@@ -1,0 +1,15 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: job-hunter-db
+    environment:
+      POSTGRES_DB: jobhunter
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    ports:
+      - "5433:5432"
+    volumes:
+      - job_hunter_data:/var/lib/postgresql/data
+
+volumes:
+  job_hunter_data:
