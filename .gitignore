@@ -33,3 +33,6 @@ build/
 .vscode/
 
 .env
+
+# Local profile (contains credentials — never commit)
+application-local.yaml
