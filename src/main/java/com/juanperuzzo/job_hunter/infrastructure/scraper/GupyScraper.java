@@ -20,9 +20,12 @@ public class GupyScraper implements ScraperPort {
     private final ObjectMapper objectMapper;
     private final List<String> keywords;
     private final int timeoutSeconds;
+    private final int limit;
 
-    public GupyScraper(String baseUrl) {
-        this.timeoutSeconds = 5;
+    public GupyScraper(String baseUrl, List<String> keywords, int limit, int timeoutSeconds) {
+        this.keywords = keywords;
+        this.limit = limit;
+        this.timeoutSeconds = timeoutSeconds;
 
         SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
         requestFactory.setConnectTimeout(timeoutSeconds * 1000);
@@ -33,7 +36,6 @@ public class GupyScraper implements ScraperPort {
                 .requestFactory(requestFactory)
                 .build();
         this.objectMapper = new ObjectMapper();
-        this.keywords = List.of("desenvolvedor", "developer", "estagiário", "engenheiro de software");
     }
 
     @Override
@@ -43,7 +45,7 @@ public class GupyScraper implements ScraperPort {
                     .uri(uriBuilder -> uriBuilder
                             .path("/api/v1/jobs")
                             .queryParam("jobName", "desenvolvedor")
-                            .queryParam("limit", 20)
+                            .queryParam("limit", limit)
                             .build())
                     .retrieve()
                     .onStatus(HttpStatusCode::isError, (req, res) -> {

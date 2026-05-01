@@ -28,7 +28,7 @@ class GupyScraperTest {
     @BeforeEach
     void setUp(WireMockRuntimeInfo wmRuntimeInfo) {
         baseUrl = wmRuntimeInfo.getHttpBaseUrl();
-        gupyScraper = new GupyScraper(baseUrl);
+        gupyScraper = new GupyScraper(baseUrl, List.of("desenvolvedor", "developer", "estagiário", "engenheiro de software"), 20, 5);
     }
 
     @Nested

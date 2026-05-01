@@ -29,6 +29,7 @@ ai:
 
 scraper:
   gupy:
+    base-url: https://www.gupy.io
     keywords: desenvolvedor,developer,estagiário,engenheiro de software
     limit: 20
     timeout-seconds: 5
