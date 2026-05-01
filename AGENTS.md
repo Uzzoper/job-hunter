@@ -253,14 +253,14 @@ src/test/java/com/juanperuzzo/job_hunter/
 ---
 
 ## Commit convention
- 
+
 All commits must follow the **Conventional Commits** standard.
- 
+
 ### Format
 ```
 <type>(optional scope): <short description in English>
 ```
- 
+
 ### Types
 | Type | When to use |
 |---|---|
@@ -271,19 +271,30 @@ All commits must follow the **Conventional Commits** standard.
 | `refactor` | Code change that neither fixes a bug nor adds a feature |
 | `chore` | Build, config, dependencies, tooling |
 | `style` | Formatting only (no logic change) |
- 
+
 ### Scope (optional)
-Use the layer or feature name: `domain`, `scraper`, `ai`, `persistence`, `web`, `scheduler`
- 
+Use the Clean Architecture layer name: `domain`, `application`, `infrastructure`, `web`, `scheduler`, `config`
+
 ### Examples
 ```
-feat(scraper): implement Gupy scraper with keyword filtering
-feat(ai): add job analysis service with OpenRouter integration
-fix(persistence): handle null description on job mapping
+feat(application): add FetchJobsService with deduplication logic
+feat(application): add AiAnalysisService with matchScore clamping
+feat(application): add EmailGenerationService
+feat(infrastructure): implement GupyScraper with keyword filtering
+feat(infrastructure): implement OpenRouterClient for AI completion
+feat(persistence): add JobRepository port and JPA adapter
+fix(infrastructure): handle null description on job mapping
 test(domain): add JobTest covering isExpired and URL equality
-refactor(scraper): extract JSON mapping into private method
+refactor(application): extract prompt building into private method
 docs: add gupy-scraper spec
-chore: add Jsoup and WireMock dependencies to pom.xml
+chore(config): add Jsoup and WireMock dependencies to pom.xml
+```
+
+### Rules
+- Description in English, lowercase, no period at the end
+- Maximum 72 characters in the subject line
+- Use imperative mood: "add", "fix", "implement" — not "added", "fixed"
+- One logical change per commit — never mix feature + refactor in the same commit
 
 ---
 
