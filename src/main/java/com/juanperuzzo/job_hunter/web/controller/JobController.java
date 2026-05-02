@@ -1,6 +1,7 @@
 package com.juanperuzzo.job_hunter.web.controller;
 
 import com.juanperuzzo.job_hunter.application.port.in.AnalyzeJobUseCase;
+import com.juanperuzzo.job_hunter.application.port.in.FetchJobsUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.GenerateEmailUseCase;
 import com.juanperuzzo.job_hunter.application.port.out.JobRepository;
 import com.juanperuzzo.job_hunter.domain.exception.JobNotFoundException;
@@ -19,11 +20,13 @@ import java.util.stream.Collectors;
 @RequestMapping("/api/jobs")
 public class JobController {
 
+    private final FetchJobsUseCase fetchJobsUseCase;
     private final AnalyzeJobUseCase analyzeJobUseCase;
     private final GenerateEmailUseCase generateEmailUseCase;
     private final JobRepository jobRepository;
 
-    public JobController(AnalyzeJobUseCase analyzeJobUseCase, GenerateEmailUseCase generateEmailUseCase, JobRepository jobRepository) {
+    public JobController(FetchJobsUseCase fetchJobsUseCase, AnalyzeJobUseCase analyzeJobUseCase, GenerateEmailUseCase generateEmailUseCase, JobRepository jobRepository) {
+        this.fetchJobsUseCase = fetchJobsUseCase;
         this.analyzeJobUseCase = analyzeJobUseCase;
         this.generateEmailUseCase = generateEmailUseCase;
         this.jobRepository = jobRepository;
@@ -85,5 +88,11 @@ public class JobController {
                 emailDraft.generatedAt()
         );
         return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/fetch")
+    public ResponseEntity<?> fetchJobs() {
+        fetchJobsUseCase.fetchAndSave();
+        return ResponseEntity.ok(java.util.Map.of("message", "Fetch completed successfully"));
     }
 }

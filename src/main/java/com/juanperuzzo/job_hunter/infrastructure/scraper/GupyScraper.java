@@ -68,7 +68,7 @@ public class GupyScraper implements ScraperPort {
     private List<Job> parseResponse(String response) {
         try {
             JsonNode root = objectMapper.readTree(response);
-            JsonNode data = root.get("data");
+            JsonNode data = root.path("data");
 
             List<Job> jobs = new ArrayList<>();
             if (data == null || !data.isArray()) {
@@ -76,7 +76,7 @@ public class GupyScraper implements ScraperPort {
             }
 
             for (JsonNode node : data) {
-                if (!matchesKeywords(node.get("name").asText(""))) {
+                if (!matchesKeywords(node.path("name").asText(""))) {
                     continue;
                 }
 
@@ -93,20 +93,23 @@ public class GupyScraper implements ScraperPort {
     }
 
     private Job mapToJob(JsonNode node) {
-        String title = node.get("name").asText("");
-        String company = node.get("company").get("name").asText("");
-        String url = node.get("jobUrl").asText("");
-        String publishedDate = node.get("publishedDate").asText("");
+        String title = node.path("name").asText("");
+        String company = node.path("careerPageName").asText("");
+        String url = node.has("jobUrl") ? node.path("jobUrl").asText("") : node.path("careerPageUrl").asText("");
+        String publishedDate = node.path("publishedDate").asText("");
 
         if (title.isEmpty() || url.isEmpty()) {
             return null;
         }
 
-        String description = node.has("description") && !node.get("description").isNull()
-                ? node.get("description").asText("")
+        String description = !node.path("description").isNull()
+                ? node.path("description").asText("")
                 : "";
 
-        LocalDate postedAt = LocalDate.parse(publishedDate.substring(0, 10));
+        LocalDate postedAt = null;
+        if (!publishedDate.isEmpty() && publishedDate.length() >= 10) {
+            postedAt = LocalDate.parse(publishedDate.substring(0, 10));
+        }
 
         return new Job(null, title, company, url, description, postedAt, Optional.empty());
     }

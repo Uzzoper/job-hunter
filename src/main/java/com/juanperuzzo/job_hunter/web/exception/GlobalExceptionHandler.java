@@ -2,6 +2,7 @@ package com.juanperuzzo.job_hunter.web.exception;
 
 import com.juanperuzzo.job_hunter.domain.exception.AiException;
 import com.juanperuzzo.job_hunter.domain.exception.JobNotFoundException;
+import com.juanperuzzo.job_hunter.domain.exception.ScraperException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -26,6 +27,11 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(AiException.class)
     public ResponseEntity<Map<String, Object>> handleAiException(AiException ex) {
+        return buildResponse(HttpStatus.BAD_GATEWAY, ex.getMessage());
+    }
+
+    @ExceptionHandler(ScraperException.class)
+    public ResponseEntity<Map<String, Object>> handleScraperException(ScraperException ex) {
         return buildResponse(HttpStatus.BAD_GATEWAY, ex.getMessage());
     }
 
