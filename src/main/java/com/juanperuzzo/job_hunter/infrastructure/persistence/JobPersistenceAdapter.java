@@ -35,6 +35,11 @@ public class JobPersistenceAdapter implements JobRepository {
                 .toList();
     }
 
+    @Override
+    public Optional<Job> findById(Long id) {
+        return jpaRepository.findById(id).map(this::toDomain);
+    }
+
     private JobEntity toEntity(Job job) {
         return new JobEntity(
                 job.id(),

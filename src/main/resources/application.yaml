@@ -24,7 +24,7 @@ ai:
   openrouter:
     base-url: https://openrouter.ai/api/v1
     api-key: ${OPENROUTER_API_KEY}
-    model: minimax/minimax-m2.5
+    model: minimax/minimax-m2.5:free
     timeout-seconds: 30
 
 scraper:

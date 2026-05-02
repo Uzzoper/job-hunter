@@ -3,6 +3,8 @@ package com.juanperuzzo.job_hunter.infrastructure.ai;
 import com.juanperuzzo.job_hunter.application.port.out.AiPort;
 import com.juanperuzzo.job_hunter.domain.exception.AiException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
@@ -73,7 +75,24 @@ public class OpenRouterClient implements AiPort {
         }
     }
 
-    private static record ChatCompletionResponse(List<Choice> choices) {}
-    private static record Choice(Message message) {}
-    private static record Message(String content) {}
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    private static class ChatCompletionResponse {
+        @JsonProperty("choices")
+        private List<Choice> choices;
+        public List<Choice> choices() { return choices; }
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    private static class Choice {
+        @JsonProperty("message")
+        private Message message;
+        public Message message() { return message; }
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    private static class Message {
+        @JsonProperty("content")
+        private String content;
+        public String content() { return content; }
+    }
 }

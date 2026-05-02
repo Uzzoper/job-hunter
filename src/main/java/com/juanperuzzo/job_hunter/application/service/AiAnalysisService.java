@@ -8,6 +8,8 @@ import com.juanperuzzo.job_hunter.domain.model.Job;
 import com.juanperuzzo.job_hunter.domain.model.JobAnalysis;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.List;
 
@@ -15,6 +17,7 @@ public class AiAnalysisService implements AnalyzeJobUseCase {
 
     private final AiPort aiPort;
     private final ObjectMapper objectMapper;
+    private static final Logger log = LoggerFactory.getLogger(AiAnalysisService.class);
 
     public AiAnalysisService(AiPort aiPort) {
         this.aiPort = aiPort;
@@ -97,7 +100,18 @@ public class AiAnalysisService implements AnalyzeJobUseCase {
 
     private JobAnalysis parseAnalysis(String json) {
         try {
-            JsonNode node = objectMapper.readTree(json);
+            if (json == null || json.isBlank()) {
+                throw new AiException("AI returned empty or null response");
+            }
+            String cleaned = json.strip();
+            cleaned = cleaned.replaceAll("```[a-zA-Z]*\\s*|```\\s*", "").strip();
+            int jsonStart = cleaned.indexOf('{');
+            int jsonEnd = cleaned.lastIndexOf('}');
+            if (jsonStart == -1 || jsonEnd == -1 || jsonEnd < jsonStart) {
+                throw new AiException("No valid JSON object found in AI response");
+            }
+            cleaned = cleaned.substring(jsonStart, jsonEnd + 1).strip();
+            JsonNode node = objectMapper.readTree(cleaned);
 
             int matchScore = node.get("matchScore").asInt(0);
             matchScore = Math.max(0, Math.min(100, matchScore));
@@ -121,6 +135,7 @@ public class AiAnalysisService implements AnalyzeJobUseCase {
 
             return new JobAnalysis(matchScore, matchedSkills, missingSkills, tone, summary);
         } catch (Exception e) {
+            log.error("Failed to parse AI response. Raw response: {}", json, e);
             throw new AiException("Failed to parse AI response: " + e.getMessage(), e);
         }
     }
