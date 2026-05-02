@@ -1,6 +1,7 @@
 package com.juanperuzzo.job_hunter.infrastructure.config;
 
 import com.juanperuzzo.job_hunter.application.port.out.AiPort;
+import com.juanperuzzo.job_hunter.application.port.out.EmailDraftRepository;
 import com.juanperuzzo.job_hunter.application.port.out.JobRepository;
 import com.juanperuzzo.job_hunter.application.port.out.ScraperPort;
 import com.juanperuzzo.job_hunter.application.service.AiAnalysisService;
@@ -46,7 +47,7 @@ public class AppConfig {
     }
 
     @Bean
-    public EmailGenerationService emailGenerationService(AiPort aiPort) {
-        return new EmailGenerationService(aiPort);
+    public EmailGenerationService emailGenerationService(AiPort aiPort, EmailDraftRepository emailDraftRepository) {
+        return new EmailGenerationService(aiPort, emailDraftRepository);
     }
 }

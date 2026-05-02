@@ -44,7 +44,7 @@ class GupyScraperTest {
                     {
                       "id": 12345,
                       "name": "Desenvolvedor Java Júnior",
-                      "company": { "name": "CompanyX" },
+                      "careerPageName": "CompanyX",
                       "jobUrl": "https://company.gupy.io/jobs/12345",
                       "publishedDate": "2025-03-10T14:00:00.000Z",
                       "description": "We are looking for a developer..."

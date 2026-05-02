@@ -2,6 +2,7 @@ package com.juanperuzzo.job_hunter.application.service;
 
 import com.juanperuzzo.job_hunter.application.port.in.GenerateEmailUseCase;
 import com.juanperuzzo.job_hunter.application.port.out.AiPort;
+import com.juanperuzzo.job_hunter.application.port.out.EmailDraftRepository;
 import com.juanperuzzo.job_hunter.domain.exception.AiException;
 import com.juanperuzzo.job_hunter.domain.model.EmailDraft;
 import com.juanperuzzo.job_hunter.domain.model.EmailStatus;
@@ -14,9 +15,11 @@ import java.util.Objects;
 public class EmailGenerationService implements GenerateEmailUseCase {
 
     private final AiPort aiPort;
+    private final EmailDraftRepository emailDraftRepository;
 
-    public EmailGenerationService(AiPort aiPort) {
+    public EmailGenerationService(AiPort aiPort, EmailDraftRepository emailDraftRepository) {
         this.aiPort = aiPort;
+        this.emailDraftRepository = emailDraftRepository;
     }
 
     @Override
@@ -27,7 +30,8 @@ public class EmailGenerationService implements GenerateEmailUseCase {
         try {
             String prompt = buildPrompt(job, analysis);
             String response = aiPort.complete(prompt);
-            return parseEmailDraft(job.id(), response);
+            EmailDraft draft = parseEmailDraft(job.id(), response);
+            return emailDraftRepository.save(draft);
         } catch (AiException e) {
             throw e;
         } catch (Exception e) {

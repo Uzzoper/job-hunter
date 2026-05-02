@@ -1,6 +1,7 @@
 package com.juanperuzzo.job_hunter.unit.application;
 
 import com.juanperuzzo.job_hunter.application.port.out.AiPort;
+import com.juanperuzzo.job_hunter.application.port.out.EmailDraftRepository;
 import com.juanperuzzo.job_hunter.application.service.EmailGenerationService;
 import com.juanperuzzo.job_hunter.domain.exception.AiException;
 import com.juanperuzzo.job_hunter.domain.model.CompanyTone;
@@ -31,11 +32,14 @@ class EmailGenerationServiceTest {
     @Mock
     private AiPort aiPort;
 
+    @Mock
+    private EmailDraftRepository emailDraftRepository;
+
     private EmailGenerationService emailGenerationService;
 
     @BeforeEach
     void setUp() {
-        emailGenerationService = new EmailGenerationService(aiPort);
+        emailGenerationService = new EmailGenerationService(aiPort, emailDraftRepository);
     }
 
     @Nested
@@ -58,6 +62,7 @@ class EmailGenerationServiceTest {
                 """;
 
             when(aiPort.complete(any())).thenReturn(aiResponse);
+            when(emailDraftRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
             Job job = new Job(null, "Java Developer", "CompanyX",
                     "https://example.com/job/1", "Description", LocalDate.now(), Optional.empty());
@@ -98,6 +103,7 @@ class EmailGenerationServiceTest {
                 """;
 
             when(aiPort.complete(any())).thenReturn(aiResponse);
+            when(emailDraftRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
             Job job = new Job(null, "Junior Developer", "StartupY",
                     "https://example.com/job/2", "Description", LocalDate.now(), Optional.empty());
@@ -136,6 +142,7 @@ class EmailGenerationServiceTest {
                 """;
 
             when(aiPort.complete(any())).thenReturn(aiResponse);
+            when(emailDraftRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
             Job job = new Job(null, "Developer", "BankZ",
                     "https://example.com/job/3", "Description", LocalDate.now(), Optional.empty());
@@ -171,6 +178,7 @@ class EmailGenerationServiceTest {
                 """;
 
             when(aiPort.complete(any())).thenReturn(aiResponse);
+            when(emailDraftRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
             Job job = new Job(null, "Developer", "StartupCool",
                     "https://example.com/job/4", "Description", LocalDate.now(), Optional.empty());

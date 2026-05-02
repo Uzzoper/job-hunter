@@ -3,6 +3,7 @@ package com.juanperuzzo.job_hunter.web.controller;
 import com.juanperuzzo.job_hunter.application.port.in.AnalyzeJobUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.FetchJobsUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.GenerateEmailUseCase;
+import com.juanperuzzo.job_hunter.application.port.out.EmailDraftRepository;
 import com.juanperuzzo.job_hunter.application.port.out.JobRepository;
 import com.juanperuzzo.job_hunter.domain.exception.JobNotFoundException;
 import com.juanperuzzo.job_hunter.domain.model.EmailDraft;
@@ -24,12 +25,14 @@ public class JobController {
     private final AnalyzeJobUseCase analyzeJobUseCase;
     private final GenerateEmailUseCase generateEmailUseCase;
     private final JobRepository jobRepository;
+    private final EmailDraftRepository emailDraftRepository;
 
-    public JobController(FetchJobsUseCase fetchJobsUseCase, AnalyzeJobUseCase analyzeJobUseCase, GenerateEmailUseCase generateEmailUseCase, JobRepository jobRepository) {
+    public JobController(FetchJobsUseCase fetchJobsUseCase, AnalyzeJobUseCase analyzeJobUseCase, GenerateEmailUseCase generateEmailUseCase, JobRepository jobRepository, EmailDraftRepository emailDraftRepository) {
         this.fetchJobsUseCase = fetchJobsUseCase;
         this.analyzeJobUseCase = analyzeJobUseCase;
         this.generateEmailUseCase = generateEmailUseCase;
         this.jobRepository = jobRepository;
+        this.emailDraftRepository = emailDraftRepository;
     }
 
     @GetMapping
@@ -94,5 +97,20 @@ public class JobController {
     public ResponseEntity<?> fetchJobs() {
         fetchJobsUseCase.fetchAndSave();
         return ResponseEntity.ok(java.util.Map.of("message", "Fetch completed successfully"));
+    }
+
+    @GetMapping("/{id}/email")
+    public ResponseEntity<EmailDraftResponse> getEmailDraft(@PathVariable Long id) {
+        EmailDraft emailDraft = emailDraftRepository.findByJobId(id)
+                .orElseThrow(() -> new JobNotFoundException("Email draft not found for job id: " + id));
+        EmailDraftResponse response = new EmailDraftResponse(
+                emailDraft.id(),
+                emailDraft.jobId(),
+                emailDraft.subject(),
+                emailDraft.body(),
+                emailDraft.status(),
+                emailDraft.generatedAt()
+        );
+        return ResponseEntity.ok(response);
     }
 }
