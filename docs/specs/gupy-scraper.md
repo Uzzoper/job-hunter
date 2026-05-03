@@ -13,7 +13,7 @@ The scraper queries the endpoint and maps the results to domain `Job` objects.
 
 **Base endpoint:**
 ```
-GET https://portal.api.gupy.io/api/v1/jobs?jobName=desenvolvedor&limit=20
+GET https://portal.api.gupy.io/api/v1/jobs?jobName=desenvolvedor&size=100
 ```
 
 ---
@@ -25,6 +25,9 @@ GET https://portal.api.gupy.io/api/v1/jobs?jobName=desenvolvedor&limit=20
 - **WHEN** `fetch()` is called
 - **THEN** returns a list of correctly mapped `Job` objects
 - **AND** the fields `title`, `company`, `url` and `postedAt` are populated
+- **AND** jobs older than 90 days are discarded
+- **AND** jobs matching exclusion regex (senior, lead, etc.) are discarded
+- **AND** jobs not matching location (PR/Remote) are discarded
 
 ### Scenario 2: response with empty list
 - **GIVEN** the endpoint returns JSON with `data: []`
@@ -32,7 +35,7 @@ GET https://portal.api.gupy.io/api/v1/jobs?jobName=desenvolvedor&limit=20
 - **THEN** returns an empty list without throwing an exception
 
 ### Scenario 3: request timeout
-- **GIVEN** the endpoint does not respond within 5 seconds
+- **GIVEN** the endpoint does not respond within the configured timeout (e.g. 10 seconds)
 - **WHEN** `fetch()` is called
 - **THEN** throws `ScraperException` with a descriptive message
 
@@ -52,8 +55,10 @@ GET https://portal.api.gupy.io/api/v1/jobs?jobName=desenvolvedor&limit=20
 
 - The `description` field may be `null` in the response — use empty string as fallback
 - `postedAt` comes as an ISO-8601 string (`"2025-03-10T14:00:00Z"`) — convert to `LocalDate`
-- Filter only jobs whose title contains configurable keywords (`desenvolvedor`, `developer`, `engenheiro de software`)
-- Keywords are case-insensitive
+- **Date Filter:** Discard any job where `postedAt` is older than 90 days from today.
+- **Keyword Filter:** Only accept jobs whose title contains configurable keywords (case-insensitive).
+- **Exclusion Filter:** Discard jobs matching "Senior", "Pleno", "Sr.", etc., using case-insensitive regex with word boundaries (`(?<!\w)word(?!\w)`).
+- **Location Filter:** Accept only jobs marked as `isRemoteWork: true` OR located in configured cities/states (e.g., "Ponta Grossa", "Paraná", "PR").
 - The `Job` `id` is generated locally with `UUID.randomUUID()`
 
 ---
@@ -66,10 +71,12 @@ public interface ScraperPort {
     List<Job> fetch();
 }
 
-// Configuration via application.properties
-// scraper.gupy.keywords=desenvolvedor,developer,estagiário,engenheiro de software
-// scraper.gupy.limit=20
-// scraper.gupy.timeout-seconds=5
+// Configuration via application.yaml
+// scraper.gupy.keywords=desenvolvedor,developer,backend
+// scraper.gupy.exclude-keywords=sênior,senior,sr,pleno,especialista
+// scraper.gupy.locations=Ponta Grossa,Paraná,PR
+// scraper.gupy.limit=100
+// scraper.gupy.timeout-seconds=10
 ```
 
 ---

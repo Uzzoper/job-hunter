@@ -14,6 +14,7 @@ import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import java.time.LocalDate;
 import java.util.*;
 import java.util.Optional;
+import java.util.regex.Pattern;
 
 public class GupyScraper implements ScraperPort {
 
@@ -22,14 +23,18 @@ public class GupyScraper implements ScraperPort {
     private final RestClient restClient;
     private final ObjectMapper objectMapper;
     private final List<String> keywords;
-    private final List<String> excludeKeywords;
+    private final List<Pattern> excludePatterns;
     private final List<String> locations;
     private final int timeoutSeconds;
     private final int limit;
 
-    public GupyScraper(String baseUrl, List<String> keywords, List<String> excludeKeywords, List<String> locations, int limit, int timeoutSeconds) {
+    public GupyScraper(String baseUrl, List<String> keywords, List<String> excludeKeywords, List<String> locations,
+            int limit, int timeoutSeconds) {
         this.keywords = keywords;
-        this.excludeKeywords = excludeKeywords;
+        this.excludePatterns = excludeKeywords.stream()
+                .map(k -> Pattern.compile("(?<!\\w)" + Pattern.quote(k.trim()) + "(?!\\w)",
+                        Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CHARACTER_CLASS))
+                .toList();
         this.locations = locations;
         this.limit = limit;
         this.timeoutSeconds = timeoutSeconds;
@@ -57,11 +62,12 @@ public class GupyScraper implements ScraperPort {
                         .uri(uriBuilder -> uriBuilder
                                 .path("/api/v1/jobs")
                                 .queryParam("jobName", keyword)
-                                .queryParam("limit", limit)
+                                .queryParam("size", limit)
                                 .build())
                         .retrieve()
                         .onStatus(HttpStatusCode::isError, (req, res) -> {
-                            throw new ScraperException("Gupy endpoint returned status " + res.getStatusCode() + " for keyword: " + keyword);
+                            throw new ScraperException("Gupy endpoint returned status " + res.getStatusCode()
+                                    + " for keyword: " + keyword);
                         })
                         .body(String.class);
 
@@ -79,7 +85,8 @@ public class GupyScraper implements ScraperPort {
 
         if (uniqueJobs.isEmpty() && !errors.isEmpty()) {
             Throwable first = errors.get(0);
-            if (first instanceof ScraperException se) throw se;
+            if (first instanceof ScraperException se)
+                throw se;
             throw new ScraperException("Failed to fetch jobs: " + first.getMessage(), first);
         }
 
@@ -106,24 +113,34 @@ public class GupyScraper implements ScraperPort {
 
     private List<Job> filterAndMapJobs(Collection<JsonNode> nodes) {
         List<Job> jobs = new ArrayList<>();
+        int countKeywords = 0, countExcluded = 0, countLocation = 0, countAge = 0;
+
         for (JsonNode node : nodes) {
             String title = node.path("name").asText("");
-            
+
             if (!matchesKeywords(title)) {
+                countKeywords++;
                 continue;
             }
             if (isExcluded(title)) {
+                countExcluded++;
                 continue;
             }
             if (!matchesLocation(node)) {
+                countLocation++;
                 continue;
             }
 
             Job job = mapToJob(node);
             if (job != null) {
                 jobs.add(job);
+            } else {
+                countAge++;
             }
         }
+        log.info(
+                "Total fetched: {}. Dropped by keywords: {}, excluded by regex: {}, dropped by location: {}, dropped by age/invalid: {}. Accepted: {}",
+                nodes.size(), countKeywords, countExcluded, countLocation, countAge, jobs.size());
         return jobs;
     }
 
@@ -150,6 +167,10 @@ public class GupyScraper implements ScraperPort {
             }
         }
 
+        if (postedAt != null && postedAt.isBefore(LocalDate.now().minusDays(90))) {
+            return null;
+        }
+
         return new Job(null, title, company, url, description, postedAt, Optional.empty());
     }
 
@@ -166,11 +187,11 @@ public class GupyScraper implements ScraperPort {
     }
 
     private boolean isExcluded(String title) {
-        if (title.isEmpty() || excludeKeywords.isEmpty()) {
+        if (title.isEmpty() || excludePatterns.isEmpty()) {
             return false;
         }
-        return excludeKeywords.stream()
-                .anyMatch(k -> title.toLowerCase().contains(k.toLowerCase()));
+        return excludePatterns.stream()
+                .anyMatch(pattern -> pattern.matcher(title).find());
     }
 
     private boolean matchesLocation(JsonNode node) {
@@ -185,6 +206,6 @@ public class GupyScraper implements ScraperPort {
         String state = node.path("state").asText("").toLowerCase();
         return locations.stream()
                 .anyMatch(loc -> city.contains(loc.toLowerCase())
-                              || state.contains(loc.toLowerCase()));
+                        || state.contains(loc.toLowerCase()));
     }
 }

@@ -46,12 +46,12 @@ class GupyScraperTest {
                       "name": "Desenvolvedor Java Júnior",
                       "careerPageName": "CompanyX",
                       "jobUrl": "https://company.gupy.io/jobs/12345",
-                      "publishedDate": "2025-03-10T14:00:00.000Z",
+                      "publishedDate": "%sT14:00:00.000Z",
                       "description": "We are looking for a developer..."
                     }
                   ]
                 }
-                """;
+                """.formatted(LocalDate.now().toString());
 
             stubFor(get(urlPathEqualTo("/api/v1/jobs"))
                     .willReturn(okJson(jsonResponse)));
@@ -63,7 +63,7 @@ class GupyScraperTest {
             assertEquals("Desenvolvedor Java Júnior", job.title());
             assertEquals("CompanyX", job.company());
             assertEquals("https://company.gupy.io/jobs/12345", job.url());
-            assertEquals(LocalDate.of(2025, 3, 10), job.postedAt());
+            assertEquals(LocalDate.now(), job.postedAt());
             assertNotNull(job.description());
             assertEquals("We are looking for a developer...", job.description());
         }
