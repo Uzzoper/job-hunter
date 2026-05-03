@@ -31,6 +31,8 @@ scraper:
   gupy:
     base-url: https://portal.api.gupy.io
     keywords: desenvolvedor,developer,estagiário,engenheiro de software
+    exclude-keywords: sênior,senior,sr.,pleno,pl.,especialista,lead,coordenador
+    locations: Ponta Grossa,Paraná,PR
     limit: 20
     timeout-seconds: 5
 

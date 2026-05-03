@@ -19,11 +19,15 @@ public class GupyScraper implements ScraperPort {
     private final RestClient restClient;
     private final ObjectMapper objectMapper;
     private final List<String> keywords;
+    private final List<String> excludeKeywords;
+    private final List<String> locations;
     private final int timeoutSeconds;
     private final int limit;
 
-    public GupyScraper(String baseUrl, List<String> keywords, int limit, int timeoutSeconds) {
+    public GupyScraper(String baseUrl, List<String> keywords, List<String> excludeKeywords, List<String> locations, int limit, int timeoutSeconds) {
         this.keywords = keywords;
+        this.excludeKeywords = excludeKeywords;
+        this.locations = locations;
         this.limit = limit;
         this.timeoutSeconds = timeoutSeconds;
 
@@ -79,6 +83,12 @@ public class GupyScraper implements ScraperPort {
                 if (!matchesKeywords(node.path("name").asText(""))) {
                     continue;
                 }
+                if (isExcluded(node.path("name").asText(""))) {
+                    continue;
+                }
+                if (!matchesLocation(node)) {
+                    continue;
+                }
 
                 Job job = mapToJob(node);
                 if (job != null) {
@@ -120,5 +130,28 @@ public class GupyScraper implements ScraperPort {
         }
         return keywords.stream()
                 .anyMatch(k -> title.toLowerCase().contains(k.toLowerCase()));
+    }
+
+    private boolean isExcluded(String title) {
+        if (title.isEmpty() || excludeKeywords.isEmpty()) {
+            return false;
+        }
+        return excludeKeywords.stream()
+                .anyMatch(k -> title.toLowerCase().contains(k.toLowerCase()));
+    }
+
+    private boolean matchesLocation(JsonNode node) {
+        if (locations.isEmpty()) {
+            return true;
+        }
+        boolean isRemote = node.path("isRemoteWork").asBoolean(false);
+        if (isRemote) {
+            return true;
+        }
+        String city = node.path("city").asText("").toLowerCase();
+        String state = node.path("state").asText("").toLowerCase();
+        return locations.stream()
+                .anyMatch(loc -> city.contains(loc.toLowerCase())
+                              || state.contains(loc.toLowerCase()));
     }
 }

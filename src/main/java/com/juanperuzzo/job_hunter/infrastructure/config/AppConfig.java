@@ -22,9 +22,11 @@ public class AppConfig {
     public GupyScraper gupyScraper(
             @Value("${scraper.gupy.base-url}") String baseUrl,
             @Value("#{'${scraper.gupy.keywords}'.split(',')}") List<String> keywords,
+            @Value("#{'${scraper.gupy.exclude-keywords}'.split(',')}") List<String> excludeKeywords,
+            @Value("#{'${scraper.gupy.locations}'.split(',')}") List<String> locations,
             @Value("${scraper.gupy.limit}") int limit,
             @Value("${scraper.gupy.timeout-seconds}") int timeoutSeconds) {
-        return new GupyScraper(baseUrl, keywords, limit, timeoutSeconds);
+        return new GupyScraper(baseUrl, keywords, excludeKeywords, locations, limit, timeoutSeconds);
     }
 
     @Bean
