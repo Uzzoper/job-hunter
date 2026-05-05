@@ -35,6 +35,16 @@ scraper:
     locations: Ponta Grossa,Paraná,PR
     limit: 100
     timeout-seconds: 10
+  infojobs:
+    enabled: true
+    base-url: https://www.infojobs.com.br
+    keywords: desenvolvedor junior,desenvolvedor júnior,analista desenvolvedor junior,programador junior,java junior,backend junior
+    exclude-keywords: senior,sênior,sr,sr.,pleno,pl.,lead,especialista,bdr,desenvolvedor de negócios,desenvolvimento de negócios,business development
+    locations: Remoto,Home office,Todo Brasil,Ponta Grossa,Paraná,PR,Curitiba
+    max-pages: 1
+    max-age-days: 30
+    timeout-seconds: 10
+    delay-millis: 2000
 
 scheduler:
   fetch-jobs:

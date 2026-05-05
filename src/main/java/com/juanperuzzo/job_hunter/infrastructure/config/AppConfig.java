@@ -8,8 +8,11 @@ import com.juanperuzzo.job_hunter.application.service.AiAnalysisService;
 import com.juanperuzzo.job_hunter.application.service.EmailGenerationService;
 import com.juanperuzzo.job_hunter.application.service.FetchJobsService;
 import com.juanperuzzo.job_hunter.infrastructure.ai.OpenRouterClient;
+import com.juanperuzzo.job_hunter.infrastructure.scraper.CompositeScraper;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.GupyScraper;
+import com.juanperuzzo.job_hunter.infrastructure.scraper.InfoJobsScraper;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Primary;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -27,6 +30,27 @@ public class AppConfig {
             @Value("${scraper.gupy.limit}") int limit,
             @Value("${scraper.gupy.timeout-seconds}") int timeoutSeconds) {
         return new GupyScraper(baseUrl, keywords, excludeKeywords, locations, limit, timeoutSeconds);
+    }
+
+    @Bean
+    public InfoJobsScraper infoJobsScraper(
+            @Value("${scraper.infojobs.base-url}") String baseUrl,
+            @Value("${scraper.infojobs.enabled}") boolean enabled,
+            @Value("#{'${scraper.infojobs.keywords}'.split(',')}") List<String> keywords,
+            @Value("#{'${scraper.infojobs.exclude-keywords}'.split(',')}") List<String> excludeKeywords,
+            @Value("#{'${scraper.infojobs.locations}'.split(',')}") List<String> locations,
+            @Value("${scraper.infojobs.max-pages}") int maxPages,
+            @Value("${scraper.infojobs.max-age-days}") int maxAgeDays,
+            @Value("${scraper.infojobs.timeout-seconds}") int timeoutSeconds,
+            @Value("${scraper.infojobs.delay-millis}") long delayMillis) {
+        return new InfoJobsScraper(baseUrl, enabled, keywords, excludeKeywords, locations, maxPages, maxAgeDays,
+                timeoutSeconds, delayMillis);
+    }
+
+    @Bean
+    @Primary
+    public ScraperPort scraperPort(GupyScraper gupyScraper, InfoJobsScraper infoJobsScraper) {
+        return new CompositeScraper(List.of(gupyScraper, infoJobsScraper));
     }
 
     @Bean
