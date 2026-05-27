@@ -507,8 +507,9 @@ public class InfoJobsScraper implements ScraperPort {
 
     private static String normalize(String value) {
         var cleaned = clean(value).toLowerCase(Locale.ROOT);
-        return Normalizer.normalize(cleaned, Normalizer.Form.NFD)
+        var normalized = Normalizer.normalize(cleaned, Normalizer.Form.NFD)
                 .replaceAll("\\p{M}", "");
+        return normalized.replaceAll("\\bjr\\b", "junior");
     }
 
     private static String removeTrailingSlash(String value) {

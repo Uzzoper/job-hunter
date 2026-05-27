@@ -4,7 +4,6 @@ import com.github.tomakehurst.wiremock.junit5.WireMockExtension;
 import com.github.tomakehurst.wiremock.junit5.WireMockRuntimeInfo;
 import com.github.tomakehurst.wiremock.client.ResponseDefinitionBuilder;
 import com.juanperuzzo.job_hunter.domain.exception.ScraperException;
-import com.juanperuzzo.job_hunter.domain.model.Job;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.InfoJobsScraper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -140,6 +139,48 @@ class InfoJobsScraperTest {
             scraper.fetch();
 
             verify(getRequestedFor(urlEqualTo("/vagas-de-emprego-desenvolvedor%2Bjunior.aspx")));
+        }
+
+        @Test
+        @DisplayName("fetch should accept job when title has 'Jr' and keyword is 'junior'")
+        void fetch_whenTitleHasJrAndKeywordIsJunior_shouldAcceptJob() {
+            var scraper = newScraper(true, List.of("desenvolvedor junior"), List.of(), List.of(), 1, 30, 5, 0);
+            stubFor(get(anyUrl()).willReturn(okHtml(pageWithCards("""
+                    <article data-testid="job-card">
+                      <a data-testid="job-title" href="/vaga-de-desenvolvedor-java-jr__123.aspx">Desenvolvedor Java Jr</a>
+                      <span data-testid="company-name">ACME Tecnologia</span>
+                      <span data-testid="job-location">Todo Brasil</span>
+                      <span data-testid="work-model">Home office</span>
+                      <span data-testid="posted-date">Hoje</span>
+                      <p data-testid="job-snippet">Desenvolvimento de APIs Java.</p>
+                    </article>
+                    """))));
+
+            var jobs = scraper.fetch();
+
+            assertEquals(1, jobs.size());
+            assertEquals("Desenvolvedor Java Jr", jobs.get(0).title());
+        }
+
+        @Test
+        @DisplayName("fetch should accept job when title has 'Junior' and keyword is 'jr'")
+        void fetch_whenTitleHasJuniorAndKeywordIsJr_shouldAcceptJob() {
+            var scraper = newScraper(true, List.of("desenvolvedor jr"), List.of(), List.of(), 1, 30, 5, 0);
+            stubFor(get(anyUrl()).willReturn(okHtml(pageWithCards("""
+                    <article data-testid="job-card">
+                      <a data-testid="job-title" href="/vaga-de-desenvolvedor-java-junior__123.aspx">Desenvolvedor Java Júnior</a>
+                      <span data-testid="company-name">ACME Tecnologia</span>
+                      <span data-testid="job-location">Todo Brasil</span>
+                      <span data-testid="work-model">Home office</span>
+                      <span data-testid="posted-date">Hoje</span>
+                      <p data-testid="job-snippet">Desenvolvimento de APIs Java.</p>
+                    </article>
+                    """))));
+
+            var jobs = scraper.fetch();
+
+            assertEquals(1, jobs.size());
+            assertEquals("Desenvolvedor Java Júnior", jobs.get(0).title());
         }
     }
 

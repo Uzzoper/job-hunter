@@ -35,7 +35,10 @@ public class GupyScraper implements ScraperPort {
                 .map(k -> Pattern.compile("(?<!\\w)" + Pattern.quote(k.trim()) + "(?!\\w)",
                         Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CHARACTER_CLASS))
                 .toList();
-        this.locations = locations;
+        this.locations = locations.stream()
+                .map(String::trim)
+                .filter(l -> !l.isEmpty())
+                .toList();
         this.limit = limit;
         this.timeoutSeconds = timeoutSeconds;
 
