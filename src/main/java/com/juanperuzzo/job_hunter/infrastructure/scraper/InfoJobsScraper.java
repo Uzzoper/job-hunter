@@ -214,7 +214,7 @@ public class InfoJobsScraper implements ScraperPort {
         var location = extractLocation(cardText);
         var workModel = extractWorkModel(cardText);
         var description = extractDescription(cardText, workModel);
-        var job = new Job(null, title, company, url, description, postedAt.get(), Optional.empty());
+        var job = new Job(null, title, company, url, description, postedAt.get());
 
         return Optional.of(new ParsedJob(job, location, workModel));
     }
@@ -322,7 +322,7 @@ public class InfoJobsScraper implements ScraperPort {
         var location = textFrom(card, "[data-testid=job-location], .location, .localizacao, .job-location");
         var workModel = textFrom(card, "[data-testid=work-model], .work-model, .modelo-trabalho");
         var description = textFrom(card, "[data-testid=job-snippet], .description, .descricao, .snippet");
-        var job = new Job(null, title, company, url, description, postedAt.get(), Optional.empty());
+        var job = new Job(null, title, company, url, description, postedAt.get());
 
         return Optional.of(new ParsedJob(job, location, workModel));
     }

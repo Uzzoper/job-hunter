@@ -3,6 +3,9 @@ package com.juanperuzzo.job_hunter.domain.model;
 import java.util.List;
 
 public record JobAnalysis(
+        Long id,
+        Long jobId,
+        Long userId,
         int matchScore,
         List<String> matchedSkills,
         List<String> missingSkills,
