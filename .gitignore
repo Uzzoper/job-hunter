@@ -36,3 +36,6 @@ build/
 
 # Local profile (contains credentials — never commit)
 application-local.yaml
+
+# OpenCode planning artifacts
+.sisyphus/

@@ -72,7 +72,6 @@ class InfoJobsScraperTest {
             assertEquals(baseUrl + "/vaga-de-desenvolvedor-java-junior__123.aspx", job.url());
             assertEquals("Desenvolvimento de APIs Java e manutenção de sistemas.", job.description());
             assertEquals(LocalDate.now(), job.postedAt());
-            assertTrue(job.matchScore().isEmpty());
         }
 
         @Test

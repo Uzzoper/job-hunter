@@ -6,6 +6,8 @@ import com.juanperuzzo.job_hunter.domain.exception.AiException;
 import com.juanperuzzo.job_hunter.domain.model.CompanyTone;
 import com.juanperuzzo.job_hunter.domain.model.Job;
 import com.juanperuzzo.job_hunter.domain.model.JobAnalysis;
+import com.juanperuzzo.job_hunter.application.port.out.JobAnalysisRepository;
+import com.juanperuzzo.job_hunter.application.port.out.UserProfileRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -29,11 +31,17 @@ class AiAnalysisServiceTest {
     @Mock
     private AiPort aiPort;
 
+    @Mock
+    private JobAnalysisRepository jobAnalysisRepository;
+
+    @Mock
+    private UserProfileRepository userProfileRepository;
+
     private AiAnalysisService aiAnalysisService;
 
     @BeforeEach
     void setUp() {
-        aiAnalysisService = new AiAnalysisService(aiPort);
+        aiAnalysisService = new AiAnalysisService(aiPort, jobAnalysisRepository, userProfileRepository);
     }
 
     @Nested
@@ -54,11 +62,13 @@ class AiAnalysisServiceTest {
                 """;
 
             when(aiPort.complete(any())).thenReturn(validJson);
+            when(userProfileRepository.findByUserId(any())).thenReturn(Optional.empty());
+            when(jobAnalysisRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
             Job job = new Job(null, "Java Developer", "CompanyX",
-                    "https://example.com/job/1", "Description", LocalDate.now(), Optional.empty());
+                    "https://example.com/job/1", "Description", LocalDate.now());
 
-            JobAnalysis analysis = aiAnalysisService.analyze(job);
+            JobAnalysis analysis = aiAnalysisService.analyze(1L, job);
 
             assertNotNull(analysis);
             assertEquals(85, analysis.matchScore());
@@ -77,13 +87,13 @@ class AiAnalysisServiceTest {
         @DisplayName("analyze should throw IllegalArgumentException when job has empty description")
         void analyze_whenEmptyDescription_shouldThrowIllegalArgumentException() {
             Job job = new Job(null, "Java Developer", "CompanyX",
-                    "https://example.com/job/1", "", LocalDate.now(), Optional.empty());
+                    "https://example.com/job/1", "", LocalDate.now());
 
-            assertThrows(IllegalArgumentException.class, () -> aiAnalysisService.analyze(job));
+            assertThrows(IllegalArgumentException.class, () -> aiAnalysisService.analyze(1L, job));
 
             Job jobBlank = new Job(null, "Java Developer", "CompanyX",
-                    "https://example.com/job/1", "   ", LocalDate.now(), Optional.empty());
-            assertThrows(IllegalArgumentException.class, () -> aiAnalysisService.analyze(jobBlank));
+                    "https://example.com/job/1", "   ", LocalDate.now());
+            assertThrows(IllegalArgumentException.class, () -> aiAnalysisService.analyze(1L, jobBlank));
         }
     }
 
@@ -95,12 +105,13 @@ class AiAnalysisServiceTest {
         @DisplayName("analyze should throw AiException when AI returns invalid JSON")
         void analyze_whenInvalidJson_shouldThrowAiException() {
             when(aiPort.complete(any())).thenReturn("not valid json");
+            when(userProfileRepository.findByUserId(any())).thenReturn(Optional.empty());
 
             Job job = new Job(null, "Java Developer", "CompanyX",
-                    "https://example.com/job/1", "Description", LocalDate.now(), Optional.empty());
+                    "https://example.com/job/1", "Description", LocalDate.now());
 
             AiException exception = assertThrows(AiException.class,
-                    () -> aiAnalysisService.analyze(job));
+                    () -> aiAnalysisService.analyze(1L, job));
 
             assertTrue(exception.getMessage().contains("parse") ||
                        exception.getMessage().contains("invalid"));
@@ -115,11 +126,12 @@ class AiAnalysisServiceTest {
         @DisplayName("analyze should propagate AiException when AI client throws exception")
         void analyze_whenAiUnavailable_shouldPropagateAiException() {
             when(aiPort.complete(any())).thenThrow(new RuntimeException("Network error"));
+            when(userProfileRepository.findByUserId(any())).thenReturn(Optional.empty());
 
             Job job = new Job(null, "Java Developer", "CompanyX",
-                    "https://example.com/job/1", "Description", LocalDate.now(), Optional.empty());
+                    "https://example.com/job/1", "Description", LocalDate.now());
 
-            assertThrows(AiException.class, () -> aiAnalysisService.analyze(job));
+            assertThrows(AiException.class, () -> aiAnalysisService.analyze(1L, job));
         }
     }
 
@@ -141,11 +153,13 @@ class AiAnalysisServiceTest {
                 """;
 
             when(aiPort.complete(any())).thenReturn(jsonAbove100);
+            when(userProfileRepository.findByUserId(any())).thenReturn(Optional.empty());
+            when(jobAnalysisRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
             Job job = new Job(null, "Java Developer", "CompanyX",
-                    "https://example.com/job/1", "Description", LocalDate.now(), Optional.empty());
+                    "https://example.com/job/1", "Description", LocalDate.now());
 
-            JobAnalysis analysis = aiAnalysisService.analyze(job);
+            JobAnalysis analysis = aiAnalysisService.analyze(1L, job);
 
             assertEquals(100, analysis.matchScore());
         }
@@ -164,11 +178,13 @@ class AiAnalysisServiceTest {
                 """;
 
             when(aiPort.complete(any())).thenReturn(jsonInRange);
+            when(userProfileRepository.findByUserId(any())).thenReturn(Optional.empty());
+            when(jobAnalysisRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
             Job job = new Job(null, "Java Developer", "CompanyX",
-                    "https://example.com/job/1", "Description", LocalDate.now(), Optional.empty());
+                    "https://example.com/job/1", "Description", LocalDate.now());
 
-            JobAnalysis analysis = aiAnalysisService.analyze(job);
+            JobAnalysis analysis = aiAnalysisService.analyze(1L, job);
 
             assertEquals(75, analysis.matchScore());
         }
