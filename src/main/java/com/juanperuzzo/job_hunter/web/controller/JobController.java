@@ -12,6 +12,7 @@ import com.juanperuzzo.job_hunter.domain.model.JobAnalysis;
 import com.juanperuzzo.job_hunter.web.dto.EmailDraftResponse;
 import com.juanperuzzo.job_hunter.web.dto.JobResponse;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -45,8 +46,7 @@ public class JobController {
                         job.company(),
                         job.url(),
                         job.description(),
-                        job.postedAt(),
-                        job.matchScore().orElse(null)
+                        job.postedAt()
                 ))
                 .collect(Collectors.toList());
         return ResponseEntity.ok(response);
@@ -62,26 +62,27 @@ public class JobController {
                 job.company(),
                 job.url(),
                 job.description(),
-                job.postedAt(),
-                job.matchScore().orElse(null)
+                job.postedAt()
         );
         return ResponseEntity.ok(response);
     }
 
     @PostMapping("/{id}/analyze")
     public ResponseEntity<JobAnalysis> analyzeJob(@PathVariable Long id) {
+        Long userId = getCurrentUserId();
         Job job = jobRepository.findById(id)
                 .orElseThrow(() -> new JobNotFoundException("Job not found with id: " + id));
-        JobAnalysis analysis = analyzeJobUseCase.analyze(job);
+        JobAnalysis analysis = analyzeJobUseCase.analyze(userId, job);
         return ResponseEntity.ok(analysis);
     }
 
     @PostMapping("/{id}/email")
     public ResponseEntity<EmailDraftResponse> generateEmail(@PathVariable Long id) {
+        Long userId = getCurrentUserId();
         Job job = jobRepository.findById(id)
                 .orElseThrow(() -> new JobNotFoundException("Job not found with id: " + id));
-        JobAnalysis analysis = analyzeJobUseCase.analyze(job);
-        EmailDraft emailDraft = generateEmailUseCase.generate(job, analysis);
+        JobAnalysis analysis = analyzeJobUseCase.analyze(userId, job);
+        EmailDraft emailDraft = generateEmailUseCase.generate(userId, job, analysis);
         EmailDraftResponse response = new EmailDraftResponse(
                 emailDraft.id(),
                 emailDraft.jobId(),
@@ -112,5 +113,10 @@ public class JobController {
                 emailDraft.generatedAt()
         );
         return ResponseEntity.ok(response);
+    }
+
+    private Long getCurrentUserId() {
+        var principal = SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+        return Long.parseLong((String) principal);
     }
 }
