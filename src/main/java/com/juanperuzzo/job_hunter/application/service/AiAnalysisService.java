@@ -2,10 +2,13 @@ package com.juanperuzzo.job_hunter.application.service;
 
 import com.juanperuzzo.job_hunter.application.port.in.AnalyzeJobUseCase;
 import com.juanperuzzo.job_hunter.application.port.out.AiPort;
+import com.juanperuzzo.job_hunter.application.port.out.JobAnalysisRepository;
+import com.juanperuzzo.job_hunter.application.port.out.UserProfileRepository;
 import com.juanperuzzo.job_hunter.domain.exception.AiException;
 import com.juanperuzzo.job_hunter.domain.model.CompanyTone;
 import com.juanperuzzo.job_hunter.domain.model.Job;
 import com.juanperuzzo.job_hunter.domain.model.JobAnalysis;
+import com.juanperuzzo.job_hunter.domain.model.UserProfile;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
@@ -16,24 +19,33 @@ import java.util.List;
 public class AiAnalysisService implements AnalyzeJobUseCase {
 
     private final AiPort aiPort;
+    private final JobAnalysisRepository jobAnalysisRepository;
+    private final UserProfileRepository userProfileRepository;
     private final ObjectMapper objectMapper;
     private static final Logger log = LoggerFactory.getLogger(AiAnalysisService.class);
 
-    public AiAnalysisService(AiPort aiPort) {
+    public AiAnalysisService(AiPort aiPort, JobAnalysisRepository jobAnalysisRepository, UserProfileRepository userProfileRepository) {
         this.aiPort = aiPort;
+        this.jobAnalysisRepository = jobAnalysisRepository;
+        this.userProfileRepository = userProfileRepository;
         this.objectMapper = new ObjectMapper();
     }
 
     @Override
-    public JobAnalysis analyze(Job job) {
+    public JobAnalysis analyze(Long userId, Job job) {
         if (job.description() == null || job.description().trim().isEmpty()) {
             throw new IllegalArgumentException("Job description must not be empty");
         }
 
         try {
-            String prompt = buildPrompt(job);
+            String prompt = buildPrompt(job, userId);
             String response = aiPort.complete(prompt);
-            return parseAnalysis(response);
+            JobAnalysis analysis = parseAnalysis(response);
+            return jobAnalysisRepository.save(new JobAnalysis(
+                    null, job.id(), userId, analysis.matchScore(),
+                    analysis.matchedSkills(), analysis.missingSkills(),
+                    analysis.companyTone(), analysis.summary()
+            ));
         } catch (AiException e) {
             throw e;
         } catch (Exception e) {
@@ -41,7 +53,20 @@ public class AiAnalysisService implements AnalyzeJobUseCase {
         }
     }
 
-    private String buildPrompt(Job job) {
+    private String buildPrompt(Job job, Long userId) {
+        String profileInfo = "";
+        try {
+            var profile = userProfileRepository.findByUserId(userId);
+            if (profile.isPresent()) {
+                UserProfile p = profile.get();
+                profileInfo = "\nUser profile:\n- Skills: " + String.join(", ", p.skills()) +
+                        "\n- Tone preference: " + p.tone() +
+                        "\n- Resume: " + p.resumeText() + "\n";
+            }
+        } catch (Exception e) {
+            log.warn("Failed to fetch user profile for prompt: {}", e.getMessage());
+        }
+
         String candidateProfile = """
             Candidate profile:
             - Name: Juan Antonio Peruzzo
@@ -60,7 +85,7 @@ public class AiAnalysisService implements AnalyzeJobUseCase {
             - English: advanced (fluent reading, intermediate conversation)
             - Location: Ponta Grossa – PR, Brazil (open to remote)
             - Goal: internship or junior developer position
-            """;
+            """ + profileInfo;
 
         return """
             You are a career assistant specialized in technology.
@@ -133,7 +158,7 @@ public class AiAnalysisService implements AnalyzeJobUseCase {
 
             String summary = node.get("summary").asText("");
 
-            return new JobAnalysis(matchScore, matchedSkills, missingSkills, tone, summary);
+            return new JobAnalysis(null, null, null, matchScore, matchedSkills, missingSkills, tone, summary);
         } catch (Exception e) {
             log.error("Failed to parse AI response. Raw response: {}", json, e);
             throw new AiException("Failed to parse AI response: " + e.getMessage(), e);
