@@ -5,7 +5,13 @@ import jakarta.persistence.*;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "email_drafts")
+@Table(
+        name = "email_drafts",
+        uniqueConstraints = @UniqueConstraint(
+                name = "uq_email_drafts_job_user",
+                columnNames = {"job_id", "user_id"}
+        )
+)
 public class EmailDraftEntity {
 
     @Id
@@ -15,7 +21,7 @@ public class EmailDraftEntity {
     @Column(name = "job_id", nullable = false)
     private Long jobId;
 
-    @Column(name = "user_id")
+    @Column(name = "user_id", nullable = false)
     private Long userId;
 
     @Column(name = "subject", nullable = false, length = 255)
