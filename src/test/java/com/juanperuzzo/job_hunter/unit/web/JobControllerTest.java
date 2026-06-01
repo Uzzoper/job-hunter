@@ -4,10 +4,14 @@ import com.juanperuzzo.job_hunter.application.port.in.AnalyzeJobUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.FetchJobsUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.GenerateEmailUseCase;
 import com.juanperuzzo.job_hunter.application.port.out.EmailDraftRepository;
+import com.juanperuzzo.job_hunter.application.port.out.JobAnalysisRepository;
 import com.juanperuzzo.job_hunter.application.port.out.JobRepository;
 import com.juanperuzzo.job_hunter.application.port.out.TokenProvider;
+import com.juanperuzzo.job_hunter.domain.model.CompanyTone;
 import com.juanperuzzo.job_hunter.domain.model.EmailDraft;
 import com.juanperuzzo.job_hunter.domain.model.EmailStatus;
+import com.juanperuzzo.job_hunter.domain.model.Job;
+import com.juanperuzzo.job_hunter.domain.model.JobAnalysis;
 import com.juanperuzzo.job_hunter.domain.model.User;
 import com.juanperuzzo.job_hunter.web.controller.JobController;
 import com.juanperuzzo.job_hunter.web.exception.GlobalExceptionHandler;
@@ -24,14 +28,17 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -57,6 +64,9 @@ class JobControllerTest {
 
     @MockitoBean
     private JobRepository jobRepository;
+
+    @MockitoBean
+    private JobAnalysisRepository jobAnalysisRepository;
 
     @MockitoBean
     private EmailDraftRepository emailDraftRepository;
@@ -103,6 +113,52 @@ class JobControllerTest {
 
         verify(emailDraftRepository).findByJobIdAndUserId(JOB_ID, 2L);
         verifyNoInteractions(jobRepository);
+    }
+
+    @Test
+    @DisplayName("generateEmail should return 400 when job has not been analyzed for the user")
+    void generateEmail_whenNoAnalysis_shouldReturn400() throws Exception {
+        authenticateAs(1L);
+
+        var job = new Job(JOB_ID, "Java Dev", "Acme", "https://example.com/job", "Description", LocalDate.now());
+        when(jobRepository.findById(JOB_ID)).thenReturn(Optional.of(job));
+        when(jobAnalysisRepository.findByJobIdAndUserId(JOB_ID, 1L)).thenReturn(Optional.empty());
+
+        mockMvc.perform(post("/api/jobs/{id}/email", JOB_ID))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message")
+                        .value("Job must be analyzed before generating an email draft"));
+
+        verifyNoInteractions(analyzeJobUseCase, generateEmailUseCase);
+    }
+
+    @Test
+    @DisplayName("generateEmail should return 200 when analysis exists and must not re-analyze")
+    void generateEmail_whenAnalysisExists_shouldReturn200WithoutReAnalyzing() throws Exception {
+        authenticateAs(1L);
+
+        var job = new Job(JOB_ID, "Java Dev", "Acme", "https://example.com/job", "Description", LocalDate.now());
+        var analysis = new JobAnalysis(
+                1L, JOB_ID, 1L, 85,
+                List.of("Java"), List.of("Kubernetes"),
+                CompanyTone.FORMAL, "Backend role");
+        var draft = new EmailDraft(
+                5L, JOB_ID, 1L,
+                "Subject: Application",
+                "Email body",
+                EmailStatus.PENDING,
+                LocalDateTime.parse("2026-05-30T10:00:00"));
+
+        when(jobRepository.findById(JOB_ID)).thenReturn(Optional.of(job));
+        when(jobAnalysisRepository.findByJobIdAndUserId(JOB_ID, 1L)).thenReturn(Optional.of(analysis));
+        when(generateEmailUseCase.generate(eq(1L), eq(job), eq(analysis))).thenReturn(draft);
+
+        mockMvc.perform(post("/api/jobs/{id}/email", JOB_ID))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.subject").value("Subject: Application"));
+
+        verifyNoInteractions(analyzeJobUseCase);
+        verify(generateEmailUseCase).generate(1L, job, analysis);
     }
 
     private void authenticateAs(Long userId) {

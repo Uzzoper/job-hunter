@@ -4,7 +4,9 @@ import com.juanperuzzo.job_hunter.application.port.in.AnalyzeJobUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.FetchJobsUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.GenerateEmailUseCase;
 import com.juanperuzzo.job_hunter.application.port.out.EmailDraftRepository;
+import com.juanperuzzo.job_hunter.application.port.out.JobAnalysisRepository;
 import com.juanperuzzo.job_hunter.application.port.out.JobRepository;
+import com.juanperuzzo.job_hunter.domain.exception.AnalysisNotFoundException;
 import com.juanperuzzo.job_hunter.domain.exception.JobNotFoundException;
 import com.juanperuzzo.job_hunter.domain.model.EmailDraft;
 import com.juanperuzzo.job_hunter.domain.model.Job;
@@ -27,13 +29,21 @@ public class JobController {
     private final AnalyzeJobUseCase analyzeJobUseCase;
     private final GenerateEmailUseCase generateEmailUseCase;
     private final JobRepository jobRepository;
+    private final JobAnalysisRepository jobAnalysisRepository;
     private final EmailDraftRepository emailDraftRepository;
 
-    public JobController(FetchJobsUseCase fetchJobsUseCase, AnalyzeJobUseCase analyzeJobUseCase, GenerateEmailUseCase generateEmailUseCase, JobRepository jobRepository, EmailDraftRepository emailDraftRepository) {
+    public JobController(
+            FetchJobsUseCase fetchJobsUseCase,
+            AnalyzeJobUseCase analyzeJobUseCase,
+            GenerateEmailUseCase generateEmailUseCase,
+            JobRepository jobRepository,
+            JobAnalysisRepository jobAnalysisRepository,
+            EmailDraftRepository emailDraftRepository) {
         this.fetchJobsUseCase = fetchJobsUseCase;
         this.analyzeJobUseCase = analyzeJobUseCase;
         this.generateEmailUseCase = generateEmailUseCase;
         this.jobRepository = jobRepository;
+        this.jobAnalysisRepository = jobAnalysisRepository;
         this.emailDraftRepository = emailDraftRepository;
     }
 
@@ -82,7 +92,9 @@ public class JobController {
         Long userId = getCurrentUserId();
         Job job = jobRepository.findById(id)
                 .orElseThrow(() -> new JobNotFoundException("Job not found with id: " + id));
-        JobAnalysis analysis = analyzeJobUseCase.analyze(userId, job);
+        JobAnalysis analysis = jobAnalysisRepository.findByJobIdAndUserId(id, userId)
+                .orElseThrow(() -> new AnalysisNotFoundException(
+                        "Job must be analyzed before generating an email draft"));
         EmailDraft emailDraft = generateEmailUseCase.generate(userId, job, analysis);
         EmailDraftResponse response = new EmailDraftResponse(
                 emailDraft.id(),
