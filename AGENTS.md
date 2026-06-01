@@ -140,7 +140,7 @@ ai:
 ```
 
 ### Prompts
-All prompts are documented and versioned in `docs/prompts.md`.
+All prompts are documented and versioned in `docs/specs/prompts.md`.
 Always read that file before implementing `AiAnalysisService` or `EmailGenerationService`.
 
 ---
