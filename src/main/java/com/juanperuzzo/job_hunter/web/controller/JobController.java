@@ -9,6 +9,7 @@ import com.juanperuzzo.job_hunter.domain.exception.JobNotFoundException;
 import com.juanperuzzo.job_hunter.domain.model.EmailDraft;
 import com.juanperuzzo.job_hunter.domain.model.Job;
 import com.juanperuzzo.job_hunter.domain.model.JobAnalysis;
+import com.juanperuzzo.job_hunter.domain.model.User;
 import com.juanperuzzo.job_hunter.web.dto.EmailDraftResponse;
 import com.juanperuzzo.job_hunter.web.dto.JobResponse;
 import org.springframework.http.ResponseEntity;
@@ -102,7 +103,8 @@ public class JobController {
 
     @GetMapping("/{id}/email")
     public ResponseEntity<EmailDraftResponse> getEmailDraft(@PathVariable Long id) {
-        EmailDraft emailDraft = emailDraftRepository.findByJobId(id)
+        Long userId = getCurrentUserId();
+        EmailDraft emailDraft = emailDraftRepository.findByJobIdAndUserId(id, userId)
                 .orElseThrow(() -> new JobNotFoundException("Email draft not found for job id: " + id));
         EmailDraftResponse response = new EmailDraftResponse(
                 emailDraft.id(),
@@ -117,6 +119,9 @@ public class JobController {
 
     private Long getCurrentUserId() {
         var principal = SecurityContextHolder.getContext().getAuthentication().getPrincipal();
-        return Long.parseLong((String) principal);
+        if (principal instanceof User user) {
+            return user.id();
+        }
+        throw new IllegalStateException("User not authenticated");
     }
 }

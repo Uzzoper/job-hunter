@@ -1,10 +1,10 @@
 package com.juanperuzzo.job_hunter.unit.web;
 
+import com.juanperuzzo.job_hunter.application.port.in.AuthResult;
 import com.juanperuzzo.job_hunter.application.port.in.AuthUseCase;
 import com.juanperuzzo.job_hunter.application.port.out.TokenProvider;
 import com.juanperuzzo.job_hunter.domain.exception.EmailAlreadyExistsException;
 import com.juanperuzzo.job_hunter.domain.exception.InvalidCredentialsException;
-import com.juanperuzzo.job_hunter.domain.model.User;
 import com.juanperuzzo.job_hunter.web.controller.AuthController;
 import com.juanperuzzo.job_hunter.web.dto.AuthRequest;
 import com.juanperuzzo.job_hunter.web.exception.GlobalExceptionHandler;
@@ -20,7 +20,6 @@ import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -45,11 +44,10 @@ class AuthControllerTest {
     @Test
     @DisplayName("register should return 201 and auth response when request is valid")
     void register_whenValidRequest_shouldReturn201() throws Exception {
-        var user = new User(1L, "juan@test.com", "Juan", "$2a$hash");
         var request = new AuthRequest("Juan", "juan@test.com", "secret123");
+        var authResult = new AuthResult("jwt-token-123", 1L, "Juan", "juan@test.com");
 
-        when(authUseCase.register("Juan", "juan@test.com", "secret123")).thenReturn(user);
-        when(tokenProvider.issue(any(User.class))).thenReturn("jwt-token-123");
+        when(authUseCase.register("Juan", "juan@test.com", "secret123")).thenReturn(authResult);
 
         mockMvc.perform(post("/api/auth/register")
                 .contentType(MediaType.APPLICATION_JSON)
@@ -79,10 +77,9 @@ class AuthControllerTest {
     @DisplayName("login should return 200 and auth response when credentials are valid")
     void login_whenValidCredentials_shouldReturn200() throws Exception {
         var request = new AuthRequest(null, "juan@test.com", "secret123");
-        var user = new User(1L, "juan@test.com", "Juan", "$2a$hash");
+        var authResult = new AuthResult("jwt-token-123", 1L, "Juan", "juan@test.com");
 
-        when(authUseCase.login("juan@test.com", "secret123")).thenReturn("jwt-token-123");
-        when(tokenProvider.validate("jwt-token-123")).thenReturn(user);
+        when(authUseCase.login("juan@test.com", "secret123")).thenReturn(authResult);
 
         mockMvc.perform(post("/api/auth/login")
                 .contentType(MediaType.APPLICATION_JSON)

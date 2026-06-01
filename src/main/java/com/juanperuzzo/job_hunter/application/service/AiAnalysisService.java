@@ -5,6 +5,7 @@ import com.juanperuzzo.job_hunter.application.port.out.AiPort;
 import com.juanperuzzo.job_hunter.application.port.out.JobAnalysisRepository;
 import com.juanperuzzo.job_hunter.application.port.out.UserProfileRepository;
 import com.juanperuzzo.job_hunter.domain.exception.AiException;
+import com.juanperuzzo.job_hunter.domain.exception.ProfileNotConfiguredException;
 import com.juanperuzzo.job_hunter.domain.model.CompanyTone;
 import com.juanperuzzo.job_hunter.domain.model.Job;
 import com.juanperuzzo.job_hunter.domain.model.JobAnalysis;
@@ -37,8 +38,11 @@ public class AiAnalysisService implements AnalyzeJobUseCase {
             throw new IllegalArgumentException("Job description must not be empty");
         }
 
+        var profile = userProfileRepository.findByUserId(userId)
+                .orElseThrow(() -> new ProfileNotConfiguredException("Please configure your resume and skills profile first"));
+
         try {
-            String prompt = buildPrompt(job, userId);
+            String prompt = buildPrompt(job, profile);
             String response = aiPort.complete(prompt);
             JobAnalysis analysis = parseAnalysis(response);
             return jobAnalysisRepository.save(new JobAnalysis(
@@ -53,44 +57,16 @@ public class AiAnalysisService implements AnalyzeJobUseCase {
         }
     }
 
-    private String buildPrompt(Job job, Long userId) {
-        String profileInfo = "";
-        try {
-            var profile = userProfileRepository.findByUserId(userId);
-            if (profile.isPresent()) {
-                UserProfile p = profile.get();
-                profileInfo = "\nUser profile:\n- Skills: " + String.join(", ", p.skills()) +
-                        "\n- Tone preference: " + p.tone() +
-                        "\n- Resume: " + p.resumeText() + "\n";
-            }
-        } catch (Exception e) {
-            log.warn("Failed to fetch user profile for prompt: {}", e.getMessage());
-        }
-
-        String candidateProfile = """
-            Candidate profile:
-            - Name: Juan Antonio Peruzzo
-            - Education: Software Engineering (Unicesumar, in progress)
-            - Stack: Java, Spring Boot, TypeScript, React, Next.js, Postgres, SQL, HTML, CSS, JavaScript, Git, GitHub, Docker
-            - Portfolio: https://juanperuzzo.is-a.dev
-            - GitHub: https://github.com/Uzzoper
-            - Projects:
-              * Jishuu — study organization platform
-              * Flappy Naruu — Flappy Bird-style game (React, TypeScript, Canvas API, Java, Spring, Postgres)
-              * ASCII Converter — image to ASCII art in the browser (Next.js, React, TypeScript, Canvas API)
-              * Thermometer of Ponta Grossa — real-time weather site for Ponta Grossa (JavaScript, Weather API)
-              * EventClean — event and venue management API (Java 17, Spring, Clean Architecture, Flyway, Postgres)
-              * MovieFlix — movie catalog REST API (Java, Spring Boot, Postgres, Flyway)
-              * Portfolio — personal website (Next.js, React, TypeScript, Tailwind, shadcn/ui)
-            - English: advanced (fluent reading, intermediate conversation)
-            - Location: Ponta Grossa – PR, Brazil (open to remote)
-            - Goal: internship or junior developer position
-            """ + profileInfo;
-
+    private String buildPrompt(Job job, UserProfile profile) {
         return """
             You are a career assistant specialized in technology.
+            Analyze the following job listing against this candidate profile:
 
-            Analyze the job listing below considering the candidate's profile.
+            Candidate profile:
+            - Skills: %s
+            - Tone preference: %s
+            - Resume: %s
+
             Return ONLY a valid JSON object, with no markdown and no additional text.
 
             Response format:
@@ -114,13 +90,17 @@ public class AiAnalysisService implements AnalyzeJobUseCase {
             - startup: young company, casual language, words like "rockstar", "ninja"
             - casual:  middle ground, modern but professional company
 
-            %s
-
             Job listing:
             Title: %s.
             Company: %s.
             Description: %s.
-            """.formatted(candidateProfile, job.title(), job.company(), job.description());
+            """.formatted(
+                String.join(", ", profile.skills()),
+                profile.tone(),
+                profile.resumeText(),
+                job.title(),
+                job.company(),
+                job.description());
     }
 
     private JobAnalysis parseAnalysis(String json) {

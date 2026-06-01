@@ -225,9 +225,9 @@ class AuthIntegrationTest {
     }
 
     private void cleanupTestData() {
-        jdbcTemplate.execute("DELETE FROM email_drafts WHERE user_id = (SELECT id FROM users WHERE email = '" + TEST_EMAIL + "')");
-        jdbcTemplate.execute("DELETE FROM job_analyses WHERE user_id = (SELECT id FROM users WHERE email = '" + TEST_EMAIL + "')");
-        jdbcTemplate.execute("DELETE FROM user_profiles WHERE user_id = (SELECT id FROM users WHERE email = '" + TEST_EMAIL + "')");
-        jdbcTemplate.execute("DELETE FROM users WHERE email = '" + TEST_EMAIL + "'");
+        jdbcTemplate.update("DELETE FROM email_drafts WHERE user_id = (SELECT id FROM users WHERE email = ?)", TEST_EMAIL);
+        jdbcTemplate.update("DELETE FROM job_analyses WHERE user_id = (SELECT id FROM users WHERE email = ?)", TEST_EMAIL);
+        jdbcTemplate.update("DELETE FROM user_profiles WHERE user_id = (SELECT id FROM users WHERE email = ?)", TEST_EMAIL);
+        jdbcTemplate.update("DELETE FROM users WHERE email = ?", TEST_EMAIL);
     }
 }

@@ -1,5 +1,6 @@
 package com.juanperuzzo.job_hunter.unit.application;
 
+import com.juanperuzzo.job_hunter.application.port.in.AuthResult;
 import com.juanperuzzo.job_hunter.application.port.out.PasswordHasher;
 import com.juanperuzzo.job_hunter.application.port.out.TokenProvider;
 import com.juanperuzzo.job_hunter.application.port.out.UserRepository;
@@ -17,8 +18,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.Optional;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -43,17 +43,21 @@ class AuthServiceTest {
     }
 
     @Test
-    @DisplayName("register should hash password and save user when email is new")
+    @DisplayName("register should hash password, save user, and return AuthResult when email is new")
     void register_whenEmailIsNew_shouldHashPasswordAndSaveUser() {
         var savedUser = new User(1L, "juan@example.com", "Juan", "$2a$hash");
 
         when(userRepository.existsByEmail("juan@example.com")).thenReturn(false);
         when(passwordHasher.hash("secret123")).thenReturn("$2a$hash");
         when(userRepository.save(new User(null, "juan@example.com", "Juan", "$2a$hash"))).thenReturn(savedUser);
+        when(tokenProvider.issue(savedUser)).thenReturn("jwt-token");
 
-        var registered = authService.register("Juan", "juan@example.com", "secret123");
+        var result = authService.register("Juan", "juan@example.com", "secret123");
 
-        assertEquals(savedUser, registered);
+        assertEquals("jwt-token", result.token());
+        assertEquals(1L, result.userId());
+        assertEquals("Juan", result.name());
+        assertEquals("juan@example.com", result.email());
 
         var userCaptor = ArgumentCaptor.forClass(User.class);
         verify(userRepository).save(userCaptor.capture());
@@ -70,7 +74,7 @@ class AuthServiceTest {
     }
 
     @Test
-    @DisplayName("login should return token when credentials are valid")
+    @DisplayName("login should return AuthResult when credentials are valid")
     void login_whenCredentialsAreValid_shouldReturnToken() {
         var user = new User(1L, "juan@example.com", "Juan", "$2a$hash");
 
@@ -78,9 +82,12 @@ class AuthServiceTest {
         when(passwordHasher.matches("secret123", "$2a$hash")).thenReturn(true);
         when(tokenProvider.issue(user)).thenReturn("jwt-token");
 
-        var token = authService.login("juan@example.com", "secret123");
+        var result = authService.login("juan@example.com", "secret123");
 
-        assertEquals("jwt-token", token);
+        assertEquals("jwt-token", result.token());
+        assertEquals(1L, result.userId());
+        assertEquals("Juan", result.name());
+        assertEquals("juan@example.com", result.email());
     }
 
     @Test

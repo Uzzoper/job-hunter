@@ -4,6 +4,7 @@ import com.juanperuzzo.job_hunter.application.port.out.TokenProvider;
 import com.juanperuzzo.job_hunter.application.service.UserProfileService;
 import com.juanperuzzo.job_hunter.domain.exception.ProfileNotConfiguredException;
 import com.juanperuzzo.job_hunter.domain.model.CompanyTone;
+import com.juanperuzzo.job_hunter.domain.model.User;
 import com.juanperuzzo.job_hunter.domain.model.UserProfile;
 import com.juanperuzzo.job_hunter.web.controller.ProfileController;
 import com.juanperuzzo.job_hunter.web.dto.ProfileRequest;
@@ -57,7 +58,7 @@ class ProfileControllerTest {
     @Test
     @DisplayName("getProfile should return 200 and profile when profile exists")
     void getProfile_whenProfileExists_shouldReturn200() throws Exception {
-        var authentication = new UsernamePasswordAuthenticationToken("1", null, List.of());
+        var authentication = new UsernamePasswordAuthenticationToken(new User(1L, "test@test.com", "Test", "hash"), null, List.of());
         SecurityContextHolder.getContext().setAuthentication(authentication);
 
         var profile = new UserProfile(1L, 1L, "Experienced dev...", List.of("Java", "Spring Boot"), CompanyTone.FORMAL);
@@ -74,7 +75,7 @@ class ProfileControllerTest {
     @Test
     @DisplayName("getProfile should return 404 when profile is not configured")
     void getProfile_whenProfileNotFound_shouldReturn404() throws Exception {
-        var authentication = new UsernamePasswordAuthenticationToken("1", null, List.of());
+        var authentication = new UsernamePasswordAuthenticationToken(new User(1L, "test@test.com", "Test", "hash"), null, List.of());
         SecurityContextHolder.getContext().setAuthentication(authentication);
 
         when(userProfileService.getProfile(1L))
@@ -87,7 +88,7 @@ class ProfileControllerTest {
     @Test
     @DisplayName("saveProfile should return 200 and updated profile when request is valid")
     void saveProfile_whenValidRequest_shouldReturn200() throws Exception {
-        var authentication = new UsernamePasswordAuthenticationToken("1", null, List.of());
+        var authentication = new UsernamePasswordAuthenticationToken(new User(1L, "test@test.com", "Test", "hash"), null, List.of());
         SecurityContextHolder.getContext().setAuthentication(authentication);
 
         var request = new ProfileRequest("New resume text", List.of("Java", "Python"), CompanyTone.STARTUP);
@@ -109,7 +110,7 @@ class ProfileControllerTest {
     @Test
     @DisplayName("saveProfile should return 400 when service throws exception")
     void saveProfile_whenServiceThrowsException_shouldReturn4xx() throws Exception {
-        var authentication = new UsernamePasswordAuthenticationToken("1", null, List.of());
+        var authentication = new UsernamePasswordAuthenticationToken(new User(1L, "test@test.com", "Test", "hash"), null, List.of());
         SecurityContextHolder.getContext().setAuthentication(authentication);
 
         var request = new ProfileRequest("", List.of(), CompanyTone.FORMAL);
@@ -126,7 +127,7 @@ class ProfileControllerTest {
     @Test
     @DisplayName("getProfile should return 200 when userId principal is valid")
     void getProfile_whenUserIdPrincipalIsValid_shouldCallService() throws Exception {
-        var authentication = new UsernamePasswordAuthenticationToken("42", null, List.of());
+        var authentication = new UsernamePasswordAuthenticationToken(new User(42L, "test@test.com", "Test", "hash"), null, List.of());
         SecurityContextHolder.getContext().setAuthentication(authentication);
 
         var profile = new UserProfile(2L, 42L, "Dev resume", List.of("Go"), CompanyTone.CASUAL);

@@ -1,6 +1,7 @@
 package com.juanperuzzo.job_hunter.web.controller;
 
 import com.juanperuzzo.job_hunter.application.service.UserProfileService;
+import com.juanperuzzo.job_hunter.domain.model.User;
 import com.juanperuzzo.job_hunter.web.dto.ProfileRequest;
 import com.juanperuzzo.job_hunter.web.dto.ProfileResponse;
 import org.springframework.http.ResponseEntity;
@@ -40,6 +41,9 @@ public class ProfileController {
 
     private Long getCurrentUserId() {
         var principal = SecurityContextHolder.getContext().getAuthentication().getPrincipal();
-        return Long.parseLong((String) principal);
+        if (principal instanceof User user) {
+            return user.id();
+        }
+        throw new IllegalStateException("User not authenticated");
     }
 }

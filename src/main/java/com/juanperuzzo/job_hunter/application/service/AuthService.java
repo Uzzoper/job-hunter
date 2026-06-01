@@ -1,5 +1,6 @@
 package com.juanperuzzo.job_hunter.application.service;
 
+import com.juanperuzzo.job_hunter.application.port.in.AuthResult;
 import com.juanperuzzo.job_hunter.application.port.in.AuthUseCase;
 import com.juanperuzzo.job_hunter.application.port.out.PasswordHasher;
 import com.juanperuzzo.job_hunter.application.port.out.TokenProvider;
@@ -21,18 +22,19 @@ public class AuthService implements AuthUseCase {
     }
 
     @Override
-    public User register(String name, String email, String password) {
+    public AuthResult register(String name, String email, String password) {
         if (userRepository.existsByEmail(email)) {
             throw new EmailAlreadyExistsException("Email already registered: " + email);
         }
 
         var hash = passwordHasher.hash(password);
-        var user = new User(null, email, name, hash);
-        return userRepository.save(user);
+        var user = userRepository.save(new User(null, email, name, hash));
+        var token = tokenProvider.issue(user);
+        return new AuthResult(token, user.id(), user.name(), user.email());
     }
 
     @Override
-    public String login(String email, String password) {
+    public AuthResult login(String email, String password) {
         var user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new InvalidCredentialsException("Invalid email or password"));
 
@@ -40,6 +42,7 @@ public class AuthService implements AuthUseCase {
             throw new InvalidCredentialsException("Invalid email or password");
         }
 
-        return tokenProvider.issue(user);
+        var token = tokenProvider.issue(user);
+        return new AuthResult(token, user.id(), user.name(), user.email());
     }
 }

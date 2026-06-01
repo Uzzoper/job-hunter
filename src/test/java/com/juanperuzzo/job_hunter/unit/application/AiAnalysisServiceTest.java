@@ -3,9 +3,11 @@ package com.juanperuzzo.job_hunter.unit.application;
 import com.juanperuzzo.job_hunter.application.port.out.AiPort;
 import com.juanperuzzo.job_hunter.application.service.AiAnalysisService;
 import com.juanperuzzo.job_hunter.domain.exception.AiException;
+import com.juanperuzzo.job_hunter.domain.exception.ProfileNotConfiguredException;
 import com.juanperuzzo.job_hunter.domain.model.CompanyTone;
 import com.juanperuzzo.job_hunter.domain.model.Job;
 import com.juanperuzzo.job_hunter.domain.model.JobAnalysis;
+import com.juanperuzzo.job_hunter.domain.model.UserProfile;
 import com.juanperuzzo.job_hunter.application.port.out.JobAnalysisRepository;
 import com.juanperuzzo.job_hunter.application.port.out.UserProfileRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -39,9 +41,13 @@ class AiAnalysisServiceTest {
 
     private AiAnalysisService aiAnalysisService;
 
+    private UserProfile defaultProfile;
+
     @BeforeEach
     void setUp() {
         aiAnalysisService = new AiAnalysisService(aiPort, jobAnalysisRepository, userProfileRepository);
+        defaultProfile = new UserProfile(1L, 1L, "Experienced Java developer",
+                List.of("Java", "Spring Boot", "PostgreSQL"), CompanyTone.FORMAL);
     }
 
     @Nested
@@ -62,7 +68,7 @@ class AiAnalysisServiceTest {
                 """;
 
             when(aiPort.complete(any())).thenReturn(validJson);
-            when(userProfileRepository.findByUserId(any())).thenReturn(Optional.empty());
+            when(userProfileRepository.findByUserId(any())).thenReturn(Optional.of(defaultProfile));
             when(jobAnalysisRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
             Job job = new Job(null, "Java Developer", "CompanyX",
@@ -105,7 +111,7 @@ class AiAnalysisServiceTest {
         @DisplayName("analyze should throw AiException when AI returns invalid JSON")
         void analyze_whenInvalidJson_shouldThrowAiException() {
             when(aiPort.complete(any())).thenReturn("not valid json");
-            when(userProfileRepository.findByUserId(any())).thenReturn(Optional.empty());
+            when(userProfileRepository.findByUserId(any())).thenReturn(Optional.of(defaultProfile));
 
             Job job = new Job(null, "Java Developer", "CompanyX",
                     "https://example.com/job/1", "Description", LocalDate.now());
@@ -126,7 +132,7 @@ class AiAnalysisServiceTest {
         @DisplayName("analyze should propagate AiException when AI client throws exception")
         void analyze_whenAiUnavailable_shouldPropagateAiException() {
             when(aiPort.complete(any())).thenThrow(new RuntimeException("Network error"));
-            when(userProfileRepository.findByUserId(any())).thenReturn(Optional.empty());
+            when(userProfileRepository.findByUserId(any())).thenReturn(Optional.of(defaultProfile));
 
             Job job = new Job(null, "Java Developer", "CompanyX",
                     "https://example.com/job/1", "Description", LocalDate.now());
@@ -153,7 +159,7 @@ class AiAnalysisServiceTest {
                 """;
 
             when(aiPort.complete(any())).thenReturn(jsonAbove100);
-            when(userProfileRepository.findByUserId(any())).thenReturn(Optional.empty());
+            when(userProfileRepository.findByUserId(any())).thenReturn(Optional.of(defaultProfile));
             when(jobAnalysisRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
             Job job = new Job(null, "Java Developer", "CompanyX",
@@ -178,7 +184,7 @@ class AiAnalysisServiceTest {
                 """;
 
             when(aiPort.complete(any())).thenReturn(jsonInRange);
-            when(userProfileRepository.findByUserId(any())).thenReturn(Optional.empty());
+            when(userProfileRepository.findByUserId(any())).thenReturn(Optional.of(defaultProfile));
             when(jobAnalysisRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
             Job job = new Job(null, "Java Developer", "CompanyX",
@@ -187,6 +193,23 @@ class AiAnalysisServiceTest {
             JobAnalysis analysis = aiAnalysisService.analyze(1L, job);
 
             assertEquals(75, analysis.matchScore());
+        }
+    }
+
+    @Nested
+    @DisplayName("Scenario 6: profile not configured")
+    class ProfileNotConfiguredTests {
+
+        @Test
+        @DisplayName("analyze should throw ProfileNotConfiguredException when no profile exists for user")
+        void analyze_whenNoProfile_shouldThrowProfileNotConfiguredException() {
+            when(userProfileRepository.findByUserId(any())).thenReturn(Optional.empty());
+
+            Job job = new Job(null, "Java Developer", "CompanyX",
+                    "https://example.com/job/1", "Description", LocalDate.now());
+
+            assertThrows(ProfileNotConfiguredException.class,
+                    () -> aiAnalysisService.analyze(1L, job));
         }
     }
 }
