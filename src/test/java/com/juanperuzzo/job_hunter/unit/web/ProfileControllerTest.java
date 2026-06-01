@@ -73,8 +73,8 @@ class ProfileControllerTest {
     }
 
     @Test
-    @DisplayName("getProfile should return 404 when profile is not configured")
-    void getProfile_whenProfileNotFound_shouldReturn404() throws Exception {
+    @DisplayName("getProfile should return 400 when profile is not configured")
+    void getProfile_whenProfileNotFound_shouldReturn400() throws Exception {
         var authentication = new UsernamePasswordAuthenticationToken(new User(1L, "test@test.com", "Test", "hash"), null, List.of());
         SecurityContextHolder.getContext().setAuthentication(authentication);
 
@@ -82,7 +82,7 @@ class ProfileControllerTest {
                 .thenThrow(new ProfileNotConfiguredException("Profile not configured for user: 1"));
 
         mockMvc.perform(get("/api/profile"))
-                .andExpect(status().isNotFound());
+                .andExpect(status().isBadRequest());
     }
 
     @Test

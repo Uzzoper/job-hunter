@@ -62,7 +62,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(ProfileNotConfiguredException.class)
     public ResponseEntity<Map<String, Object>> handleProfileNotConfigured(ProfileNotConfiguredException ex) {
-        return buildResponse(HttpStatus.NOT_FOUND, ex.getMessage());
+        return buildResponse(HttpStatus.BAD_REQUEST, ex.getMessage());
     }
 
     @ExceptionHandler(AnalysisNotFoundException.class)

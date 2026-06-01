@@ -96,7 +96,7 @@ public class AiAnalysisService implements AnalyzeJobUseCase {
             Description: %s.
             """.formatted(
                 String.join(", ", profile.skills()),
-                profile.tone(),
+                profile.tone().name().toLowerCase(),
                 profile.resumeText(),
                 job.title(),
                 job.company(),

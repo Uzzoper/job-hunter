@@ -102,8 +102,8 @@ public class AppConfig {
     }
 
     @Bean
-    public JwtTokenService jwtTokenService(@Value("${jwt.secret}") String secret) {
-        return new JwtTokenService(secret, 24);
+    public JwtTokenService jwtTokenService(@Value("${jwt.secret}") String secret, @Value("${jwt.expiration-hours}") int expirationHours) {
+        return new JwtTokenService(secret, expirationHours);
     }
 
     @Bean
