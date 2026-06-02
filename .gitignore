@@ -39,3 +39,11 @@ application-local.yaml
 
 # OpenCode planning artifacts
 .sisyphus/
+# Local Maven repository cache
+.m2/
+
+# Compiled Java classes from org/ directory
+org/
+
+# Scratch/debug files
+scratch_debug.java

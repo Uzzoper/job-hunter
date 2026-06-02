@@ -48,7 +48,13 @@ scraper:
     max-pages: 3
     max-age-days: 30
     timeout-seconds: 10
-    delay-millis: 2000
+    delay-millis: 0
+
+app:
+  cors:
+    allowed-origins: "http://localhost:3000,http://localhost:4200"
+    allowed-methods: "GET,POST,PUT,DELETE,OPTIONS"
+    allowed-headers: "*"
 
 scheduler:
   fetch-jobs:

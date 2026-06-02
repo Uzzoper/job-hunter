@@ -16,6 +16,7 @@ import java.net.URI;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.text.Normalizer;
+import java.time.Clock;
 import java.time.LocalDate;
 import java.time.Month;
 import java.util.ArrayList;
@@ -46,9 +47,15 @@ public class InfoJobsScraper implements ScraperPort {
     private final int maxAgeDays;
     private final int timeoutSeconds;
     private final long delayMillis;
+    private final Clock clock;
 
     public InfoJobsScraper(String baseUrl, boolean enabled, List<String> keywords, List<String> excludeKeywords,
             List<String> locations, int maxPages, int maxAgeDays, int timeoutSeconds, long delayMillis) {
+        this(baseUrl, enabled, keywords, excludeKeywords, locations, maxPages, maxAgeDays, timeoutSeconds, delayMillis, Clock.systemDefaultZone());
+    }
+
+    public InfoJobsScraper(String baseUrl, boolean enabled, List<String> keywords, List<String> excludeKeywords,
+            List<String> locations, int maxPages, int maxAgeDays, int timeoutSeconds, long delayMillis, Clock clock) {
         this.baseUrl = removeTrailingSlash(baseUrl);
         this.enabled = enabled;
         this.keywords = normalizeList(keywords);
@@ -60,6 +67,7 @@ public class InfoJobsScraper implements ScraperPort {
         this.maxAgeDays = Math.max(1, maxAgeDays);
         this.timeoutSeconds = timeoutSeconds;
         this.delayMillis = Math.max(0, delayMillis);
+        this.clock = clock;
 
         var requestFactory = new SimpleClientHttpRequestFactory();
         requestFactory.setConnectTimeout(timeoutSeconds * 1000);
@@ -112,7 +120,7 @@ public class InfoJobsScraper implements ScraperPort {
                         countLocation++;
                         continue;
                     }
-                    if (parsedJob.job().postedAt().isBefore(LocalDate.now().minusDays(maxAgeDays))) {
+                    if (parsedJob.job().postedAt().isBefore(LocalDate.now(clock).minusDays(maxAgeDays))) {
                         countAge++;
                         continue;
                     }
@@ -349,19 +357,20 @@ public class InfoJobsScraper implements ScraperPort {
 
     private Optional<LocalDate> parsePostedAt(String rawDate) {
         var date = normalize(rawDate);
+        var today = LocalDate.now(clock);
         if (date.isEmpty() || date.contains("nova")) {
-            return Optional.of(LocalDate.now());
+            return Optional.of(today);
         }
         if (date.contains("hoje")) {
-            return Optional.of(LocalDate.now());
+            return Optional.of(today);
         }
         if (date.contains("ontem")) {
-            return Optional.of(LocalDate.now().minusDays(1));
+            return Optional.of(today.minusDays(1));
         }
 
         var daysAgoMatcher = Pattern.compile(".*(?:ha|a)\\s+(\\d+)\\s+dias?.*").matcher(date);
         if (daysAgoMatcher.matches()) {
-            return Optional.of(LocalDate.now().minusDays(Long.parseLong(daysAgoMatcher.group(1))));
+            return Optional.of(today.minusDays(Long.parseLong(daysAgoMatcher.group(1))));
         }
 
         var dayMonthMatcher = Pattern.compile(".*?(\\d{1,2})\\s+([a-z]{3,}).*").matcher(date);
@@ -372,8 +381,8 @@ public class InfoJobsScraper implements ScraperPort {
                 return Optional.empty();
             }
 
-            var parsedDate = LocalDate.of(LocalDate.now().getYear(), month.get(), day);
-            if (parsedDate.isAfter(LocalDate.now())) {
+            var parsedDate = LocalDate.of(today.getYear(), month.get(), day);
+            if (parsedDate.isAfter(today)) {
                 parsedDate = parsedDate.minusYears(1);
             }
             return Optional.of(parsedDate);

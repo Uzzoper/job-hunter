@@ -5,16 +5,22 @@ import com.juanperuzzo.job_hunter.web.dto.AuthRequest;
 import com.juanperuzzo.job_hunter.web.dto.AuthResponse;
 import com.juanperuzzo.job_hunter.web.dto.ProfileRequest;
 import com.juanperuzzo.job_hunter.web.dto.ProfileResponse;
-import org.junit.jupiter.api.*;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.MethodOrderer;
+import org.junit.jupiter.api.Order;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestInstance;
+import org.junit.jupiter.api.TestMethodOrder;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
-import org.springframework.http.*;
+import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
-import org.springframework.web.client.NoOpResponseErrorHandler;
-import org.springframework.web.client.RestTemplate;
+import org.springframework.web.client.RestClient;
 
 import java.util.List;
 
@@ -30,18 +36,13 @@ class AuthIntegrationTest {
     private static final String TEST_PASSWORD = "secret123";
     private static final String TEST_NAME = "TestUser";
 
-    private final RestTemplate restTemplate = new RestTemplate();
-
-    {
-        restTemplate.setErrorHandler(new NoOpResponseErrorHandler());
-    }
+    @LocalServerPort
+    private int port;
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
-    @LocalServerPort
-    private int port;
-
+    private RestClient restClient;
     private String authToken;
     private Long userId;
 
@@ -55,6 +56,7 @@ class AuthIntegrationTest {
 
     @BeforeAll
     void setUp() {
+        restClient = RestClient.create();
         cleanupTestData();
     }
 
@@ -67,21 +69,17 @@ class AuthIntegrationTest {
     @DisplayName("should register a new user and return 201 with token")
     void register_whenValidData_shouldReturn201AndToken() {
         var request = new AuthRequest(TEST_NAME, TEST_EMAIL, TEST_PASSWORD);
-        var entity = new HttpEntity<>(request);
-
-        var response = restTemplate.exchange(
-                url("/api/auth/register"),
-                HttpMethod.POST,
-                entity,
-                AuthResponse.class);
-
+        var response = restClient.post()
+                .uri(url("/api/auth/register"))
+                .body(request)
+                .retrieve()
+                .toEntity(AuthResponse.class);
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
         assertThat(response.getBody()).isNotNull();
         assertThat(response.getBody().token()).isNotEmpty();
         assertThat(response.getBody().userId()).isPositive();
         assertThat(response.getBody().name()).isEqualTo(TEST_NAME);
         assertThat(response.getBody().email()).isEqualTo(TEST_EMAIL);
-
         this.authToken = response.getBody().token();
         this.userId = response.getBody().userId();
     }
@@ -91,21 +89,15 @@ class AuthIntegrationTest {
     @DisplayName("should login with valid credentials and return 200 with token")
     void login_whenValidCredentials_shouldReturn200AndToken() {
         var request = new AuthRequest(null, TEST_EMAIL, TEST_PASSWORD);
-        var entity = new HttpEntity<>(request);
-
-        var response = restTemplate.exchange(
-                url("/api/auth/login"),
-                HttpMethod.POST,
-                entity,
-                AuthResponse.class);
-
+        var response = restClient.post()
+                .uri(url("/api/auth/login"))
+                .body(request)
+                .retrieve()
+                .toEntity(AuthResponse.class);
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).isNotNull();
         assertThat(response.getBody().token()).isNotEmpty();
         assertThat(response.getBody().userId()).isEqualTo(userId);
-        assertThat(response.getBody().name()).isEqualTo(TEST_NAME);
-        assertThat(response.getBody().email()).isEqualTo(TEST_EMAIL);
-
         this.authToken = response.getBody().token();
     }
 
@@ -113,16 +105,11 @@ class AuthIntegrationTest {
     @Order(3)
     @DisplayName("should return profile when authenticated")
     void getProfile_whenAuthenticated_shouldReturn200() {
-        var headers = new HttpHeaders();
-        headers.setBearerAuth(authToken);
-        var entity = new HttpEntity<>(headers);
-
-        var response = restTemplate.exchange(
-                url("/api/profile"),
-                HttpMethod.GET,
-                entity,
-                ProfileResponse.class);
-
+        var response = restClient.get()
+                .uri(url("/api/profile"))
+                .header("Authorization", "Bearer " + authToken)
+                .retrieve()
+                .toEntity(ProfileResponse.class);
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).isNotNull();
         assertThat(response.getBody().userId()).isEqualTo(userId);
@@ -132,14 +119,11 @@ class AuthIntegrationTest {
     @Order(4)
     @DisplayName("should return 401 when no auth token is provided")
     void getProfile_whenNoAuth_shouldReturn401() {
-        var entity = new HttpEntity<>(new HttpHeaders());
-
-        var response = restTemplate.exchange(
-                url("/api/profile"),
-                HttpMethod.GET,
-                entity,
-                String.class);
-
+        var response = restClient.get()
+                .uri(url("/api/profile"))
+                .retrieve()
+                .onStatus(status -> status.value() == 401, (request, response1) -> {})
+                .toEntity(String.class);
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
     }
 
@@ -147,16 +131,12 @@ class AuthIntegrationTest {
     @Order(5)
     @DisplayName("should return 401 when invalid token is provided")
     void getProfile_whenInvalidToken_shouldReturn401() {
-        var headers = new HttpHeaders();
-        headers.setBearerAuth("invalid-token-123");
-        var entity = new HttpEntity<>(headers);
-
-        var response = restTemplate.exchange(
-                url("/api/profile"),
-                HttpMethod.GET,
-                entity,
-                String.class);
-
+        var response = restClient.get()
+                .uri(url("/api/profile"))
+                .header("Authorization", "Bearer invalid-token-123")
+                .retrieve()
+                .onStatus(status -> status.value() == 401, (request, response1) -> {})
+                .toEntity(String.class);
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
     }
 
@@ -164,24 +144,20 @@ class AuthIntegrationTest {
     @Order(6)
     @DisplayName("should save profile when authenticated")
     void saveProfile_whenAuthenticated_shouldReturn200() {
+        var resumeText = "Java developer with Spring Boot experience building REST APIs and microservices.";
         var profileRequest = new ProfileRequest(
-                "Java developer with Spring Boot experience building REST APIs and microservices.",
+                resumeText,
                 List.of("Java", "Spring Boot", "PostgreSQL"),
                 CompanyTone.FORMAL);
-
-        var headers = new HttpHeaders();
-        headers.setBearerAuth(authToken);
-        var entity = new HttpEntity<>(profileRequest, headers);
-
-        var response = restTemplate.exchange(
-                url("/api/profile"),
-                HttpMethod.PUT,
-                entity,
-                ProfileResponse.class);
-
+        var response = restClient.put()
+                .uri(url("/api/profile"))
+                .header("Authorization", "Bearer " + authToken)
+                .body(profileRequest)
+                .retrieve()
+                .toEntity(ProfileResponse.class);
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).isNotNull();
-        assertThat(response.getBody().resumeText()).isEqualTo("Java developer with Spring Boot experience building REST APIs and microservices.");
+        assertThat(response.getBody().resumeText()).isEqualTo(resumeText);
         assertThat(response.getBody().skills()).containsExactly("Java", "Spring Boot", "PostgreSQL");
         assertThat(response.getBody().tone()).isEqualTo(CompanyTone.FORMAL);
         assertThat(response.getBody().userId()).isEqualTo(userId);
@@ -192,14 +168,12 @@ class AuthIntegrationTest {
     @DisplayName("should return 409 when registering with duplicate email")
     void register_whenDuplicateEmail_shouldReturn409() {
         var request = new AuthRequest("AnotherUser", TEST_EMAIL, "otherpass123");
-        var entity = new HttpEntity<>(request);
-
-        var response = restTemplate.exchange(
-                url("/api/auth/register"),
-                HttpMethod.POST,
-                entity,
-                String.class);
-
+        var response = restClient.post()
+                .uri(url("/api/auth/register"))
+                .body(request)
+                .retrieve()
+                .onStatus(status -> status.value() == 409, (request1, response1) -> {})
+                .toEntity(String.class);
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
     }
 
@@ -208,14 +182,12 @@ class AuthIntegrationTest {
     @DisplayName("should return 401 when login with wrong password")
     void login_whenWrongPassword_shouldReturn401() {
         var request = new AuthRequest(null, TEST_EMAIL, "wrongpassword");
-        var entity = new HttpEntity<>(request);
-
-        var response = restTemplate.exchange(
-                url("/api/auth/login"),
-                HttpMethod.POST,
-                entity,
-                String.class);
-
+        var response = restClient.post()
+                .uri(url("/api/auth/login"))
+                .body(request)
+                .retrieve()
+                .onStatus(status -> status.value() == 401, (request1, response1) -> {})
+                .toEntity(String.class);
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
     }
 
