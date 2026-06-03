@@ -8,6 +8,7 @@ import com.juanperuzzo.job_hunter.domain.exception.EmailAlreadyExistsException;
 import com.juanperuzzo.job_hunter.domain.exception.UserNotFoundException;
 import com.juanperuzzo.job_hunter.domain.exception.ProfileNotConfiguredException;
 import com.juanperuzzo.job_hunter.domain.exception.AnalysisNotFoundException;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -68,6 +69,11 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(AnalysisNotFoundException.class)
     public ResponseEntity<Map<String, Object>> handleAnalysisNotFound(AnalysisNotFoundException ex) {
         return buildResponse(HttpStatus.BAD_REQUEST, ex.getMessage());
+    }
+
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<Map<String, Object>> handleDataIntegrityViolation(DataIntegrityViolationException ex) {
+        return buildResponse(HttpStatus.CONFLICT, "Resource already exists");
     }
 
     private ResponseEntity<Map<String, Object>> buildResponse(HttpStatus status, String message) {

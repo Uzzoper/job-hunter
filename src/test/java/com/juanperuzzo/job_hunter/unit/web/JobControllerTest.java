@@ -16,6 +16,7 @@ import com.juanperuzzo.job_hunter.domain.model.User;
 import com.juanperuzzo.job_hunter.web.controller.JobController;
 import com.juanperuzzo.job_hunter.web.exception.GlobalExceptionHandler;
 import org.junit.jupiter.api.AfterEach;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -159,6 +160,22 @@ class JobControllerTest {
 
         verifyNoInteractions(analyzeJobUseCase);
         verify(generateEmailUseCase).generate(1L, job, analysis);
+    }
+
+    @Test
+    @DisplayName("analyzeJob should return 409 when analysis already exists")
+    void analyzeJob_whenDuplicate_shouldReturn409() throws Exception {
+        authenticateAs(1L);
+
+        var job = new Job(10L, "Java Dev", "Acme", "https://example.com/job", "Description", LocalDate.now());
+        when(jobRepository.findById(10L)).thenReturn(Optional.of(job));
+        when(analyzeJobUseCase.analyze(eq(1L), eq(job))).thenThrow(new DataIntegrityViolationException("duplicate"));
+
+        mockMvc.perform(post("/api/jobs/{id}/analyze", 10L))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.status").value(409))
+                .andExpect(jsonPath("$.error").value("Conflict"))
+                .andExpect(jsonPath("$.message").value("Resource already exists"));
     }
 
     private void authenticateAs(Long userId) {
