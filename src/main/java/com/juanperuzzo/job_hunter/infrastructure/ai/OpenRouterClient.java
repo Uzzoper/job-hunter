@@ -12,6 +12,7 @@ import org.springframework.web.client.ResourceAccessException;
 
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 
 public class OpenRouterClient implements AiPort {
 
@@ -61,9 +62,13 @@ public class OpenRouterClient implements AiPort {
     }
 
     private String buildRequest(String prompt) {
-        return String.format("""
-                {"model": "%s", "messages": [{"role": "user", "content": "%s"}]}
-                """, model, prompt.replace("\"", "\\\""));
+        try {
+            var messages = List.of(Map.of("role", "user", "content", prompt));
+            var body = Map.of("model", model, "messages", messages);
+            return objectMapper.writeValueAsString(body);
+        } catch (Exception e) {
+            throw new AiException("Failed to build request body", e);
+        }
     }
 
     private String extractText(String responseBody) {

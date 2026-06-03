@@ -93,4 +93,27 @@ class OpenRouterClientTest {
 
         assertThrows(AiException.class, () -> openRouterClient.getCompletion("Test prompt"));
     }
+
+    @Test
+    @DisplayName("getCompletion when prompt has special characters should send valid JSON")
+    void getCompletion_whenPromptHasSpecialChars_shouldSendValidJson() {
+        wireMockServer.stubFor(post(urlEqualTo("/chat/completions"))
+                .withHeader("Authorization", equalTo("Bearer test-api-key"))
+                .withHeader("Content-Type", equalTo("application/json"))
+                .withRequestBody(matchingJsonPath("$.messages[0].content"))
+                .willReturn(aResponse()
+                        .withStatus(200)
+                        .withHeader("Content-Type", "application/json")
+                        .withBody("""
+                                {"choices": [{"message": {"content": "AI response"}}]}
+                                """)));
+
+        String result = openRouterClient.getCompletion("Line 1\nLine 2\tTabbed\"Quoted\\Backslash");
+        assertEquals("AI response", result);
+
+        wireMockServer.verify(postRequestedFor(urlEqualTo("/chat/completions"))
+                .withRequestBody(matchingJsonPath("$.model", equalTo("minimax/minimax-m2.5")))
+                .withRequestBody(matchingJsonPath("$.messages[0].role", equalTo("user")))
+                .withRequestBody(matchingJsonPath("$.messages[0].content")));
+    }
 }
