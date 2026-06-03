@@ -1,8 +1,11 @@
 package com.juanperuzzo.job_hunter.infrastructure.security;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.juanperuzzo.job_hunter.web.exception.GlobalExceptionHandler;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -18,6 +21,7 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 
 @Configuration
 @EnableWebSecurity
@@ -54,8 +58,9 @@ public class SecurityConfig {
             .exceptionHandling(ex -> ex
                 .authenticationEntryPoint((request, response, authException) -> {
                     response.setContentType("application/json");
-                    response.setStatus(401);
-                    response.getWriter().write("{\"error\":\"Unauthorized\"}");
+                    response.setStatus(HttpStatus.UNAUTHORIZED.value());
+                    Map<String, Object> body = GlobalExceptionHandler.buildErrorBody(HttpStatus.UNAUTHORIZED, "Unauthorized");
+                    response.getWriter().write(new ObjectMapper().writeValueAsString(body));
                 })
             )
             .addFilterBefore(jwtTokenFilter, UsernamePasswordAuthenticationFilter.class);
