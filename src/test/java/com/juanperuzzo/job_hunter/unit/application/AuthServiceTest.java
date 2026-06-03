@@ -110,4 +110,54 @@ class AuthServiceTest {
         assertThrows(InvalidCredentialsException.class,
                 () -> authService.login("missing@example.com", "secret123"));
     }
+
+    @Test
+    @DisplayName("register should normalize email to lowercase")
+    void register_whenEmailHasUpperCase_shouldNormalizeToLowercase() {
+        var savedUser = new User(1L, "user@example.com", "Juan", "$2a$hash");
+
+        when(userRepository.existsByEmail("user@example.com")).thenReturn(false);
+        when(passwordHasher.hash("secret123")).thenReturn("$2a$hash");
+        when(userRepository.save(new User(null, "user@example.com", "Juan", "$2a$hash"))).thenReturn(savedUser);
+        when(tokenProvider.issue(savedUser)).thenReturn("jwt-token");
+
+        var result = authService.register("Juan", "User@Example.COM", "secret123");
+
+        assertEquals("user@example.com", result.email());
+
+        var userCaptor = ArgumentCaptor.forClass(User.class);
+        verify(userRepository).save(userCaptor.capture());
+        assertEquals("user@example.com", userCaptor.getValue().email());
+    }
+
+    @Test
+    @DisplayName("login should normalize email to lowercase before lookup")
+    void login_whenEmailHasUpperCase_shouldNormalizeBeforeLookup() {
+        var user = new User(1L, "user@example.com", "Juan", "$2a$hash");
+
+        when(userRepository.findByEmail("user@example.com")).thenReturn(Optional.of(user));
+        when(passwordHasher.matches("secret123", "$2a$hash")).thenReturn(true);
+        when(tokenProvider.issue(user)).thenReturn("jwt-token");
+
+        var result = authService.login("USER@EXAMPLE.COM", "secret123");
+
+        assertEquals("jwt-token", result.token());
+    }
+
+    @Test
+    @DisplayName("register should trim whitespace from email")
+    void register_whenEmailHasSpaces_shouldTrim() {
+        var savedUser = new User(1L, "user@example.com", "Juan", "$2a$hash");
+
+        when(userRepository.existsByEmail("user@example.com")).thenReturn(false);
+        when(passwordHasher.hash("secret123")).thenReturn("$2a$hash");
+        when(userRepository.save(new User(null, "user@example.com", "Juan", "$2a$hash"))).thenReturn(savedUser);
+        when(tokenProvider.issue(savedUser)).thenReturn("jwt-token");
+
+        var result = authService.register("Juan", "  user@example.com  ", "secret123");
+
+        var userCaptor = ArgumentCaptor.forClass(User.class);
+        verify(userRepository).save(userCaptor.capture());
+        assertEquals("user@example.com", userCaptor.getValue().email());
+    }
 }
