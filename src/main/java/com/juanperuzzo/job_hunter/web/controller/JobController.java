@@ -11,11 +11,10 @@ import com.juanperuzzo.job_hunter.domain.exception.JobNotFoundException;
 import com.juanperuzzo.job_hunter.domain.model.EmailDraft;
 import com.juanperuzzo.job_hunter.domain.model.Job;
 import com.juanperuzzo.job_hunter.domain.model.JobAnalysis;
-import com.juanperuzzo.job_hunter.domain.model.User;
+import com.juanperuzzo.job_hunter.infrastructure.security.CurrentUserService;
 import com.juanperuzzo.job_hunter.web.dto.EmailDraftResponse;
 import com.juanperuzzo.job_hunter.web.dto.JobResponse;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -31,6 +30,7 @@ public class JobController {
     private final JobRepository jobRepository;
     private final JobAnalysisRepository jobAnalysisRepository;
     private final EmailDraftRepository emailDraftRepository;
+    private final CurrentUserService currentUserService;
 
     public JobController(
             FetchJobsUseCase fetchJobsUseCase,
@@ -38,13 +38,15 @@ public class JobController {
             GenerateEmailUseCase generateEmailUseCase,
             JobRepository jobRepository,
             JobAnalysisRepository jobAnalysisRepository,
-            EmailDraftRepository emailDraftRepository) {
+            EmailDraftRepository emailDraftRepository,
+            CurrentUserService currentUserService) {
         this.fetchJobsUseCase = fetchJobsUseCase;
         this.analyzeJobUseCase = analyzeJobUseCase;
         this.generateEmailUseCase = generateEmailUseCase;
         this.jobRepository = jobRepository;
         this.jobAnalysisRepository = jobAnalysisRepository;
         this.emailDraftRepository = emailDraftRepository;
+        this.currentUserService = currentUserService;
     }
 
     @GetMapping
@@ -80,7 +82,7 @@ public class JobController {
 
     @PostMapping("/{id}/analyze")
     public ResponseEntity<JobAnalysis> analyzeJob(@PathVariable Long id) {
-        Long userId = getCurrentUserId();
+        Long userId = currentUserService.getCurrentUserId();
         Job job = jobRepository.findById(id)
                 .orElseThrow(() -> new JobNotFoundException("Job not found with id: " + id));
         JobAnalysis analysis = analyzeJobUseCase.analyze(userId, job);
@@ -89,7 +91,7 @@ public class JobController {
 
     @PostMapping("/{id}/email")
     public ResponseEntity<EmailDraftResponse> generateEmail(@PathVariable Long id) {
-        Long userId = getCurrentUserId();
+        Long userId = currentUserService.getCurrentUserId();
         Job job = jobRepository.findById(id)
                 .orElseThrow(() -> new JobNotFoundException("Job not found with id: " + id));
         JobAnalysis analysis = jobAnalysisRepository.findByJobIdAndUserId(id, userId)
@@ -115,7 +117,7 @@ public class JobController {
 
     @GetMapping("/{id}/email")
     public ResponseEntity<EmailDraftResponse> getEmailDraft(@PathVariable Long id) {
-        Long userId = getCurrentUserId();
+        Long userId = currentUserService.getCurrentUserId();
         EmailDraft emailDraft = emailDraftRepository.findByJobIdAndUserId(id, userId)
                 .orElseThrow(() -> new JobNotFoundException("Email draft not found for job id: " + id));
         EmailDraftResponse response = new EmailDraftResponse(
@@ -129,11 +131,4 @@ public class JobController {
         return ResponseEntity.ok(response);
     }
 
-    private Long getCurrentUserId() {
-        var principal = SecurityContextHolder.getContext().getAuthentication().getPrincipal();
-        if (principal instanceof User user) {
-            return user.id();
-        }
-        throw new IllegalStateException("User not authenticated");
-    }
 }

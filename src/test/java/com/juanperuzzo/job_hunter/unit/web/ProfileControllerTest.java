@@ -6,6 +6,7 @@ import com.juanperuzzo.job_hunter.domain.exception.ProfileNotConfiguredException
 import com.juanperuzzo.job_hunter.domain.model.CompanyTone;
 import com.juanperuzzo.job_hunter.domain.model.User;
 import com.juanperuzzo.job_hunter.domain.model.UserProfile;
+import com.juanperuzzo.job_hunter.infrastructure.security.CurrentUserService;
 import com.juanperuzzo.job_hunter.web.controller.ProfileController;
 import com.juanperuzzo.job_hunter.web.dto.ProfileRequest;
 import com.juanperuzzo.job_hunter.web.exception.GlobalExceptionHandler;
@@ -35,7 +36,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 @WebMvcTest(controllers = ProfileController.class, excludeAutoConfiguration = SecurityAutoConfiguration.class)
 @AutoConfigureMockMvc(addFilters = false)
-@Import(GlobalExceptionHandler.class)
+@Import({GlobalExceptionHandler.class, CurrentUserService.class})
 @DisplayName("ProfileController tests")
 class ProfileControllerTest {
 

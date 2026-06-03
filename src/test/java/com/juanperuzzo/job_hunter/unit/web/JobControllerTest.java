@@ -13,6 +13,7 @@ import com.juanperuzzo.job_hunter.domain.model.EmailStatus;
 import com.juanperuzzo.job_hunter.domain.model.Job;
 import com.juanperuzzo.job_hunter.domain.model.JobAnalysis;
 import com.juanperuzzo.job_hunter.domain.model.User;
+import com.juanperuzzo.job_hunter.infrastructure.security.CurrentUserService;
 import com.juanperuzzo.job_hunter.web.controller.JobController;
 import com.juanperuzzo.job_hunter.web.exception.GlobalExceptionHandler;
 import org.junit.jupiter.api.AfterEach;
@@ -45,7 +46,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 @WebMvcTest(controllers = JobController.class, excludeAutoConfiguration = SecurityAutoConfiguration.class)
 @AutoConfigureMockMvc(addFilters = false)
-@Import(GlobalExceptionHandler.class)
+@Import({GlobalExceptionHandler.class, CurrentUserService.class})
 @DisplayName("JobController tests")
 class JobControllerTest {
 
