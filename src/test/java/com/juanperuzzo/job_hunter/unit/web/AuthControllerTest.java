@@ -7,6 +7,7 @@ import com.juanperuzzo.job_hunter.domain.exception.EmailAlreadyExistsException;
 import com.juanperuzzo.job_hunter.domain.exception.InvalidCredentialsException;
 import com.juanperuzzo.job_hunter.web.controller.AuthController;
 import com.juanperuzzo.job_hunter.web.dto.AuthRequest;
+import com.juanperuzzo.job_hunter.web.dto.LoginRequest;
 import com.juanperuzzo.job_hunter.web.exception.GlobalExceptionHandler;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.DisplayName;
@@ -76,7 +77,7 @@ class AuthControllerTest {
     @Test
     @DisplayName("login should return 200 and auth response when credentials are valid")
     void login_whenValidCredentials_shouldReturn200() throws Exception {
-        var request = new AuthRequest(null, "juan@test.com", "secret123");
+        var request = new LoginRequest("juan@test.com", "secret123");
         var authResult = new AuthResult("jwt-token-123", 1L, "Juan", "juan@test.com");
 
         when(authUseCase.login("juan@test.com", "secret123")).thenReturn(authResult);
@@ -92,9 +93,9 @@ class AuthControllerTest {
     @Test
     @DisplayName("login should return 401 when password is wrong")
     void login_whenWrongPassword_shouldReturn401() throws Exception {
-        var request = new AuthRequest(null, "juan@test.com", "wrong");
+        var request = new LoginRequest("juan@test.com", "wrongpass");
 
-        when(authUseCase.login("juan@test.com", "wrong"))
+        when(authUseCase.login("juan@test.com", "wrongpass"))
                 .thenThrow(new InvalidCredentialsException("Invalid credentials"));
 
         mockMvc.perform(post("/api/auth/login")
@@ -106,7 +107,7 @@ class AuthControllerTest {
     @Test
     @DisplayName("login should return 401 when email is unknown")
     void login_whenUnknownEmail_shouldReturn401() throws Exception {
-        var request = new AuthRequest(null, "unknown@test.com", "secret123");
+        var request = new LoginRequest("unknown@test.com", "secret123");
 
         when(authUseCase.login("unknown@test.com", "secret123"))
                 .thenThrow(new InvalidCredentialsException("Invalid credentials"));
@@ -118,11 +119,11 @@ class AuthControllerTest {
     }
 
     @Test
-    @DisplayName("register should return 500 when JSON is malformed")
-    void register_whenInvalidJson_shouldReturn500() throws Exception {
+    @DisplayName("register should return 400 when JSON is malformed")
+    void register_whenInvalidJson_shouldReturn400() throws Exception {
         mockMvc.perform(post("/api/auth/register")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{invalid json}"))
-                .andExpect(status().isInternalServerError());
+                .andExpect(status().isBadRequest());
     }
 }
