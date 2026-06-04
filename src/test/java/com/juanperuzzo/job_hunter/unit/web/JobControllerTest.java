@@ -253,6 +253,18 @@ class JobControllerTest {
         verify(jobRepository).findById(99L);
     }
 
+    @Test
+    @DisplayName("fetchJobs should return 200 when fetch completes successfully")
+    void fetchJobs_whenSuccessful_shouldReturn200() throws Exception {
+        authenticateAs(1L);
+
+        mockMvc.perform(post("/api/jobs/fetch"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("Fetch completed successfully"));
+
+        verify(fetchJobsUseCase).fetchAndSave();
+    }
+
     private void authenticateAs(Long userId) {
         var authentication = new UsernamePasswordAuthenticationToken(new User(userId, "test@test.com", "Test", "hash"), null, List.of());
         SecurityContextHolder.getContext().setAuthentication(authentication);
