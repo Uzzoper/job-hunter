@@ -13,6 +13,7 @@ import com.juanperuzzo.job_hunter.domain.model.EmailStatus;
 import com.juanperuzzo.job_hunter.domain.model.Job;
 import com.juanperuzzo.job_hunter.domain.model.JobAnalysis;
 import com.juanperuzzo.job_hunter.domain.model.User;
+import com.juanperuzzo.job_hunter.domain.exception.JobNotFoundException;
 import com.juanperuzzo.job_hunter.infrastructure.security.CurrentUserService;
 import com.juanperuzzo.job_hunter.web.controller.JobController;
 import com.juanperuzzo.job_hunter.web.exception.GlobalExceptionHandler;
@@ -215,6 +216,41 @@ class JobControllerTest {
                 .andExpect(jsonPath("$.length()").value(0));
 
         verify(jobRepository).findAll();
+    }
+
+    @Test
+    @DisplayName("getJobById should return 200 when job exists")
+    void getJobById_whenJobExists_shouldReturn200() throws Exception {
+        authenticateAs(1L);
+
+        var job = new Job(1L, "Java Dev", "Acme", "https://acme.com/job", "Description", LocalDate.now());
+        when(jobRepository.findById(1L)).thenReturn(Optional.of(job));
+
+        mockMvc.perform(get("/api/jobs/{id}", 1L))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(1))
+                .andExpect(jsonPath("$.title").value("Java Dev"))
+                .andExpect(jsonPath("$.company").value("Acme"))
+                .andExpect(jsonPath("$.url").value("https://acme.com/job"))
+                .andExpect(jsonPath("$.description").value("Description"));
+
+        verify(jobRepository).findById(1L);
+    }
+
+    @Test
+    @DisplayName("getJobById should return 404 when job does not exist")
+    void getJobById_whenJobNotFound_shouldReturn404() throws Exception {
+        authenticateAs(1L);
+
+        when(jobRepository.findById(99L)).thenThrow(new JobNotFoundException("Job not found with id: 99"));
+
+        mockMvc.perform(get("/api/jobs/{id}", 99L))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.status").value(404))
+                .andExpect(jsonPath("$.error").value("Not Found"))
+                .andExpect(jsonPath("$.message").value("Job not found with id: 99"));
+
+        verify(jobRepository).findById(99L);
     }
 
     private void authenticateAs(Long userId) {
