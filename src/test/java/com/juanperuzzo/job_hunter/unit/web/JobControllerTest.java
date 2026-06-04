@@ -265,6 +265,34 @@ class JobControllerTest {
         verify(fetchJobsUseCase).fetchAndSave();
     }
 
+    @Test
+    @DisplayName("analyzeJob should return 200 with analysis when successful")
+    void analyzeJob_whenSuccessful_shouldReturn200() throws Exception {
+        authenticateAs(1L);
+
+        var job = new Job(1L, "Java Dev", "Acme", "https://acme.com/job", "Description", LocalDate.now());
+        var analysis = new JobAnalysis(
+                1L, 1L, 1L, 85,
+                List.of("Java"), List.of("Kubernetes"),
+                CompanyTone.FORMAL, "Backend role");
+
+        when(jobRepository.findById(1L)).thenReturn(Optional.of(job));
+        when(analyzeJobUseCase.analyze(1L, job)).thenReturn(analysis);
+
+        mockMvc.perform(post("/api/jobs/{id}/analyze", 1L))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(1))
+                .andExpect(jsonPath("$.jobId").value(1))
+                .andExpect(jsonPath("$.matchScore").value(85))
+                .andExpect(jsonPath("$.matchedSkills[0]").value("Java"))
+                .andExpect(jsonPath("$.missingSkills[0]").value("Kubernetes"))
+                .andExpect(jsonPath("$.companyTone").value("FORMAL"))
+                .andExpect(jsonPath("$.summary").value("Backend role"));
+
+        verify(jobRepository).findById(1L);
+        verify(analyzeJobUseCase).analyze(1L, job);
+    }
+
     private void authenticateAs(Long userId) {
         var authentication = new UsernamePasswordAuthenticationToken(new User(userId, "test@test.com", "Test", "hash"), null, List.of());
         SecurityContextHolder.getContext().setAuthentication(authentication);
