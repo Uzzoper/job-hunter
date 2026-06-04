@@ -179,6 +179,44 @@ class JobControllerTest {
                 .andExpect(jsonPath("$.message").value("Resource already exists"));
     }
 
+    @Test
+    @DisplayName("getAllJobs should return 200 with list of jobs")
+    void getAllJobs_whenJobsExist_shouldReturn200() throws Exception {
+        authenticateAs(1L);
+
+        var jobs = List.of(
+                new Job(1L, "Java Dev", "Acme", "https://acme.com/job1", "Description 1", LocalDate.now()),
+                new Job(2L, "React Dev", "Beta", "https://beta.com/job2", "Description 2", LocalDate.now())
+        );
+        when(jobRepository.findAll()).thenReturn(jobs);
+
+        mockMvc.perform(get("/api/jobs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$").isArray())
+                .andExpect(jsonPath("$.length()").value(2))
+                .andExpect(jsonPath("$[0].title").value("Java Dev"))
+                .andExpect(jsonPath("$[0].company").value("Acme"))
+                .andExpect(jsonPath("$[1].title").value("React Dev"))
+                .andExpect(jsonPath("$[1].company").value("Beta"));
+
+        verify(jobRepository).findAll();
+    }
+
+    @Test
+    @DisplayName("getAllJobs should return 200 with empty list when no jobs exist")
+    void getAllJobs_whenNoJobs_shouldReturn200EmptyList() throws Exception {
+        authenticateAs(1L);
+
+        when(jobRepository.findAll()).thenReturn(List.of());
+
+        mockMvc.perform(get("/api/jobs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$").isArray())
+                .andExpect(jsonPath("$.length()").value(0));
+
+        verify(jobRepository).findAll();
+    }
+
     private void authenticateAs(Long userId) {
         var authentication = new UsernamePasswordAuthenticationToken(new User(userId, "test@test.com", "Test", "hash"), null, List.of());
         SecurityContextHolder.getContext().setAuthentication(authentication);
