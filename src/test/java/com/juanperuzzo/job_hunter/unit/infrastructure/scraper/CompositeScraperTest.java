@@ -9,7 +9,6 @@ import org.junit.jupiter.api.Test;
 
 import java.time.LocalDate;
 import java.util.List;
-import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -21,11 +20,11 @@ class CompositeScraperTest {
     @DisplayName("fetch should combine multiple scrapers and deduplicate jobs by URL")
     void fetch_whenMultipleScrapersReturnDuplicateUrls_shouldCombineAndDeduplicate() {
         var gupyJob = new Job(null, "Desenvolvedor Java Júnior", "Company A", "https://example.com/jobs/1",
-                "Description", LocalDate.now(), Optional.empty());
+                "Description", LocalDate.now());
         var duplicateInfoJobsJob = new Job(null, "Desenvolvedor Java Júnior", "Company A", "https://example.com/jobs/1",
-                "Description from another source", LocalDate.now(), Optional.empty());
+                "Description from another source", LocalDate.now());
         var infoJobsOnlyJob = new Job(null, "Desenvolvedor Backend Júnior", "Company B", "https://example.com/jobs/2",
-                "Description", LocalDate.now(), Optional.empty());
+                "Description", LocalDate.now());
 
         ScraperPort gupyScraper = () -> List.of(gupyJob);
         ScraperPort infoJobsScraper = () -> List.of(duplicateInfoJobsJob, infoJobsOnlyJob);
@@ -41,7 +40,7 @@ class CompositeScraperTest {
     @DisplayName("fetch should continue when one scraper fails and another returns jobs")
     void fetch_whenOneScraperFails_shouldReturnJobsFromOtherScrapers() {
         var infoJobsOnlyJob = new Job(null, "Desenvolvedor Backend Júnior", "Company B", "https://example.com/jobs/2",
-                "Description", LocalDate.now(), Optional.empty());
+                "Description", LocalDate.now());
         ScraperPort failingScraper = () -> {
             throw new ScraperException("Gupy unavailable");
         };

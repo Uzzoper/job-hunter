@@ -2,10 +2,14 @@ package com.juanperuzzo.job_hunter.application.service;
 
 import com.juanperuzzo.job_hunter.application.port.in.AnalyzeJobUseCase;
 import com.juanperuzzo.job_hunter.application.port.out.AiPort;
+import com.juanperuzzo.job_hunter.application.port.out.JobAnalysisRepository;
+import com.juanperuzzo.job_hunter.application.port.out.UserProfileRepository;
 import com.juanperuzzo.job_hunter.domain.exception.AiException;
+import com.juanperuzzo.job_hunter.domain.exception.ProfileNotConfiguredException;
 import com.juanperuzzo.job_hunter.domain.model.CompanyTone;
 import com.juanperuzzo.job_hunter.domain.model.Job;
 import com.juanperuzzo.job_hunter.domain.model.JobAnalysis;
+import com.juanperuzzo.job_hunter.domain.model.UserProfile;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
@@ -16,24 +20,36 @@ import java.util.List;
 public class AiAnalysisService implements AnalyzeJobUseCase {
 
     private final AiPort aiPort;
+    private final JobAnalysisRepository jobAnalysisRepository;
+    private final UserProfileRepository userProfileRepository;
     private final ObjectMapper objectMapper;
     private static final Logger log = LoggerFactory.getLogger(AiAnalysisService.class);
 
-    public AiAnalysisService(AiPort aiPort) {
+    public AiAnalysisService(AiPort aiPort, JobAnalysisRepository jobAnalysisRepository, UserProfileRepository userProfileRepository) {
         this.aiPort = aiPort;
+        this.jobAnalysisRepository = jobAnalysisRepository;
+        this.userProfileRepository = userProfileRepository;
         this.objectMapper = new ObjectMapper();
     }
 
     @Override
-    public JobAnalysis analyze(Job job) {
+    public JobAnalysis analyze(Long userId, Job job) {
         if (job.description() == null || job.description().trim().isEmpty()) {
             throw new IllegalArgumentException("Job description must not be empty");
         }
 
+        var profile = userProfileRepository.findByUserId(userId)
+                .orElseThrow(() -> new ProfileNotConfiguredException("Please configure your resume and skills profile first"));
+
         try {
-            String prompt = buildPrompt(job);
+            String prompt = buildPrompt(job, profile);
             String response = aiPort.complete(prompt);
-            return parseAnalysis(response);
+            JobAnalysis analysis = parseAnalysis(response);
+            return jobAnalysisRepository.save(new JobAnalysis(
+                    null, job.id(), userId, analysis.matchScore(),
+                    analysis.matchedSkills(), analysis.missingSkills(),
+                    analysis.companyTone(), analysis.summary()
+            ));
         } catch (AiException e) {
             throw e;
         } catch (Exception e) {
@@ -41,31 +57,16 @@ public class AiAnalysisService implements AnalyzeJobUseCase {
         }
     }
 
-    private String buildPrompt(Job job) {
-        String candidateProfile = """
-            Candidate profile:
-            - Name: Juan Antonio Peruzzo
-            - Education: Software Engineering (Unicesumar, in progress)
-            - Stack: Java, Spring Boot, TypeScript, React, Next.js, Postgres, SQL, HTML, CSS, JavaScript, Git, GitHub, Docker
-            - Portfolio: https://juanperuzzo.is-a.dev
-            - GitHub: https://github.com/Uzzoper
-            - Projects:
-              * Jishuu — study organization platform
-              * Flappy Naruu — Flappy Bird-style game (React, TypeScript, Canvas API, Java, Spring, Postgres)
-              * ASCII Converter — image to ASCII art in the browser (Next.js, React, TypeScript, Canvas API)
-              * Thermometer of Ponta Grossa — real-time weather site for Ponta Grossa (JavaScript, Weather API)
-              * EventClean — event and venue management API (Java 17, Spring, Clean Architecture, Flyway, Postgres)
-              * MovieFlix — movie catalog REST API (Java, Spring Boot, Postgres, Flyway)
-              * Portfolio — personal website (Next.js, React, TypeScript, Tailwind, shadcn/ui)
-            - English: advanced (fluent reading, intermediate conversation)
-            - Location: Ponta Grossa – PR, Brazil (open to remote)
-            - Goal: internship or junior developer position
-            """;
-
+    private String buildPrompt(Job job, UserProfile profile) {
         return """
             You are a career assistant specialized in technology.
+            Analyze the following job listing against this candidate profile:
 
-            Analyze the job listing below considering the candidate's profile.
+            Candidate profile:
+            - Skills: %s
+            - Tone preference: %s
+            - Resume: %s
+
             Return ONLY a valid JSON object, with no markdown and no additional text.
 
             Response format:
@@ -89,13 +90,17 @@ public class AiAnalysisService implements AnalyzeJobUseCase {
             - startup: young company, casual language, words like "rockstar", "ninja"
             - casual:  middle ground, modern but professional company
 
-            %s
-
             Job listing:
             Title: %s.
             Company: %s.
             Description: %s.
-            """.formatted(candidateProfile, job.title(), job.company(), job.description());
+            """.formatted(
+                String.join(", ", profile.skills()),
+                profile.tone().name().toLowerCase(),
+                profile.resumeText(),
+                job.title(),
+                job.company(),
+                job.description());
     }
 
     private JobAnalysis parseAnalysis(String json) {
@@ -133,7 +138,7 @@ public class AiAnalysisService implements AnalyzeJobUseCase {
 
             String summary = node.get("summary").asText("");
 
-            return new JobAnalysis(matchScore, matchedSkills, missingSkills, tone, summary);
+            return new JobAnalysis(null, null, null, matchScore, matchedSkills, missingSkills, tone, summary);
         } catch (Exception e) {
             log.error("Failed to parse AI response. Raw response: {}", json, e);
             throw new AiException("Failed to parse AI response: " + e.getMessage(), e);

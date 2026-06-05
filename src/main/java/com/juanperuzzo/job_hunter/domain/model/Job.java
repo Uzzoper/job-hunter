@@ -3,7 +3,6 @@ package com.juanperuzzo.job_hunter.domain.model;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import static java.util.Objects.requireNonNull;
-import java.util.Optional;
 
 public record Job(
         Long id,
@@ -11,8 +10,7 @@ public record Job(
         String company,
         String url,
         String description,
-        LocalDate postedAt,
-        Optional<Integer> matchScore
+        LocalDate postedAt
 ) {
     private static final int EXPIRATION_DAYS = 30;
 

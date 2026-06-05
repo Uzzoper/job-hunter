@@ -11,7 +11,10 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 
+import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.List;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.*;
@@ -20,6 +23,8 @@ import static org.junit.jupiter.api.Assertions.*;
 @ExtendWith(WireMockExtension.class)
 @DisplayName("InfoJobsScraper tests")
 class InfoJobsScraperTest {
+
+    private static final Clock FIXED_CLOCK = Clock.fixed(Instant.parse("2026-05-25T00:00:00Z"), ZoneId.systemDefault());
 
     private String baseUrl;
 
@@ -71,8 +76,7 @@ class InfoJobsScraperTest {
             assertEquals("ACME Tecnologia", job.company());
             assertEquals(baseUrl + "/vaga-de-desenvolvedor-java-junior__123.aspx", job.url());
             assertEquals("Desenvolvimento de APIs Java e manutenção de sistemas.", job.description());
-            assertEquals(LocalDate.now(), job.postedAt());
-            assertTrue(job.matchScore().isEmpty());
+            assertEquals(LocalDate.now(FIXED_CLOCK), job.postedAt());
         }
 
         @Test
@@ -322,7 +326,7 @@ class InfoJobsScraperTest {
             var jobs = scraper.fetch();
 
             assertEquals(1, jobs.size());
-            assertEquals(LocalDate.now().minusDays(1), jobs.get(0).postedAt());
+            assertEquals(LocalDate.now(FIXED_CLOCK).minusDays(1), jobs.get(0).postedAt());
         }
     }
 
@@ -438,8 +442,9 @@ class InfoJobsScraperTest {
 
     private InfoJobsScraper newScraper(boolean enabled, List<String> keywords, List<String> excludeKeywords,
             List<String> locations, int maxPages, int maxAgeDays, int timeoutSeconds, long delayMillis) {
+        // Use the same fixed clock across all tests for deterministic date-based filtering
         return new InfoJobsScraper(baseUrl, enabled, keywords, excludeKeywords, locations, maxPages, maxAgeDays,
-                timeoutSeconds, delayMillis);
+                timeoutSeconds, delayMillis, FIXED_CLOCK);
     }
 
     private String pageWithCards(String cards) {

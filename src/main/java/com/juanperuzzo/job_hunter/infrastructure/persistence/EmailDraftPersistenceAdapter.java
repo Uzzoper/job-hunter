@@ -29,10 +29,16 @@ public class EmailDraftPersistenceAdapter implements EmailDraftRepository {
         return jpaRepository.findByJobId(jobId).map(this::toDomain);
     }
 
+    @Override
+    public Optional<EmailDraft> findByJobIdAndUserId(Long jobId, Long userId) {
+        return jpaRepository.findByJobIdAndUserId(jobId, userId).map(this::toDomain);
+    }
+
     private EmailDraftEntity toEntity(EmailDraft draft) {
         EmailDraftEntity entity = new EmailDraftEntity(
                 draft.id(),
                 draft.jobId(),
+                draft.userId(),
                 draft.subject(),
                 draft.body(),
                 draft.status().name()
@@ -45,6 +51,7 @@ public class EmailDraftPersistenceAdapter implements EmailDraftRepository {
         return new EmailDraft(
                 entity.getId(),
                 entity.getJobId(),
+                entity.getUserId(),
                 entity.getSubject(),
                 entity.getBody(),
                 EmailStatus.valueOf(entity.getStatus()),

@@ -11,7 +11,16 @@ import com.juanperuzzo.job_hunter.infrastructure.ai.OpenRouterClient;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.CompositeScraper;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.GupyScraper;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.InfoJobsScraper;
+import com.juanperuzzo.job_hunter.application.port.out.PasswordHasher;
+import com.juanperuzzo.job_hunter.application.port.out.TokenProvider;
+import com.juanperuzzo.job_hunter.application.port.out.UserRepository;
+import com.juanperuzzo.job_hunter.application.port.out.JobAnalysisRepository;
+import com.juanperuzzo.job_hunter.application.port.out.UserProfileRepository;
+import com.juanperuzzo.job_hunter.application.service.AuthService;
+import com.juanperuzzo.job_hunter.application.service.UserProfileService;
+import com.juanperuzzo.job_hunter.infrastructure.security.JwtTokenService;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.context.annotation.Primary;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -68,12 +77,42 @@ public class AppConfig {
     }
 
     @Bean
-    public AiAnalysisService aiAnalysisService(AiPort aiPort) {
-        return new AiAnalysisService(aiPort);
+    public AiAnalysisService aiAnalysisService(AiPort aiPort, JobAnalysisRepository jobAnalysisRepository, UserProfileRepository userProfileRepository) {
+        return new AiAnalysisService(aiPort, jobAnalysisRepository, userProfileRepository);
     }
 
     @Bean
-    public EmailGenerationService emailGenerationService(AiPort aiPort, EmailDraftRepository emailDraftRepository) {
-        return new EmailGenerationService(aiPort, emailDraftRepository);
+    public EmailGenerationService emailGenerationService(AiPort aiPort, EmailDraftRepository emailDraftRepository, UserProfileRepository userProfileRepository) {
+        return new EmailGenerationService(aiPort, emailDraftRepository, userProfileRepository);
+    }
+
+    @Bean
+    public PasswordHasher passwordHasher(PasswordEncoder passwordEncoder) {
+        return new PasswordHasher() {
+            @Override
+            public String hash(String rawPassword) {
+                return passwordEncoder.encode(rawPassword);
+            }
+
+            @Override
+            public boolean matches(String rawPassword, String hash) {
+                return passwordEncoder.matches(rawPassword, hash);
+            }
+        };
+    }
+
+    @Bean
+    public JwtTokenService jwtTokenService(@Value("${jwt.secret}") String secret, @Value("${jwt.expiration-hours}") int expirationHours) {
+        return new JwtTokenService(secret, expirationHours);
+    }
+
+    @Bean
+    public AuthService authService(UserRepository userRepository, PasswordHasher passwordHasher, TokenProvider tokenProvider) {
+        return new AuthService(userRepository, passwordHasher, tokenProvider);
+    }
+
+    @Bean
+    public UserProfileService userProfileService(UserRepository userRepository, UserProfileRepository userProfileRepository) {
+        return new UserProfileService(userRepository, userProfileRepository);
     }
 }

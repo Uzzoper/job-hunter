@@ -9,4 +9,6 @@ public interface EmailDraftRepository {
     EmailDraft save(EmailDraft draft);
 
     Optional<EmailDraft> findByJobId(Long jobId);
+
+    Optional<EmailDraft> findByJobIdAndUserId(Long jobId, Long userId);
 }

@@ -174,7 +174,7 @@ public class GupyScraper implements ScraperPort {
             return null;
         }
 
-        return new Job(null, title, company, url, description, postedAt, Optional.empty());
+        return new Job(null, title, company, url, description, postedAt);
     }
 
     private String getJobUrl(JsonNode node) {
