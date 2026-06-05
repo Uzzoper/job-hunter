@@ -12,22 +12,27 @@ job listings, analyzes each listing with AI, and generates personalized applicat
 
 ### Main flow
 ```
-Scraper (HTTP + Jsoup)
-      ↓
+User Register/Login → JWT token
+       ↓
+All requests require Authorization: Bearer
+       ↓
+JwtTokenFilter → CurrentUserService
+       ↓
+Scraper (CompositeScraper: Gupy + InfoJobs)
+       ↓
 Persistence (PostgreSQL + Flyway)
-      ↓
+       ↓
 AI Client (OpenRouter → MiniMax M2.5)
-      ↓
+       ↓
 Job analysis + personalized email generation
-      ↓
-REST API → web interface
+       ↓
+REST API (auth required except register/login)
 ```
 
 ### Target sites (priority order)
-1. **Gupy** — accessible JSON endpoint, no authentication required
-2. **Indeed BR** — scraping via Jsoup
-3. **InfoJobs** — scraping via Jsoup
-4. **LinkedIn** — basic scraping, no login (fallback)
+1. **Gupy** — accessible JSON endpoint
+2. **InfoJobs** — scraping via Jsoup
+3. Both orchestrated by CompositeScraper
 
 ---
 
@@ -35,27 +40,27 @@ REST API → web interface
 
 ```
 com.juanperuzzo.job_hunter
-├── domain/
-│   ├── model/       → Job, EmailDraft, JobAnalysis, CompanyTone, EmailStatus
-│   └── exception/   → JobNotFoundException, ScraperException, AiException
+├── domain/                      ← pure Java, no framework dependencies
+│   ├── model/                   → Entities (Job, User, EmailDraft, etc.)
+│   └── exception/               → Custom exceptions
 │
-├── application/
-│   ├── port/
-│   │   ├── in/      → FetchJobsUseCase, AnalyzeJobUseCase, GenerateEmailUseCase
-│   │   └── out/     → JobRepository, EmailDraftRepository, ScraperPort, AiPort
-│   └── service/     → FetchJobsService, AiAnalysisService, EmailGenerationService
+├── application/                 ← use cases and ports
+│   ├── port/in/                 → Use case interfaces
+│   ├── port/out/                → Repository interfaces (outbound ports)
+│   └── service/                 → Use case implementations
 │
-├── infrastructure/
-│   ├── scraper/     → GupyScraper (implements ScraperPort)
-│   ├── ai/          → OpenRouterClient (implements AiPort)
-│   ├── persistence/ → JobJpaRepository, JobPersistenceAdapter,
-│   │                  EmailDraftJpaRepository, EmailDraftPersistenceAdapter
-│   └── scheduler/   → JobHunterScheduler (@Scheduled)
+├── infrastructure/              ← technical details
+│   ├── scraper/                 → GupyScraper, InfoJobsScraper, CompositeScraper
+│   ├── ai/                      → OpenRouterClient
+│   ├── persistence/             → JPA adapters per entity
+│   ├── security/                → JWT filter, token service, CurrentUserService
+│   ├── scheduler/               → JobHunterScheduler
+│   └── config/                  → AppConfig
 │
-└── web/
-    ├── controller/  → JobController, EmailController
-    ├── dto/         → JobResponse, EmailDraftResponse (records)
-    └── exception/   → GlobalExceptionHandler (@RestControllerAdvice)
+└── web/                         ← REST controllers
+    ├── controller/              → Endpoints
+    ├── dto/                     → Request/Response records
+    └── exception/               → GlobalExceptionHandler
 ```
 
 ### Dependency rule
@@ -73,12 +78,12 @@ infrastructure → domain
 | Layer | Technology |
 |---|---|
 | Language | Java 21 — use records, text blocks, var |
-| Framework | Spring Boot 3.x |
+| Framework | Spring Boot 4.0.6 |
 | Build | Maven |
 | Database | PostgreSQL via Docker Compose (dev and prod) |
 | Migrations | Flyway |
-| Scraping | Jsoup |
-| HTTP client | Spring `RestClient` — never use `RestTemplate` |
+| Security | Spring Security + JWT (jjwt) |
+| Scraping | Jsoup + RestClient |
 | AI | OpenRouter API (OpenAI-compatible) |
 | Logging | SLF4J (`private static final Logger log`) |
 | Tests | JUnit 5 + Mockito + WireMock |
@@ -150,15 +155,8 @@ Always read that file before implementing `AiAnalysisService` or `EmailGeneratio
 Every feature starts with a spec written **before** any code.
 
 ### Specs location
-```
-docs/specs/
-├── _template.md
-├── deduplicate-jobs.md
-├── fetch-jobs.md
-├── gupy-scraper.md
-├── analyze-job.md
-└── generate-email.md
-```
+
+All specs live in `docs/specs/`. Check the directory before implementing a new feature.
 
 ### Agent rules for SDD
 - **Never generate code for a feature without an existing spec**
@@ -180,20 +178,8 @@ All business logic follows the **RED → GREEN → REFACTOR** cycle.
 ```
 
 ### Test structure
-```
-src/test/java/com/juanperuzzo/job_hunter/
-├── unit/
-│   ├── application/
-│   │   ├── FetchJobsServiceTest.java
-│   │   ├── AiAnalysisServiceTest.java
-│   │   └── EmailGenerationServiceTest.java
-│   └── infrastructure/
-│       ├── GupyScraperTest.java
-│       └── OpenRouterClientTest.java
-└── integration/
-    ├── JobControllerIT.java
-    └── GupyScraperIT.java
-```
+
+Tests follow the same package structure under `src/test/java/.../`. Check the directory for the full list of test files.
 
 ### Test rules by layer
 
@@ -202,7 +188,7 @@ src/test/java/com/juanperuzzo/job_hunter/
 | `domain` | Unit | Plain JUnit 5 — no mocks, no Spring |
 | `application` | Unit | Mockito — mock all output ports |
 | `infrastructure` | Unit | WireMock — simulate HTTP server |
-| `web` | Integration | `@SpringBootTest` + `MockMvc` |
+| `web` | Unit | `@WebMvcTest` + `MockMvc` |
 
 ### Agent rules for TDD
 - **Always generate the test BEFORE the production code**
@@ -215,38 +201,38 @@ src/test/java/com/juanperuzzo/job_hunter/
 
 ## Development roadmap
 
-### Phase 1 — Core (MVP)
-- [ ] `pom.xml` dependencies (Jsoup, Flyway, WireMock, PostgreSQL)
-- [ ] `docker-compose.yml` + `application.yaml`
-- [ ] **[TDD]** `JobTest` — domain model RED
-- [ ] `Job` record with `isExpired()` and URL-based `equals` → GREEN
-- [ ] Migration `V1__create_jobs_table.sql`
-- [ ] `JobRepository` port + JPA adapter
-- [ ] **[TDD]** `FetchJobsServiceTest` RED
-- [ ] `FetchJobsService` → GREEN → REFACTOR
-- [ ] **[TDD]** `GupyScraperTest` RED (WireMock)
-- [ ] `GupyScraper` → GREEN → REFACTOR
+### Phase 1 — Core (MVP) — ✅ Complete
+- [x] `pom.xml` dependencies (Jsoup, Flyway, WireMock, PostgreSQL)
+- [x] `docker-compose.yml` + `application.yaml`
+- [x] **[TDD]** `JobTest` — domain model RED
+- [x] `Job` record with `isExpired()` and URL-based `equals` → GREEN
+- [x] Migration `V1__create_jobs_table.sql`
+- [x] `JobRepository` port + JPA adapter
+- [x] **[TDD]** `FetchJobsServiceTest` RED
+- [x] `FetchJobsService` → GREEN → REFACTOR
+- [x] **[TDD]** `GupyScraperTest` RED (WireMock)
+- [x] `GupyScraper` → GREEN → REFACTOR
 
-### Phase 2 — AI
-- [ ] `OpenRouterClient` with `RestClient`
-- [ ] **[TDD]** `AiAnalysisServiceTest` RED
-- [ ] `AiAnalysisService` → GREEN → REFACTOR
-- [ ] **[TDD]** `EmailGenerationServiceTest` RED
-- [ ] `EmailGenerationService` → GREEN → REFACTOR
-- [ ] `EmailDraft` record + migration `V2`
+### Phase 2 — AI — ✅ Complete
+- [x] `OpenRouterClient` with `RestClient`
+- [x] **[TDD]** `AiAnalysisServiceTest` RED
+- [x] `AiAnalysisService` → GREEN → REFACTOR
+- [x] **[TDD]** `EmailGenerationServiceTest` RED
+- [x] `EmailGenerationService` → GREEN → REFACTOR
+- [x] `EmailDraft` record + migration `V2`
 
-### Phase 3 — API
-- [ ] `GET /api/jobs` — list jobs (filters: keyword, minScore)
-- [ ] `GET /api/jobs/{id}` — job detail
-- [ ] `POST /api/jobs/{id}/analyze` — analyze with AI
-- [ ] `GET /api/jobs/{id}/email` — return generated email
-- [ ] `POST /api/jobs/{id}/email` — generate new email
+### Phase 3 — API — ✅ Complete
+- [x] `GET /api/jobs` — list jobs (filters: keyword, minScore)
+- [x] `GET /api/jobs/{id}` — job detail
+- [x] `POST /api/jobs/{id}/analyze` — analyze with AI
+- [x] `GET /api/jobs/{id}/email` — return generated email
+- [x] `POST /api/jobs/{id}/email` — generate new email
 
-### Phase 4 — Automation
+### Phase 4 — Automation — ⏳ Pending
 - [ ] `@Scheduled` running scrapers every 6 hours
 - [ ] Configurable keyword filters via `application.yaml`
 
-### Phase 5 — Interface
+### Phase 5 — Interface — ⏳ Pending
 - [ ] Simple HTML page or Angular SPA
 - [ ] Dashboard with job list and "Generate email" button
 
