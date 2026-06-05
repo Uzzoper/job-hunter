@@ -4,7 +4,7 @@
 ![Spring Boot](https://img.shields.io/badge/Spring_Boot-4.0.6-brightgreen?logo=springboot)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-blue?logo=postgresql)
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker)
-![License](https://img.shields.io/badge/license-MIT-green)
+![License](https://img.shields.io/badge/license-GPL--3.0-blue)
 
 A Spring Boot application that automates the search for junior developer job listings, analyzes each one with AI, and generates a personalized application email — ready to send.
 
@@ -157,7 +157,7 @@ ai:
     api-key: YOUR_OPENROUTER_API_KEY
 
 jwt:
-  secret: uma-chave-com-pelo-menos-32-caracteres-para-hmac
+  secret: a-key-with-at-least-32-characters-for-hmac
 ```
 
 > This file is in `.gitignore` and will never be committed.
@@ -205,7 +205,7 @@ This project was built following **SDD (Specification-Driven Development)** and 
 
 - Every feature starts with a spec in `docs/specs/` (Given/When/Then)
 - Tests are written before the implementation (RED → GREEN → REFACTOR)
-- The AI coding assistant (OpenCode + MiniMax M2.5) is guided by `AGENTS.md`, which documents the architecture, conventions, and workflow
+- The AI coding assistant is guided by `AGENTS.md`, which documents the architecture, conventions, and workflow
 
 ---
 
@@ -213,21 +213,28 @@ This project was built following **SDD (Specification-Driven Development)** and 
 
 ```
 docs/
-├── architecture.md     ← package structure, schema, architectural decisions
-├── prompts.md          ← all AI prompts versioned and documented
 └── specs/
     ├── _template.md
-    ├── fetch-jobs.md
-    ├── deduplicate-jobs.md
-    ├── gupy-scraper.md
     ├── analyze-job.md
+    ├── angular-frontend-spec.md
+    ├── architecture.md       ← package structure, schema, architectural decisions
+    ├── deduplicate-jobs.md
+    ├── fetch-jobs.md
     ├── generate-email.md
+    ├── gupy-scraper.md
+    ├── indeed-scraper.md
+    ├── infojobs-scraper.md
+    ├── prompts.md            ← all AI prompts versioned and documented
     ├── user-authentication.md
     ├── user-profile.md
     └── user-scoped-analysis.md
 ```
 
 ---
+
+## License
+
+This project is licensed under the **GNU General Public License v3.0**. See the [LICENSE](LICENSE) file for details.
 
 ## Author
 
