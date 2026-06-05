@@ -92,20 +92,76 @@ class ProfileControllerTest {
         var authentication = new UsernamePasswordAuthenticationToken(new User(1L, "test@test.com", "Test", "hash"), null, List.of());
         SecurityContextHolder.getContext().setAuthentication(authentication);
 
-        var request = new ProfileRequest("New resume text", List.of("Java", "Python"), CompanyTone.STARTUP);
-        var profile = new UserProfile(1L, 1L, "New resume text", List.of("Java", "Python"), CompanyTone.STARTUP);
+        var request = new ProfileRequest("New resume text that is certainly long enough to pass the minimum length constraint of fifty characters for test", List.of("Java", "Python"), CompanyTone.STARTUP);
+        var profile = new UserProfile(1L, 1L, "New resume text that is certainly long enough to pass the minimum length constraint of fifty characters for test", List.of("Java", "Python"), CompanyTone.STARTUP);
 
-        when(userProfileService.saveProfile(1L, "New resume text", List.of("Java", "Python"), CompanyTone.STARTUP))
+        when(userProfileService.saveProfile(1L, "New resume text that is certainly long enough to pass the minimum length constraint of fifty characters for test", List.of("Java", "Python"), CompanyTone.STARTUP))
                 .thenReturn(profile);
 
         mockMvc.perform(put("/api/profile")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.resumeText").value("New resume text"))
+                .andExpect(jsonPath("$.resumeText").value("New resume text that is certainly long enough to pass the minimum length constraint of fifty characters for test"))
                 .andExpect(jsonPath("$.skills[0]").value("Java"))
                 .andExpect(jsonPath("$.skills[1]").value("Python"))
                 .andExpect(jsonPath("$.tone").value("STARTUP"));
+    }
+
+    @Test
+    @DisplayName("saveProfile when null resumeText should return 400")
+    void saveProfile_whenNullResumeText_shouldReturn400() throws Exception {
+        var authentication = new UsernamePasswordAuthenticationToken(new User(1L, "test@test.com", "Test", "hash"), null, List.of());
+        SecurityContextHolder.getContext().setAuthentication(authentication);
+
+        var request = new ProfileRequest(null, List.of("Java"), CompanyTone.STARTUP);
+
+        mockMvc.perform(put("/api/profile")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("saveProfile when short resumeText should return 400")
+    void saveProfile_whenShortResumeText_shouldReturn400() throws Exception {
+        var authentication = new UsernamePasswordAuthenticationToken(new User(1L, "test@test.com", "Test", "hash"), null, List.of());
+        SecurityContextHolder.getContext().setAuthentication(authentication);
+
+        var request = new ProfileRequest("short", List.of("Java"), CompanyTone.STARTUP);
+
+        mockMvc.perform(put("/api/profile")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("saveProfile when empty skills should return 400")
+    void saveProfile_whenEmptySkills_shouldReturn400() throws Exception {
+        var authentication = new UsernamePasswordAuthenticationToken(new User(1L, "test@test.com", "Test", "hash"), null, List.of());
+        SecurityContextHolder.getContext().setAuthentication(authentication);
+
+        var request = new ProfileRequest("A very long resume text that is certainly more than fifty characters long to pass validation", List.of(), CompanyTone.STARTUP);
+
+        mockMvc.perform(put("/api/profile")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("saveProfile when null tone should return 400")
+    void saveProfile_whenNullTone_shouldReturn400() throws Exception {
+        var authentication = new UsernamePasswordAuthenticationToken(new User(1L, "test@test.com", "Test", "hash"), null, List.of());
+        SecurityContextHolder.getContext().setAuthentication(authentication);
+
+        var request = new ProfileRequest("A very long resume text that is certainly more than fifty characters long to pass validation", List.of("Java"), null);
+
+        mockMvc.perform(put("/api/profile")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest());
     }
 
     @Test
@@ -114,7 +170,7 @@ class ProfileControllerTest {
         var authentication = new UsernamePasswordAuthenticationToken(new User(1L, "test@test.com", "Test", "hash"), null, List.of());
         SecurityContextHolder.getContext().setAuthentication(authentication);
 
-        var request = new ProfileRequest("", List.of(), CompanyTone.FORMAL);
+        var request = new ProfileRequest("New resume text that is certainly long enough to pass the minimum length constraint of fifty characters for test", List.of("Java"), CompanyTone.FORMAL);
 
         when(userProfileService.saveProfile(eq(1L), any(), any(), any()))
                 .thenThrow(new IllegalArgumentException("Invalid input"));
