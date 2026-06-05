@@ -115,7 +115,8 @@ infrastructure → domain
 ### Flyway migrations
 - Format: `V{number}__{description_in_english}.sql`
 - Example: `V1__create_jobs_table.sql`, `V2__create_email_drafts_table.sql`
-- Never modify a committed migration — always create a new one
+- Never modify a committed migration that has been run in a shared environment (staging, production, other devs)
+- It is safe to consolidate or rename migrations that have only run locally on a feature branch
 
 ### Error handling
 - Always use a centralized `@RestControllerAdvice`

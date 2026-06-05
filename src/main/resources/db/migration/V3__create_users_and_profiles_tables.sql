@@ -13,7 +13,8 @@ CREATE TABLE user_profiles (
     resume_text TEXT NOT NULL,
     skills      TEXT[] NOT NULL,
     tone        VARCHAR(50) DEFAULT 'STARTUP',
-    updated_at  TIMESTAMP DEFAULT NOW()
+    updated_at  TIMESTAMP DEFAULT NOW(),
+    UNIQUE(user_id)
 );
 
 -- Remove single-user match_score from jobs
@@ -33,5 +34,6 @@ CREATE TABLE job_analyses (
     UNIQUE(job_id, user_id)
 );
 
--- Link email drafts to users
-ALTER TABLE email_drafts ADD COLUMN user_id BIGINT REFERENCES users(id) ON DELETE CASCADE;
+-- Link email drafts to users (NOT NULL from the start, with uniqueness)
+ALTER TABLE email_drafts ADD COLUMN user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE;
+ALTER TABLE email_drafts ADD CONSTRAINT uq_email_drafts_job_user UNIQUE (job_id, user_id);

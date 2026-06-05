@@ -47,7 +47,7 @@
 - The `subject` is extracted from the first line of the AI response (prefix `"Subject: "`)
 - The `body` is the remainder of the response after removing the subject line
 - `EmailDraft` is saved with `userId`, `jobId`, and `status = PENDING`
-- Per-user uniqueness: one draft per `(job_id, user_id)` enforced at database level (V4 migration)
+- Per-user uniqueness: one draft per `(job_id, user_id)` enforced at database level (V3 migration)
 
 ---
 

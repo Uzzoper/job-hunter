@@ -57,7 +57,7 @@ GET  /api/jobs/{id}/email      →  read draft
 ## Business rules
 
 - **Score & skills:** `matchScore`, `matchedSkills`, and `missingSkills` are produced by the AI comparing the job description to the user's profile (skills listed in the prompt); there is no separate rule engine in code.
-- **Data isolation:** All analysis and email queries filter by the logged-in user's id. Migration `V4__enforce_email_drafts_user_scope.sql` enforces `email_drafts.user_id NOT NULL` and `UNIQUE(job_id, user_id)`.
+- **Data isolation:** All analysis and email queries filter by the logged-in user's id. Migration `V3__create_users_and_profiles_tables.sql` enforces `email_drafts.user_id NOT NULL` and `UNIQUE(job_id, user_id)`.
 - **Jobs listing:** `GET /api/jobs` returns shared job postings; only analyses and drafts are per-user.
 - **Breaking change:** `match_score` was removed from the `jobs` table (V3); scores live in `job_analyses` per user.
 
