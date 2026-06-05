@@ -15,7 +15,6 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.LocalDate;
 import java.util.List;
-import java.util.Optional;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
@@ -44,8 +43,8 @@ class FetchJobsServiceTest {
         @Test
         @DisplayName("fetchAndSave should save new jobs and skip existing ones when scraper returns jobs")
         void fetchAndSave_whenNewJobsFound_shouldSaveOnlyNewJobs() {
-            var newJob = new Job(null, "Java Developer", "Company A", "https://example.com/job/1", "Description", LocalDate.now(), Optional.empty());
-            var existingJob = new Job(null, "Java Developer", "Company B", "https://example.com/job/2", "Description", LocalDate.now(), Optional.empty());
+            var newJob = new Job(null, "Java Developer", "Company A", "https://example.com/job/1", "Description", LocalDate.now());
+            var existingJob = new Job(null, "Java Developer", "Company B", "https://example.com/job/2", "Description", LocalDate.now());
 
             when(scraperPort.fetch()).thenReturn(List.of(newJob, existingJob));
             when(jobRepository.existsByUrl("https://example.com/job/1")).thenReturn(false);
@@ -65,7 +64,7 @@ class FetchJobsServiceTest {
         @Test
         @DisplayName("fetchAndSave should not save any job when all jobs already exist")
         void fetchAndSave_whenNoNewJobs_shouldNotSaveAnyJob() {
-            var existingJob = new Job(null, "Java Developer", "Company A", "https://example.com/job/1", "Description", LocalDate.now(), Optional.empty());
+            var existingJob = new Job(null, "Java Developer", "Company A", "https://example.com/job/1", "Description", LocalDate.now());
 
             when(scraperPort.fetch()).thenReturn(List.of(existingJob));
             when(jobRepository.existsByUrl("https://example.com/job/1")).thenReturn(true);

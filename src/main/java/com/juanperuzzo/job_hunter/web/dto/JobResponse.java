@@ -8,6 +8,5 @@ public record JobResponse(
     String company,
     String url,
     String description,
-    LocalDate postedAt,
-    Integer matchScore
+    LocalDate postedAt
 ) {}

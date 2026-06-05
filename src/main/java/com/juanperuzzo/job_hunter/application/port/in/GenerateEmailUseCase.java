@@ -5,5 +5,5 @@ import com.juanperuzzo.job_hunter.domain.model.Job;
 import com.juanperuzzo.job_hunter.domain.model.JobAnalysis;
 
 public interface GenerateEmailUseCase {
-    EmailDraft generate(Job job, JobAnalysis analysis);
+    EmailDraft generate(Long userId, Job job, JobAnalysis analysis);
 }

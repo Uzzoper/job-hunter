@@ -2,6 +2,7 @@ package com.juanperuzzo.job_hunter.unit.application;
 
 import com.juanperuzzo.job_hunter.application.port.out.AiPort;
 import com.juanperuzzo.job_hunter.application.port.out.EmailDraftRepository;
+import com.juanperuzzo.job_hunter.application.port.out.UserProfileRepository;
 import com.juanperuzzo.job_hunter.application.service.EmailGenerationService;
 import com.juanperuzzo.job_hunter.domain.exception.AiException;
 import com.juanperuzzo.job_hunter.domain.model.CompanyTone;
@@ -9,6 +10,9 @@ import com.juanperuzzo.job_hunter.domain.model.EmailDraft;
 import com.juanperuzzo.job_hunter.domain.model.EmailStatus;
 import com.juanperuzzo.job_hunter.domain.model.Job;
 import com.juanperuzzo.job_hunter.domain.model.JobAnalysis;
+import com.juanperuzzo.job_hunter.domain.model.UserProfile;
+
+import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -19,7 +23,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.LocalDate;
 import java.util.List;
-import java.util.Optional;
+
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
@@ -35,11 +39,14 @@ class EmailGenerationServiceTest {
     @Mock
     private EmailDraftRepository emailDraftRepository;
 
+    @Mock
+    private UserProfileRepository userProfileRepository;
+
     private EmailGenerationService emailGenerationService;
 
     @BeforeEach
     void setUp() {
-        emailGenerationService = new EmailGenerationService(aiPort, emailDraftRepository);
+        emailGenerationService = new EmailGenerationService(aiPort, emailDraftRepository, userProfileRepository);
     }
 
     @Nested
@@ -63,16 +70,21 @@ class EmailGenerationServiceTest {
 
             when(aiPort.complete(any())).thenReturn(aiResponse);
             when(emailDraftRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            UserProfile validProfile = new UserProfile(null, 1L,
+                "Experienced Java developer with Spring Boot expertise.",
+                List.of("Java", "Spring Boot", "PostgreSQL"),
+                CompanyTone.FORMAL);
+            when(userProfileRepository.findByUserId(any())).thenReturn(Optional.of(validProfile));
 
             Job job = new Job(null, "Java Developer", "CompanyX",
-                    "https://example.com/job/1", "Description", LocalDate.now(), Optional.empty());
-            JobAnalysis analysis = new JobAnalysis(85,
+                    "https://example.com/job/1", "Description", LocalDate.now());
+            JobAnalysis analysis = new JobAnalysis(null, null, null, 85,
                     List.of("Java", "Spring Boot"),
                     List.of("Kubernetes"),
                     CompanyTone.FORMAL,
                     "Java developer position");
 
-            EmailDraft draft = emailGenerationService.generate(job, analysis);
+            EmailDraft draft = emailGenerationService.generate(1L, job, analysis);
 
             assertNotNull(draft);
             assertTrue(draft.subject().startsWith("Subject: "));
@@ -104,16 +116,21 @@ class EmailGenerationServiceTest {
 
             when(aiPort.complete(any())).thenReturn(aiResponse);
             when(emailDraftRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            UserProfile validProfile = new UserProfile(null, 1L,
+                "Experienced Java developer with Spring Boot expertise.",
+                List.of("Java", "Spring Boot", "PostgreSQL"),
+                CompanyTone.FORMAL);
+            when(userProfileRepository.findByUserId(any())).thenReturn(Optional.of(validProfile));
 
             Job job = new Job(null, "Junior Developer", "StartupY",
-                    "https://example.com/job/2", "Description", LocalDate.now(), Optional.empty());
-            JobAnalysis analysis = new JobAnalysis(25, // low score
+                    "https://example.com/job/2", "Description", LocalDate.now());
+            JobAnalysis analysis = new JobAnalysis(null, null, null, 25, // low score
                     List.of("Java"),
                     List.of("AWS", "Docker"),
                     CompanyTone.STARTUP,
                     "Junior developer position");
 
-            EmailDraft draft = emailGenerationService.generate(job, analysis);
+            EmailDraft draft = emailGenerationService.generate(1L, job, analysis);
 
             assertNotNull(draft);
             // Should mention willingness to learn (we can only verify it doesn't throw)
@@ -143,16 +160,21 @@ class EmailGenerationServiceTest {
 
             when(aiPort.complete(any())).thenReturn(aiResponse);
             when(emailDraftRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            UserProfile validProfile = new UserProfile(null, 1L,
+                "Experienced Java developer with Spring Boot expertise.",
+                List.of("Java", "Spring Boot", "PostgreSQL"),
+                CompanyTone.FORMAL);
+            when(userProfileRepository.findByUserId(any())).thenReturn(Optional.of(validProfile));
 
             Job job = new Job(null, "Developer", "BankZ",
-                    "https://example.com/job/3", "Description", LocalDate.now(), Optional.empty());
-            JobAnalysis analysis = new JobAnalysis(80,
+                    "https://example.com/job/3", "Description", LocalDate.now());
+            JobAnalysis analysis = new JobAnalysis(null, null, null, 80,
                     List.of("Java"),
                     List.of(),
                     CompanyTone.FORMAL,
                     "Developer position");
 
-            EmailDraft draft = emailGenerationService.generate(job, analysis);
+            EmailDraft draft = emailGenerationService.generate(1L, job, analysis);
 
             assertNotNull(draft);
             assertEquals(CompanyTone.FORMAL, analysis.companyTone());
@@ -179,16 +201,21 @@ class EmailGenerationServiceTest {
 
             when(aiPort.complete(any())).thenReturn(aiResponse);
             when(emailDraftRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            UserProfile validProfile = new UserProfile(null, 1L,
+                "Experienced Java developer with Spring Boot expertise.",
+                List.of("Java", "Spring Boot", "PostgreSQL"),
+                CompanyTone.FORMAL);
+            when(userProfileRepository.findByUserId(any())).thenReturn(Optional.of(validProfile));
 
             Job job = new Job(null, "Developer", "StartupCool",
-                    "https://example.com/job/4", "Description", LocalDate.now(), Optional.empty());
-            JobAnalysis analysis = new JobAnalysis(70,
+                    "https://example.com/job/4", "Description", LocalDate.now());
+            JobAnalysis analysis = new JobAnalysis(null, null, null, 70,
                     List.of("React"),
                     List.of("AWS"),
                     CompanyTone.STARTUP,
                     "Startup developer position");
 
-            EmailDraft draft = emailGenerationService.generate(job, analysis);
+            EmailDraft draft = emailGenerationService.generate(1L, job, analysis);
 
             assertNotNull(draft);
             assertEquals(CompanyTone.STARTUP, analysis.companyTone());
@@ -203,16 +230,21 @@ class EmailGenerationServiceTest {
         @DisplayName("generate should throw AiException when AI client throws exception")
         void generate_whenAiUnavailable_shouldThrowAiException() {
             when(aiPort.complete(any())).thenThrow(new RuntimeException("Network error"));
+            UserProfile validProfile = new UserProfile(null, 1L,
+                "Experienced Java developer with Spring Boot expertise.",
+                List.of("Java", "Spring Boot", "PostgreSQL"),
+                CompanyTone.FORMAL);
+            when(userProfileRepository.findByUserId(any())).thenReturn(Optional.of(validProfile));
 
             Job job = new Job(null, "Developer", "CompanyX",
-                    "https://example.com/job/5", "Description", LocalDate.now(), Optional.empty());
-            JobAnalysis analysis = new JobAnalysis(80,
+                    "https://example.com/job/5", "Description", LocalDate.now());
+            JobAnalysis analysis = new JobAnalysis(null, null, null, 80,
                     List.of("Java"),
                     List.of(),
                     CompanyTone.FORMAL,
                     "Developer position");
 
-            assertThrows(AiException.class, () -> emailGenerationService.generate(job, analysis));
+            assertThrows(AiException.class, () -> emailGenerationService.generate(1L, job, analysis));
         }
     }
 
@@ -223,22 +255,22 @@ class EmailGenerationServiceTest {
         @Test
         @DisplayName("generate should throw NullPointerException when job is null")
         void generate_whenJobIsNull_shouldThrowNullPointerException() {
-            JobAnalysis analysis = new JobAnalysis(80,
+            JobAnalysis analysis = new JobAnalysis(null, null, null, 80,
                     List.of("Java"),
                     List.of(),
                     CompanyTone.FORMAL,
                     "Developer position");
 
-            assertThrows(NullPointerException.class, () -> emailGenerationService.generate(null, analysis));
+            assertThrows(NullPointerException.class, () -> emailGenerationService.generate(1L, null, analysis));
         }
 
         @Test
         @DisplayName("generate should throw NullPointerException when analysis is null")
         void generate_whenAnalysisIsNull_shouldThrowNullPointerException() {
             Job job = new Job(null, "Developer", "CompanyX",
-                    "https://example.com/job/6", "Description", LocalDate.now(), Optional.empty());
+                    "https://example.com/job/6", "Description", LocalDate.now());
 
-            assertThrows(NullPointerException.class, () -> emailGenerationService.generate(job, null));
+            assertThrows(NullPointerException.class, () -> emailGenerationService.generate(1L, job, null));
         }
     }
 }

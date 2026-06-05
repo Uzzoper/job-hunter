@@ -3,11 +3,13 @@ package com.juanperuzzo.job_hunter.application.service;
 import com.juanperuzzo.job_hunter.application.port.in.GenerateEmailUseCase;
 import com.juanperuzzo.job_hunter.application.port.out.AiPort;
 import com.juanperuzzo.job_hunter.application.port.out.EmailDraftRepository;
+import com.juanperuzzo.job_hunter.application.port.out.UserProfileRepository;
 import com.juanperuzzo.job_hunter.domain.exception.AiException;
 import com.juanperuzzo.job_hunter.domain.model.EmailDraft;
 import com.juanperuzzo.job_hunter.domain.model.EmailStatus;
 import com.juanperuzzo.job_hunter.domain.model.Job;
 import com.juanperuzzo.job_hunter.domain.model.JobAnalysis;
+import com.juanperuzzo.job_hunter.domain.model.UserProfile;
 
 import java.time.LocalDateTime;
 import java.util.Objects;
@@ -16,21 +18,27 @@ public class EmailGenerationService implements GenerateEmailUseCase {
 
     private final AiPort aiPort;
     private final EmailDraftRepository emailDraftRepository;
+    private final UserProfileRepository userProfileRepository;
 
-    public EmailGenerationService(AiPort aiPort, EmailDraftRepository emailDraftRepository) {
+    public EmailGenerationService(AiPort aiPort, EmailDraftRepository emailDraftRepository, UserProfileRepository userProfileRepository) {
         this.aiPort = aiPort;
         this.emailDraftRepository = emailDraftRepository;
+        this.userProfileRepository = userProfileRepository;
     }
 
     @Override
-    public EmailDraft generate(Job job, JobAnalysis analysis) {
+    public EmailDraft generate(Long userId, Job job, JobAnalysis analysis) {
+        Objects.requireNonNull(userId, "userId must not be null");
         Objects.requireNonNull(job, "job must not be null");
         Objects.requireNonNull(analysis, "analysis must not be null");
 
+        UserProfile profile = userProfileRepository.findByUserId(userId)
+                .orElseThrow(() -> new AiException("User profile not found for userId: " + userId));
+
         try {
-            String prompt = buildPrompt(job, analysis);
+            String prompt = buildPrompt(job, analysis, profile);
             String response = aiPort.complete(prompt);
-            EmailDraft draft = parseEmailDraft(job.id(), response);
+            EmailDraft draft = parseEmailDraft(job.id(), userId, response);
             return emailDraftRepository.save(draft);
         } catch (AiException e) {
             throw e;
@@ -39,23 +47,13 @@ public class EmailGenerationService implements GenerateEmailUseCase {
         }
     }
 
-    private String buildPrompt(Job job, JobAnalysis analysis) {
+    private String buildPrompt(Job job, JobAnalysis analysis, UserProfile profile) {
         String candidateProfile = """
             Candidate profile:
-            - Name: Juan Antonio Peruzzo
-            - Education: Software Engineering (Unicesumar, in progress)
-            - Stack: Java, Spring Boot, TypeScript, React, Next.js, Postgres, SQL, HTML, CSS, JavaScript, Git, GitHub, Docker
-            - Portfolio: https://juanperuzzo.is-a.dev
-            - GitHub: https://github.com/Uzzoper
-            - Projects:
-              * Jishuu — study organization platform (Next.js, React, TypeScript, Tailwind)
-              * Flappy Naruu — full stack game (React, TypeScript, Canvas API, Java, Spring, Postgres)
-              * ASCII Converter — client-side image processing tool (Next.js, React, TypeScript, Canvas API)
-              * Thermometer of Ponta Grossa — real-time weather site (JavaScript, Weather API)
-            - English: advanced (fluent reading, intermediate conversation)
-            - Location: Ponta Grossa – PR, Brazil (open to remote)
-            - Goal: internship or junior developer position
-            """;
+            - Resume: %s
+            - Skills: %s
+            - Preferred tone: %s
+            """.formatted(profile.resumeText(), String.join(", ", profile.skills()), profile.tone().name().toLowerCase());
 
         String tone = analysis.companyTone().name().toLowerCase();
 
@@ -99,7 +97,7 @@ public class EmailGenerationService implements GenerateEmailUseCase {
                 matchedSkills, missingSkills, analysis.summary());
     }
 
-    private EmailDraft parseEmailDraft(Long jobId, String aiResponse) {
+    private EmailDraft parseEmailDraft(Long jobId, Long userId, String aiResponse) {
         String subject;
         String body;
 
@@ -116,6 +114,6 @@ public class EmailGenerationService implements GenerateEmailUseCase {
             subject = "Subject: " + subject;
         }
 
-        return new EmailDraft(null, jobId, subject, body, EmailStatus.PENDING, LocalDateTime.now());
+        return new EmailDraft(null, jobId, userId, subject, body, EmailStatus.PENDING, LocalDateTime.now());
     }
 }

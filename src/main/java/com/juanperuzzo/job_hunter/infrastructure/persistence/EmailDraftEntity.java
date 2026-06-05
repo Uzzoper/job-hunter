@@ -5,7 +5,13 @@ import jakarta.persistence.*;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "email_drafts")
+@Table(
+        name = "email_drafts",
+        uniqueConstraints = @UniqueConstraint(
+                name = "uq_email_drafts_job_user",
+                columnNames = {"job_id", "user_id"}
+        )
+)
 public class EmailDraftEntity {
 
     @Id
@@ -14,6 +20,9 @@ public class EmailDraftEntity {
 
     @Column(name = "job_id", nullable = false)
     private Long jobId;
+
+    @Column(name = "user_id", nullable = false)
+    private Long userId;
 
     @Column(name = "subject", nullable = false, length = 255)
     private String subject;
@@ -30,9 +39,10 @@ public class EmailDraftEntity {
     public EmailDraftEntity() {
     }
 
-    public EmailDraftEntity(Long id, Long jobId, String subject, String body, String status) {
+    public EmailDraftEntity(Long id, Long jobId, Long userId, String subject, String body, String status) {
         this.id = id;
         this.jobId = jobId;
+        this.userId = userId;
         this.subject = subject;
         this.body = body;
         this.status = status;
@@ -52,6 +62,14 @@ public class EmailDraftEntity {
 
     public void setJobId(Long jobId) {
         this.jobId = jobId;
+    }
+
+    public Long getUserId() {
+        return userId;
+    }
+
+    public void setUserId(Long userId) {
+        this.userId = userId;
     }
 
     public String getSubject() {

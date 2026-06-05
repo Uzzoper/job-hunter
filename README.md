@@ -1,7 +1,7 @@
 # Job Hunter
 
 ![Java](https://img.shields.io/badge/Java-21-orange?logo=openjdk)
-![Spring Boot](https://img.shields.io/badge/Spring_Boot-4.0-brightgreen?logo=springboot)
+![Spring Boot](https://img.shields.io/badge/Spring_Boot-4.0.6-brightgreen?logo=springboot)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-blue?logo=postgresql)
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker)
 ![License](https://img.shields.io/badge/license-MIT-green)
@@ -13,23 +13,44 @@ A Spring Boot application that automates the search for junior developer job lis
 ## How it works
 
 ```
-Gupy API ──► GupyScraper ──► FetchJobsService ──► PostgreSQL
-                                                       │
-                                              POST /api/jobs/{id}/analyze
-                                                       │
-                                              AiAnalysisService ──► OpenRouter (MiniMax M2.5)
-                                                       │
-                                              POST /api/jobs/{id}/email
-                                                       │
-                                              EmailGenerationService ──► OpenRouter
-                                                       │
-                                              EmailDraft (ready to send)
+User ──► POST /api/auth/register ──► AuthService ──► UserRepository ──► PostgreSQL
+                                            │
+                           POST /api/auth/login
+                    AuthService ──► JwtTokenService ──► JWT Token
+                                            │
+          ┌─────────────────────────────────┘
+          ▼
+  All subsequent requests require Authorization: Bearer <token>
+          │
+          ▼
+  JwtTokenFilter (validates JWT on every request)
+          │
+          ▼
+  CurrentUserService.getCurrentUserId() ──► Controller ──► Service ──► Repository
+          │
+  ┌───────┴──────────────────────────────────────────────────────────────────┐
+  │                                                                          │
+  ▼                                                                          ▼
+Gupy API ──► GupyScraper                                          POST /api/jobs/{id}/analyze
+       ──► InfoJobsScraper  ──► FetchJobsService ──► PostgreSQL         AiAnalysisService
+       ──► CompositeScraper                                                    │
+                                                                               ▼
+                                                                      OpenRouter (MiniMax M2.5)
+                                                                               │
+                                                                               ▼
+                                                                   POST /api/jobs/{id}/email
+                                                                   EmailGenerationService
+                                                                               │
+                                                                               ▼
+                                                                   EmailDraft (ready to send)
 ```
 
-1. The scraper fetches job listings from Gupy filtered by keywords (`desenvolvedor`, `developer`, etc.)
-2. Each listing is saved to PostgreSQL — duplicates are skipped by URL
-3. On demand, the AI analyzes the listing against your profile and returns a match score (0–100), matched/missing skills, and company tone
-4. The AI then generates a personalized application email in Brazilian Portuguese, tailored to the company tone and mentioning a relevant portfolio project
+0. Register or login via `/api/auth/register` and `/api/auth/login` to receive a JWT token.
+   All subsequent requests must include `Authorization: Bearer <token>`.
+1. The scraper fetches job listings from Gupy and InfoJobs, filtered by keywords.
+2. Each listing is saved to PostgreSQL — duplicates are skipped by URL.
+3. On demand, the AI analyzes the listing against your profile and returns a match score (0–100), matched/missing skills, and company tone.
+4. The AI then generates a personalized application email in Brazilian Portuguese, tailored to the company tone and mentioning a relevant portfolio project.
 
 ---
 
@@ -38,11 +59,12 @@ Gupy API ──► GupyScraper ──► FetchJobsService ──► PostgreSQL
 | Layer | Technology |
 |---|---|
 | Language | Java 21 |
-| Framework | Spring Boot 4 |
+| Framework | Spring Boot 4.0.6 |
 | Architecture | Clean Architecture |
 | Database | PostgreSQL 16 (Docker) |
 | Migrations | Flyway |
-| Scraping | RestClient (Jsoup planned for future scrapers) |
+| Security | Spring Security + JWT (jjwt) |
+| Scraping | RestClient + Jsoup |
 | AI | OpenRouter API (MiniMax M2.5) |
 | Tests | JUnit 5 + Mockito + WireMock |
 | Build | Maven |
@@ -55,25 +77,42 @@ This project follows Clean Architecture with strict layer separation:
 
 ```
 src/main/java/com/juanperuzzo/job_hunter/
-├── domain/               ← pure Java, no framework dependencies
-│   ├── model/            → Job, EmailDraft, JobAnalysis, CompanyTone, EmailStatus
-│   └── exception/        → ScraperException, AiException, JobNotFoundException
+├── domain/                      ← pure Java, no framework dependencies
+│   ├── model/                   → Job, EmailDraft, JobAnalysis, CompanyTone, EmailStatus,
+│   │                              User, UserProfile
+│   └── exception/               → ScraperException, AiException, JobNotFoundException,
+│                                    InvalidCredentialsException, EmailAlreadyExistsException,
+│                                    UserNotFoundException, ProfileNotConfiguredException,
+│                                    AnalysisNotFoundException
 │
-├── application/          ← use cases and ports
-│   ├── port/in/          → FetchJobsUseCase, AnalyzeJobUseCase, GenerateEmailUseCase
-│   ├── port/out/         → JobRepository, ScraperPort, AiPort
-│   └── service/          → FetchJobsService, AiAnalysisService, EmailGenerationService
+├── application/                 ← use cases and ports
+│   ├── port/in/                 → FetchJobsUseCase, AnalyzeJobUseCase, GenerateEmailUseCase,
+│   │                              AuthUseCase, AuthResult
+│   ├── port/out/                → JobRepository, ScraperPort, AiPort, UserRepository,
+│   │                              PasswordHasher, TokenProvider, UserProfileRepository,
+│   │                              EmailDraftRepository, JobAnalysisRepository
+│   └── service/                 → FetchJobsService, AiAnalysisService, EmailGenerationService,
+│   │                               AuthService, UserProfileService
 │
-├── infrastructure/       ← technical details (Spring, HTTP, DB)
-│   ├── scraper/          → GupyScraper
-│   ├── ai/               → OpenRouterClient
-│   ├── persistence/      → JobJpaRepository, JobPersistenceAdapter
-│   ├── scheduler/        → JobHunterScheduler
-│   └── config/           → AppConfig
+├── infrastructure/              ← technical details (Spring, HTTP, DB, Security)
+│   ├── scraper/                 → GupyScraper, InfoJobsScraper, CompositeScraper
+│   ├── ai/                      → OpenRouterClient
+│   ├── persistence/             → JobJpaRepository, JobPersistenceAdapter, UserEntity,
+│   │                              UserJpaRepository, UserPersistenceAdapter, UserProfileEntity,
+│   │                              UserProfileJpaRepository, UserProfilePersistenceAdapter,
+│   │                              EmailDraftEntity, EmailDraftJpaRepository,
+│   │                              EmailDraftPersistenceAdapter, JobAnalysisEntity,
+│   │                              JobAnalysisJpaRepository, JobAnalysisPersistenceAdapter
+│   ├── security/                → SecurityConfig, JwtTokenFilter, JwtTokenService,
+│   │                              CurrentUserService
+│   ├── scheduler/               → JobHunterScheduler
+│   └── config/                  → AppConfig
 │
-└── web/                  ← REST controllers
-    ├── controller/       → JobController, EmailController
-    └── dto/              → JobResponse, EmailDraftResponse
+├── web/                         ← REST controllers
+│   ├── controller/              → JobController, EmailController, AuthController, ProfileController
+│   ├── dto/                     → JobResponse, EmailDraftResponse, AuthRequest, AuthResponse,
+│   │                              LoginRequest, ProfileRequest, ProfileResponse
+│   └── exception/               → GlobalExceptionHandler
 ```
 
 The dependency rule is strictly enforced: `domain` has no external dependencies, `application` depends only on `domain`, and `infrastructure`/`web` depend on `application`.
@@ -116,6 +155,9 @@ spring:
 ai:
   openrouter:
     api-key: YOUR_OPENROUTER_API_KEY
+
+jwt:
+  secret: uma-chave-com-pelo-menos-32-caracteres-para-hmac
 ```
 
 > This file is in `.gitignore` and will never be committed.
@@ -132,13 +174,18 @@ The application will start on `http://localhost:8080`. Flyway runs automatically
 
 ## API
 
-| Method | Endpoint | Description |
-|---|---|---|
-| `GET` | `/api/jobs` | List all jobs (filters: `keyword`, `minScore`) |
-| `GET` | `/api/jobs/{id}` | Get job detail |
-| `POST` | `/api/jobs/{id}/analyze` | Analyze job with AI |
-| `GET` | `/api/jobs/{id}/email` | Get generated email |
-| `POST` | `/api/jobs/{id}/email` | Generate new email for the job |
+| Method | Endpoint | Description | Auth Required |
+|--------|----------|-------------|:---:|
+| `POST` | `/api/auth/register` | Register a new user | No |
+| `POST` | `/api/auth/login` | Login and receive JWT token | No |
+| `GET` | `/api/jobs` | List all jobs | Yes |
+| `GET` | `/api/jobs/{id}` | Get job detail | Yes |
+| `POST` | `/api/jobs/fetch` | Trigger scraper manually | Yes |
+| `POST` | `/api/jobs/{id}/analyze` | Analyze job with AI | Yes |
+| `GET` | `/api/jobs/{id}/email` | Get generated email draft | Yes |
+| `POST` | `/api/jobs/{id}/email` | Generate new email for the job | Yes |
+| `GET` | `/api/profile` | Get authenticated user's profile | Yes |
+| `PUT` | `/api/profile` | Save/update user profile | Yes |
 
 ---
 
@@ -174,7 +221,10 @@ docs/
     ├── deduplicate-jobs.md
     ├── gupy-scraper.md
     ├── analyze-job.md
-    └── generate-email.md
+    ├── generate-email.md
+    ├── user-authentication.md
+    ├── user-profile.md
+    └── user-scoped-analysis.md
 ```
 
 ---

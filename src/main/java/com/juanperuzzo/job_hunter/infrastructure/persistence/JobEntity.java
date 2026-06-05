@@ -28,8 +28,7 @@ public class JobEntity {
     @Column(name = "posted_at", nullable = false)
     private LocalDate postedAt;
 
-    @Column(name = "match_score")
-    private Integer matchScore;
+
 
     @Column(name = "created_at", nullable = false, updatable = false, insertable = false, columnDefinition = "TIMESTAMP DEFAULT NOW()")
     private LocalDateTime createdAt;
@@ -37,14 +36,13 @@ public class JobEntity {
     public JobEntity() {
     }
 
-    public JobEntity(Long id, String title, String company, String url, String description, LocalDate postedAt, Integer matchScore) {
+    public JobEntity(Long id, String title, String company, String url, String description, LocalDate postedAt) {
         this.id = id;
         this.title = title;
         this.company = company;
         this.url = url;
         this.description = description;
         this.postedAt = postedAt;
-        this.matchScore = matchScore;
     }
 
     public Long getId() {
@@ -95,13 +93,7 @@ public class JobEntity {
         this.postedAt = postedAt;
     }
 
-    public Integer getMatchScore() {
-        return matchScore;
-    }
 
-    public void setMatchScore(Integer matchScore) {
-        this.matchScore = matchScore;
-    }
 
     public LocalDateTime getCreatedAt() {
         return createdAt;

@@ -7,4 +7,6 @@ import java.util.Optional;
 public interface EmailDraftJpaRepository extends JpaRepository<EmailDraftEntity, Long> {
 
     Optional<EmailDraftEntity> findByJobId(Long jobId);
+
+    Optional<EmailDraftEntity> findByJobIdAndUserId(Long jobId, Long userId);
 }

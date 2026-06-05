@@ -115,7 +115,7 @@ com.juanperuzzo.job_hunter
 src/main/resources/db/migration/
 ├── V1__create_jobs_table.sql
 ├── V2__create_email_drafts_table.sql
-└── V3__add_match_score_to_jobs.sql      (after AI analysis is implemented)
+└── V3__create_users_and_profiles_tables.sql
 ```
 
 ### Simplified schema

@@ -3,8 +3,16 @@ package com.juanperuzzo.job_hunter.web.exception;
 import com.juanperuzzo.job_hunter.domain.exception.AiException;
 import com.juanperuzzo.job_hunter.domain.exception.JobNotFoundException;
 import com.juanperuzzo.job_hunter.domain.exception.ScraperException;
+import com.juanperuzzo.job_hunter.domain.exception.InvalidCredentialsException;
+import com.juanperuzzo.job_hunter.domain.exception.EmailAlreadyExistsException;
+import com.juanperuzzo.job_hunter.domain.exception.UserNotFoundException;
+import com.juanperuzzo.job_hunter.domain.exception.ProfileNotConfiguredException;
+import com.juanperuzzo.job_hunter.domain.exception.AnalysisNotFoundException;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
@@ -40,12 +48,61 @@ public class GlobalExceptionHandler {
         return buildResponse(HttpStatus.INTERNAL_SERVER_ERROR, "An unexpected error occurred");
     }
 
-    private ResponseEntity<Map<String, Object>> buildResponse(HttpStatus status, String message) {
+    @ExceptionHandler(InvalidCredentialsException.class)
+    public ResponseEntity<Map<String, Object>> handleInvalidCredentials(InvalidCredentialsException ex) {
+        return buildResponse(HttpStatus.UNAUTHORIZED, ex.getMessage());
+    }
+
+    @ExceptionHandler(EmailAlreadyExistsException.class)
+    public ResponseEntity<Map<String, Object>> handleEmailAlreadyExists(EmailAlreadyExistsException ex) {
+        return buildResponse(HttpStatus.CONFLICT, ex.getMessage());
+    }
+
+    @ExceptionHandler(UserNotFoundException.class)
+    public ResponseEntity<Map<String, Object>> handleUserNotFound(UserNotFoundException ex) {
+        return buildResponse(HttpStatus.NOT_FOUND, ex.getMessage());
+    }
+
+    @ExceptionHandler(ProfileNotConfiguredException.class)
+    public ResponseEntity<Map<String, Object>> handleProfileNotConfigured(ProfileNotConfiguredException ex) {
+        return buildResponse(HttpStatus.BAD_REQUEST, ex.getMessage());
+    }
+
+    @ExceptionHandler(AnalysisNotFoundException.class)
+    public ResponseEntity<Map<String, Object>> handleAnalysisNotFound(AnalysisNotFoundException ex) {
+        return buildResponse(HttpStatus.BAD_REQUEST, ex.getMessage());
+    }
+
+    @ExceptionHandler(IllegalStateException.class)
+    public ResponseEntity<Map<String, Object>> handleIllegalState(IllegalStateException ex) {
+        return buildResponse(HttpStatus.UNAUTHORIZED, ex.getMessage());
+    }
+
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    public ResponseEntity<Map<String, Object>> handleValidationError(MethodArgumentNotValidException ex) {
+        return buildResponse(HttpStatus.BAD_REQUEST, "Validation failed");
+    }
+
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<Map<String, Object>> handleMessageNotReadable(HttpMessageNotReadableException ex) {
+        return buildResponse(HttpStatus.BAD_REQUEST, "Malformed JSON request");
+    }
+
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<Map<String, Object>> handleDataIntegrityViolation(DataIntegrityViolationException ex) {
+        return buildResponse(HttpStatus.CONFLICT, "Resource already exists");
+    }
+
+    public static Map<String, Object> buildErrorBody(HttpStatus status, String message) {
         Map<String, Object> body = new LinkedHashMap<>();
-        body.put("timestamp", LocalDateTime.now());
+        body.put("timestamp", LocalDateTime.now().toString());
         body.put("status", status.value());
         body.put("error", status.getReasonPhrase());
         body.put("message", message);
-        return new ResponseEntity<>(body, status);
+        return body;
+    }
+
+    private ResponseEntity<Map<String, Object>> buildResponse(HttpStatus status, String message) {
+        return new ResponseEntity<>(buildErrorBody(status, message), status);
     }
 }

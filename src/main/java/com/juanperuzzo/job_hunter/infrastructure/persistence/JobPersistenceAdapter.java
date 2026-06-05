@@ -47,8 +47,7 @@ public class JobPersistenceAdapter implements JobRepository {
                 job.company(),
                 job.url(),
                 job.description(),
-                job.postedAt(),
-                job.matchScore().orElse(null)
+                job.postedAt()
         );
     }
 
@@ -59,8 +58,7 @@ public class JobPersistenceAdapter implements JobRepository {
                 entity.getCompany(),
                 entity.getUrl(),
                 entity.getDescription(),
-                entity.getPostedAt(),
-                Optional.ofNullable(entity.getMatchScore())
+                entity.getPostedAt()
         );
     }
 }
