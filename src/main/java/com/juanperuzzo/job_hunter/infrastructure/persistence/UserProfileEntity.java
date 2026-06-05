@@ -5,7 +5,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 @Entity
-@Table(name = "user_profiles")
+@Table(name = "user_profiles", uniqueConstraints = @UniqueConstraint(name = "uq_user_profiles_user_id", columnNames = "user_id"))
 public class UserProfileEntity {
 
     @Id
