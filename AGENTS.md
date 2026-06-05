@@ -54,7 +54,6 @@ com.juanperuzzo.job_hunter
 │   ├── ai/                      → OpenRouterClient
 │   ├── persistence/             → JPA adapters per entity
 │   ├── security/                → JWT filter, token service, CurrentUserService
-│   ├── scheduler/               → JobHunterScheduler
 │   └── config/                  → AppConfig
 │
 └── web/                         ← REST controllers
@@ -229,13 +228,8 @@ Tests follow the same package structure under `src/test/java/.../`. Check the di
 - [x] `GET /api/jobs/{id}/email` — return generated email
 - [x] `POST /api/jobs/{id}/email` — generate new email
 
-### Phase 4 — Automation — ⏳ Pending
-- [ ] `@Scheduled` running scrapers every 6 hours
-- [ ] Configurable keyword filters via `application.yaml`
-
-### Phase 5 — Interface — ⏳ Pending
-- [ ] Simple HTML page or Angular SPA
-- [ ] Dashboard with job list and "Generate email" button
+### Phase 4 — Interface — ✅ Complete
+- [x] REST API fully ready for frontend consumption
 
 ---
 
@@ -260,7 +254,7 @@ All commits must follow the **Conventional Commits** standard.
 | `style` | Formatting only (no logic change) |
 
 ### Scope (optional)
-Use the Clean Architecture layer name: `domain`, `application`, `infrastructure`, `web`, `scheduler`, `config`
+Use the Clean Architecture layer name: `domain`, `application`, `infrastructure`, `web`, `config`
 
 ### Examples
 ```
