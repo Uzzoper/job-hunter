@@ -1,7 +1,7 @@
 package com.juanperuzzo.job_hunter.web.controller;
 
+import com.juanperuzzo.job_hunter.application.port.in.CurrentUserProvider;
 import com.juanperuzzo.job_hunter.application.service.UserProfileService;
-import com.juanperuzzo.job_hunter.infrastructure.security.CurrentUserService;
 import com.juanperuzzo.job_hunter.web.dto.ProfileRequest;
 import com.juanperuzzo.job_hunter.web.dto.ProfileResponse;
 import org.springframework.http.ResponseEntity;
@@ -12,9 +12,9 @@ import org.springframework.web.bind.annotation.*;
 public class ProfileController {
 
     private final UserProfileService userProfileService;
-    private final CurrentUserService currentUserService;
+    private final CurrentUserProvider currentUserService;
 
-    public ProfileController(UserProfileService userProfileService, CurrentUserService currentUserService) {
+    public ProfileController(UserProfileService userProfileService, CurrentUserProvider currentUserService) {
         this.userProfileService = userProfileService;
         this.currentUserService = currentUserService;
     }

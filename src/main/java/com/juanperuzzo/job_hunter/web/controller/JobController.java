@@ -11,7 +11,7 @@ import com.juanperuzzo.job_hunter.domain.exception.JobNotFoundException;
 import com.juanperuzzo.job_hunter.domain.model.EmailDraft;
 import com.juanperuzzo.job_hunter.domain.model.Job;
 import com.juanperuzzo.job_hunter.domain.model.JobAnalysis;
-import com.juanperuzzo.job_hunter.infrastructure.security.CurrentUserService;
+import com.juanperuzzo.job_hunter.application.port.in.CurrentUserProvider;
 import com.juanperuzzo.job_hunter.web.dto.EmailDraftResponse;
 import com.juanperuzzo.job_hunter.web.dto.JobResponse;
 import org.springframework.http.ResponseEntity;
@@ -30,7 +30,7 @@ public class JobController {
     private final JobRepository jobRepository;
     private final JobAnalysisRepository jobAnalysisRepository;
     private final EmailDraftRepository emailDraftRepository;
-    private final CurrentUserService currentUserService;
+    private final CurrentUserProvider currentUserService;
 
     public JobController(
             FetchJobsUseCase fetchJobsUseCase,
@@ -39,7 +39,7 @@ public class JobController {
             JobRepository jobRepository,
             JobAnalysisRepository jobAnalysisRepository,
             EmailDraftRepository emailDraftRepository,
-            CurrentUserService currentUserService) {
+            CurrentUserProvider currentUserService) {
         this.fetchJobsUseCase = fetchJobsUseCase;
         this.analyzeJobUseCase = analyzeJobUseCase;
         this.generateEmailUseCase = generateEmailUseCase;
