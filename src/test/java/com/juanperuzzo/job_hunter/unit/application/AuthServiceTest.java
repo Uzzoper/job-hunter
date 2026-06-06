@@ -1,6 +1,5 @@
 package com.juanperuzzo.job_hunter.unit.application;
 
-import com.juanperuzzo.job_hunter.application.port.in.AuthResult;
 import com.juanperuzzo.job_hunter.application.port.out.PasswordHasher;
 import com.juanperuzzo.job_hunter.application.port.out.TokenProvider;
 import com.juanperuzzo.job_hunter.application.port.out.UserRepository;
@@ -155,6 +154,9 @@ class AuthServiceTest {
         when(tokenProvider.issue(savedUser)).thenReturn("jwt-token");
 
         var result = authService.register("Juan", "  user@example.com  ", "secret123");
+
+        assertEquals("user@example.com", result.email());
+        assertEquals("jwt-token", result.token());
 
         var userCaptor = ArgumentCaptor.forClass(User.class);
         verify(userRepository).save(userCaptor.capture());

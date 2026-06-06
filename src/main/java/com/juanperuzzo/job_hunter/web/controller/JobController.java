@@ -6,8 +6,6 @@ import com.juanperuzzo.job_hunter.application.port.in.GenerateEmailUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.GetEmailDraftUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.GetJobUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.ListJobsUseCase;
-import com.juanperuzzo.job_hunter.domain.exception.AnalysisNotFoundException;
-import com.juanperuzzo.job_hunter.domain.exception.JobNotFoundException;
 import com.juanperuzzo.job_hunter.domain.model.EmailDraft;
 import com.juanperuzzo.job_hunter.domain.model.Job;
 import com.juanperuzzo.job_hunter.domain.model.JobAnalysis;

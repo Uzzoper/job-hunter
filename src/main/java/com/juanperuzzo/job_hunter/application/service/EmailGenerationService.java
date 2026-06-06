@@ -48,9 +48,6 @@ public class EmailGenerationService implements GenerateEmailUseCase, GetEmailDra
                 .orElseThrow(() -> new AnalysisNotFoundException(
                         "Job must be analyzed before generating an email draft"));
 
-        Objects.requireNonNull(job, "job must not be null");
-        Objects.requireNonNull(analysis, "analysis must not be null");
-
         UserProfile profile = userProfileRepository.findByUserId(userId)
                 .orElseThrow(() -> new AiException("User profile not found for userId: " + userId));
 
