@@ -77,13 +77,16 @@ public class AppConfig {
     }
 
     @Bean
-    public AiAnalysisService aiAnalysisService(AiPort aiPort, JobAnalysisRepository jobAnalysisRepository, UserProfileRepository userProfileRepository) {
-        return new AiAnalysisService(aiPort, jobAnalysisRepository, userProfileRepository);
+    public AiAnalysisService aiAnalysisService(AiPort aiPort, JobAnalysisRepository jobAnalysisRepository,
+                                               UserProfileRepository userProfileRepository, JobRepository jobRepository) {
+        return new AiAnalysisService(aiPort, jobAnalysisRepository, userProfileRepository, jobRepository);
     }
 
     @Bean
-    public EmailGenerationService emailGenerationService(AiPort aiPort, EmailDraftRepository emailDraftRepository, UserProfileRepository userProfileRepository) {
-        return new EmailGenerationService(aiPort, emailDraftRepository, userProfileRepository);
+    public EmailGenerationService emailGenerationService(AiPort aiPort, EmailDraftRepository emailDraftRepository,
+                                                         UserProfileRepository userProfileRepository,
+                                                         JobRepository jobRepository, JobAnalysisRepository jobAnalysisRepository) {
+        return new EmailGenerationService(aiPort, emailDraftRepository, userProfileRepository, jobRepository, jobAnalysisRepository);
     }
 
     @Bean
