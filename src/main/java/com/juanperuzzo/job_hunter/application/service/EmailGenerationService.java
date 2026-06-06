@@ -1,10 +1,12 @@
 package com.juanperuzzo.job_hunter.application.service;
 
 import com.juanperuzzo.job_hunter.application.port.in.GenerateEmailUseCase;
+import com.juanperuzzo.job_hunter.application.port.in.GetEmailDraftUseCase;
 import com.juanperuzzo.job_hunter.application.port.out.AiPort;
 import com.juanperuzzo.job_hunter.application.port.out.EmailDraftRepository;
 import com.juanperuzzo.job_hunter.application.port.out.UserProfileRepository;
 import com.juanperuzzo.job_hunter.domain.exception.AiException;
+import com.juanperuzzo.job_hunter.domain.exception.JobNotFoundException;
 import com.juanperuzzo.job_hunter.domain.model.EmailDraft;
 import com.juanperuzzo.job_hunter.domain.model.EmailStatus;
 import com.juanperuzzo.job_hunter.domain.model.Job;
@@ -14,7 +16,7 @@ import com.juanperuzzo.job_hunter.domain.model.UserProfile;
 import java.time.LocalDateTime;
 import java.util.Objects;
 
-public class EmailGenerationService implements GenerateEmailUseCase {
+public class EmailGenerationService implements GenerateEmailUseCase, GetEmailDraftUseCase {
 
     private final AiPort aiPort;
     private final EmailDraftRepository emailDraftRepository;
@@ -45,6 +47,12 @@ public class EmailGenerationService implements GenerateEmailUseCase {
         } catch (Exception e) {
             throw new AiException("Failed to generate email: " + e.getMessage(), e);
         }
+    }
+
+    @Override
+    public EmailDraft getEmailDraft(Long userId, Long jobId) {
+        return emailDraftRepository.findByJobIdAndUserId(jobId, userId)
+                .orElseThrow(() -> new JobNotFoundException("Email draft not found for job id: " + jobId));
     }
 
     private String buildPrompt(Job job, JobAnalysis analysis, UserProfile profile) {

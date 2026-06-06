@@ -3,7 +3,9 @@ package com.juanperuzzo.job_hunter.web.controller;
 import com.juanperuzzo.job_hunter.application.port.in.AnalyzeJobUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.FetchJobsUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.GenerateEmailUseCase;
-import com.juanperuzzo.job_hunter.application.port.out.EmailDraftRepository;
+import com.juanperuzzo.job_hunter.application.port.in.GetEmailDraftUseCase;
+import com.juanperuzzo.job_hunter.application.port.in.GetJobUseCase;
+import com.juanperuzzo.job_hunter.application.port.in.ListJobsUseCase;
 import com.juanperuzzo.job_hunter.application.port.out.JobAnalysisRepository;
 import com.juanperuzzo.job_hunter.application.port.out.JobRepository;
 import com.juanperuzzo.job_hunter.domain.exception.AnalysisNotFoundException;
@@ -27,31 +29,37 @@ public class JobController {
     private final FetchJobsUseCase fetchJobsUseCase;
     private final AnalyzeJobUseCase analyzeJobUseCase;
     private final GenerateEmailUseCase generateEmailUseCase;
+    private final ListJobsUseCase listJobsUseCase;
+    private final GetJobUseCase getJobUseCase;
+    private final GetEmailDraftUseCase getEmailDraftUseCase;
     private final JobRepository jobRepository;
     private final JobAnalysisRepository jobAnalysisRepository;
-    private final EmailDraftRepository emailDraftRepository;
     private final CurrentUserProvider currentUserService;
 
     public JobController(
             FetchJobsUseCase fetchJobsUseCase,
             AnalyzeJobUseCase analyzeJobUseCase,
             GenerateEmailUseCase generateEmailUseCase,
+            ListJobsUseCase listJobsUseCase,
+            GetJobUseCase getJobUseCase,
+            GetEmailDraftUseCase getEmailDraftUseCase,
             JobRepository jobRepository,
             JobAnalysisRepository jobAnalysisRepository,
-            EmailDraftRepository emailDraftRepository,
             CurrentUserProvider currentUserService) {
         this.fetchJobsUseCase = fetchJobsUseCase;
         this.analyzeJobUseCase = analyzeJobUseCase;
         this.generateEmailUseCase = generateEmailUseCase;
+        this.listJobsUseCase = listJobsUseCase;
+        this.getJobUseCase = getJobUseCase;
+        this.getEmailDraftUseCase = getEmailDraftUseCase;
         this.jobRepository = jobRepository;
         this.jobAnalysisRepository = jobAnalysisRepository;
-        this.emailDraftRepository = emailDraftRepository;
         this.currentUserService = currentUserService;
     }
 
     @GetMapping
     public ResponseEntity<List<JobResponse>> getAllJobs() {
-        List<Job> jobs = jobRepository.findAll();
+        List<Job> jobs = listJobsUseCase.findAll();
         List<JobResponse> response = jobs.stream()
                 .map(job -> new JobResponse(
                         job.id(),
@@ -67,8 +75,7 @@ public class JobController {
 
     @GetMapping("/{id}")
     public ResponseEntity<JobResponse> getJobById(@PathVariable Long id) {
-        Job job = jobRepository.findById(id)
-                .orElseThrow(() -> new JobNotFoundException("Job not found with id: " + id));
+        Job job = getJobUseCase.getById(id);
         JobResponse response = new JobResponse(
                 job.id(),
                 job.title(),
@@ -118,8 +125,7 @@ public class JobController {
     @GetMapping("/{id}/email")
     public ResponseEntity<EmailDraftResponse> getEmailDraft(@PathVariable Long id) {
         Long userId = currentUserService.getCurrentUserId();
-        EmailDraft emailDraft = emailDraftRepository.findByJobIdAndUserId(id, userId)
-                .orElseThrow(() -> new JobNotFoundException("Email draft not found for job id: " + id));
+        EmailDraft emailDraft = getEmailDraftUseCase.getEmailDraft(userId, id);
         EmailDraftResponse response = new EmailDraftResponse(
                 emailDraft.id(),
                 emailDraft.jobId(),

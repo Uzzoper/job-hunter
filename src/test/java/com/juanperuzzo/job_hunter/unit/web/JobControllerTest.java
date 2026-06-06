@@ -3,7 +3,9 @@ package com.juanperuzzo.job_hunter.unit.web;
 import com.juanperuzzo.job_hunter.application.port.in.AnalyzeJobUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.FetchJobsUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.GenerateEmailUseCase;
-import com.juanperuzzo.job_hunter.application.port.out.EmailDraftRepository;
+import com.juanperuzzo.job_hunter.application.port.in.GetEmailDraftUseCase;
+import com.juanperuzzo.job_hunter.application.port.in.GetJobUseCase;
+import com.juanperuzzo.job_hunter.application.port.in.ListJobsUseCase;
 import com.juanperuzzo.job_hunter.application.port.out.JobAnalysisRepository;
 import com.juanperuzzo.job_hunter.application.port.out.JobRepository;
 import com.juanperuzzo.job_hunter.application.port.out.TokenProvider;
@@ -72,7 +74,13 @@ class JobControllerTest {
     private JobAnalysisRepository jobAnalysisRepository;
 
     @MockitoBean
-    private EmailDraftRepository emailDraftRepository;
+    private ListJobsUseCase listJobsUseCase;
+
+    @MockitoBean
+    private GetJobUseCase getJobUseCase;
+
+    @MockitoBean
+    private GetEmailDraftUseCase getEmailDraftUseCase;
 
     @MockitoBean
     private TokenProvider tokenProvider;
@@ -94,14 +102,14 @@ class JobControllerTest {
                 EmailStatus.PENDING,
                 LocalDateTime.parse("2026-05-30T10:00:00"));
 
-        when(emailDraftRepository.findByJobIdAndUserId(JOB_ID, 1L)).thenReturn(Optional.of(draft));
+        when(getEmailDraftUseCase.getEmailDraft(1L, JOB_ID)).thenReturn(draft);
 
         mockMvc.perform(get("/api/jobs/{id}/email", JOB_ID))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.subject").value("Subject: Application"))
                 .andExpect(jsonPath("$.body").value("Hello, I am interested in this role."));
 
-        verify(emailDraftRepository).findByJobIdAndUserId(JOB_ID, 1L);
+        verify(getEmailDraftUseCase).getEmailDraft(1L, JOB_ID);
     }
 
     @Test
@@ -109,13 +117,12 @@ class JobControllerTest {
     void getEmailDraft_whenOtherUser_shouldReturn404() throws Exception {
         authenticateAs(2L);
 
-        when(emailDraftRepository.findByJobIdAndUserId(JOB_ID, 2L)).thenReturn(Optional.empty());
+        when(getEmailDraftUseCase.getEmailDraft(2L, JOB_ID)).thenThrow(new JobNotFoundException("Email draft not found for job id: " + JOB_ID));
 
         mockMvc.perform(get("/api/jobs/{id}/email", JOB_ID))
                 .andExpect(status().isNotFound());
 
-        verify(emailDraftRepository).findByJobIdAndUserId(JOB_ID, 2L);
-        verifyNoInteractions(jobRepository);
+        verify(getEmailDraftUseCase).getEmailDraft(2L, JOB_ID);
     }
 
     @Test
@@ -189,7 +196,7 @@ class JobControllerTest {
                 new Job(1L, "Java Dev", "Acme", "https://acme.com/job1", "Description 1", LocalDate.now()),
                 new Job(2L, "React Dev", "Beta", "https://beta.com/job2", "Description 2", LocalDate.now())
         );
-        when(jobRepository.findAll()).thenReturn(jobs);
+        when(listJobsUseCase.findAll()).thenReturn(jobs);
 
         mockMvc.perform(get("/api/jobs"))
                 .andExpect(status().isOk())
@@ -200,7 +207,7 @@ class JobControllerTest {
                 .andExpect(jsonPath("$[1].title").value("React Dev"))
                 .andExpect(jsonPath("$[1].company").value("Beta"));
 
-        verify(jobRepository).findAll();
+        verify(listJobsUseCase).findAll();
     }
 
     @Test
@@ -208,14 +215,14 @@ class JobControllerTest {
     void getAllJobs_whenNoJobs_shouldReturn200EmptyList() throws Exception {
         authenticateAs(1L);
 
-        when(jobRepository.findAll()).thenReturn(List.of());
+        when(listJobsUseCase.findAll()).thenReturn(List.of());
 
         mockMvc.perform(get("/api/jobs"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$").isArray())
                 .andExpect(jsonPath("$.length()").value(0));
 
-        verify(jobRepository).findAll();
+        verify(listJobsUseCase).findAll();
     }
 
     @Test
@@ -224,7 +231,7 @@ class JobControllerTest {
         authenticateAs(1L);
 
         var job = new Job(1L, "Java Dev", "Acme", "https://acme.com/job", "Description", LocalDate.now());
-        when(jobRepository.findById(1L)).thenReturn(Optional.of(job));
+        when(getJobUseCase.getById(1L)).thenReturn(job);
 
         mockMvc.perform(get("/api/jobs/{id}", 1L))
                 .andExpect(status().isOk())
@@ -234,7 +241,7 @@ class JobControllerTest {
                 .andExpect(jsonPath("$.url").value("https://acme.com/job"))
                 .andExpect(jsonPath("$.description").value("Description"));
 
-        verify(jobRepository).findById(1L);
+        verify(getJobUseCase).getById(1L);
     }
 
     @Test
@@ -242,7 +249,7 @@ class JobControllerTest {
     void getJobById_whenJobNotFound_shouldReturn404() throws Exception {
         authenticateAs(1L);
 
-        when(jobRepository.findById(99L)).thenThrow(new JobNotFoundException("Job not found with id: 99"));
+        when(getJobUseCase.getById(99L)).thenThrow(new JobNotFoundException("Job not found with id: 99"));
 
         mockMvc.perform(get("/api/jobs/{id}", 99L))
                 .andExpect(status().isNotFound())
@@ -250,7 +257,7 @@ class JobControllerTest {
                 .andExpect(jsonPath("$.error").value("Not Found"))
                 .andExpect(jsonPath("$.message").value("Job not found with id: 99"));
 
-        verify(jobRepository).findById(99L);
+        verify(getJobUseCase).getById(99L);
     }
 
     @Test
