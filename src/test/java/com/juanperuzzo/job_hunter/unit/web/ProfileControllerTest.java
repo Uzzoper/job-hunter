@@ -1,7 +1,7 @@
 package com.juanperuzzo.job_hunter.unit.web;
 
+import com.juanperuzzo.job_hunter.application.port.in.UserProfileUseCase;
 import com.juanperuzzo.job_hunter.application.port.out.TokenProvider;
-import com.juanperuzzo.job_hunter.application.service.UserProfileService;
 import com.juanperuzzo.job_hunter.domain.exception.ProfileNotConfiguredException;
 import com.juanperuzzo.job_hunter.domain.model.CompanyTone;
 import com.juanperuzzo.job_hunter.domain.model.User;
@@ -46,7 +46,7 @@ class ProfileControllerTest {
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @MockitoBean
-    private UserProfileService userProfileService;
+    private UserProfileUseCase userProfileService;
 
     @MockitoBean
     private TokenProvider tokenProvider;
