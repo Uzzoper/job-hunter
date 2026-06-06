@@ -65,21 +65,34 @@ com.juanperuzzo.job_hunter
 │       ├── ScraperException.java
 │       └── AiException.java
 │
-├── application/                         ← use cases
+├── application/                         ← use cases and ports
 │   ├── port/
 │   │   ├── in/                          ← interfaces called by web layer
-│   │   │   ├── FetchJobsUseCase.java
 │   │   │   ├── AnalyzeJobUseCase.java
-│   │   │   └── GenerateEmailUseCase.java
+│   │   │   ├── AuthUseCase.java
+│   │   │   ├── CurrentUserProvider.java
+│   │   │   ├── FetchJobsUseCase.java
+│   │   │   ├── GenerateEmailUseCase.java
+│   │   │   ├── GetEmailDraftUseCase.java
+│   │   │   ├── GetJobUseCase.java
+│   │   │   ├── ListJobsUseCase.java
+│   │   │   └── UserProfileUseCase.java
 │   │   └── out/                         ← interfaces implemented by infrastructure
-│   │       ├── JobRepository.java
+│   │       ├── AiPort.java
 │   │       ├── EmailDraftRepository.java
+│   │       ├── JobAnalysisRepository.java
+│   │       ├── JobRepository.java
+│   │       ├── PasswordHasher.java
 │   │       ├── ScraperPort.java
-│   │       └── AiPort.java
+│   │       ├── TokenProvider.java
+│   │       ├── UserProfileRepository.java
+│   │       └── UserRepository.java
 │   └── service/
-│       ├── FetchJobsService.java
 │       ├── AiAnalysisService.java
-│       └── EmailGenerationService.java
+│       ├── AuthService.java
+│       ├── EmailGenerationService.java
+│       ├── FetchJobsService.java
+│       └── UserProfileService.java
 │
 ├── infrastructure/                      ← technical details
 │   ├── scraper/
