@@ -2,6 +2,8 @@ package com.juanperuzzo.job_hunter.unit.application;
 
 import com.juanperuzzo.job_hunter.application.port.out.AiPort;
 import com.juanperuzzo.job_hunter.application.port.out.EmailDraftRepository;
+import com.juanperuzzo.job_hunter.application.port.out.JobAnalysisRepository;
+import com.juanperuzzo.job_hunter.application.port.out.JobRepository;
 import com.juanperuzzo.job_hunter.application.port.out.UserProfileRepository;
 import com.juanperuzzo.job_hunter.application.service.EmailGenerationService;
 import com.juanperuzzo.job_hunter.domain.exception.AiException;
@@ -42,11 +44,18 @@ class EmailGenerationServiceTest {
     @Mock
     private UserProfileRepository userProfileRepository;
 
+    @Mock
+    private JobRepository jobRepository;
+
+    @Mock
+    private JobAnalysisRepository jobAnalysisRepository;
+
     private EmailGenerationService emailGenerationService;
 
     @BeforeEach
     void setUp() {
-        emailGenerationService = new EmailGenerationService(aiPort, emailDraftRepository, userProfileRepository);
+        emailGenerationService = new EmailGenerationService(aiPort, emailDraftRepository, userProfileRepository,
+                jobRepository, jobAnalysisRepository);
     }
 
     @Nested
@@ -76,7 +85,8 @@ class EmailGenerationServiceTest {
                 CompanyTone.FORMAL);
             when(userProfileRepository.findByUserId(any())).thenReturn(Optional.of(validProfile));
 
-            Job job = new Job(null, "Java Developer", "CompanyX",
+            Long jobId = 1L;
+            Job job = new Job(jobId, "Java Developer", "CompanyX",
                     "https://example.com/job/1", "Description", LocalDate.now());
             JobAnalysis analysis = new JobAnalysis(null, null, null, 85,
                     List.of("Java", "Spring Boot"),
@@ -84,7 +94,10 @@ class EmailGenerationServiceTest {
                     CompanyTone.FORMAL,
                     "Java developer position");
 
-            EmailDraft draft = emailGenerationService.generate(1L, job, analysis);
+            when(jobRepository.findById(jobId)).thenReturn(Optional.of(job));
+            when(jobAnalysisRepository.findByJobIdAndUserId(jobId, 1L)).thenReturn(Optional.of(analysis));
+
+            EmailDraft draft = emailGenerationService.generate(1L, jobId);
 
             assertNotNull(draft);
             assertTrue(draft.subject().startsWith("Subject: "));
@@ -122,7 +135,8 @@ class EmailGenerationServiceTest {
                 CompanyTone.FORMAL);
             when(userProfileRepository.findByUserId(any())).thenReturn(Optional.of(validProfile));
 
-            Job job = new Job(null, "Junior Developer", "StartupY",
+            Long jobId = 2L;
+            Job job = new Job(jobId, "Junior Developer", "StartupY",
                     "https://example.com/job/2", "Description", LocalDate.now());
             JobAnalysis analysis = new JobAnalysis(null, null, null, 25, // low score
                     List.of("Java"),
@@ -130,7 +144,10 @@ class EmailGenerationServiceTest {
                     CompanyTone.STARTUP,
                     "Junior developer position");
 
-            EmailDraft draft = emailGenerationService.generate(1L, job, analysis);
+            when(jobRepository.findById(jobId)).thenReturn(Optional.of(job));
+            when(jobAnalysisRepository.findByJobIdAndUserId(jobId, 1L)).thenReturn(Optional.of(analysis));
+
+            EmailDraft draft = emailGenerationService.generate(1L, jobId);
 
             assertNotNull(draft);
             // Should mention willingness to learn (we can only verify it doesn't throw)
@@ -166,7 +183,8 @@ class EmailGenerationServiceTest {
                 CompanyTone.FORMAL);
             when(userProfileRepository.findByUserId(any())).thenReturn(Optional.of(validProfile));
 
-            Job job = new Job(null, "Developer", "BankZ",
+            Long jobId = 3L;
+            Job job = new Job(jobId, "Developer", "BankZ",
                     "https://example.com/job/3", "Description", LocalDate.now());
             JobAnalysis analysis = new JobAnalysis(null, null, null, 80,
                     List.of("Java"),
@@ -174,7 +192,10 @@ class EmailGenerationServiceTest {
                     CompanyTone.FORMAL,
                     "Developer position");
 
-            EmailDraft draft = emailGenerationService.generate(1L, job, analysis);
+            when(jobRepository.findById(jobId)).thenReturn(Optional.of(job));
+            when(jobAnalysisRepository.findByJobIdAndUserId(jobId, 1L)).thenReturn(Optional.of(analysis));
+
+            EmailDraft draft = emailGenerationService.generate(1L, jobId);
 
             assertNotNull(draft);
             assertEquals(CompanyTone.FORMAL, analysis.companyTone());
@@ -207,7 +228,8 @@ class EmailGenerationServiceTest {
                 CompanyTone.FORMAL);
             when(userProfileRepository.findByUserId(any())).thenReturn(Optional.of(validProfile));
 
-            Job job = new Job(null, "Developer", "StartupCool",
+            Long jobId = 4L;
+            Job job = new Job(jobId, "Developer", "StartupCool",
                     "https://example.com/job/4", "Description", LocalDate.now());
             JobAnalysis analysis = new JobAnalysis(null, null, null, 70,
                     List.of("React"),
@@ -215,7 +237,10 @@ class EmailGenerationServiceTest {
                     CompanyTone.STARTUP,
                     "Startup developer position");
 
-            EmailDraft draft = emailGenerationService.generate(1L, job, analysis);
+            when(jobRepository.findById(jobId)).thenReturn(Optional.of(job));
+            when(jobAnalysisRepository.findByJobIdAndUserId(jobId, 1L)).thenReturn(Optional.of(analysis));
+
+            EmailDraft draft = emailGenerationService.generate(1L, jobId);
 
             assertNotNull(draft);
             assertEquals(CompanyTone.STARTUP, analysis.companyTone());
@@ -236,7 +261,8 @@ class EmailGenerationServiceTest {
                 CompanyTone.FORMAL);
             when(userProfileRepository.findByUserId(any())).thenReturn(Optional.of(validProfile));
 
-            Job job = new Job(null, "Developer", "CompanyX",
+            Long jobId = 5L;
+            Job job = new Job(jobId, "Developer", "CompanyX",
                     "https://example.com/job/5", "Description", LocalDate.now());
             JobAnalysis analysis = new JobAnalysis(null, null, null, 80,
                     List.of("Java"),
@@ -244,7 +270,10 @@ class EmailGenerationServiceTest {
                     CompanyTone.FORMAL,
                     "Developer position");
 
-            assertThrows(AiException.class, () -> emailGenerationService.generate(1L, job, analysis));
+            when(jobRepository.findById(jobId)).thenReturn(Optional.of(job));
+            when(jobAnalysisRepository.findByJobIdAndUserId(jobId, 1L)).thenReturn(Optional.of(analysis));
+
+            assertThrows(AiException.class, () -> emailGenerationService.generate(1L, jobId));
         }
     }
 
@@ -253,24 +282,16 @@ class EmailGenerationServiceTest {
     class NullParameterTests {
 
         @Test
-        @DisplayName("generate should throw NullPointerException when job is null")
-        void generate_whenJobIsNull_shouldThrowNullPointerException() {
-            JobAnalysis analysis = new JobAnalysis(null, null, null, 80,
-                    List.of("Java"),
-                    List.of(),
-                    CompanyTone.FORMAL,
-                    "Developer position");
-
-            assertThrows(NullPointerException.class, () -> emailGenerationService.generate(1L, null, analysis));
+        @DisplayName("generate should throw NullPointerException when userId is null")
+        void generate_whenUserIdIsNull_shouldThrowNullPointerException() {
+            Long jobId = 1L;
+            assertThrows(NullPointerException.class, () -> emailGenerationService.generate(null, jobId));
         }
 
         @Test
-        @DisplayName("generate should throw NullPointerException when analysis is null")
-        void generate_whenAnalysisIsNull_shouldThrowNullPointerException() {
-            Job job = new Job(null, "Developer", "CompanyX",
-                    "https://example.com/job/6", "Description", LocalDate.now());
-
-            assertThrows(NullPointerException.class, () -> emailGenerationService.generate(1L, job, null));
+        @DisplayName("generate should throw NullPointerException when jobId is null")
+        void generate_whenJobIdIsNull_shouldThrowNullPointerException() {
+            assertThrows(NullPointerException.class, () -> emailGenerationService.generate(1L, null));
         }
     }
 }

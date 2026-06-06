@@ -6,8 +6,6 @@ import com.juanperuzzo.job_hunter.application.port.in.GenerateEmailUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.GetEmailDraftUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.GetJobUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.ListJobsUseCase;
-import com.juanperuzzo.job_hunter.application.port.out.JobAnalysisRepository;
-import com.juanperuzzo.job_hunter.application.port.out.JobRepository;
 import com.juanperuzzo.job_hunter.domain.exception.AnalysisNotFoundException;
 import com.juanperuzzo.job_hunter.domain.exception.JobNotFoundException;
 import com.juanperuzzo.job_hunter.domain.model.EmailDraft;
@@ -32,8 +30,6 @@ public class JobController {
     private final ListJobsUseCase listJobsUseCase;
     private final GetJobUseCase getJobUseCase;
     private final GetEmailDraftUseCase getEmailDraftUseCase;
-    private final JobRepository jobRepository;
-    private final JobAnalysisRepository jobAnalysisRepository;
     private final CurrentUserProvider currentUserService;
 
     public JobController(
@@ -43,8 +39,6 @@ public class JobController {
             ListJobsUseCase listJobsUseCase,
             GetJobUseCase getJobUseCase,
             GetEmailDraftUseCase getEmailDraftUseCase,
-            JobRepository jobRepository,
-            JobAnalysisRepository jobAnalysisRepository,
             CurrentUserProvider currentUserService) {
         this.fetchJobsUseCase = fetchJobsUseCase;
         this.analyzeJobUseCase = analyzeJobUseCase;
@@ -52,8 +46,6 @@ public class JobController {
         this.listJobsUseCase = listJobsUseCase;
         this.getJobUseCase = getJobUseCase;
         this.getEmailDraftUseCase = getEmailDraftUseCase;
-        this.jobRepository = jobRepository;
-        this.jobAnalysisRepository = jobAnalysisRepository;
         this.currentUserService = currentUserService;
     }
 
@@ -90,21 +82,14 @@ public class JobController {
     @PostMapping("/{id}/analyze")
     public ResponseEntity<JobAnalysis> analyzeJob(@PathVariable Long id) {
         Long userId = currentUserService.getCurrentUserId();
-        Job job = jobRepository.findById(id)
-                .orElseThrow(() -> new JobNotFoundException("Job not found with id: " + id));
-        JobAnalysis analysis = analyzeJobUseCase.analyze(userId, job);
+        JobAnalysis analysis = analyzeJobUseCase.analyze(userId, id);
         return ResponseEntity.ok(analysis);
     }
 
     @PostMapping("/{id}/email")
     public ResponseEntity<EmailDraftResponse> generateEmail(@PathVariable Long id) {
         Long userId = currentUserService.getCurrentUserId();
-        Job job = jobRepository.findById(id)
-                .orElseThrow(() -> new JobNotFoundException("Job not found with id: " + id));
-        JobAnalysis analysis = jobAnalysisRepository.findByJobIdAndUserId(id, userId)
-                .orElseThrow(() -> new AnalysisNotFoundException(
-                        "Job must be analyzed before generating an email draft"));
-        EmailDraft emailDraft = generateEmailUseCase.generate(userId, job, analysis);
+        EmailDraft emailDraft = generateEmailUseCase.generate(userId, id);
         EmailDraftResponse response = new EmailDraftResponse(
                 emailDraft.id(),
                 emailDraft.jobId(),

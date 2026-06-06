@@ -3,8 +3,10 @@ package com.juanperuzzo.job_hunter.application.service;
 import com.juanperuzzo.job_hunter.application.port.in.AnalyzeJobUseCase;
 import com.juanperuzzo.job_hunter.application.port.out.AiPort;
 import com.juanperuzzo.job_hunter.application.port.out.JobAnalysisRepository;
+import com.juanperuzzo.job_hunter.application.port.out.JobRepository;
 import com.juanperuzzo.job_hunter.application.port.out.UserProfileRepository;
 import com.juanperuzzo.job_hunter.domain.exception.AiException;
+import com.juanperuzzo.job_hunter.domain.exception.JobNotFoundException;
 import com.juanperuzzo.job_hunter.domain.exception.ProfileNotConfiguredException;
 import com.juanperuzzo.job_hunter.domain.model.CompanyTone;
 import com.juanperuzzo.job_hunter.domain.model.Job;
@@ -22,18 +24,24 @@ public class AiAnalysisService implements AnalyzeJobUseCase {
     private final AiPort aiPort;
     private final JobAnalysisRepository jobAnalysisRepository;
     private final UserProfileRepository userProfileRepository;
+    private final JobRepository jobRepository;
     private final ObjectMapper objectMapper;
     private static final Logger log = LoggerFactory.getLogger(AiAnalysisService.class);
 
-    public AiAnalysisService(AiPort aiPort, JobAnalysisRepository jobAnalysisRepository, UserProfileRepository userProfileRepository) {
+    public AiAnalysisService(AiPort aiPort, JobAnalysisRepository jobAnalysisRepository,
+                             UserProfileRepository userProfileRepository, JobRepository jobRepository) {
         this.aiPort = aiPort;
         this.jobAnalysisRepository = jobAnalysisRepository;
         this.userProfileRepository = userProfileRepository;
+        this.jobRepository = jobRepository;
         this.objectMapper = new ObjectMapper();
     }
 
     @Override
-    public JobAnalysis analyze(Long userId, Job job) {
+    public JobAnalysis analyze(Long userId, Long jobId) {
+        Job job = jobRepository.findById(jobId)
+                .orElseThrow(() -> new JobNotFoundException("Job not found with id: " + jobId));
+
         if (job.description() == null || job.description().trim().isEmpty()) {
             throw new IllegalArgumentException("Job description must not be empty");
         }
