@@ -1,7 +1,7 @@
 package com.juanperuzzo.job_hunter.web.controller;
 
 import com.juanperuzzo.job_hunter.application.port.in.CurrentUserProvider;
-import com.juanperuzzo.job_hunter.application.service.UserProfileService;
+import com.juanperuzzo.job_hunter.application.port.in.UserProfileUseCase;
 import com.juanperuzzo.job_hunter.web.dto.ProfileRequest;
 import com.juanperuzzo.job_hunter.web.dto.ProfileResponse;
 import jakarta.validation.Valid;
@@ -12,10 +12,10 @@ import org.springframework.web.bind.annotation.*;
 @RequestMapping("/api/profile")
 public class ProfileController {
 
-    private final UserProfileService userProfileService;
+    private final UserProfileUseCase userProfileService;
     private final CurrentUserProvider currentUserService;
 
-    public ProfileController(UserProfileService userProfileService, CurrentUserProvider currentUserService) {
+    public ProfileController(UserProfileUseCase userProfileService, CurrentUserProvider currentUserService) {
         this.userProfileService = userProfileService;
         this.currentUserService = currentUserService;
     }

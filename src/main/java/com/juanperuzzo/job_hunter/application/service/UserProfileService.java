@@ -1,5 +1,6 @@
 package com.juanperuzzo.job_hunter.application.service;
 
+import com.juanperuzzo.job_hunter.application.port.in.UserProfileUseCase;
 import com.juanperuzzo.job_hunter.application.port.out.UserProfileRepository;
 import com.juanperuzzo.job_hunter.application.port.out.UserRepository;
 import com.juanperuzzo.job_hunter.domain.exception.UserNotFoundException;
@@ -8,7 +9,7 @@ import com.juanperuzzo.job_hunter.domain.model.UserProfile;
 
 import java.util.List;
 
-public class UserProfileService {
+public class UserProfileService implements UserProfileUseCase {
 
     private final UserRepository userRepository;
     private final UserProfileRepository userProfileRepository;
