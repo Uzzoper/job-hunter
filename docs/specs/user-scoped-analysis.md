@@ -82,11 +82,11 @@ GET  /api/jobs/{id}/email      →  read draft
 
 ```java
 public interface AnalyzeJobUseCase {
-    JobAnalysis analyze(Long userId, Job job);
+    JobAnalysis analyze(Long userId, Long jobId);
 }
 
 public interface GenerateEmailUseCase {
-    EmailDraft generate(Long userId, Job job, JobAnalysis analysis);
+    EmailDraft generate(Long userId, Long jobId);
 }
 ```
 

@@ -1,6 +1,7 @@
 package com.juanperuzzo.job_hunter.unit.application;
 
 import com.juanperuzzo.job_hunter.application.port.out.AiPort;
+import com.juanperuzzo.job_hunter.application.port.out.JobRepository;
 import com.juanperuzzo.job_hunter.application.service.AiAnalysisService;
 import com.juanperuzzo.job_hunter.domain.exception.AiException;
 import com.juanperuzzo.job_hunter.domain.exception.ProfileNotConfiguredException;
@@ -39,13 +40,16 @@ class AiAnalysisServiceTest {
     @Mock
     private UserProfileRepository userProfileRepository;
 
+    @Mock
+    private JobRepository jobRepository;
+
     private AiAnalysisService aiAnalysisService;
 
     private UserProfile defaultProfile;
 
     @BeforeEach
     void setUp() {
-        aiAnalysisService = new AiAnalysisService(aiPort, jobAnalysisRepository, userProfileRepository);
+        aiAnalysisService = new AiAnalysisService(aiPort, jobAnalysisRepository, userProfileRepository, jobRepository);
         defaultProfile = new UserProfile(1L, 1L, "Experienced Java developer",
                 List.of("Java", "Spring Boot", "PostgreSQL"), CompanyTone.FORMAL);
     }
@@ -71,10 +75,12 @@ class AiAnalysisServiceTest {
             when(userProfileRepository.findByUserId(any())).thenReturn(Optional.of(defaultProfile));
             when(jobAnalysisRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
-            Job job = new Job(null, "Java Developer", "CompanyX",
+            Long jobId = 1L;
+            Job job = new Job(jobId, "Java Developer", "CompanyX",
                     "https://example.com/job/1", "Description", LocalDate.now());
+            when(jobRepository.findById(jobId)).thenReturn(Optional.of(job));
 
-            JobAnalysis analysis = aiAnalysisService.analyze(1L, job);
+            JobAnalysis analysis = aiAnalysisService.analyze(1L, jobId);
 
             assertNotNull(analysis);
             assertEquals(85, analysis.matchScore());
@@ -92,14 +98,18 @@ class AiAnalysisServiceTest {
         @Test
         @DisplayName("analyze should throw IllegalArgumentException when job has empty description")
         void analyze_whenEmptyDescription_shouldThrowIllegalArgumentException() {
-            Job job = new Job(null, "Java Developer", "CompanyX",
+            Long jobId = 1L;
+            Job job = new Job(jobId, "Java Developer", "CompanyX",
                     "https://example.com/job/1", "", LocalDate.now());
+            when(jobRepository.findById(jobId)).thenReturn(Optional.of(job));
 
-            assertThrows(IllegalArgumentException.class, () -> aiAnalysisService.analyze(1L, job));
+            assertThrows(IllegalArgumentException.class, () -> aiAnalysisService.analyze(1L, jobId));
 
-            Job jobBlank = new Job(null, "Java Developer", "CompanyX",
+            Job jobBlank = new Job(jobId, "Java Developer", "CompanyX",
                     "https://example.com/job/1", "   ", LocalDate.now());
-            assertThrows(IllegalArgumentException.class, () -> aiAnalysisService.analyze(1L, jobBlank));
+            when(jobRepository.findById(jobId)).thenReturn(Optional.of(jobBlank));
+
+            assertThrows(IllegalArgumentException.class, () -> aiAnalysisService.analyze(1L, jobId));
         }
     }
 
@@ -113,11 +123,13 @@ class AiAnalysisServiceTest {
             when(aiPort.complete(any())).thenReturn("not valid json");
             when(userProfileRepository.findByUserId(any())).thenReturn(Optional.of(defaultProfile));
 
-            Job job = new Job(null, "Java Developer", "CompanyX",
+            Long jobId = 1L;
+            Job job = new Job(jobId, "Java Developer", "CompanyX",
                     "https://example.com/job/1", "Description", LocalDate.now());
+            when(jobRepository.findById(jobId)).thenReturn(Optional.of(job));
 
             AiException exception = assertThrows(AiException.class,
-                    () -> aiAnalysisService.analyze(1L, job));
+                    () -> aiAnalysisService.analyze(1L, jobId));
 
             assertTrue(exception.getMessage().contains("parse") ||
                        exception.getMessage().contains("invalid"));
@@ -134,10 +146,12 @@ class AiAnalysisServiceTest {
             when(aiPort.complete(any())).thenThrow(new RuntimeException("Network error"));
             when(userProfileRepository.findByUserId(any())).thenReturn(Optional.of(defaultProfile));
 
-            Job job = new Job(null, "Java Developer", "CompanyX",
+            Long jobId = 1L;
+            Job job = new Job(jobId, "Java Developer", "CompanyX",
                     "https://example.com/job/1", "Description", LocalDate.now());
+            when(jobRepository.findById(jobId)).thenReturn(Optional.of(job));
 
-            assertThrows(AiException.class, () -> aiAnalysisService.analyze(1L, job));
+            assertThrows(AiException.class, () -> aiAnalysisService.analyze(1L, jobId));
         }
     }
 
@@ -162,10 +176,12 @@ class AiAnalysisServiceTest {
             when(userProfileRepository.findByUserId(any())).thenReturn(Optional.of(defaultProfile));
             when(jobAnalysisRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
-            Job job = new Job(null, "Java Developer", "CompanyX",
+            Long jobId = 1L;
+            Job job = new Job(jobId, "Java Developer", "CompanyX",
                     "https://example.com/job/1", "Description", LocalDate.now());
+            when(jobRepository.findById(jobId)).thenReturn(Optional.of(job));
 
-            JobAnalysis analysis = aiAnalysisService.analyze(1L, job);
+            JobAnalysis analysis = aiAnalysisService.analyze(1L, jobId);
 
             assertEquals(100, analysis.matchScore());
         }
@@ -187,10 +203,12 @@ class AiAnalysisServiceTest {
             when(userProfileRepository.findByUserId(any())).thenReturn(Optional.of(defaultProfile));
             when(jobAnalysisRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
-            Job job = new Job(null, "Java Developer", "CompanyX",
+            Long jobId = 1L;
+            Job job = new Job(jobId, "Java Developer", "CompanyX",
                     "https://example.com/job/1", "Description", LocalDate.now());
+            when(jobRepository.findById(jobId)).thenReturn(Optional.of(job));
 
-            JobAnalysis analysis = aiAnalysisService.analyze(1L, job);
+            JobAnalysis analysis = aiAnalysisService.analyze(1L, jobId);
 
             assertEquals(75, analysis.matchScore());
         }
@@ -205,11 +223,13 @@ class AiAnalysisServiceTest {
         void analyze_whenNoProfile_shouldThrowProfileNotConfiguredException() {
             when(userProfileRepository.findByUserId(any())).thenReturn(Optional.empty());
 
-            Job job = new Job(null, "Java Developer", "CompanyX",
+            Long jobId = 1L;
+            Job job = new Job(jobId, "Java Developer", "CompanyX",
                     "https://example.com/job/1", "Description", LocalDate.now());
+            when(jobRepository.findById(jobId)).thenReturn(Optional.of(job));
 
             assertThrows(ProfileNotConfiguredException.class,
-                    () -> aiAnalysisService.analyze(1L, job));
+                    () -> aiAnalysisService.analyze(1L, jobId));
         }
     }
 }
