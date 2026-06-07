@@ -1,8 +1,8 @@
 package com.juanperuzzo.job_hunter.web.controller;
 
-import com.juanperuzzo.job_hunter.application.port.in.AuthResult;
 import com.juanperuzzo.job_hunter.application.port.in.AuthUseCase;
 import com.juanperuzzo.job_hunter.web.dto.AuthRequest;
+import com.juanperuzzo.job_hunter.web.dto.AuthResponse;
 import com.juanperuzzo.job_hunter.web.dto.LoginRequest;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -20,14 +20,15 @@ public class AuthController {
     }
 
     @PostMapping("/register")
-    public ResponseEntity<AuthResult> register(@Valid @RequestBody AuthRequest request) {
+    public ResponseEntity<AuthResponse> register(@Valid @RequestBody AuthRequest request) {
         var result = authUseCase.register(request.name(), request.email(), request.password());
-        return ResponseEntity.status(HttpStatus.CREATED).body(result);
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(new AuthResponse(result.token(), result.userId(), result.name(), result.email()));
     }
 
     @PostMapping("/login")
-    public ResponseEntity<AuthResult> login(@Valid @RequestBody LoginRequest request) {
+    public ResponseEntity<AuthResponse> login(@Valid @RequestBody LoginRequest request) {
         var result = authUseCase.login(request.email(), request.password());
-        return ResponseEntity.ok(result);
+        return ResponseEntity.ok(new AuthResponse(result.token(), result.userId(), result.name(), result.email()));
     }
 }

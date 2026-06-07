@@ -2,7 +2,6 @@ package com.juanperuzzo.job_hunter.infrastructure.persistence;
 
 import jakarta.persistence.*;
 import java.time.LocalDateTime;
-import java.util.List;
 
 @Entity
 @Table(name = "user_profiles", uniqueConstraints = @UniqueConstraint(name = "uq_user_profiles_user_id", columnNames = "user_id"))

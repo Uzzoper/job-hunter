@@ -60,8 +60,8 @@ Public routes: `POST /api/auth/register`, `POST /api/auth/login` only.
 
 | Method | Path | Auth | Response |
 |--------|------|------|----------|
-| POST | `/api/auth/register` | None | `201` + `AuthResult` |
-| POST | `/api/auth/login` | None | `200` + `AuthResult` |
+| POST | `/api/auth/register` | None | `201` + `AuthResponse` |
+| POST | `/api/auth/login` | None | `200` + `AuthResponse` |
 
 ### DTOs
 
@@ -69,8 +69,8 @@ Public routes: `POST /api/auth/register`, `POST /api/auth/login` only.
 // Web layer — shared request body (name optional on login)
 public record AuthRequest(String name, String email, String password) {}
 
-// Application layer — returned by AuthUseCase and exposed as JSON
-public record AuthResult(String token, Long userId, String name, String email) {}
+// Web layer — DTO exposed as JSON response
+public record AuthResponse(String token, Long userId, String name, String email) {}
 ```
 
 Example register response:

@@ -13,7 +13,6 @@ import org.springframework.http.client.SimpleClientHttpRequestFactory;
 
 import java.time.LocalDate;
 import java.util.*;
-import java.util.Optional;
 import java.util.regex.Pattern;
 
 public class GupyScraper implements ScraperPort {
