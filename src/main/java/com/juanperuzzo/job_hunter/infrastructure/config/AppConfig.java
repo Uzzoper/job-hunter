@@ -25,10 +25,29 @@ import org.springframework.context.annotation.Primary;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+import java.time.Clock;
+import java.time.Duration;
 import java.util.List;
+import java.util.regex.Pattern;
+import java.util.stream.Collectors;
+
+import com.juanperuzzo.job_hunter.infrastructure.scraper.ProviderBasedScraperAdapter;
+import com.juanperuzzo.job_hunter.infrastructure.scraper.normalizer.DateParser;
+import com.juanperuzzo.job_hunter.infrastructure.scraper.normalizer.JobNormalizer;
+import com.juanperuzzo.job_hunter.infrastructure.scraper.provider.GupyProvider;
+import com.juanperuzzo.job_hunter.infrastructure.scraper.provider.InfoJobsProvider;
+import com.juanperuzzo.job_hunter.infrastructure.scraper.provider.ProviderRegistry;
+import com.juanperuzzo.job_hunter.infrastructure.scraper.ratelimit.RateLimiter;
+import com.juanperuzzo.job_hunter.infrastructure.scraper.ratelimit.TokenBucketRateLimiter;
+import com.juanperuzzo.job_hunter.infrastructure.scraper.retry.ExponentialBackoffRetry;
+import com.juanperuzzo.job_hunter.infrastructure.scraper.strategy.ExtractionStrategy;
 
 @Configuration
 public class AppConfig {
+
+    // ═══════════════════════════════════════════
+    //  Legacy scrapers (kept for migration)
+    // ═══════════════════════════════════════════
 
     @Bean
     public GupyScraper gupyScraper(
@@ -49,11 +68,9 @@ public class AppConfig {
             @Value("#{'${scraper.infojobs.exclude-keywords}'.split(',')}") List<String> excludeKeywords,
             @Value("#{'${scraper.infojobs.locations}'.split(',')}") List<String> locations,
             @Value("${scraper.infojobs.max-pages}") int maxPages,
-            @Value("${scraper.infojobs.max-age-days}") int maxAgeDays,
-            @Value("${scraper.infojobs.timeout-seconds}") int timeoutSeconds,
-            @Value("${scraper.infojobs.delay-millis}") long delayMillis) {
-        return new InfoJobsScraper(baseUrl, enabled, keywords, excludeKeywords, locations, maxPages, maxAgeDays,
-                timeoutSeconds, delayMillis);
+            @Value("${scraper.infojobs.timeout-seconds}") int timeoutSeconds) {
+        return new InfoJobsScraper(baseUrl, enabled, keywords, excludeKeywords, locations, maxPages,
+                30, timeoutSeconds, 0);
     }
 
     @Bean
@@ -61,6 +78,87 @@ public class AppConfig {
     public ScraperPort scraperPort(GupyScraper gupyScraper, InfoJobsScraper infoJobsScraper) {
         return new CompositeScraper(List.of(gupyScraper, infoJobsScraper));
     }
+
+    // ═══════════════════════════════════════════
+    //  Provider-based scraper beans
+    // ═══════════════════════════════════════════
+
+    @Bean
+    public ExponentialBackoffRetry exponentialBackoffRetry(
+            @Value("${scraper.retry.max-attempts}") int maxAttempts,
+            @Value("${scraper.retry.base-delay-millis}") long baseDelayMillis,
+            @Value("${scraper.retry.max-delay-millis}") long maxDelayMillis,
+            @Value("${scraper.retry.max-jitter-millis}") long maxJitterMillis) {
+        return new ExponentialBackoffRetry(
+                maxAttempts,
+                Duration.ofMillis(baseDelayMillis),
+                Duration.ofMillis(maxDelayMillis),
+                Duration.ofMillis(maxJitterMillis));
+    }
+
+    @Bean
+    public RateLimiter rateLimiter(
+            @Value("${scraper.rate-limiter.default-permits-per-second}") double permitsPerSecond,
+            @Value("${scraper.rate-limiter.default-burst}") int burst) {
+        return new TokenBucketRateLimiter(permitsPerSecond, burst, java.util.Map.of());
+    }
+
+    @Bean
+    public DateParser dateParser() {
+        return new DateParser(Clock.systemUTC());
+    }
+
+    @Bean
+    public JobNormalizer jobNormalizer(
+            DateParser dateParser,
+            @Value("#{'${scraper.gupy.keywords}'.split(',')}") List<String> keywords,
+            @Value("${scraper.normalizer.max-age-days}") int maxAgeDays) {
+        var excludePatterns = List.of(
+                Pattern.compile("(?i)\\b(s[eê]nior|senior|sr\\.?|especialista|lead|coordenador|manager|bdr)\\b"));
+        return new JobNormalizer(dateParser, keywords, excludePatterns, List.of(), maxAgeDays, Clock.systemUTC());
+    }
+
+    @Bean
+    public ExtractionStrategy gupyProvider(
+            @Value("${scraper.gupy.base-url}") String baseUrl,
+            @Value("${scraper.gupy.timeout-seconds}") int timeoutSeconds,
+            @Value("#{'${scraper.gupy.keywords}'.split(',')}") List<String> keywords,
+            @Value("${scraper.gupy.limit}") int limit,
+            ExponentialBackoffRetry exponentialBackoffRetry) {
+        return new GupyProvider(baseUrl, timeoutSeconds, keywords, limit, exponentialBackoffRetry);
+    }
+
+    @Bean
+    public ExtractionStrategy infojobsProvider(
+            @Value("${scraper.infojobs.base-url}") String baseUrl,
+            @Value("${scraper.infojobs.timeout-seconds}") int timeoutSeconds,
+            @Value("#{'${scraper.infojobs.keywords}'.split(',')}") List<String> keywords,
+            @Value("${scraper.infojobs.max-pages}") int maxPages,
+            ExponentialBackoffRetry exponentialBackoffRetry) {
+        return new InfoJobsProvider(baseUrl, timeoutSeconds, keywords, maxPages, exponentialBackoffRetry);
+    }
+
+    @Bean
+    public ProviderRegistry providerRegistry(
+            ExtractionStrategy gupyProvider,
+            ExtractionStrategy infojobsProvider,
+            ExponentialBackoffRetry exponentialBackoffRetry,
+            RateLimiter rateLimiter,
+            JobNormalizer jobNormalizer) {
+        var registry = new ProviderRegistry();
+        registry.register(gupyProvider, exponentialBackoffRetry, rateLimiter, jobNormalizer);
+        registry.register(infojobsProvider, exponentialBackoffRetry, rateLimiter, jobNormalizer);
+        return registry;
+    }
+
+    @Bean
+    public ProviderBasedScraperAdapter providerBasedScraperAdapter(ProviderRegistry providerRegistry) {
+        return new ProviderBasedScraperAdapter(providerRegistry);
+    }
+
+    // ═══════════════════════════════════════════
+    //  AI, Security, and Services
+    // ═══════════════════════════════════════════
 
     @Bean
     public OpenRouterClient openRouterClient(
