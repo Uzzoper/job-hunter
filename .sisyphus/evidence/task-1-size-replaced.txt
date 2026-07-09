@@ -1,7 +1,0 @@
-Verification 1: grep -rn 'queryParam.*"size"' src/main/java/ || echo "Not found"
-Result: PASS
-Output: Not found
-
-Verification 2: grep -rn '"&size="' src/main/java/ || echo "Not found"
-Result: PASS
-Output: Not found

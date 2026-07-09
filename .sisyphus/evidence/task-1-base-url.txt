@@ -1,4 +1,0 @@
-Verification: grep "employability-portal" src/main/resources/application.yaml
-Result: PASS
-Output:
-    base-url: https://employability-portal.gupy.io
