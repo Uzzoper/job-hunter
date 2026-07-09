@@ -61,7 +61,7 @@ class GupyProviderTest {
         void extract_whenValidResponse_shouldReturnMappedJobs() {
             stubFor(get(urlPathEqualTo("/api/v1/jobs"))
                     .withQueryParam("jobName", equalTo("desenvolvedor"))
-                    .withQueryParam("size", equalTo("20"))
+                    .withQueryParam("limit", equalTo("20"))
                     .willReturn(okJson("""
                         {"data": [{
                           "id": 12345,
