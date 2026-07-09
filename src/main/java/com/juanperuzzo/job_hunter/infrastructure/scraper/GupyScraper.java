@@ -64,7 +64,7 @@ public class GupyScraper implements ScraperPort {
                         .uri(uriBuilder -> uriBuilder
                                 .path("/api/v1/jobs")
                                 .queryParam("jobName", keyword)
-                                .queryParam("size", limit)
+                                .queryParam("limit", limit)
                                 .build())
                         .retrieve()
                         .onStatus(HttpStatusCode::isError, (req, res) -> {
