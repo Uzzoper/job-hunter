@@ -91,7 +91,7 @@ Job Board (HTTP) → Provider (fetch + parse) → RawJob → Normalizer → Job
 ### Fetch Flow (happy path)
 
 ```
-1. User/scheduler calls FetchJobsService.fetch()
+1. User calls FetchJobsService.fetch() via POST /api/jobs/fetch
 2.   → ProviderBasedScraperAdapter.fetch()
 3.     → ProviderRegistry fetches from each registered provider:
 4.       → retry.execute(provider::extract)
@@ -138,7 +138,7 @@ Job Board (HTTP) → Provider (fetch + parse) → RawJob → Normalizer → Job
 
 **Decision**: New `ProviderBasedScraperAdapter` implements existing `ScraperPort`.
 
-**Rationale**: Zero changes to `FetchJobsService`, controllers, scheduler, or domain. Old scrapers preserved for side-by-side validation.
+**Rationale**: Zero changes to `FetchJobsService`, controllers, or domain. Old scrapers preserved for side-by-side validation.
 
 ### 5. Retry and Rate Limiting as Decorators
 
@@ -150,7 +150,7 @@ Job Board (HTTP) → Provider (fetch + parse) → RawJob → Normalizer → Job
 
 **Decision**: When ALL providers fail, new adapter returns empty list. Old `CompositeScraper` throws `ScraperException`.
 
-**Rationale**: The scheduler should continue on transient failures. Downstream consumers (`FetchJobsService`) handle empty lists.
+**Rationale**: The manual trigger can be retried by the user. Downstream consumers (`FetchJobsService`) handle empty lists.
 
 ## Comparison: Old vs New
 
