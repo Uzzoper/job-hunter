@@ -105,7 +105,7 @@ src/main/java/com/juanperuzzo/job_hunter/
 │   │                              JobAnalysisJpaRepository, JobAnalysisPersistenceAdapter
 │   ├── security/                → SecurityConfig, JwtTokenFilter, JwtTokenService,
 │   │                              CurrentUserService
-│   ├── scheduler/               → JobHunterScheduler
+│   ├── scheduler/               → (not implemented — manual trigger only)
 │   └── config/                  → AppConfig
 │
 ├── web/                         ← REST controllers

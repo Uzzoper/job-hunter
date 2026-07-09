@@ -14,7 +14,7 @@ analyzes each listing with AI, and generates personalized application emails.
 [Gupy API] ──► [GupyScraper]
                      │
                      ▼
-             [FetchJobsService]  ◄──  @Scheduled (every 6h)
+             [FetchJobsService]  ◄──  [REST API] (manual)
                      │
                      ▼
              [JobRepository]  ──►  [PostgreSQL]
@@ -104,8 +104,7 @@ com.juanperuzzo.job_hunter
 │   │   ├── JobPersistenceAdapter.java   (implements JobRepository)
 │   │   ├── EmailDraftJpaRepository.java
 │   │   └── EmailDraftPersistenceAdapter.java
-│   └── scheduler/
-│       └── JobHunterScheduler.java      (@Scheduled)
+│   └── scheduler/                      ← (not implemented — manual trigger only)
 │
 └── web/                                 ← HTTP entry point
     ├── controller/
@@ -221,7 +220,6 @@ scraper:
     limit: 20
     timeout-seconds: 5
 
-scheduler:
-  fetch-jobs:
-    cron: "0 0 */6 * * *"
+scraper:
+  # No automatic scheduler — manual trigger via POST /api/jobs/fetch
 ```
