@@ -74,7 +74,7 @@ public class AppConfig {
     }
 
     @Bean
-    @Primary
+    // @Primary (moved to provider-based)
     public ScraperPort scraperPort(GupyScraper gupyScraper, InfoJobsScraper infoJobsScraper) {
         return new CompositeScraper(List.of(gupyScraper, infoJobsScraper));
     }
@@ -152,6 +152,7 @@ public class AppConfig {
     }
 
     @Bean
+    @Primary
     public ProviderBasedScraperAdapter providerBasedScraperAdapter(ProviderRegistry providerRegistry) {
         return new ProviderBasedScraperAdapter(providerRegistry);
     }
