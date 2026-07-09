@@ -1,3 +1,0 @@
-Verification: grep -rn "portal.api.gupy.io" src/ || echo "Not found"
-Result: PASS
-Output: Not found
