@@ -62,7 +62,7 @@ public class GupyProvider implements ExtractionStrategy {
 
         for (var keyword : keywords) {
             try {
-                var path = "/api/v1/jobs?jobName=" + urlEncode(keyword) + "&size=" + limit;
+                var path = "/api/v1/jobs?jobName=" + urlEncode(keyword) + "&limit=" + limit;
                 var jobs = retry.execute(() -> apiStrategy.extractWithPath(path));
 
                 for (var job : jobs) {

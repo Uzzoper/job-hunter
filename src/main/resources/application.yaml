@@ -44,7 +44,7 @@ scraper:
   normalizer:
     max-age-days: 90
   gupy:
-    base-url: https://portal.api.gupy.io
+    base-url: https://employability-portal.gupy.io
     keywords: desenvolvedor,developer,engenheiro de software,software engineer,fullstack,full stack,backend,front-end,frontend,ti,tecnologia
     exclude-keywords: sênior,senior,sr,sr.,especialista,lead,coordenador,manager
     locations: ""
