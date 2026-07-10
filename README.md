@@ -95,7 +95,12 @@ src/main/java/com/juanperuzzo/job_hunter/
 │   │                               AuthService, UserProfileService
 │
 ├── infrastructure/              ← technical details (Spring, HTTP, DB, Security)
-│   ├── scraper/                 → GupyScraper, InfoJobsScraper, CompositeScraper
+│   ├── scraper/                 → ProviderBasedScraperAdapter, providers, strategies
+│   │   ├── provider/            → GupyProvider, InfoJobsProvider, ProviderRegistry
+│   │   ├── strategy/            → ExtractionStrategy, ApiStrategy, HtmlStrategy
+│   │   ├── normalizer/          → DateParser, JobNormalizer, RawJob
+│   │   ├── retry/               → ExponentialBackoffRetry
+│   │   └── ratelimit/           → RateLimiter, TokenBucketRateLimiter
 │   ├── ai/                      → OpenRouterClient
 │   ├── persistence/             → JobJpaRepository, JobPersistenceAdapter, UserEntity,
 │   │                              UserJpaRepository, UserPersistenceAdapter, UserProfileEntity,
@@ -105,7 +110,7 @@ src/main/java/com/juanperuzzo/job_hunter/
 │   │                              JobAnalysisJpaRepository, JobAnalysisPersistenceAdapter
 │   ├── security/                → SecurityConfig, JwtTokenFilter, JwtTokenService,
 │   │                              CurrentUserService
-│   ├── scheduler/               → JobHunterScheduler
+│   ├── scheduler/               → (not implemented — manual trigger only)
 │   └── config/                  → AppConfig
 │
 ├── web/                         ← REST controllers
