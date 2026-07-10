@@ -11,13 +11,14 @@
 analyzes each listing with AI, and generates personalized application emails.
 
 ```
-[Gupy API] ──► [GupyScraper]
-                     │
-                     ▼
-             [FetchJobsService]  ◄──  [REST API] (manual)
-                     │
-                     ▼
-             [JobRepository]  ──►  [PostgreSQL]
+[Gupy API]       ──►  [GupyProvider]  ──┐
+                                         ├──► [ProviderRegistry] ──► [ProviderBasedScraperAdapter]
+[InfoJobs HTML]  ──►  [InfoJobsProvider] ──┘           │
+                                                        ▼
+                                                [FetchJobsService]  ◄──  [REST API] (manual)
+                                                        │
+                                                        ▼
+                                                [JobRepository]  ──►  [PostgreSQL]
                      │
                      ▼ (on demand)
              [AiAnalysisService]  ──►  [OpenRouterClient]  ──►  [OpenRouter API]
@@ -96,7 +97,24 @@ com.juanperuzzo.job_hunter
 │
 ├── infrastructure/                      ← technical details
 │   ├── scraper/
-│   │   └── GupyScraper.java             (implements ScraperPort)
+│   │   ├── ProviderBasedScraperAdapter.java  (implements ScraperPort)
+│   │   ├── provider/
+│   │   │   ├── GupyProvider.java             (API strategy)
+│   │   │   ├── InfoJobsProvider.java         (HTML strategy)
+│   │   │   └── ProviderRegistry.java         (orchestrates all providers)
+│   │   ├── strategy/
+│   │   │   ├── ExtractionStrategy.java       (interface)
+│   │   │   ├── ApiStrategy.java              (JSON/API scraper)
+│   │   │   └── HtmlStrategy.java             (Jsoup scraper)
+│   │   ├── normalizer/
+│   │   │   ├── DateParser.java
+│   │   │   ├── JobNormalizer.java            (shared pipeline)
+│   │   │   └── RawJob.java                   (DTO)
+│   │   ├── retry/
+│   │   │   └── ExponentialBackoffRetry.java
+│   │   └── ratelimit/
+│   │       ├── RateLimiter.java              (interface)
+│   │       └── TokenBucketRateLimiter.java
 │   ├── ai/
 │   │   └── OpenRouterClient.java        (implements AiPort)
 │   ├── persistence/
@@ -215,11 +233,24 @@ ai:
     timeout-seconds: 30
 
 scraper:
+  retry:
+    max-attempts: 3
+    base-delay-millis: 1000
+    max-delay-millis: 30000
+    max-jitter-millis: 2000
+  rate-limiter:
+    default-permits-per-second: 5
+    default-burst: 3
+  normalizer:
+    max-age-days: 90
   gupy:
-    keywords: desenvolvedor,developer,estagiário,engenheiro de software
-    limit: 20
-    timeout-seconds: 5
+    keywords: desenvolvedor,developer,engenheiro de software
+    limit: 100
+    timeout-seconds: 10
+  infojobs:
+    keywords: desenvolvedor junior,analista desenvolvedor junior
+    max-pages: 3
+    timeout-seconds: 10
 
-scraper:
   # No automatic scheduler — manual trigger via POST /api/jobs/fetch
 ```
