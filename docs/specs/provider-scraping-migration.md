@@ -208,6 +208,22 @@ All new components follow TDD with JUnit 5 + Mockito + WireMock:
 - [x] 187 tests pass (0 failures, 1 pre-existing Docker-dependent error)
 - [x] Side-by-side comparison: old vs new produce identical results
 - [x] Backward compatible: FetchJobsService unchanged, ScraperPort unchanged
-- [x] Old scrapers preserved (GupyScraper, InfoJobsScraper, CompositeScraper)
-- [ ] `@Primary` still on CompositeScraper — can be switched to ProviderBasedScraperAdapter after validation
-- [ ] Old scrapers can be deleted in a follow-up PR
+- [x] Old scrapers deleted (dead code removal — intentional decision validated by side-by-side comparison)
+- [x] `@Primary` switched to ProviderBasedScraperAdapter (old scrapers removed, only one implementation left)
+
+### Decision Record: Delete Old Scrapers
+
+After side-by-side validation confirmed the new provider-based architecture produces identical results
+to the old scrapers, the legacy implementations were removed:
+
+**Deleted files**:
+- GupyScraper.java, InfoJobsScraper.java, CompositeScraper.java
+- GupyScraperTest.java, InfoJobsScraperTest.java, CompositeScraperTest.java
+- ScrapingComparisonTest.java
+
+**Rationale**: Keeping dead code creates maintenance burden, confuses new developers, and increases
+compilation time. The adapter pattern guarantees backward compatibility — ProviderBasedScraperAdapter
+implements ScraperPort, so no callers are affected. If ProviderRegistry fails, the behavior degrades
+gracefully (returns empty list).
+
+**@Primary switch**: Natural consequence of deletion — only one ScraperPort implementation remains.
