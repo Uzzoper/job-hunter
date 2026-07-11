@@ -31,13 +31,13 @@ flowchart TB
     end
 
     subgraph AI["AI Analysis"]
-        I1[POST /api/jobs/{id}/analyze] --> I2[AiAnalysisService]
+        I1["POST /api/jobs/{id}/analyze"] --> I2[AiAnalysisService]
         I2 --> I3[OpenRouter API<br/>MiniMax M2.5]
         I3 --> I4[JobAnalysis<br/>score + skills + tone]
     end
 
     subgraph Email["Email Generation"]
-        E1[POST /api/jobs/{id}/email] --> E2[EmailGenerationService]
+        E1["POST /api/jobs/{id}/email"] --> E2[EmailGenerationService]
         E2 --> E3[OpenRouter API]
         E3 --> E4[EmailDraft<br/>ready to send]
     end
@@ -79,7 +79,7 @@ sequenceDiagram
     Auth ->> DB: verify credentials
     DB -->> Auth: user found
     Auth -->> API: JWT token
-    API -->> User: { token, userId, name, email }
+    API -->> User: token, userId, name, email
 
     Note over User,API: All subsequent requests include Authorization: Bearer <token>
 
@@ -89,24 +89,24 @@ sequenceDiagram
     Scraper ->> Scraper: normalize + dedup
     Scraper ->> DB: save jobs
     DB -->> API: jobs saved
-    API -->> User: { jobs[], count }
+    API -->> User: jobs, count
 
-    User ->> API: POST /api/jobs/{id}/analyze
+    User ->> API: POST /api/jobs/:id/analyze
     API ->> AI: analyze(jobId)
     AI ->> AI: build prompt
     AI ->> AI: call OpenRouter
     AI ->> DB: save analysis
     DB -->> AI: analysis saved
-    AI -->> API: { score, matchedSkills, missingSkills, companyTone }
+    AI -->> API: score, matchedSkills, missingSkills, companyTone
     API -->> User: JobAnalysis
 
-    User ->> API: POST /api/jobs/{id}/email
+    User ->> API: POST /api/jobs/:id/email
     API ->> Email: generate(jobId)
     Email ->> Email: build prompt
     Email ->> Email: call OpenRouter
     Email ->> DB: save draft
     DB -->> Email: draft saved
-    Email -->> API: { subject, body }
+    Email -->> API: subject, body
     API -->> User: EmailDraft
 ```
 
