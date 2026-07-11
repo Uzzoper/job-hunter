@@ -12,37 +12,39 @@ A Spring Boot application that automates the search for junior developer job lis
 
 ## How it works
 
-```
-User ──► POST /api/auth/register ──► AuthService ──► UserRepository ──► PostgreSQL
-                                            │
-                           POST /api/auth/login
-                    AuthService ──► JwtTokenService ──► JWT Token
-                                            │
-          ┌─────────────────────────────────┘
-          ▼
-  All subsequent requests require Authorization: Bearer <token>
-          │
-          ▼
-  JwtTokenFilter (validates JWT on every request)
-          │
-          ▼
-  CurrentUserService.getCurrentUserId() ──► Controller ──► Service ──► Repository
-          │
-  ┌───────┴──────────────────────────────────────────────────────────────────┐
-  │                                                                          │
-  ▼                                                                          ▼
-Gupy API ──► GupyScraper                                          POST /api/jobs/{id}/analyze
-       ──► InfoJobsScraper  ──► FetchJobsService ──► PostgreSQL         AiAnalysisService
-       ──► CompositeScraper                                                    │
-                                                                               ▼
-                                                                      OpenRouter (MiniMax M2.5)
-                                                                               │
-                                                                               ▼
-                                                                   POST /api/jobs/{id}/email
-                                                                   EmailGenerationService
-                                                                               │
-                                                                               ▼
-                                                                   EmailDraft (ready to send)
+```mermaid
+flowchart TB
+    subgraph Auth["Authentication"]
+        A1[POST /api/auth/register] --> A2[AuthService]
+        A3[POST /api/auth/login] --> A2
+        A2 --> A4[JwtTokenService]
+        A4 --> A5[JWT Token]
+    end
+
+    subgraph Scraper["Job Scraping"]
+        S1[Gupy API] --> S2[GupyProvider]
+        S3[InfoJobs] --> S4[InfoJobsProvider]
+        S2 --> S5[ProviderRegistry]
+        S4 --> S5
+        S5 --> S6[JobNormalizer]
+        S6 --> S7[(PostgreSQL)]
+    end
+
+    subgraph AI["AI Analysis"]
+        I1["POST /api/jobs/{id}/analyze"] --> I2[AiAnalysisService]
+        I2 --> I3[OpenRouter API<br/>MiniMax M2.5]
+        I3 --> I4[JobAnalysis<br/>score + skills + tone]
+    end
+
+    subgraph Email["Email Generation"]
+        E1["POST /api/jobs/{id}/email"] --> E2[EmailGenerationService]
+        E2 --> E3[OpenRouter API]
+        E3 --> E4[EmailDraft<br/>ready to send]
+    end
+
+    Auth -->|Authorization: Bearer| Scraper
+    Scraper --> AI
+    AI --> Email
 ```
 
 0. Register or login via `/api/auth/register` and `/api/auth/login` to receive a JWT token.
@@ -51,6 +53,62 @@ Gupy API ──► GupyScraper                                          POST /ap
 2. Each listing is saved to PostgreSQL — duplicates are skipped by URL.
 3. On demand, the AI analyzes the listing against your profile and returns a match score (0–100), matched/missing skills, and company tone.
 4. The AI then generates a personalized application email in Brazilian Portuguese, tailored to the company tone and mentioning a relevant portfolio project.
+
+---
+
+## Full API Flow
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant API
+    participant Auth as AuthService
+    participant Scraper as ProviderRegistry
+    participant AI as AiAnalysisService
+    participant Email as EmailGenerationService
+    participant DB as PostgreSQL
+
+    User ->> API: POST /api/auth/register
+    API ->> Auth: create user
+    Auth ->> DB: save user
+    DB -->> API: user created
+    API -->> User: 201 Created
+
+    User ->> API: POST /api/auth/login
+    API ->> Auth: authenticate
+    Auth ->> DB: verify credentials
+    DB -->> Auth: user found
+    Auth -->> API: JWT token
+    API -->> User: token, userId, name, email
+
+    Note over User,API: All subsequent requests include Authorization: Bearer <token>
+
+    User ->> API: POST /api/jobs/fetch
+    API ->> Scraper: fetchAll()
+    Scraper ->> Scraper: retry + rate limit
+    Scraper ->> Scraper: normalize + dedup
+    Scraper ->> DB: save jobs
+    DB -->> API: jobs saved
+    API -->> User: jobs, count
+
+    User ->> API: POST /api/jobs/:id/analyze
+    API ->> AI: analyze(jobId)
+    AI ->> AI: build prompt
+    AI ->> AI: call OpenRouter
+    AI ->> DB: save analysis
+    DB -->> AI: analysis saved
+    AI -->> API: score, matchedSkills, missingSkills, companyTone
+    API -->> User: JobAnalysis
+
+    User ->> API: POST /api/jobs/:id/email
+    API ->> Email: generate(jobId)
+    Email ->> Email: build prompt
+    Email ->> Email: call OpenRouter
+    Email ->> DB: save draft
+    DB -->> Email: draft saved
+    Email -->> API: subject, body
+    API -->> User: EmailDraft
+```
 
 ---
 
@@ -75,52 +133,57 @@ Gupy API ──► GupyScraper                                          POST /ap
 
 This project follows Clean Architecture with strict layer separation:
 
-```
-src/main/java/com/juanperuzzo/job_hunter/
-├── domain/                      ← pure Java, no framework dependencies
-│   ├── model/                   → Job, EmailDraft, JobAnalysis, CompanyTone, EmailStatus,
-│   │                              User, UserProfile
-│   └── exception/               → ScraperException, AiException, JobNotFoundException,
-│                                    InvalidCredentialsException, EmailAlreadyExistsException,
-│                                    UserNotFoundException, ProfileNotConfiguredException,
-│                                    AnalysisNotFoundException
-│
-├── application/                 ← use cases and ports
-│   ├── port/in/                 → FetchJobsUseCase, AnalyzeJobUseCase, GenerateEmailUseCase,
-│   │                              AuthUseCase, AuthResult
-│   ├── port/out/                → JobRepository, ScraperPort, AiPort, UserRepository,
-│   │                              PasswordHasher, TokenProvider, UserProfileRepository,
-│   │                              EmailDraftRepository, JobAnalysisRepository
-│   └── service/                 → FetchJobsService, AiAnalysisService, EmailGenerationService,
-│   │                               AuthService, UserProfileService
-│
-├── infrastructure/              ← technical details (Spring, HTTP, DB, Security)
-│   ├── scraper/                 → ProviderBasedScraperAdapter, providers, strategies
-│   │   ├── provider/            → GupyProvider, InfoJobsProvider, ProviderRegistry
-│   │   ├── strategy/            → ExtractionStrategy, ApiStrategy, HtmlStrategy
-│   │   ├── normalizer/          → DateParser, JobNormalizer, RawJob
-│   │   ├── retry/               → ExponentialBackoffRetry
-│   │   └── ratelimit/           → RateLimiter, TokenBucketRateLimiter
-│   ├── ai/                      → OpenRouterClient
-│   ├── persistence/             → JobJpaRepository, JobPersistenceAdapter, UserEntity,
-│   │                              UserJpaRepository, UserPersistenceAdapter, UserProfileEntity,
-│   │                              UserProfileJpaRepository, UserProfilePersistenceAdapter,
-│   │                              EmailDraftEntity, EmailDraftJpaRepository,
-│   │                              EmailDraftPersistenceAdapter, JobAnalysisEntity,
-│   │                              JobAnalysisJpaRepository, JobAnalysisPersistenceAdapter
-│   ├── security/                → SecurityConfig, JwtTokenFilter, JwtTokenService,
-│   │                              CurrentUserService
-│   ├── scheduler/               → (not implemented — manual trigger only)
-│   └── config/                  → AppConfig
-│
-├── web/                         ← REST controllers
-│   ├── controller/              → JobController, EmailController, AuthController, ProfileController
-│   ├── dto/                     → JobResponse, EmailDraftResponse, AuthRequest, AuthResponse,
-│   │                              LoginRequest, ProfileRequest, ProfileResponse
-│   └── exception/               → GlobalExceptionHandler
+```mermaid
+flowchart BT
+    subgraph Domain["🟢 Domain"]
+        D1["model/ — Job, EmailDraft, JobAnalysis,<br/>CompanyTone, User, UserProfile"]
+        D2["exception/ — ScraperException, AiException,<br/>JobNotFoundException, etc."]
+    end
+
+    subgraph Application["🔵 Application"]
+        A1["port/in/ — FetchJobsUseCase,<br/>AnalyzeJobUseCase, GenerateEmailUseCase,<br/>AuthUseCase"]
+        A2["port/out/ — JobRepository, ScraperPort,<br/>AiPort, UserRepository, etc."]
+        A3["service/ — FetchJobsService,<br/>AiAnalysisService, EmailGenerationService,<br/>AuthService, UserProfileService"]
+    end
+
+    subgraph Infrastructure["🟠 Infrastructure"]
+        I1["scraper/ — ProviderBasedScraper,<br/>GupyProvider, InfoJobsProvider"]
+        I2["ai/ — OpenRouterClient"]
+        I3["persistence/ — JPA adapters,<br/>repositories, entities"]
+        I4["security/ — JWT filter,<br/>JwtTokenService, SecurityConfig"]
+        I5["config/ — AppConfig"]
+    end
+
+    subgraph Web["🩷 Web"]
+        W1["controller/ — JobController,<br/>EmailController, AuthController,<br/>ProfileController"]
+        W2["dto/ — Request/Response records"]
+        W3["exception/ — GlobalExceptionHandler"]
+    end
+
+    Web --> Application
+    Infrastructure --> Application
+    Application --> Domain
 ```
 
 The dependency rule is strictly enforced: `domain` has no external dependencies, `application` depends only on `domain`, and `infrastructure`/`web` depend on `application`.
+
+---
+
+## Scraping Pipeline
+
+```mermaid
+flowchart LR
+    Src["🌐 Source<br/>Gupy API / InfoJobs"]
+    Prov["📡 Provider<br/>GupyProvider · InfoJobsProvider"]
+    Strat["⚙️ Strategy<br/>ExtractionStrategy<br/>RestApiStrategy · HtmlStrategy"]
+    Pars["🔍 Parser<br/>JsonLdParser"]
+    Norm["🧹 Normalizer<br/>JobNormalizer · DateParser"]
+    Adpt["🔌 Adapter<br/>ProviderBasedScraperAdapter"]
+
+    Src --> Prov --> Strat --> Pars --> Norm --> Adpt
+```
+
+Each source is wrapped by a **Provider** that selects the right **Strategy** (REST API vs HTML). The parsed result is **Normalized** (dates, URLs, null-safe fields) and **Deduplicated** by URL before reaching the database via the **Adapter**.
 
 ---
 
@@ -232,7 +295,8 @@ docs/
     ├── prompts.md            ← all AI prompts versioned and documented
     ├── user-authentication.md
     ├── user-profile.md
-    └── user-scoped-analysis.md
+    ├── user-scoped-analysis.md
+    └── use-case-refactoring.md
 ```
 
 ---
