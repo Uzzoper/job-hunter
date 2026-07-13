@@ -150,7 +150,7 @@ public class InfoJobsProvider implements ExtractionStrategy {
         var description = extractDescription(cardText, workModel);
 
         return Optional.of(new RawJob(
-                title, company, url, description, null, location, workModel, null));
+                title, company, url, description, null, location, workModel, "infojobs", null));
     }
 
     private Optional<RawJob> mapCardToRawJob(Element card) {
@@ -171,7 +171,7 @@ public class InfoJobsProvider implements ExtractionStrategy {
         var description = textFrom(card, "[data-testid=job-snippet], .description, .descricao, .snippet");
         var rawDate = textFrom(card, "[data-testid=posted-date], .posted-date, .date, .data");
 
-        return Optional.of(new RawJob(title, company, url, description, rawDate, location, workModel, null));
+        return Optional.of(new RawJob(title, company, url, description, rawDate, location, workModel, "infojobs", null));
     }
 
     private Optional<Element> findLikelyCardContainer(Element titleLink) {

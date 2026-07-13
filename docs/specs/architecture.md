@@ -11,26 +11,34 @@
 analyzes each listing with AI, and generates personalized application emails.
 
 ```
-[Gupy API]       ──►  [GupyProvider]  ──┐
-                                         ├──► [ProviderRegistry] ──► [ProviderBasedScraperAdapter]
-[InfoJobs HTML]  ──►  [InfoJobsProvider] ──┘           │
-                                                        ▼
-                                                [FetchJobsService]  ◄──  [REST API] (manual)
-                                                        │
-                                                        ▼
-                                                [JobRepository]  ──►  [PostgreSQL]
-                     │
-                     ▼ (on demand)
-             [AiAnalysisService]  ──►  [OpenRouterClient]  ──►  [OpenRouter API]
-                     │
-                     ▼
-          [EmailGenerationService]  ──►  [OpenRouterClient]
-                     │
-                     ▼
-             [EmailDraftRepository]  ──►  [PostgreSQL]
-                     │
-                     ▼
-             [REST API]  ──►  [Web Interface]
+[Gupy API]            ──►  [GupyProvider]             ──┐
+                                                        ├──► [ProviderRegistry] ──► [ProviderBasedScraperAdapter]
+[InfoJobs HTML]       ──►  [InfoJobsProvider]           ──┘           │
+                                                                       │
+[LinkedIn (Playwright)] ──► [LinkedInScraperClient]     ──┘
+       │                         (RestClient)
+       ▼
+[Node.js Service]
+ (:3000, separate
+  Docker container)
+                                                                       │
+                                                                       ▼
+                                                               [FetchJobsService]  ◄──  [REST API] (manual)
+                                                                       │
+                                                                       ▼
+                                                               [JobRepository]  ──►  [PostgreSQL]
+                    │
+                    ▼ (on demand)
+            [AiAnalysisService]  ──►  [OpenRouterClient]  ──►  [OpenRouter API]
+                    │
+                    ▼
+         [EmailGenerationService]  ──►  [OpenRouterClient]
+                    │
+                    ▼
+            [EmailDraftRepository]  ──►  [PostgreSQL]
+                    │
+                    ▼
+            [REST API]  ──►  [Web Interface]
 ```
 
 ---
@@ -83,8 +91,10 @@ com.juanperuzzo.job_hunter
 │   │       ├── EmailDraftRepository.java
 │   │       ├── JobAnalysisRepository.java
 │   │       ├── JobRepository.java
+│   │       ├── NormalizerPort.java
 │   │       ├── PasswordHasher.java
-│   │       ├── ScraperPort.java
+│   │       ├── ScraperPort.java                         (legacy — see ADR)
+│   │       ├── SourceFetchPort.java
 │   │       ├── TokenProvider.java
 │   │       ├── UserProfileRepository.java
 │   │       └── UserRepository.java
@@ -93,22 +103,26 @@ com.juanperuzzo.job_hunter
 │       ├── AuthService.java
 │       ├── EmailGenerationService.java
 │       ├── FetchJobsService.java
+│       ├── FetchSourceJobsService.java              (uses SourceFetchPort + NormalizerPort)
 │       └── UserProfileService.java
 │
 ├── infrastructure/                      ← technical details
 │   ├── scraper/
 │   │   ├── ProviderBasedScraperAdapter.java  (implements ScraperPort)
+│   │   ├── client/
+│   │   │   └── LinkedInScraperClient.java    (ExtractionStrategy impl, calls Node.js Playwright service)
 │   │   ├── provider/
 │   │   │   ├── GupyProvider.java             (API strategy)
 │   │   │   ├── InfoJobsProvider.java         (HTML strategy)
-│   │   │   └── ProviderRegistry.java         (orchestrates all providers)
+│   │   │   ├── LinkedInProvider.java         (Jsoup fallback)
+│   │   │   └── ProviderRegistry.java         (implements SourceFetchPort)
 │   │   ├── strategy/
 │   │   │   ├── ExtractionStrategy.java       (interface)
 │   │   │   ├── ApiStrategy.java              (JSON/API scraper)
 │   │   │   └── HtmlStrategy.java             (Jsoup scraper)
 │   │   ├── normalizer/
 │   │   │   ├── DateParser.java
-│   │   │   ├── JobNormalizer.java            (shared pipeline)
+│   │   │   ├── JobNormalizer.java            (implements NormalizerPort)
 │   │   │   └── RawJob.java                   (DTO)
 │   │   ├── retry/
 │   │   │   └── ExponentialBackoffRetry.java
@@ -200,6 +214,18 @@ PostgreSQL runs via Docker Compose in development.
 Records are immutable by default, have auto-generated `equals`/`hashCode`/`toString`,
 and communicate immutability intent clearly.
 
+### Why Playwright over Jsoup for LinkedIn?
+LinkedIn serves different content to headless vs headed browsers. Playwright renders JavaScript-rendered content, which more closely mirrors what a real browser would display. Jsoup only parses static HTML and may receive a Bot Challenge page instead of actual job data. The Jsoup-based `LinkedInProvider` is kept as a lightweight fallback for environments without Docker.
+
+### Why a separate microservice for LinkedIn scraping?
+Playwright requires heavy Chromium dependencies (600MB+). A separate Node.js + Express + TypeScript microservice keeps the Spring Boot container lightweight (no Playwright/Chromium in the JVM image) and allows independent scaling of the scraping layer.
+
+### How do the Java and Node.js services communicate?
+The Spring Boot app accesses the Node.js scraper via `http://linkedin-scraper:3000` in Docker (Compose service name resolves via internal DNS). Local development overrides to `http://localhost:3000` via `application-local.yaml`.
+
+### Why both random delays and a token bucket rate limiter?
+They serve different layers. The `TokenBucketRateLimiter` controls HTTP request rate to external APIs (Gupy, InfoJobs) to avoid 429 responses. The random delays in the Playwright scraper (`linkedin-scraper`) simulate human navigation patterns between page interactions to avoid bot detection. One is network-level rate limiting, the other is browser-level behavior simulation — they are complementary, not redundant.
+
 ---
 
 ## REST endpoints
@@ -208,6 +234,8 @@ and communicate immutability intent clearly.
 |---|---|---|
 | `GET` | `/api/jobs` | List jobs (filters: `keyword`, `minScore`) |
 | `GET` | `/api/jobs/{id}` | Job detail |
+| `POST` | `/api/jobs/fetch` | Trigger all scrapers (Gupy + InfoJobs + LinkedIn) |
+| `POST` | `/api/jobs/fetch/linkedin` | Trigger only LinkedIn scraper (requires `service` mode) |
 | `POST` | `/api/jobs/{id}/analyze` | Analyze job with AI |
 | `GET` | `/api/jobs/{id}/email` | Return generated email |
 | `POST` | `/api/jobs/{id}/email` | Generate new email for the job |
@@ -251,6 +279,14 @@ scraper:
     keywords: desenvolvedor junior,analista desenvolvedor junior
     max-pages: 3
     timeout-seconds: 10
+  linkedin:
+    enabled: true
+    mode: service          # "service" (Playwright) | "jsoup" (fallback)
+    service-url: http://linkedin-scraper:3000
+    keywords: "desenvolvedor junior,...,junior developer"
+    locations: "Brazil,São Paulo,Remote"
+    max-jobs: 25
+    timeout-seconds: 30
 
   # No automatic scheduler — manual trigger via POST /api/jobs/fetch
 ```

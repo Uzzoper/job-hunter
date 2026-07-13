@@ -53,6 +53,21 @@ scraper:
     keywords: desenvolvedor junior,desenvolvedor júnior,analista desenvolvedor junior,programador junior,java junior,backend junior,desenvolvedor jr,programador jr,dev jr,java jr,backend jr,frontend jr,fullstack jr,c# jr,python jr,.net jr
     max-pages: 3
     timeout-seconds: 10
+  linkedin:
+    enabled: true
+    mode: service          # "service" (Playwright) | "jsoup" (current, fallback)
+    service-url: http://linkedin-scraper:3000
+    connect-timeout-seconds: 5
+    base-url: https://www.linkedin.com
+    keywords: "desenvolvedor junior,software engineer junior,backend junior,java junior,frontend junior,fullstack junior,estagiario dev,junior developer"
+    locations: "Brazil,São Paulo,Rio de Janeiro,Curitiba,Remote"
+    geo-ids: "106057199,102927786,105972731,105906364"
+    seniority: "entry_level"
+    work-type: "remote,hybrid,on-site"
+    time-range: "past_week"
+    max-jobs: 25
+    timeout-seconds: 30
+    detail-fetch-delay-millis: 500
 
 app:
   cors:

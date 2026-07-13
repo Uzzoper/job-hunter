@@ -49,7 +49,7 @@ class GupyProviderTest {
         var isRemote = node.path("isRemoteWork").asBoolean(false);
         return new RawJob(title, node.path("careerPageName").asText(null), url,
                 node.path("description").asText(null), rawDate, locationStr,
-                isRemote ? "Remoto" : null, new HashMap<>());
+                isRemote ? "Remoto" : null, "gupy", new HashMap<>());
     }
 
     @Nested

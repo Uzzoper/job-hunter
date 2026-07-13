@@ -49,7 +49,7 @@ class RestApiStrategyTest {
                             node.path("title").asText(),
                             node.path("company").asText(),
                             node.path("url").asText(),
-                            null, null, null, null, new HashMap<>()));
+                            null, null, null, null, "test", new HashMap<>()));
 
             var jobs = strategy.extract();
             assertEquals(2, jobs.size());
@@ -74,7 +74,7 @@ class RestApiStrategyTest {
                         var title = node.path("title").asText();
                         if (title.isBlank()) return null;
                         return new RawJob(title, "", node.path("url").asText(),
-                                null, null, null, null, null);
+                                null, null, null, null, "test", null);
                     });
 
             var jobs = strategy.extract();
@@ -93,7 +93,7 @@ class RestApiStrategyTest {
                     .willReturn(okJson("{\"data\": []}")));
 
             strategy = new RestApiStrategy("test-api", baseUrl, 5, "data",
-                    node -> new RawJob("", "", "https://x.com", null, null, null, null, null));
+                    node -> new RawJob("", "", "https://x.com", null, null, null, null, "test", null));
 
             assertTrue(strategy.extract().isEmpty());
         }
@@ -132,7 +132,7 @@ class RestApiStrategyTest {
 
             strategy = new RestApiStrategy("test-api", baseUrl, 5, null,
                     node -> new RawJob(node.path("title").asText(), "", node.path("url").asText(),
-                            null, null, null, null, null));
+                            null, null, null, null, "test", null));
 
             var jobs = ((RestApiStrategy) strategy).extractWithPath("/jobs");
             assertEquals(1, jobs.size());

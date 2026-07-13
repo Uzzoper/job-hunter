@@ -8,5 +8,6 @@ public record JobResponse(
     String company,
     String url,
     String description,
-    LocalDate postedAt
+    LocalDate postedAt,
+    String source
 ) {}

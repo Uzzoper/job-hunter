@@ -78,6 +78,7 @@ public class HtmlStrategy implements ExtractionStrategy {
                         ld.datePosted(),
                         ld.location(),
                         ld.workModel(),
+                        providerId,
                         null));
             });
 

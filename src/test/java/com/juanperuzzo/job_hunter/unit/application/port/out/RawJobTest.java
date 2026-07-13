@@ -26,6 +26,7 @@ class RawJobTest {
                 "2026-07-08",
                 "São Paulo - SP",
                 "Remoto",
+                "test",
                 metadata
         );
 
@@ -43,7 +44,7 @@ class RawJobTest {
     @DisplayName("create with null url should throw NullPointerException")
     void create_withNullUrl_shouldThrowNPE() {
         assertThrows(NullPointerException.class, () -> new RawJob(
-                "Title", "Company", null, null, null, null, null, null
+                "Title", "Company", null, null, null, null, null, "test", null
         ));
     }
 
@@ -52,7 +53,7 @@ class RawJobTest {
     void create_withNullMetadata_shouldDefaultToEmptyMap() {
         RawJob job = new RawJob(
                 "Title", "Company", "https://example.com/job/123",
-                null, null, null, null, null
+                null, null, null, null, "test", null
         );
 
         assertNotNull(job.metadata());
