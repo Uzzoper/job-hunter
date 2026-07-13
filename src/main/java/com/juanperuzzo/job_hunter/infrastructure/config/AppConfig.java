@@ -103,6 +103,11 @@ public class AppConfig {
     }
 
     @Bean
+    public NormalizerPort linkedinNormalizerPort(JobNormalizer linkedinJobNormalizer) {
+        return linkedinJobNormalizer;
+    }
+
+    @Bean
     @Qualifier("linkedinProvider")
     @ConditionalOnProperty(name = "scraper.linkedin.mode", havingValue = "jsoup", matchIfMissing = true)
     public ExtractionStrategy linkedinProvider(
@@ -186,7 +191,7 @@ public class AppConfig {
     }
 
     @Bean
-    public FetchSourceJobsService fetchSourceJobsService(SourceFetchPort sourceFetchPort, JobRepository jobRepository, NormalizerPort normalizerPort) {
+    public FetchSourceJobsService fetchSourceJobsService(SourceFetchPort sourceFetchPort, JobRepository jobRepository, @Qualifier("linkedinNormalizerPort") NormalizerPort normalizerPort) {
         return new FetchSourceJobsService(sourceFetchPort, jobRepository, normalizerPort);
     }
 

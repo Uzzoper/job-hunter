@@ -113,22 +113,17 @@ class LinkedInScraperClientTest {
     class EmptySearchResponse {
 
         @Test
-        @DisplayName("extract should return empty list when no jobs found")
-        void extract_whenEmptyResponse_shouldReturnEmptyList() {
+        @DisplayName("extract should throw ScraperException when empty response body")
+        void extract_whenEmptyResponse_shouldThrowScraperException() {
             stubFor(get(urlPathEqualTo("/api/jobs"))
                     .withQueryParam("keywords", equalTo("desenvolvedor"))
                     .withQueryParam("location", equalTo("Brazil"))
-                    .willReturn(okJson("""
-                        {
-                          "success": true,
-                          "data": []
-                        }
-                        """)));
+                    .willReturn(aResponse()
+                            .withStatus(200)
+                            .withBody("")));
 
-            List<RawJob> jobs = client.extract();
-
-            assertNotNull(jobs);
-            assertTrue(jobs.isEmpty());
+            var exception = assertThrows(ScraperException.class, () -> client.extract());
+            assertTrue(exception.getMessage().contains("returned empty response"));
         }
     }
 
