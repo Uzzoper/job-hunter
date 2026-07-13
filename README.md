@@ -142,12 +142,12 @@ flowchart BT
 
     subgraph Application["🔵 Application"]
         A1["port/in/ — FetchJobsUseCase,<br/>AnalyzeJobUseCase, GenerateEmailUseCase,<br/>AuthUseCase"]
-        A2["port/out/ — JobRepository, ScraperPort,<br/>AiPort, UserRepository, etc."]
-        A3["service/ — FetchJobsService,<br/>AiAnalysisService, EmailGenerationService,<br/>AuthService, UserProfileService"]
+        A2["port/out/ — JobRepository, ScraperPort,<br/>AiPort, NormalizerPort, SourceFetchPort"]
+        A3["service/ — FetchJobsService,<br/>AiAnalysisService, EmailGenerationService,<br/>AuthService, FetchSourceJobsService"]
     end
 
     subgraph Infrastructure["🟠 Infrastructure"]
-        I1["scraper/ — ProviderBasedScraper,<br/>GupyProvider, InfoJobsProvider"]
+        I1["scraper/ — ProviderBasedScraper,<br/>GupyProvider, InfoJobsProvider,<br/>LinkedInScraperClient"]
         I2["ai/ — OpenRouterClient"]
         I3["persistence/ — JPA adapters,<br/>repositories, entities"]
         I4["security/ — JWT filter,<br/>JwtTokenService, SecurityConfig"]
@@ -160,9 +160,12 @@ flowchart BT
         W3["exception/ — GlobalExceptionHandler"]
     end
 
+    LS[/"⚙️ LinkedIn Scraper<br/>(Node.js + Playwright)"/]
+
     Web --> Application
     Infrastructure --> Application
     Application --> Domain
+    I1 -.->|"HTTP :3000"| LS
 ```
 
 The dependency rule is strictly enforced: `domain` has no external dependencies, `application` depends only on `domain`, and `infrastructure`/`web` depend on `application`.
