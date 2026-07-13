@@ -108,6 +108,11 @@ public class LinkedInScraperClient implements ExtractionStrategy {
                 }
             }
 
+            // Limit to maxJobs BEFORE enrichment to avoid wasteful detail calls
+            if (results.size() > properties.maxJobs()) {
+                results = new ArrayList<>(results.subList(0, properties.maxJobs()));
+            }
+
             var enriched = new ArrayList<RawJob>();
             for (int i = 0; i < results.size(); i++) {
                 var card = results.get(i);
@@ -127,10 +132,6 @@ public class LinkedInScraperClient implements ExtractionStrategy {
                     }
                 }
                 enriched.add(card);
-            }
-
-            if (enriched.size() > properties.maxJobs()) {
-                enriched = new ArrayList<>(enriched.subList(0, properties.maxJobs()));
             }
 
             log.info("{}: fetched {} jobs", PROVIDER_ID, enriched.size());
