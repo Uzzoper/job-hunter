@@ -42,8 +42,6 @@ export class SearchScraper {
 
       return jobCards;
     } catch (error) {
-      await page.close();
-      await context.close();
       throw error;
     } finally {
       if (!page.isClosed()) {
