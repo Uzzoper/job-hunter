@@ -3,10 +3,13 @@ package com.juanperuzzo.job_hunter.infrastructure.config;
 import com.juanperuzzo.job_hunter.application.port.out.AiPort;
 import com.juanperuzzo.job_hunter.application.port.out.EmailDraftRepository;
 import com.juanperuzzo.job_hunter.application.port.out.JobRepository;
+import com.juanperuzzo.job_hunter.application.port.out.NormalizerPort;
 import com.juanperuzzo.job_hunter.application.port.out.ScraperPort;
+import com.juanperuzzo.job_hunter.application.port.out.SourceFetchPort;
 import com.juanperuzzo.job_hunter.application.service.AiAnalysisService;
 import com.juanperuzzo.job_hunter.application.service.EmailGenerationService;
 import com.juanperuzzo.job_hunter.application.service.FetchJobsService;
+import com.juanperuzzo.job_hunter.application.service.FetchSourceJobsService;
 import com.juanperuzzo.job_hunter.infrastructure.ai.OpenRouterClient;
 import com.juanperuzzo.job_hunter.application.port.out.PasswordHasher;
 import com.juanperuzzo.job_hunter.application.port.out.TokenProvider;
@@ -17,21 +20,27 @@ import com.juanperuzzo.job_hunter.application.service.AuthService;
 import com.juanperuzzo.job_hunter.application.service.UserProfileService;
 import com.juanperuzzo.job_hunter.infrastructure.security.JwtTokenService;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.context.annotation.Primary;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.beans.factory.annotation.Qualifier;
 
 import java.time.Clock;
 import java.time.Duration;
 import java.util.List;
+import java.util.Optional;
 import java.util.regex.Pattern;
 
 import com.juanperuzzo.job_hunter.infrastructure.scraper.ProviderBasedScraperAdapter;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.normalizer.DateParser;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.normalizer.JobNormalizer;
+import com.juanperuzzo.job_hunter.infrastructure.scraper.client.LinkedInScraperClient;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.provider.GupyProvider;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.provider.InfoJobsProvider;
+import com.juanperuzzo.job_hunter.infrastructure.scraper.provider.LinkedInProvider;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.provider.ProviderRegistry;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.ratelimit.RateLimiter;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.ratelimit.TokenBucketRateLimiter;
@@ -39,6 +48,7 @@ import com.juanperuzzo.job_hunter.infrastructure.scraper.retry.ExponentialBackof
 import com.juanperuzzo.job_hunter.infrastructure.scraper.strategy.ExtractionStrategy;
 
 @Configuration
+@EnableConfigurationProperties(LinkedInScraperProperties.class)
 public class AppConfig {
 
     @Bean
@@ -77,6 +87,40 @@ public class AppConfig {
     }
 
     @Bean
+    public JobNormalizer linkedinJobNormalizer(
+            DateParser dateParser,
+            @Value("#{'${scraper.linkedin.keywords}'.split(',')}") List<String> keywords,
+            @Value("${scraper.normalizer.max-age-days}") int maxAgeDays) {
+        var excludePatterns = List.of(
+                Pattern.compile("(?i)\\b(s[eê]nior|senior|sr\\.?|especialista|lead|coordenador|manager|bdr)\\b"));
+        return new JobNormalizer(dateParser, keywords, excludePatterns, List.of(), maxAgeDays, Clock.systemUTC());
+    }
+
+    @Bean
+    @Primary
+    public NormalizerPort normalizerPort(JobNormalizer jobNormalizer) {
+        return jobNormalizer;
+    }
+
+    @Bean
+    @Qualifier("linkedinProvider")
+    @ConditionalOnProperty(name = "scraper.linkedin.mode", havingValue = "jsoup", matchIfMissing = true)
+    public ExtractionStrategy linkedinProvider(
+            LinkedInScraperProperties props,
+            ExponentialBackoffRetry exponentialBackoffRetry) {
+        return new LinkedInProvider(
+                props,
+                exponentialBackoffRetry);
+    }
+
+    @Bean
+    @Qualifier("linkedinScraperClient")
+    @ConditionalOnProperty(name = "scraper.linkedin.mode", havingValue = "service")
+    public ExtractionStrategy linkedinScraperClient(LinkedInScraperProperties props) {
+        return new LinkedInScraperClient(props);
+    }
+
+    @Bean
     public ExtractionStrategy gupyProvider(
             @Value("${scraper.gupy.base-url}") String baseUrl,
             @Value("${scraper.gupy.timeout-seconds}") int timeoutSeconds,
@@ -100,13 +144,25 @@ public class AppConfig {
     public ProviderRegistry providerRegistry(
             ExtractionStrategy gupyProvider,
             ExtractionStrategy infojobsProvider,
+            @Qualifier("linkedinProvider") Optional<ExtractionStrategy> linkedinProvider,
+            @Qualifier("linkedinScraperClient") Optional<ExtractionStrategy> linkedinScraperClient,
             ExponentialBackoffRetry exponentialBackoffRetry,
             RateLimiter rateLimiter,
-            JobNormalizer jobNormalizer) {
+            JobNormalizer jobNormalizer,
+            JobNormalizer linkedinJobNormalizer) {
         var registry = new ProviderRegistry();
         registry.register(gupyProvider, exponentialBackoffRetry, rateLimiter, jobNormalizer);
         registry.register(infojobsProvider, exponentialBackoffRetry, rateLimiter, jobNormalizer);
+        linkedinProvider.ifPresent(provider ->
+                registry.register(provider, exponentialBackoffRetry, rateLimiter, linkedinJobNormalizer));
+        linkedinScraperClient.ifPresent(provider ->
+                registry.register(provider, exponentialBackoffRetry, rateLimiter, linkedinJobNormalizer));
         return registry;
+    }
+
+    @Bean
+    public SourceFetchPort sourceFetchPort(ProviderRegistry providerRegistry) {
+        return providerRegistry;
     }
 
     @Bean
@@ -127,6 +183,11 @@ public class AppConfig {
     @Bean
     public FetchJobsService fetchJobsService(ScraperPort scraperPort, JobRepository jobRepository) {
         return new FetchJobsService(scraperPort, jobRepository);
+    }
+
+    @Bean
+    public FetchSourceJobsService fetchSourceJobsService(SourceFetchPort sourceFetchPort, JobRepository jobRepository, NormalizerPort normalizerPort) {
+        return new FetchSourceJobsService(sourceFetchPort, jobRepository, normalizerPort);
     }
 
     @Bean
