@@ -17,10 +17,12 @@ public record RawJob(
         String rawDate,
         String location,
         String workModel,
+        String source,
         Map<String, String> metadata
 ) {
     public RawJob {
         requireNonNull(url, "url must not be null");
+        requireNonNull(source, "source must not be null");
         if (metadata == null) {
             metadata = new HashMap<>();
         }

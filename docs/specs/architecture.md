@@ -11,26 +11,34 @@
 analyzes each listing with AI, and generates personalized application emails.
 
 ```
-[Gupy API]       ──►  [GupyProvider]  ──┐
-                                         ├──► [ProviderRegistry] ──► [ProviderBasedScraperAdapter]
-[InfoJobs HTML]  ──►  [InfoJobsProvider] ──┘           │
-                                                        ▼
-                                                [FetchJobsService]  ◄──  [REST API] (manual)
-                                                        │
-                                                        ▼
-                                                [JobRepository]  ──►  [PostgreSQL]
-                     │
-                     ▼ (on demand)
-             [AiAnalysisService]  ──►  [OpenRouterClient]  ──►  [OpenRouter API]
-                     │
-                     ▼
-          [EmailGenerationService]  ──►  [OpenRouterClient]
-                     │
-                     ▼
-             [EmailDraftRepository]  ──►  [PostgreSQL]
-                     │
-                     ▼
-             [REST API]  ──►  [Web Interface]
+[Gupy API]            ──►  [GupyProvider]             ──┐
+                                                        ├──► [ProviderRegistry] ──► [ProviderBasedScraperAdapter]
+[InfoJobs HTML]       ──►  [InfoJobsProvider]           ──┘           │
+                                                                       │
+[LinkedIn (Playwright)] ──► [LinkedInScraperClient]     ──┘
+       │                         (RestClient)
+       ▼
+[Node.js Service]
+ (:3000, separate
+  Docker container)
+                                                                       │
+                                                                       ▼
+                                                               [FetchJobsService]  ◄──  [REST API] (manual)
+                                                                       │
+                                                                       ▼
+                                                               [JobRepository]  ──►  [PostgreSQL]
+                    │
+                    ▼ (on demand)
+            [AiAnalysisService]  ──►  [OpenRouterClient]  ──►  [OpenRouter API]
+                    │
+                    ▼
+         [EmailGenerationService]  ──►  [OpenRouterClient]
+                    │
+                    ▼
+            [EmailDraftRepository]  ──►  [PostgreSQL]
+                    │
+                    ▼
+            [REST API]  ──►  [Web Interface]
 ```
 
 ---
@@ -98,9 +106,12 @@ com.juanperuzzo.job_hunter
 ├── infrastructure/                      ← technical details
 │   ├── scraper/
 │   │   ├── ProviderBasedScraperAdapter.java  (implements ScraperPort)
+│   │   ├── client/
+│   │   │   └── LinkedInScraperClient.java    (ExtractionStrategy impl, calls Node.js Playwright service)
 │   │   ├── provider/
 │   │   │   ├── GupyProvider.java             (API strategy)
 │   │   │   ├── InfoJobsProvider.java         (HTML strategy)
+│   │   │   ├── LinkedInProvider.java         (Jsoup fallback)
 │   │   │   └── ProviderRegistry.java         (orchestrates all providers)
 │   │   ├── strategy/
 │   │   │   ├── ExtractionStrategy.java       (interface)
@@ -200,6 +211,15 @@ PostgreSQL runs via Docker Compose in development.
 Records are immutable by default, have auto-generated `equals`/`hashCode`/`toString`,
 and communicate immutability intent clearly.
 
+### Why Playwright over Jsoup for LinkedIn?
+LinkedIn serves a Bot Challenge (502 Bad Gateway) to Jsoup-based requests. Playwright runs a real headless Chromium with a realistic browser fingerprint (Chrome 129, pt-BR locale, `Accept-Language: pt-BR`), which bypasses detection. The Jsoup-based `LinkedInProvider` is kept as a lightweight fallback for environments without Docker.
+
+### Why a separate microservice for LinkedIn scraping?
+Playwright requires heavy Chromium dependencies (600MB+). A separate Node.js + Express + TypeScript microservice keeps the Spring Boot container lightweight (no Playwright/Chromium in the JVM image) and allows independent scaling of the scraping layer.
+
+### Why no internal Docker network between services?
+The Spring Boot app accesses the Node.js scraper via `http://linkedin-scraper:3000` in Docker (Compose service name resolves via internal DNS). Local development overrides to `http://localhost:3000` via `application-local.yaml`.
+
 ---
 
 ## REST endpoints
@@ -208,6 +228,8 @@ and communicate immutability intent clearly.
 |---|---|---|
 | `GET` | `/api/jobs` | List jobs (filters: `keyword`, `minScore`) |
 | `GET` | `/api/jobs/{id}` | Job detail |
+| `POST` | `/api/jobs/fetch` | Trigger all scrapers (Gupy + InfoJobs + LinkedIn) |
+| `POST` | `/api/jobs/fetch/linkedin` | Trigger only LinkedIn scraper (requires `service` mode) |
 | `POST` | `/api/jobs/{id}/analyze` | Analyze job with AI |
 | `GET` | `/api/jobs/{id}/email` | Return generated email |
 | `POST` | `/api/jobs/{id}/email` | Generate new email for the job |
@@ -251,6 +273,14 @@ scraper:
     keywords: desenvolvedor junior,analista desenvolvedor junior
     max-pages: 3
     timeout-seconds: 10
+  linkedin:
+    enabled: true
+    mode: service          # "service" (Playwright) | "jsoup" (fallback)
+    service-url: http://linkedin-scraper:3000
+    keywords: "desenvolvedor junior,...,junior developer"
+    locations: "Brazil,São Paulo,Remote"
+    max-jobs: 25
+    timeout-seconds: 30
 
   # No automatic scheduler — manual trigger via POST /api/jobs/fetch
 ```

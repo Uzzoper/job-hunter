@@ -107,6 +107,7 @@ public class GupyProvider implements ExtractionStrategy {
                 rawDate,
                 locationStr,
                 workModel,
+                "gupy",
                 null);
     }
 

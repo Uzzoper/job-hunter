@@ -1,5 +1,6 @@
 package com.juanperuzzo.job_hunter.infrastructure.scraper.normalizer;
 
+import com.juanperuzzo.job_hunter.application.port.out.NormalizerPort;
 import com.juanperuzzo.job_hunter.application.port.out.RawJob;
 import com.juanperuzzo.job_hunter.domain.model.Job;
 import org.slf4j.Logger;
@@ -19,7 +20,7 @@ import java.util.stream.Collectors;
  * Pipeline: clean → normalize → parseDate → matchKeywords → isExcluded →
  * matchLocation → filterByAge → decode → mapToJob.
  */
-public class JobNormalizer {
+public class JobNormalizer implements NormalizerPort {
 
     private static final Logger log = LoggerFactory.getLogger(JobNormalizer.class);
 
@@ -94,7 +95,7 @@ public class JobNormalizer {
         var company = raw.company() != null ? cleanText(raw.company()) : "";
         var description = raw.description() != null ? decodeEntities(raw.description()) : "";
 
-        return new Job(null, cleanText(raw.title()), company, raw.url(), description, postedDate);
+        return new Job(null, cleanText(raw.title()), company, raw.url(), description, postedDate, raw.source());
     }
 
     public List<Job> normalizeAll(List<RawJob> rawJobs) {
