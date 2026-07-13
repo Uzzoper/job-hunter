@@ -248,7 +248,8 @@ The application will start on `http://localhost:8080`. Flyway runs automatically
 | `POST` | `/api/auth/login` | Login and receive JWT token | No |
 | `GET` | `/api/jobs` | List all jobs | Yes |
 | `GET` | `/api/jobs/{id}` | Get job detail | Yes |
-| `POST` | `/api/jobs/fetch` | Trigger scraper manually | Yes |
+| `POST` | `/api/jobs/fetch` | Trigger all scrapers (Gupy + InfoJobs + LinkedIn) | Yes |
+| `POST` | `/api/jobs/fetch/linkedin` | Trigger only LinkedIn scraper | Yes |
 | `POST` | `/api/jobs/{id}/analyze` | Analyze job with AI | Yes |
 | `GET` | `/api/jobs/{id}/email` | Get generated email draft | Yes |
 | `POST` | `/api/jobs/{id}/email` | Generate new email for the job | Yes |

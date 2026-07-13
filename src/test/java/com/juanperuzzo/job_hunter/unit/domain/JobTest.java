@@ -20,8 +20,8 @@ class JobTest {
         @DisplayName("two jobs with identical URLs should be considered equal")
         void givenTwoJobsWithSameUrl_whenEquals_thenTheyAreEqual() {
             var postedAt = LocalDate.now().minusDays(10);
-            var job1 = new Job(null, "Java Developer", "Company A", "https://example.com/job/123", "Description 1", postedAt);
-            var job2 = new Job(null, "Java Developer", "Company A", "https://example.com/job/123", "Description 2", postedAt);
+            var job1 = new Job(null, "Java Developer", "Company A", "https://example.com/job/123", "Description 1", postedAt, "test");
+            var job2 = new Job(null, "Java Developer", "Company A", "https://example.com/job/123", "Description 2", postedAt, "test");
 
             assertEquals(job1, job2);
             assertEquals(job1.hashCode(), job2.hashCode());
@@ -31,8 +31,8 @@ class JobTest {
         @DisplayName("two jobs with different URLs should be considered different")
         void givenTwoJobsWithDifferentUrls_whenEquals_thenTheyAreNotEqual() {
             var postedAt = LocalDate.now().minusDays(10);
-            var job1 = new Job(null, "Java Developer", "Company A", "https://example.com/job/123", "Description", postedAt);
-            var job2 = new Job(null, "Java Developer", "Company A", "https://example.com/job/456", "Description", postedAt);
+            var job1 = new Job(null, "Java Developer", "Company A", "https://example.com/job/123", "Description", postedAt, "test");
+            var job2 = new Job(null, "Java Developer", "Company A", "https://example.com/job/456", "Description", postedAt, "test");
 
             assertNotEquals(job1, job2);
         }
@@ -40,7 +40,7 @@ class JobTest {
         @Test
         @DisplayName("job should not be equal to null")
         void givenJob_whenComparedToNull_thenNotEqual() {
-            var job = new Job(null, "Java Developer", "Company A", "https://example.com/job/123", "Description", LocalDate.now());
+            var job = new Job(null, "Java Developer", "Company A", "https://example.com/job/123", "Description", LocalDate.now(), "test");
 
             assertNotEquals(null, job);
         }
@@ -48,7 +48,7 @@ class JobTest {
         @Test
         @DisplayName("job should not be equal to object of different type")
         void givenJob_whenComparedToDifferentType_thenNotEqual() {
-            var job = new Job(null, "Java Developer", "Company A", "https://example.com/job/123", "Description", LocalDate.now());
+            var job = new Job(null, "Java Developer", "Company A", "https://example.com/job/123", "Description", LocalDate.now(), "test");
 
             assertNotEquals("not a job", job);
         }
@@ -62,7 +62,7 @@ class JobTest {
         @DisplayName("job within expiration window (20 days) should not be expired")
         void givenJobPosted20DaysAgo_whenIsExpired_thenReturnsFalse() {
             var postedAt = LocalDate.now().minusDays(20);
-            var job = new Job(null, "Java Developer", "Company A", "https://example.com/job/123", "Description", postedAt);
+            var job = new Job(null, "Java Developer", "Company A", "https://example.com/job/123", "Description", postedAt, "test");
 
             assertFalse(job.isExpired());
         }
@@ -71,7 +71,7 @@ class JobTest {
         @DisplayName("job past expiration window (31 days) should be expired")
         void givenJobPosted31DaysAgo_whenIsExpired_thenReturnsTrue() {
             var postedAt = LocalDate.now().minusDays(31);
-            var job = new Job(null, "Java Developer", "Company A", "https://example.com/job/123", "Description", postedAt);
+            var job = new Job(null, "Java Developer", "Company A", "https://example.com/job/123", "Description", postedAt, "test");
 
             assertTrue(job.isExpired());
         }
@@ -80,7 +80,7 @@ class JobTest {
         @DisplayName("job exactly at the limit (30 days) should not be expired")
         void givenJobPostedExactly30DaysAgo_whenIsExpired_thenReturnsFalse() {
             var postedAt = LocalDate.now().minusDays(30);
-            var job = new Job(null, "Java Developer", "Company A", "https://example.com/job/123", "Description", postedAt);
+            var job = new Job(null, "Java Developer", "Company A", "https://example.com/job/123", "Description", postedAt, "test");
 
             assertFalse(job.isExpired());
         }
@@ -94,7 +94,7 @@ class JobTest {
         @DisplayName("creating job with null URL should throw NullPointerException")
         void givenNullUrl_whenCreatingJob_thenThrowsNullPointerException() {
             assertThrows(NullPointerException.class, () ->
-                new Job(null, "Java Developer", "Company A", null, "Description", LocalDate.now())
+                new Job(null, "Java Developer", "Company A", null, "Description", LocalDate.now(), "test")
             );
         }
 
@@ -102,7 +102,7 @@ class JobTest {
         @DisplayName("creating job with null postedAt should throw NullPointerException")
         void givenNullPostedAt_whenCreatingJob_thenThrowsNullPointerException() {
             assertThrows(NullPointerException.class, () ->
-                new Job(null, "Java Developer", "Company A", "https://example.com/job/123", "Description", null)
+                new Job(null, "Java Developer", "Company A", "https://example.com/job/123", "Description", null, "test")
             );
         }
     }

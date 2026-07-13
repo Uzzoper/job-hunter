@@ -43,8 +43,8 @@ class FetchJobsServiceTest {
         @Test
         @DisplayName("fetchAndSave should save new jobs and skip existing ones when scraper returns jobs")
         void fetchAndSave_whenNewJobsFound_shouldSaveOnlyNewJobs() {
-            var newJob = new Job(null, "Java Developer", "Company A", "https://example.com/job/1", "Description", LocalDate.now());
-            var existingJob = new Job(null, "Java Developer", "Company B", "https://example.com/job/2", "Description", LocalDate.now());
+            var newJob = new Job(null, "Java Developer", "Company A", "https://example.com/job/1", "Description", LocalDate.now(), "test");
+            var existingJob = new Job(null, "Java Developer", "Company B", "https://example.com/job/2", "Description", LocalDate.now(), "test");
 
             when(scraperPort.fetch()).thenReturn(List.of(newJob, existingJob));
             when(jobRepository.existsByUrl("https://example.com/job/1")).thenReturn(false);
@@ -64,7 +64,7 @@ class FetchJobsServiceTest {
         @Test
         @DisplayName("fetchAndSave should not save any job when all jobs already exist")
         void fetchAndSave_whenNoNewJobs_shouldNotSaveAnyJob() {
-            var existingJob = new Job(null, "Java Developer", "Company A", "https://example.com/job/1", "Description", LocalDate.now());
+            var existingJob = new Job(null, "Java Developer", "Company A", "https://example.com/job/1", "Description", LocalDate.now(), "test");
 
             when(scraperPort.fetch()).thenReturn(List.of(existingJob));
             when(jobRepository.existsByUrl("https://example.com/job/1")).thenReturn(true);

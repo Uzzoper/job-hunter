@@ -87,7 +87,7 @@ class EmailGenerationServiceTest {
 
             Long jobId = 1L;
             Job job = new Job(jobId, "Java Developer", "CompanyX",
-                    "https://example.com/job/1", "Description", LocalDate.now());
+                    "https://example.com/job/1", "Description", LocalDate.now(), "test");
             JobAnalysis analysis = new JobAnalysis(null, null, null, 85,
                     List.of("Java", "Spring Boot"),
                     List.of("Kubernetes"),
@@ -137,8 +137,8 @@ class EmailGenerationServiceTest {
 
             Long jobId = 2L;
             Job job = new Job(jobId, "Junior Developer", "StartupY",
-                    "https://example.com/job/2", "Description", LocalDate.now());
-            JobAnalysis analysis = new JobAnalysis(null, null, null, 25, // low score
+                    "https://example.com/job/2", "Description", LocalDate.now(), "test");
+            JobAnalysis analysis = new JobAnalysis(null, null, null, 25,
                     List.of("Java"),
                     List.of("AWS", "Docker"),
                     CompanyTone.STARTUP,
@@ -185,7 +185,7 @@ class EmailGenerationServiceTest {
 
             Long jobId = 3L;
             Job job = new Job(jobId, "Developer", "BankZ",
-                    "https://example.com/job/3", "Description", LocalDate.now());
+                    "https://example.com/job/3", "Description", LocalDate.now(), "test");
             JobAnalysis analysis = new JobAnalysis(null, null, null, 80,
                     List.of("Java"),
                     List.of(),
@@ -230,7 +230,7 @@ class EmailGenerationServiceTest {
 
             Long jobId = 4L;
             Job job = new Job(jobId, "Developer", "StartupCool",
-                    "https://example.com/job/4", "Description", LocalDate.now());
+                    "https://example.com/job/4", "Description", LocalDate.now(), "test");
             JobAnalysis analysis = new JobAnalysis(null, null, null, 70,
                     List.of("React"),
                     List.of("AWS"),
@@ -263,7 +263,7 @@ class EmailGenerationServiceTest {
 
             Long jobId = 5L;
             Job job = new Job(jobId, "Developer", "CompanyX",
-                    "https://example.com/job/5", "Description", LocalDate.now());
+                    "https://example.com/job/5", "Description", LocalDate.now(), "test");
             JobAnalysis analysis = new JobAnalysis(null, null, null, 80,
                     List.of("Java"),
                     List.of(),

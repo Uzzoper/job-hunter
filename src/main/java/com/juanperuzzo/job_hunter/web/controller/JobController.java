@@ -2,6 +2,7 @@ package com.juanperuzzo.job_hunter.web.controller;
 
 import com.juanperuzzo.job_hunter.application.port.in.AnalyzeJobUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.FetchJobsUseCase;
+import com.juanperuzzo.job_hunter.application.port.in.FetchSourceJobsUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.GenerateEmailUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.GetEmailDraftUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.GetJobUseCase;
@@ -23,6 +24,7 @@ import java.util.stream.Collectors;
 public class JobController {
 
     private final FetchJobsUseCase fetchJobsUseCase;
+    private final FetchSourceJobsUseCase fetchSourceJobsUseCase;
     private final AnalyzeJobUseCase analyzeJobUseCase;
     private final GenerateEmailUseCase generateEmailUseCase;
     private final ListJobsUseCase listJobsUseCase;
@@ -32,6 +34,7 @@ public class JobController {
 
     public JobController(
             FetchJobsUseCase fetchJobsUseCase,
+            FetchSourceJobsUseCase fetchSourceJobsUseCase,
             AnalyzeJobUseCase analyzeJobUseCase,
             GenerateEmailUseCase generateEmailUseCase,
             ListJobsUseCase listJobsUseCase,
@@ -39,6 +42,7 @@ public class JobController {
             GetEmailDraftUseCase getEmailDraftUseCase,
             CurrentUserProvider currentUserService) {
         this.fetchJobsUseCase = fetchJobsUseCase;
+        this.fetchSourceJobsUseCase = fetchSourceJobsUseCase;
         this.analyzeJobUseCase = analyzeJobUseCase;
         this.generateEmailUseCase = generateEmailUseCase;
         this.listJobsUseCase = listJobsUseCase;
@@ -57,7 +61,8 @@ public class JobController {
                         job.company(),
                         job.url(),
                         job.description(),
-                        job.postedAt()
+                        job.postedAt(),
+                        job.source()
                 ))
                 .collect(Collectors.toList());
         return ResponseEntity.ok(response);
@@ -72,7 +77,8 @@ public class JobController {
                 job.company(),
                 job.url(),
                 job.description(),
-                job.postedAt()
+                job.postedAt(),
+                job.source()
         );
         return ResponseEntity.ok(response);
     }
@@ -103,6 +109,12 @@ public class JobController {
     public ResponseEntity<?> fetchJobs() {
         fetchJobsUseCase.fetchAndSave();
         return ResponseEntity.ok(java.util.Map.of("message", "Fetch completed successfully"));
+    }
+
+    @PostMapping("/fetch/linkedin")
+    public ResponseEntity<?> fetchLinkedInJobs() {
+        fetchSourceJobsUseCase.fetchAndSave("linkedin");
+        return ResponseEntity.ok(java.util.Map.of("message", "LinkedIn fetch completed successfully"));
     }
 
     @GetMapping("/{id}/email")

@@ -114,7 +114,7 @@ class JobNormalizerTest {
             normalizer = new JobNormalizer(dateParser, List.of(), List.of(), List.of(), 90, FIXED_CLOCK);
             var job = normalizer.normalize(new RawJob(
                     "Desenvolvedor Java", "Company", "https://example.com/job1",
-                    "Description", "2026-07-01", "São Paulo", "Presencial", null));
+                    "Description", "2026-07-01", "São Paulo", "Presencial", "test", null));
             assertNotNull(job);
             assertEquals("Desenvolvedor Java", job.title());
         }
@@ -127,7 +127,7 @@ class JobNormalizerTest {
                     List.of(), List.of(), 90, FIXED_CLOCK);
             var job = normalizer.normalize(new RawJob(
                     "Desenvolvedor Java Spring", "Company", "https://example.com/job2",
-                    "Description", "2026-07-01", null, null, null));
+                    "Description", "2026-07-01", null, null, "test", null));
             assertNotNull(job);
         }
 
@@ -139,7 +139,7 @@ class JobNormalizerTest {
                     List.of(), List.of(), 90, FIXED_CLOCK);
             var job = normalizer.normalize(new RawJob(
                     "Desenvolvedor Java", "Company", "https://example.com/job3",
-                    "Description", "2026-07-01", null, null, null));
+                    "Description", "2026-07-01", null, null, "test", null));
             assertNull(job);
         }
 
@@ -151,7 +151,7 @@ class JobNormalizerTest {
                     List.of(), List.of(), 90, FIXED_CLOCK);
             var job = normalizer.normalize(new RawJob(
                     "Desenvolvedor Java Jr", "Company", "https://example.com/job4",
-                    "Description", "2026-07-01", null, null, null));
+                    "Description", "2026-07-01", null, null, "test", null));
             assertNotNull(job);
         }
 
@@ -164,7 +164,7 @@ class JobNormalizerTest {
             var job = normalizer.normalize(new RawJob(
                     "Desenvolvedor Backend", "Company", "https://example.com/job5",
                     "We use Kubernetes for orchestration",
-                    "2026-07-01", null, null, null));
+                    "2026-07-01", null, null, "test", null));
             assertNotNull(job);
         }
     }
@@ -182,7 +182,7 @@ class JobNormalizerTest {
                     List.of(), 90, FIXED_CLOCK);
             var job = normalizer.normalize(new RawJob(
                     "Desenvolvedor Senior", "Company", "https://example.com/excluded1",
-                    "Description", "2026-07-01", null, null, null));
+                    "Description", "2026-07-01", null, null, "test", null));
             assertNull(job);
         }
 
@@ -194,7 +194,7 @@ class JobNormalizerTest {
                     List.of(), 90, FIXED_CLOCK);
             var job = normalizer.normalize(new RawJob(
                     "Desenvolvedor Junior", "Company", "https://example.com/not-excluded",
-                    "Description", "2026-07-01", null, null, null));
+                    "Description", "2026-07-01", null, null, "test", null));
             assertNotNull(job);
         }
     }
@@ -210,7 +210,7 @@ class JobNormalizerTest {
                     List.of(), List.of(), 90, FIXED_CLOCK);
             var job = normalizer.normalize(new RawJob(
                     "Desenvolvedor", "Company", "https://example.com/loc1",
-                    "Description", "2026-07-01", "São Paulo", "Presencial", null));
+                    "Description", "2026-07-01", "São Paulo", "Presencial", "test", null));
             assertNotNull(job);
         }
 
@@ -221,7 +221,7 @@ class JobNormalizerTest {
                     List.of(), List.of("São Paulo"), 90, FIXED_CLOCK);
             var job = normalizer.normalize(new RawJob(
                     "Desenvolvedor", "Company", "https://example.com/remote1",
-                    "Description", "2026-07-01", "Qualquer", "Remoto", null));
+                    "Description", "2026-07-01", "Qualquer", "Remoto", "test", null));
             assertNotNull(job);
         }
 
@@ -232,7 +232,7 @@ class JobNormalizerTest {
                     List.of(), List.of("sao paulo"), 90, FIXED_CLOCK);
             var job = normalizer.normalize(new RawJob(
                     "Desenvolvedor", "Company", "https://example.com/sp",
-                    "Description", "2026-07-01", "São Paulo", "Presencial", null));
+                    "Description", "2026-07-01", "São Paulo", "Presencial", "test", null));
             assertNotNull(job);
         }
 
@@ -243,7 +243,7 @@ class JobNormalizerTest {
                     List.of(), List.of("São Paulo"), 90, FIXED_CLOCK);
             var job = normalizer.normalize(new RawJob(
                     "Desenvolvedor", "Company", "https://example.com/rj",
-                    "Description", "2026-07-01", "Rio de Janeiro", "Presencial", null));
+                    "Description", "2026-07-01", "Rio de Janeiro", "Presencial", "test", null));
             assertNull(job);
         }
     }
@@ -259,7 +259,7 @@ class JobNormalizerTest {
                     List.of(), List.of(), 90, FIXED_CLOCK);
             var job = normalizer.normalize(new RawJob(
                     "Desenvolvedor", "Company", "https://example.com/recent",
-                    "Description", "2026-07-01", null, null, null));
+                    "Description", "2026-07-01", null, null, "test", null));
             assertNotNull(job);
             assertEquals(LocalDate.of(2026, 7, 1), job.postedAt());
         }
@@ -271,7 +271,7 @@ class JobNormalizerTest {
                     List.of(), List.of(), 30, FIXED_CLOCK);
             var job = normalizer.normalize(new RawJob(
                     "Desenvolvedor", "Company", "https://example.com/old",
-                    "Description", "2026-05-01", null, null, null));
+                    "Description", "2026-05-01", null, null, "test", null));
             assertNull(job);
         }
     }
@@ -291,7 +291,7 @@ class JobNormalizerTest {
         void shouldReturnNullForNullTitle() {
             var job = normalizer.normalize(new RawJob(
                     null, "Company", "https://example.com/null-title",
-                    "Description", "2026-07-01", null, null, null));
+                    "Description", "2026-07-01", null, null, "test", null));
             assertNull(job);
         }
 
@@ -300,7 +300,7 @@ class JobNormalizerTest {
         void shouldReturnNullForBlankTitle() {
             var job = normalizer.normalize(new RawJob(
                     "  ", "Company", "https://example.com/blank-title",
-                    "Description", "2026-07-01", null, null, null));
+                    "Description", "2026-07-01", null, null, "test", null));
             assertNull(job);
         }
 
@@ -309,7 +309,7 @@ class JobNormalizerTest {
         void shouldHandleNullDate() {
             var job = normalizer.normalize(new RawJob(
                     "Desenvolvedor", "Company", "https://example.com/null-date",
-                    "Description", null, null, null, null));
+                    "Description", null, null, null, "test", null));
             assertNull(job);
         }
 
@@ -318,7 +318,7 @@ class JobNormalizerTest {
         void shouldHandleNullDescription() {
             var job = normalizer.normalize(new RawJob(
                     "Desenvolvedor", "Company", "https://example.com/null-desc",
-                    null, "2026-07-01", null, null, null));
+                    null, "2026-07-01", null, null, "test", null));
             assertNotNull(job);
         }
     }
@@ -334,11 +334,11 @@ class JobNormalizerTest {
                     List.of(), List.of(), 90, FIXED_CLOCK);
             var jobs = normalizer.normalizeAll(List.of(
                     new RawJob("Desenvolvedor Java", "C1", "https://a.com/1",
-                            "Desc", "2026-07-01", null, null, null),
+                            "Desc", "2026-07-01", null, null, "test", null),
                     new RawJob("Analista de Dados", "C2", "https://a.com/2",
-                            "Desc", "2026-07-01", null, null, null),
+                            "Desc", "2026-07-01", null, null, "test", null),
                     new RawJob("Desenvolvedor Python", "C3", "https://a.com/3",
-                            "Desc", "2026-07-01", null, null, null)
+                            "Desc", "2026-07-01", null, null, "test", null)
             ));
             assertEquals(2, jobs.size());
         }
