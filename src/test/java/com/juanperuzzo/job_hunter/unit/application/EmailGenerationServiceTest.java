@@ -138,7 +138,7 @@ class EmailGenerationServiceTest {
             Long jobId = 2L;
             Job job = new Job(jobId, "Junior Developer", "StartupY",
                     "https://example.com/job/2", "Description", LocalDate.now(), "test");
-            JobAnalysis analysis = new JobAnalysis(null, null, null, 25, // low score
+            JobAnalysis analysis = new JobAnalysis(null, null, null, 25,
                     List.of("Java"),
                     List.of("AWS", "Docker"),
                     CompanyTone.STARTUP,
