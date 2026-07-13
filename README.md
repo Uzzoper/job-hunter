@@ -342,6 +342,9 @@ docs/
     ├── gupy-scraper.md
     ├── indeed-scraper.md
     ├── infojobs-scraper.md
+    ├── linkedin-scraper-client.md
+    ├── linkedin-scraper-service.md
+    ├── provider-scraping-migration.md
     ├── prompts.md            ← all AI prompts versioned and documented
     ├── user-authentication.md
     ├── user-profile.md
