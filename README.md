@@ -154,7 +154,7 @@ flowchart BT
         I5["config/ — AppConfig"]
     end
 
-    subgraph Web["🩷 Web"]
+    subgraph Web["🟣 Web"]
         W1["controller/ — JobController,<br/>EmailController, AuthController,<br/>ProfileController"]
         W2["dto/ — Request/Response records"]
         W3["exception/ — GlobalExceptionHandler"]
