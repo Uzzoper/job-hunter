@@ -24,10 +24,12 @@ flowchart TB
     subgraph Scraper["Job Scraping"]
         S1[Gupy API] --> S2[GupyProvider]
         S3[InfoJobs] --> S4[InfoJobsProvider]
-        S2 --> S5[ProviderRegistry]
-        S4 --> S5
-        S5 --> S6[JobNormalizer]
-        S6 --> S7[(PostgreSQL)]
+        S5[LinkedIn] --> S6[LinkedInScraperClient]
+        S2 --> S7[ProviderRegistry]
+        S4 --> S7
+        S6 --> S7
+        S7 --> S8[JobNormalizer]
+        S8 --> S9[(PostgreSQL)]
     end
 
     subgraph AI["AI Analysis"]
@@ -49,7 +51,7 @@ flowchart TB
 
 0. Register or login via `/api/auth/register` and `/api/auth/login` to receive a JWT token.
    All subsequent requests must include `Authorization: Bearer <token>`.
-1. The scraper fetches job listings from Gupy and InfoJobs, filtered by keywords.
+1. The scraper fetches job listings from Gupy, InfoJobs, and LinkedIn, filtered by keywords.
 2. Each listing is saved to PostgreSQL — duplicates are skipped by URL.
 3. On demand, the AI analyzes the listing against your profile and returns a match score (0–100), matched/missing skills, and company tone.
 4. The AI then generates a personalized application email in Brazilian Portuguese, tailored to the company tone and mentioning a relevant portfolio project.
@@ -123,6 +125,7 @@ sequenceDiagram
 | Migrations | Flyway |
 | Security | Spring Security + JWT (jjwt) |
 | Scraping | RestClient + Jsoup |
+| Browser Automation | Playwright (Node.js + TypeScript, separate container) |
 | AI | OpenRouter API (MiniMax M2.5) |
 | Tests | JUnit 5 + Mockito + WireMock |
 | Build | Maven |
@@ -303,10 +306,14 @@ The application will start on `http://localhost:8080`. Flyway runs automatically
 ## Running the tests
 
 ```bash
+# Backend (Java)
 ./mvnw test
+
+# LinkedIn microservice (Node.js)
+cd linkedin-scraper && npm test
 ```
 
-The test suite uses WireMock to simulate HTTP servers for the scraper and AI client — no real API calls are made during testing.
+The test suite uses WireMock to simulate HTTP servers for the scraper and AI client — no real API calls are made during testing. The LinkedIn microservice has its own Jest test suite with Playwright fixtures.
 
 ---
 
