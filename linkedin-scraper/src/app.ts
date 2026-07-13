@@ -29,7 +29,6 @@ export interface AppDependencies {
 export function createApp(deps?: AppDependencies) {
   const app = express();
 
-  // Resolve dependencies: use injected or default to real singletons
   const browserManager = deps?.browserManager ?? BrowserManager.getInstance();
   const searchScraper =
     deps?.searchScraper ?? new SearchScraper(browserManager);
