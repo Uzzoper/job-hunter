@@ -10,13 +10,15 @@ public record Job(
         String company,
         String url,
         String description,
-        LocalDate postedAt
+        LocalDate postedAt,
+        String source
 ) {
     private static final int EXPIRATION_DAYS = 30;
 
     public Job {
         requireNonNull(url, "url must not be null");
         requireNonNull(postedAt, "postedAt must not be null");
+        requireNonNull(source, "source must not be null");
     }
 
     @Override

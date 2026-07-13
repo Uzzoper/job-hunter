@@ -77,7 +77,7 @@ class AiAnalysisServiceTest {
 
             Long jobId = 1L;
             Job job = new Job(jobId, "Java Developer", "CompanyX",
-                    "https://example.com/job/1", "Description", LocalDate.now());
+                    "https://example.com/job/1", "Description", LocalDate.now(), "test");
             when(jobRepository.findById(jobId)).thenReturn(Optional.of(job));
 
             JobAnalysis analysis = aiAnalysisService.analyze(1L, jobId);
@@ -100,13 +100,13 @@ class AiAnalysisServiceTest {
         void analyze_whenEmptyDescription_shouldThrowIllegalArgumentException() {
             Long jobId = 1L;
             Job job = new Job(jobId, "Java Developer", "CompanyX",
-                    "https://example.com/job/1", "", LocalDate.now());
+                    "https://example.com/job/1", "", LocalDate.now(), "test");
             when(jobRepository.findById(jobId)).thenReturn(Optional.of(job));
 
             assertThrows(IllegalArgumentException.class, () -> aiAnalysisService.analyze(1L, jobId));
 
             Job jobBlank = new Job(jobId, "Java Developer", "CompanyX",
-                    "https://example.com/job/1", "   ", LocalDate.now());
+                    "https://example.com/job/1", "   ", LocalDate.now(), "test");
             when(jobRepository.findById(jobId)).thenReturn(Optional.of(jobBlank));
 
             assertThrows(IllegalArgumentException.class, () -> aiAnalysisService.analyze(1L, jobId));
@@ -125,7 +125,7 @@ class AiAnalysisServiceTest {
 
             Long jobId = 1L;
             Job job = new Job(jobId, "Java Developer", "CompanyX",
-                    "https://example.com/job/1", "Description", LocalDate.now());
+                    "https://example.com/job/1", "Description", LocalDate.now(), "test");
             when(jobRepository.findById(jobId)).thenReturn(Optional.of(job));
 
             AiException exception = assertThrows(AiException.class,
@@ -148,7 +148,7 @@ class AiAnalysisServiceTest {
 
             Long jobId = 1L;
             Job job = new Job(jobId, "Java Developer", "CompanyX",
-                    "https://example.com/job/1", "Description", LocalDate.now());
+                    "https://example.com/job/1", "Description", LocalDate.now(), "test");
             when(jobRepository.findById(jobId)).thenReturn(Optional.of(job));
 
             assertThrows(AiException.class, () -> aiAnalysisService.analyze(1L, jobId));
@@ -178,7 +178,7 @@ class AiAnalysisServiceTest {
 
             Long jobId = 1L;
             Job job = new Job(jobId, "Java Developer", "CompanyX",
-                    "https://example.com/job/1", "Description", LocalDate.now());
+                    "https://example.com/job/1", "Description", LocalDate.now(), "test");
             when(jobRepository.findById(jobId)).thenReturn(Optional.of(job));
 
             JobAnalysis analysis = aiAnalysisService.analyze(1L, jobId);
@@ -205,7 +205,7 @@ class AiAnalysisServiceTest {
 
             Long jobId = 1L;
             Job job = new Job(jobId, "Java Developer", "CompanyX",
-                    "https://example.com/job/1", "Description", LocalDate.now());
+                    "https://example.com/job/1", "Description", LocalDate.now(), "test");
             when(jobRepository.findById(jobId)).thenReturn(Optional.of(job));
 
             JobAnalysis analysis = aiAnalysisService.analyze(1L, jobId);
@@ -225,7 +225,7 @@ class AiAnalysisServiceTest {
 
             Long jobId = 1L;
             Job job = new Job(jobId, "Java Developer", "CompanyX",
-                    "https://example.com/job/1", "Description", LocalDate.now());
+                    "https://example.com/job/1", "Description", LocalDate.now(), "test");
             when(jobRepository.findById(jobId)).thenReturn(Optional.of(job));
 
             assertThrows(ProfileNotConfiguredException.class,

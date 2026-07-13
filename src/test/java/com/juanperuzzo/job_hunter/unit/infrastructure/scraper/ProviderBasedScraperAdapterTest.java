@@ -140,7 +140,7 @@ class ProviderBasedScraperAdapterTest {
     }
 
     private static RawJob raw(String title, String url) {
-        return new RawJob(title, "Co", url, "desc", "2026-07-01", null, null, null);
+        return new RawJob(title, "Co", url, "desc", "2026-07-01", null, null, "test", null);
     }
 
     private static ExtractionStrategy createStub(String id, RawJob... jobs) {

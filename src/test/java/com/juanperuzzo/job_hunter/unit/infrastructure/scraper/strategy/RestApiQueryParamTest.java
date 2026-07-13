@@ -24,7 +24,7 @@ class RestApiQueryParamTest {
     void setUp(WireMockRuntimeInfo wmRuntimeInfo) {
         strategy = new RestApiStrategy("test", wmRuntimeInfo.getHttpBaseUrl(), 5, "data",
                 node -> new RawJob(node.path("name").asText(), "", node.path("url").asText(),
-                        null, null, null, null, new HashMap<>()));
+                        null, null, null, null, "test", new HashMap<>()));
     }
 
     @Test
