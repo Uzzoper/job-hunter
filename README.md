@@ -169,6 +169,43 @@ The dependency rule is strictly enforced: `domain` has no external dependencies,
 
 ---
 
+## Docker Architecture
+
+The LinkedIn scraper runs as a separate container — a deliberate architectural decision to keep responsibilities isolated:
+
+```mermaid
+flowchart TB
+    subgraph Docker["Docker Compose"]
+        subgraph Backend["Spring Boot (Java 21)"]
+            Controller["JobController<br/>(REST API)"]
+            Registry["ProviderRegistry"]
+            Client["LinkedInScraperClient"]
+            Controller --> Registry
+            Registry --> Client
+        end
+
+        subgraph Scraper["LinkedIn Scraper (Node.js + Playwright)"]
+            Router["Express Router"]
+            Search["SearchScraper<br/>— search by keywords"]
+            Detail["DetailScraper<br/>— extract details"]
+            Router --> Search
+            Router --> Detail
+        end
+
+        Database[("PostgreSQL")]
+
+        Client -->|"HTTP :3000<br/>internal network"| Router
+        Registry --> Database
+    end
+
+    style Backend fill:#e1f5fe,stroke:#0288d1
+    style Scraper fill:#fff3e0,stroke:#f57c00
+```
+
+The Spring Boot container handles business logic, orchestration, and persistence. The Node.js container handles browser automation exclusively. They communicate via Docker's internal DNS (`http://linkedin-scraper:3000`) — no host port exposure required.
+
+---
+
 ## Scraping Pipeline
 
 ```mermaid
