@@ -1,5 +1,7 @@
 package com.juanperuzzo.job_hunter.infrastructure.scraper.provider;
 
+import com.juanperuzzo.job_hunter.application.port.out.RawJob;
+import com.juanperuzzo.job_hunter.application.port.out.SourceFetchPort;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.normalizer.JobNormalizer;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.ratelimit.RateLimiter;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.ratelimit.TokenBucketRateLimiter;
@@ -11,7 +13,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
-public class ProviderRegistry {
+public class ProviderRegistry implements SourceFetchPort {
 
     private final Map<String, ProviderEntry> providers = new HashMap<>();
 
@@ -40,5 +42,12 @@ public class ProviderRegistry {
 
     public boolean isEmpty() {
         return providers.isEmpty();
+    }
+
+    @Override
+    public List<RawJob> fetch(String sourceId) {
+        var entry = getProvider(sourceId)
+                .orElseThrow(() -> new IllegalArgumentException("Unknown source: " + sourceId));
+        return entry.strategy().extract();
     }
 }

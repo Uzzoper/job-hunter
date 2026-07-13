@@ -2,6 +2,7 @@ package com.juanperuzzo.job_hunter.unit.web;
 
 import com.juanperuzzo.job_hunter.application.port.in.AnalyzeJobUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.FetchJobsUseCase;
+import com.juanperuzzo.job_hunter.application.port.in.FetchSourceJobsUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.GenerateEmailUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.GetEmailDraftUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.GetJobUseCase;
@@ -37,6 +38,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -58,6 +60,9 @@ class JobControllerTest {
 
     @MockitoBean
     private FetchJobsUseCase fetchJobsUseCase;
+
+    @MockitoBean
+    private FetchSourceJobsUseCase fetchSourceJobsUseCase;
 
     @MockitoBean
     private AnalyzeJobUseCase analyzeJobUseCase;
@@ -177,8 +182,8 @@ class JobControllerTest {
         authenticateAs(1L);
 
         var jobs = List.of(
-                new Job(1L, "Java Dev", "Acme", "https://acme.com/job1", "Description 1", LocalDate.now()),
-                new Job(2L, "React Dev", "Beta", "https://beta.com/job2", "Description 2", LocalDate.now())
+                new Job(1L, "Java Dev", "Acme", "https://acme.com/job1", "Description 1", LocalDate.now(), "test"),
+                new Job(2L, "React Dev", "Beta", "https://beta.com/job2", "Description 2", LocalDate.now(), "test")
         );
         when(listJobsUseCase.findAll()).thenReturn(jobs);
 
@@ -214,7 +219,7 @@ class JobControllerTest {
     void getJobById_whenJobExists_shouldReturn200() throws Exception {
         authenticateAs(1L);
 
-        var job = new Job(1L, "Java Dev", "Acme", "https://acme.com/job", "Description", LocalDate.now());
+        var job = new Job(1L, "Java Dev", "Acme", "https://acme.com/job", "Description", LocalDate.now(), "test");
         when(getJobUseCase.getById(1L)).thenReturn(job);
 
         mockMvc.perform(get("/api/jobs/{id}", 1L))
@@ -254,6 +259,35 @@ class JobControllerTest {
                 .andExpect(jsonPath("$.message").value("Fetch completed successfully"));
 
         verify(fetchJobsUseCase).fetchAndSave();
+    }
+
+    @Test
+    @DisplayName("fetchLinkedInJobs should return 200 when fetch completes successfully")
+    void fetchLinkedInJobs_whenValidRequest_shouldReturnSavedJobCount() throws Exception {
+        authenticateAs(1L);
+
+        mockMvc.perform(post("/api/jobs/fetch/linkedin"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("LinkedIn fetch completed successfully"));
+
+        verify(fetchSourceJobsUseCase).fetchAndSave("linkedin");
+    }
+
+    @Test
+    @DisplayName("fetchLinkedInJobs should return 500 when service throws exception")
+    void fetchLinkedInJobs_whenServiceFails_shouldReturnError() throws Exception {
+        authenticateAs(1L);
+
+        doThrow(new RuntimeException("LinkedIn service unavailable"))
+                .when(fetchSourceJobsUseCase).fetchAndSave("linkedin");
+
+        mockMvc.perform(post("/api/jobs/fetch/linkedin"))
+                .andExpect(status().isInternalServerError())
+                .andExpect(jsonPath("$.status").value(500))
+                .andExpect(jsonPath("$.error").value("Internal Server Error"))
+                .andExpect(jsonPath("$.message").value("An unexpected error occurred"));
+
+        verify(fetchSourceJobsUseCase).fetchAndSave("linkedin");
     }
 
     @Test
