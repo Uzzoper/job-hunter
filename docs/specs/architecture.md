@@ -91,8 +91,10 @@ com.juanperuzzo.job_hunter
 │   │       ├── EmailDraftRepository.java
 │   │       ├── JobAnalysisRepository.java
 │   │       ├── JobRepository.java
+│   │       ├── NormalizerPort.java
 │   │       ├── PasswordHasher.java
-│   │       ├── ScraperPort.java
+│   │       ├── ScraperPort.java                         (legacy — see ADR)
+│   │       ├── SourceFetchPort.java
 │   │       ├── TokenProvider.java
 │   │       ├── UserProfileRepository.java
 │   │       └── UserRepository.java
@@ -101,6 +103,7 @@ com.juanperuzzo.job_hunter
 │       ├── AuthService.java
 │       ├── EmailGenerationService.java
 │       ├── FetchJobsService.java
+│       ├── FetchSourceJobsService.java              (uses SourceFetchPort + NormalizerPort)
 │       └── UserProfileService.java
 │
 ├── infrastructure/                      ← technical details
@@ -112,14 +115,14 @@ com.juanperuzzo.job_hunter
 │   │   │   ├── GupyProvider.java             (API strategy)
 │   │   │   ├── InfoJobsProvider.java         (HTML strategy)
 │   │   │   ├── LinkedInProvider.java         (Jsoup fallback)
-│   │   │   └── ProviderRegistry.java         (orchestrates all providers)
+│   │   │   └── ProviderRegistry.java         (implements SourceFetchPort)
 │   │   ├── strategy/
 │   │   │   ├── ExtractionStrategy.java       (interface)
 │   │   │   ├── ApiStrategy.java              (JSON/API scraper)
 │   │   │   └── HtmlStrategy.java             (Jsoup scraper)
 │   │   ├── normalizer/
 │   │   │   ├── DateParser.java
-│   │   │   ├── JobNormalizer.java            (shared pipeline)
+│   │   │   ├── JobNormalizer.java            (implements NormalizerPort)
 │   │   │   └── RawJob.java                   (DTO)
 │   │   ├── retry/
 │   │   │   └── ExponentialBackoffRetry.java
@@ -212,13 +215,16 @@ Records are immutable by default, have auto-generated `equals`/`hashCode`/`toStr
 and communicate immutability intent clearly.
 
 ### Why Playwright over Jsoup for LinkedIn?
-LinkedIn serves a Bot Challenge (502 Bad Gateway) to Jsoup-based requests. Playwright runs a real headless Chromium with a realistic browser fingerprint (Chrome 129, pt-BR locale, `Accept-Language: pt-BR`), which bypasses detection. The Jsoup-based `LinkedInProvider` is kept as a lightweight fallback for environments without Docker.
+LinkedIn serves different content to headless vs headed browsers. Playwright renders JavaScript-rendered content, which more closely mirrors what a real browser would display. Jsoup only parses static HTML and may receive a Bot Challenge page instead of actual job data. The Jsoup-based `LinkedInProvider` is kept as a lightweight fallback for environments without Docker.
 
 ### Why a separate microservice for LinkedIn scraping?
 Playwright requires heavy Chromium dependencies (600MB+). A separate Node.js + Express + TypeScript microservice keeps the Spring Boot container lightweight (no Playwright/Chromium in the JVM image) and allows independent scaling of the scraping layer.
 
-### Why no internal Docker network between services?
+### How do the Java and Node.js services communicate?
 The Spring Boot app accesses the Node.js scraper via `http://linkedin-scraper:3000` in Docker (Compose service name resolves via internal DNS). Local development overrides to `http://localhost:3000` via `application-local.yaml`.
+
+### Why both random delays and a token bucket rate limiter?
+They serve different layers. The `TokenBucketRateLimiter` controls HTTP request rate to external APIs (Gupy, InfoJobs) to avoid 429 responses. The random delays in the Playwright scraper (`linkedin-scraper`) simulate human navigation patterns between page interactions to avoid bot detection. One is network-level rate limiting, the other is browser-level behavior simulation — they are complementary, not redundant.
 
 ---
 
