@@ -49,7 +49,7 @@ export class SearchScraper {
       if (!page.isClosed()) {
         await page.close();
       }
-      if (!context.browser()?.isConnected()) {
+      if (!context.isClosed()) {
         await context.close();
       }
     }

@@ -6,7 +6,7 @@ import com.juanperuzzo.job_hunter.application.port.out.SourceFetchPort;
 import com.juanperuzzo.job_hunter.application.service.FetchSourceJobsService;
 import com.juanperuzzo.job_hunter.domain.exception.ScraperException;
 import com.juanperuzzo.job_hunter.domain.model.Job;
-import com.juanperuzzo.job_hunter.infrastructure.scraper.normalizer.JobNormalizer;
+import com.juanperuzzo.job_hunter.application.port.out.NormalizerPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -32,7 +32,7 @@ class FetchSourceJobsServiceTest {
     private JobRepository jobRepository;
 
     @Mock
-    private JobNormalizer normalizer;
+    private NormalizerPort normalizer;
 
     private FetchSourceJobsService service;
 

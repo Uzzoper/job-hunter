@@ -78,8 +78,7 @@ public class LinkedInScraperClient implements ExtractionStrategy {
                     .body(String.class);
 
             if (response == null || response.isBlank()) {
-                log.warn("{} returned empty response", PROVIDER_ID);
-                return List.of();
+                throw new ScraperException(PROVIDER_ID + " returned empty response");
             }
 
             var root = objectMapper.readTree(response);
