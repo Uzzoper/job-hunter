@@ -24,10 +24,12 @@ flowchart TB
     subgraph Scraper["Job Scraping"]
         S1[Gupy API] --> S2[GupyProvider]
         S3[InfoJobs] --> S4[InfoJobsProvider]
-        S2 --> S5[ProviderRegistry]
-        S4 --> S5
-        S5 --> S6[JobNormalizer]
-        S6 --> S7[(PostgreSQL)]
+        S5[LinkedIn] --> S6[LinkedInScraperClient]
+        S2 --> S7[ProviderRegistry]
+        S4 --> S7
+        S6 --> S7
+        S7 --> S8[JobNormalizer]
+        S8 --> S9[(PostgreSQL)]
     end
 
     subgraph AI["AI Analysis"]
@@ -49,7 +51,7 @@ flowchart TB
 
 0. Register or login via `/api/auth/register` and `/api/auth/login` to receive a JWT token.
    All subsequent requests must include `Authorization: Bearer <token>`.
-1. The scraper fetches job listings from Gupy and InfoJobs, filtered by keywords.
+1. The scraper fetches job listings from Gupy, InfoJobs, and LinkedIn, filtered by keywords.
 2. Each listing is saved to PostgreSQL — duplicates are skipped by URL.
 3. On demand, the AI analyzes the listing against your profile and returns a match score (0–100), matched/missing skills, and company tone.
 4. The AI then generates a personalized application email in Brazilian Portuguese, tailored to the company tone and mentioning a relevant portfolio project.
@@ -123,6 +125,7 @@ sequenceDiagram
 | Migrations | Flyway |
 | Security | Spring Security + JWT (jjwt) |
 | Scraping | RestClient + Jsoup |
+| Browser Automation | Playwright (Node.js + TypeScript, separate container) |
 | AI | OpenRouter API (MiniMax M2.5) |
 | Tests | JUnit 5 + Mockito + WireMock |
 | Build | Maven |
@@ -142,30 +145,70 @@ flowchart BT
 
     subgraph Application["🔵 Application"]
         A1["port/in/ — FetchJobsUseCase,<br/>AnalyzeJobUseCase, GenerateEmailUseCase,<br/>AuthUseCase"]
-        A2["port/out/ — JobRepository, ScraperPort,<br/>AiPort, UserRepository, etc."]
-        A3["service/ — FetchJobsService,<br/>AiAnalysisService, EmailGenerationService,<br/>AuthService, UserProfileService"]
+        A2["port/out/ — JobRepository, ScraperPort,<br/>AiPort, NormalizerPort, SourceFetchPort"]
+        A3["service/ — FetchJobsService,<br/>AiAnalysisService, EmailGenerationService,<br/>AuthService, FetchSourceJobsService"]
     end
 
     subgraph Infrastructure["🟠 Infrastructure"]
-        I1["scraper/ — ProviderBasedScraper,<br/>GupyProvider, InfoJobsProvider"]
+        I1["scraper/ — ProviderBasedScraper,<br/>GupyProvider, InfoJobsProvider,<br/>LinkedInScraperClient"]
         I2["ai/ — OpenRouterClient"]
         I3["persistence/ — JPA adapters,<br/>repositories, entities"]
         I4["security/ — JWT filter,<br/>JwtTokenService, SecurityConfig"]
         I5["config/ — AppConfig"]
     end
 
-    subgraph Web["🩷 Web"]
+    subgraph Web["🟣 Web"]
         W1["controller/ — JobController,<br/>EmailController, AuthController,<br/>ProfileController"]
         W2["dto/ — Request/Response records"]
         W3["exception/ — GlobalExceptionHandler"]
     end
 
+    LS[/"⚙️ LinkedIn Scraper<br/>(Node.js + Playwright)"/]
+
     Web --> Application
     Infrastructure --> Application
     Application --> Domain
+    I1 -.->|"HTTP :3000"| LS
 ```
 
 The dependency rule is strictly enforced: `domain` has no external dependencies, `application` depends only on `domain`, and `infrastructure`/`web` depend on `application`.
+
+---
+
+## Docker Architecture
+
+The LinkedIn scraper runs as a separate container — a deliberate architectural decision to keep responsibilities isolated:
+
+```mermaid
+flowchart TB
+    subgraph Docker["Docker Compose"]
+        subgraph Backend["Spring Boot (Java 21)"]
+            Controller["JobController<br/>(REST API)"]
+            Registry["ProviderRegistry"]
+            Client["LinkedInScraperClient"]
+            Controller --> Registry
+            Registry --> Client
+        end
+
+        subgraph Scraper["LinkedIn Scraper (Node.js + Playwright)"]
+            Router["Express Router"]
+            Search["SearchScraper<br/>— search by keywords"]
+            Detail["DetailScraper<br/>— extract details"]
+            Router --> Search
+            Router --> Detail
+        end
+
+        Database[("PostgreSQL")]
+
+        Client -->|"HTTP :3000<br/>internal network"| Router
+        Registry --> Database
+    end
+
+    style Backend fill:#e1f5fe,stroke:#0288d1
+    style Scraper fill:#fff3e0,stroke:#f57c00
+```
+
+The Spring Boot container handles business logic, orchestration, and persistence. The Node.js container handles browser automation exclusively. They communicate via Docker's internal DNS (`http://linkedin-scraper:3000`) — no host port exposure required.
 
 ---
 
@@ -184,6 +227,8 @@ flowchart LR
 ```
 
 Each source is wrapped by a **Provider** that selects the right **Strategy** (REST API vs HTML). The parsed result is **Normalized** (dates, URLs, null-safe fields) and **Deduplicated** by URL before reaching the database via the **Adapter**.
+
+> **Note**: LinkedIn follows a different path — a dedicated Node.js + Playwright microservice handles browser automation and feeds data through `LinkedInScraperClient` into the same normalization pipeline.
 
 ---
 
@@ -261,10 +306,14 @@ The application will start on `http://localhost:8080`. Flyway runs automatically
 ## Running the tests
 
 ```bash
+# Backend (Java)
 ./mvnw test
+
+# LinkedIn microservice (Node.js)
+cd linkedin-scraper && npm test
 ```
 
-The test suite uses WireMock to simulate HTTP servers for the scraper and AI client — no real API calls are made during testing.
+The test suite uses WireMock to simulate HTTP servers for the scraper and AI client — no real API calls are made during testing. The LinkedIn microservice has its own Jest test suite with Playwright fixtures.
 
 ---
 
@@ -293,6 +342,9 @@ docs/
     ├── gupy-scraper.md
     ├── indeed-scraper.md
     ├── infojobs-scraper.md
+    ├── linkedin-scraper-client.md
+    ├── linkedin-scraper-service.md
+    ├── provider-scraping-migration.md
     ├── prompts.md            ← all AI prompts versioned and documented
     ├── user-authentication.md
     ├── user-profile.md

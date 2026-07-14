@@ -18,7 +18,9 @@ All requests require Authorization: Bearer
        ↓
 JwtTokenFilter → CurrentUserService
        ↓
-Scraper (CompositeScraper: Gupy + InfoJobs)
+Scraper (ProviderRegistry: Gupy + InfoJobs + LinkedIn)
+       ↓
+   LinkedInScraperClient → LinkedIn Scraper Microservice (Node.js + Playwright)
        ↓
 Persistence (PostgreSQL + Flyway)
        ↓
@@ -31,8 +33,9 @@ REST API (auth required except register/login)
 
 ### Target sites (priority order)
 1. **Gupy** — accessible JSON endpoint
-2. **InfoJobs** — scraping via Jsoup
-3. Both orchestrated by CompositeScraper
+2. **LinkedIn** — Playwright automation (Node.js microservice), Jsoup fallback
+3. **InfoJobs** — scraping via Jsoup
+4. All orchestrated by ProviderRegistry
 
 ---
 
@@ -50,7 +53,8 @@ com.juanperuzzo.job_hunter
 │   └── service/                 → Use case implementations
 │
 ├── infrastructure/              ← technical details
-│   ├── scraper/                 → GupyScraper, InfoJobsScraper, CompositeScraper
+│   ├── scraper/                 → ProviderRegistry, LinkedInScraperClient,
+│                                  GupyProvider, InfoJobsProvider, LinkedInProvider
 │   ├── ai/                      → OpenRouterClient
 │   ├── persistence/             → JPA adapters per entity
 │   ├── security/                → JWT filter, token service, CurrentUserService
