@@ -364,7 +364,8 @@ impl App {
     }
 
     async fn handle_event(&mut self, event: crossterm::event::Event) -> anyhow::Result<()> {
-        if let crossterm::event::Event::Key(key) = event {
+        if let crossterm::event::Event::Key(key) = event
+            && key.kind == crossterm::event::KeyEventKind::Press {
             if self.error_message.is_some() {
                 return self.handle_error_popup(key).await;
             }
