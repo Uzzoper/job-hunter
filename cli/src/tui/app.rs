@@ -374,6 +374,25 @@ impl App {
                 return auth_screen::handle_event(event, self).await;
             }
 
+            // When search is focused, intercept all keys for search handling before global match
+            if self.state == AppState::JobList
+                && self.job_list_screen.as_ref().is_some_and(|s| s.search_focus == SearchFocus::Focused)
+            {
+                match key.code {
+                    crossterm::event::KeyCode::Esc | crossterm::event::KeyCode::Enter => {
+                        if let Some(s) = &mut self.job_list_screen { s.blur_search(); }
+                    }
+                    crossterm::event::KeyCode::Backspace => {
+                        if let Some(s) = &mut self.job_list_screen { s.handle_search_backspace(); }
+                    }
+                    crossterm::event::KeyCode::Char(c) => {
+                        if let Some(s) = &mut self.job_list_screen { s.handle_search_char(c); }
+                    }
+                    _ => {}
+                }
+                return Ok(());
+            }
+
             match key.code {
                 crossterm::event::KeyCode::Char('q') | crossterm::event::KeyCode::Char('Q') => {
                     self.should_quit = true;
@@ -408,29 +427,13 @@ impl App {
                     if self.state == AppState::Profile => {
                 }
                 crossterm::event::KeyCode::Esc => {
-                    let search_focused = self.state == AppState::JobList
-                        && self.job_list_screen.as_ref().is_some_and(|s| s.search_focus == SearchFocus::Focused);
-                    if search_focused {
-                        if let Some(screen) = &mut self.job_list_screen {
-                            screen.blur_search();
-                        }
-                    } else {
-                        self.handle_escape();
-                    }
+                    self.handle_escape();
                 }
                 crossterm::event::KeyCode::Tab => {
                     self.handle_tab();
                 }
                 crossterm::event::KeyCode::Enter => {
-                    let search_focused = self.state == AppState::JobList
-                        && self.job_list_screen.as_ref().is_some_and(|s| s.search_focus == SearchFocus::Focused);
-                    if search_focused {
-                        if let Some(screen) = &mut self.job_list_screen {
-                            screen.blur_search();
-                        }
-                    } else {
-                        self.handle_enter()?;
-                    }
+                    self.handle_enter()?;
                 }
                 crossterm::event::KeyCode::Up | crossterm::event::KeyCode::Char('k') => {
                     self.handle_up();
@@ -438,22 +441,7 @@ impl App {
                 crossterm::event::KeyCode::Down | crossterm::event::KeyCode::Char('j') => {
                     self.handle_down();
                 }
-                crossterm::event::KeyCode::Backspace => {
-                    if self.state == AppState::JobList
-                        && let Some(screen) = &mut self.job_list_screen
-                        && screen.search_focus == SearchFocus::Focused
-                    {
-                        screen.handle_search_backspace();
-                    }
-                }
-                crossterm::event::KeyCode::Char(c) => {
-                    if self.state == AppState::JobList
-                        && let Some(screen) = &mut self.job_list_screen
-                        && screen.search_focus == SearchFocus::Focused
-                    {
-                        screen.handle_search_char(c);
-                    }
-                }
+
                 _ => {}
             }
         }
