@@ -193,32 +193,29 @@ impl App {
         }
     }
 
-    fn handle_refresh(&mut self) {
+    async fn handle_refresh(&mut self) {
         if let Some(screen) = &mut self.job_list_screen {
             let api_client = self.api_client.clone();
             let cache = self.cache.clone();
-            let rt = tokio::runtime::Handle::current();
 
             screen.set_loading();
 
-            rt.block_on(async {
-                let client = api_client.lock().await;
-                match client.get_jobs().await {
-                    Ok(jobs) => {
-                        let _ = cache.lock().await.update_cache_on_fetch(&jobs);
-                        screen.from_cache = false;
-                        screen.cache_stale = false;
-                        if jobs.is_empty() {
-                            screen.set_empty();
-                        } else {
-                            screen.set_jobs(jobs);
-                        }
-                    }
-                    Err(e) => {
-                        screen.set_error(e.to_string());
+            let client = api_client.lock().await;
+            match client.get_jobs().await {
+                Ok(jobs) => {
+                    let _ = cache.lock().await.update_cache_on_fetch(&jobs);
+                    screen.from_cache = false;
+                    screen.cache_stale = false;
+                    if jobs.is_empty() {
+                        screen.set_empty();
+                    } else {
+                        screen.set_jobs(jobs);
                     }
                 }
-            });
+                Err(e) => {
+                    screen.set_error(e.to_string());
+                }
+            }
         }
     }
 
@@ -414,7 +411,7 @@ impl App {
                 }
                 crossterm::event::KeyCode::Char('r') | crossterm::event::KeyCode::Char('R')
                     if self.state == AppState::JobList => {
-                    self.handle_refresh();
+                    self.handle_refresh().await;
                 }
                 crossterm::event::KeyCode::Char('r') | crossterm::event::KeyCode::Char('R')
                     if self.state == AppState::Profile => {
