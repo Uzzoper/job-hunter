@@ -5,7 +5,7 @@ use crate::config::ConfigManager;
 use crate::domain::{AuthResponse, JobResponse, ProfileResponse};
 use crate::tui::{auth_screen, job_detail_screen, job_list_screen, profile_screen};
 use crate::tui::job_detail_screen::JobDetailScreen;
-use crate::tui::job_list_screen::{JobListScreen, LoadingState};
+use crate::tui::job_list_screen::{JobListScreen, LoadingState, SearchFocus};
 use crate::tui::profile_screen::ProfileScreen;
 use ratatui::Terminal;
 use std::io;
@@ -379,20 +379,10 @@ impl App {
                     self.should_quit = true;
                     self.state = AppState::Quitting;
                 }
-                crossterm::event::KeyCode::Esc => {
-                    self.handle_escape();
-                }
-                crossterm::event::KeyCode::Tab => {
-                    self.handle_tab();
-                }
-                crossterm::event::KeyCode::Enter => {
-                    self.handle_enter()?;
-                }
-                crossterm::event::KeyCode::Up | crossterm::event::KeyCode::Char('k') => {
-                    self.handle_up();
-                }
-                crossterm::event::KeyCode::Down | crossterm::event::KeyCode::Char('j') => {
-                    self.handle_down();
+                crossterm::event::KeyCode::Char('/') if self.state == AppState::JobList => {
+                    if let Some(screen) = &mut self.job_list_screen {
+                        screen.focus_search();
+                    }
                 }
                 crossterm::event::KeyCode::Char('p') | crossterm::event::KeyCode::Char('P') => {
                     if self.state == AppState::JobList {
@@ -416,7 +406,54 @@ impl App {
                 }
                 crossterm::event::KeyCode::Char('r') | crossterm::event::KeyCode::Char('R')
                     if self.state == AppState::Profile => {
+                }
+                crossterm::event::KeyCode::Esc => {
+                    let search_focused = self.state == AppState::JobList
+                        && self.job_list_screen.as_ref().is_some_and(|s| s.search_focus == SearchFocus::Focused);
+                    if search_focused {
+                        if let Some(screen) = &mut self.job_list_screen {
+                            screen.blur_search();
+                        }
+                    } else {
+                        self.handle_escape();
                     }
+                }
+                crossterm::event::KeyCode::Tab => {
+                    self.handle_tab();
+                }
+                crossterm::event::KeyCode::Enter => {
+                    let search_focused = self.state == AppState::JobList
+                        && self.job_list_screen.as_ref().is_some_and(|s| s.search_focus == SearchFocus::Focused);
+                    if search_focused {
+                        if let Some(screen) = &mut self.job_list_screen {
+                            screen.blur_search();
+                        }
+                    } else {
+                        self.handle_enter()?;
+                    }
+                }
+                crossterm::event::KeyCode::Up | crossterm::event::KeyCode::Char('k') => {
+                    self.handle_up();
+                }
+                crossterm::event::KeyCode::Down | crossterm::event::KeyCode::Char('j') => {
+                    self.handle_down();
+                }
+                crossterm::event::KeyCode::Backspace => {
+                    if self.state == AppState::JobList
+                        && let Some(screen) = &mut self.job_list_screen
+                        && screen.search_focus == SearchFocus::Focused
+                    {
+                        screen.handle_search_backspace();
+                    }
+                }
+                crossterm::event::KeyCode::Char(c) => {
+                    if self.state == AppState::JobList
+                        && let Some(screen) = &mut self.job_list_screen
+                        && screen.search_focus == SearchFocus::Focused
+                    {
+                        screen.handle_search_char(c);
+                    }
+                }
                 _ => {}
             }
         }
