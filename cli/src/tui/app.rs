@@ -477,9 +477,19 @@ impl App {
     }
 
     fn handle_up(&mut self) {
+        if self.state == AppState::JobList
+            && let Some(screen) = &mut self.job_list_screen
+        {
+            screen.select_prev();
+        }
     }
 
     fn handle_down(&mut self) {
+        if self.state == AppState::JobList
+            && let Some(screen) = &mut self.job_list_screen
+        {
+            screen.select_next();
+        }
     }
 
     fn handle_back(&mut self) {
