@@ -425,7 +425,7 @@ pub async fn submit(&mut self, app: &mut App) -> anyhow::Result<()> {
         let field_text = if focused || label != "Password" {
             display_value.to_string()
         } else {
-            "•".repeat(display_value.len())
+            "•".repeat(display_value.chars().count())
         };
 
         let paragraph = Paragraph::new(field_text)
