@@ -8,6 +8,9 @@ mod profile_screen;
 #[cfg(test)]
 mod theme_test;
 
+#[cfg(test)]
+mod app_integration_test;
+
 pub use app::{App, AppState};
 pub use theme::Theme;
 
