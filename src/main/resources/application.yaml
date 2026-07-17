@@ -29,7 +29,7 @@ ai:
   openrouter:
     base-url: https://openrouter.ai/api/v1
     api-key: ${OPENROUTER_API_KEY}
-    model: minimax/minimax-m2.5:free
+    model: meta-llama/llama-3.3-70b-instruct:free
     timeout-seconds: 30
 
 scraper:
