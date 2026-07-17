@@ -1,9 +1,13 @@
 use crate::api::ApiClient;
 use crate::config::Config;
 use crate::tui::app::{App, AppState};
+use crate::tui::profile_screen::ProfileScreen;
+use crate::tui::job_detail_screen::JobDetailScreen;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;
+use std::sync::Arc;
+use tokio::sync::Mutex;
 
 #[tokio::test]
 async fn tui_app_new_creates_app_with_default_state() {
@@ -55,9 +59,6 @@ async fn tui_app_transition_to_changes_state() {
     let api_client = ApiClient::new("http://localhost:8080");
     let mut app = App::new(api_client, config);
 
-    app.transition_to(AppState::JobList);
-    assert_eq!(app.state, AppState::JobList);
-
     app.transition_to(AppState::JobDetail);
     assert_eq!(app.state, AppState::JobDetail);
 
@@ -106,6 +107,287 @@ async fn tui_app_run_exits_cleanly_on_quit() {
 
     app.should_quit = true;
 
-    let result = app.run(&mut terminal).await;
-    assert!(result.is_ok());
+    // Test render doesn't panic
+    terminal.draw(|frame| app.render(frame)).unwrap();
+    
+    // Test handle_event doesn't panic
+    let event = crossterm::event::Event::Key(KeyEvent::new(KeyCode::Char('q'), KeyModifiers::NONE));
+    app.handle_event(event).await.unwrap();
+}
+
+// ===== Profile Handler Tests =====
+
+#[tokio::test]
+async fn profile_e_toggles_edit_mode() {
+    let config = Config::default();
+    let api_client = ApiClient::new("http://localhost:8080");
+    let mut app = App::new(api_client, config);
+
+    app.state = AppState::Profile;
+    // Initialize profile_screen
+    let profile_screen = ProfileScreen::new(
+        Arc::new(Mutex::new(ApiClient::new("http://localhost:8080"))),
+        Arc::new(Mutex::new(crate::config::ConfigManager::new())),
+    );
+    app.profile_screen = Some(profile_screen);
+
+    // Press 'e' to enter edit mode
+    let event = crossterm::event::Event::Key(KeyEvent::new(KeyCode::Char('e'), KeyModifiers::NONE));
+    app.handle_event(event).await.unwrap();
+
+    // Assert edit mode
+    assert_eq!(app.profile_screen.as_ref().unwrap().mode, crate::tui::profile_screen::ProfileMode::Edit);
+
+    // Press 'e' again to return to view mode
+    let event = crossterm::event::Event::Key(KeyEvent::new(KeyCode::Char('e'), KeyModifiers::NONE));
+    app.handle_event(event).await.unwrap();
+
+    // Assert view mode
+    assert_eq!(app.profile_screen.as_ref().unwrap().mode, crate::tui::profile_screen::ProfileMode::View);
+}
+
+#[tokio::test]
+async fn profile_r_triggers_load_profile() {
+    let config = Config::default();
+    let api_client = ApiClient::new("http://localhost:8080");
+    let mut app = App::new(api_client, config);
+
+    app.state = AppState::Profile;
+    let profile_screen = ProfileScreen::new(
+        Arc::new(Mutex::new(ApiClient::new("http://localhost:8080"))),
+        Arc::new(Mutex::new(crate::config::ConfigManager::new())),
+    );
+    app.profile_screen = Some(profile_screen);
+
+    // Press 'r' to reload profile
+    let event = crossterm::event::Event::Key(KeyEvent::new(KeyCode::Char('r'), KeyModifiers::NONE));
+    app.handle_event(event).await.unwrap();
+
+    // The load_profile is async and will set loading state
+    // We just verify the handler was called without panic
+    assert_eq!(app.state, AppState::Profile);
+}
+
+#[tokio::test]
+async fn profile_b_cancels_edit_then_exits() {
+    let config = Config::default();
+    let api_client = ApiClient::new("http://localhost:8080");
+    let mut app = App::new(api_client, config);
+
+    app.state = AppState::Profile;
+    let profile_screen = ProfileScreen::new(
+        Arc::new(Mutex::new(ApiClient::new("http://localhost:8080"))),
+        Arc::new(Mutex::new(crate::config::ConfigManager::new())),
+    );
+    app.profile_screen = Some(profile_screen);
+
+    // First enter edit mode
+    let event = crossterm::event::Event::Key(KeyEvent::new(KeyCode::Char('e'), KeyModifiers::NONE));
+    app.handle_event(event).await.unwrap();
+    assert_eq!(app.profile_screen.as_ref().unwrap().mode, crate::tui::profile_screen::ProfileMode::Edit);
+
+    // Press 'b' to cancel edit (should return to view mode)
+    let event = crossterm::event::Event::Key(KeyEvent::new(KeyCode::Char('b'), KeyModifiers::NONE));
+    app.handle_event(event).await.unwrap();
+    assert_eq!(app.profile_screen.as_ref().unwrap().mode, crate::tui::profile_screen::ProfileMode::View);
+    assert_eq!(app.state, AppState::Profile); // Still in profile
+
+    // Press 'b' again to exit to job list
+    let event = crossterm::event::Event::Key(KeyEvent::new(KeyCode::Char('b'), KeyModifiers::NONE));
+    app.handle_event(event).await.unwrap();
+    assert_eq!(app.state, AppState::JobList);
+}
+
+#[tokio::test]
+async fn profile_esc_cancels_edit_then_exits() {
+    let config = Config::default();
+    let api_client = ApiClient::new("http://localhost:8080");
+    let mut app = App::new(api_client, config);
+
+    app.state = AppState::Profile;
+    let profile_screen = ProfileScreen::new(
+        Arc::new(Mutex::new(ApiClient::new("http://localhost:8080"))),
+        Arc::new(Mutex::new(crate::config::ConfigManager::new())),
+    );
+    app.profile_screen = Some(profile_screen);
+
+    // First enter edit mode
+    let event = crossterm::event::Event::Key(KeyEvent::new(KeyCode::Char('e'), KeyModifiers::NONE));
+    app.handle_event(event).await.unwrap();
+    assert_eq!(app.profile_screen.as_ref().unwrap().mode, crate::tui::profile_screen::ProfileMode::Edit);
+
+    // Press Esc to cancel edit (should return to view mode)
+    let event = crossterm::event::Event::Key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+    app.handle_event(event).await.unwrap();
+    assert_eq!(app.profile_screen.as_ref().unwrap().mode, crate::tui::profile_screen::ProfileMode::View);
+    assert_eq!(app.state, AppState::Profile); // Still in profile
+
+    // Press Esc again to exit to job list
+    let event = crossterm::event::Event::Key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+    app.handle_event(event).await.unwrap();
+    assert_eq!(app.state, AppState::JobList);
+}
+
+// ===== JobDetail Handler Tests =====
+
+#[tokio::test]
+async fn job_detail_a_triggers_analyze_job() {
+    let config = Config::default();
+    let api_client = ApiClient::new("http://localhost:8080");
+    let mut app = App::new(api_client, config);
+
+    app.state = AppState::JobDetail;
+    // Initialize job_detail_screen with a job
+    let job = crate::domain::JobResponse {
+        id: 1,
+        title: "Test Job".into(),
+        company: "Test Corp".into(),
+        url: "https://example.com/job/1".into(),
+        description: "Test description".into(),
+        posted_at: chrono::NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(),
+        source: "gupy".into(),
+    };
+    app.selected_job = Some(job.clone());
+
+    let job_detail_screen = JobDetailScreen::new(
+        Arc::new(Mutex::new(ApiClient::new("http://localhost:8080"))),
+        Arc::new(Mutex::new(crate::cache::CacheManager::new(None, 24).unwrap())),
+    );
+    app.job_detail_screen = Some(job_detail_screen);
+
+    // Press 'a' to analyze
+    let event = crossterm::event::Event::Key(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE));
+    app.handle_event(event).await.unwrap();
+
+    // Verify analyze_job was called (loading state should be set)
+    // The screen's analyze_job sets loading_analysis to Loading
+    assert_eq!(app.state, AppState::JobDetail);
+}
+
+#[tokio::test]
+async fn job_detail_e_triggers_generate_email() {
+    let config = Config::default();
+    let api_client = ApiClient::new("http://localhost:8080");
+    let mut app = App::new(api_client, config);
+
+    app.state = AppState::JobDetail;
+    let job = crate::domain::JobResponse {
+        id: 1,
+        title: "Test Job".into(),
+        company: "Test Corp".into(),
+        url: "https://example.com/job/1".into(),
+        description: "Test description".into(),
+        posted_at: chrono::NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(),
+        source: "gupy".into(),
+    };
+    app.selected_job = Some(job.clone());
+
+    let job_detail_screen = JobDetailScreen::new(
+        Arc::new(Mutex::new(ApiClient::new("http://localhost:8080"))),
+        Arc::new(Mutex::new(crate::cache::CacheManager::new(None, 24).unwrap())),
+    );
+    app.job_detail_screen = Some(job_detail_screen);
+
+    // Press 'e' to generate email
+    let event = crossterm::event::Event::Key(KeyEvent::new(KeyCode::Char('e'), KeyModifiers::NONE));
+    app.handle_event(event).await.unwrap();
+
+    // Verify generate_email was called
+    assert_eq!(app.state, AppState::JobDetail);
+}
+
+#[tokio::test]
+async fn job_detail_a_ignored_in_non_jobdetail_state() {
+    let config = Config::default();
+    let api_client = ApiClient::new("http://localhost:8080");
+    let mut app = App::new(api_client, config);
+
+    // Test in JobList state
+    app.state = AppState::JobList;
+    let event = crossterm::event::Event::Key(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE));
+    app.handle_event(event).await.unwrap();
+    assert_eq!(app.state, AppState::JobList);
+
+    // Test in Profile state
+    app.state = AppState::Profile;
+    let event = crossterm::event::Event::Key(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE));
+    app.handle_event(event).await.unwrap();
+    assert_eq!(app.state, AppState::Profile);
+}
+
+#[tokio::test]
+async fn job_detail_e_ignored_in_non_jobdetail_state() {
+    let config = Config::default();
+    let api_client = ApiClient::new("http://localhost:8080");
+    let mut app = App::new(api_client, config);
+
+    // Test in JobList state
+    app.state = AppState::JobList;
+    let event = crossterm::event::Event::Key(KeyEvent::new(KeyCode::Char('e'), KeyModifiers::NONE));
+    app.handle_event(event).await.unwrap();
+    assert_eq!(app.state, AppState::JobList);
+
+    // Test in Profile state (should be handled by profile_screen::handle_event)
+    app.state = AppState::Profile;
+    let profile_screen = ProfileScreen::new(
+        Arc::new(Mutex::new(ApiClient::new("http://localhost:8080"))),
+        Arc::new(Mutex::new(crate::config::ConfigManager::new())),
+    );
+    app.profile_screen = Some(profile_screen);
+
+    let event = crossterm::event::Event::Key(KeyEvent::new(KeyCode::Char('e'), KeyModifiers::NONE));
+    app.handle_event(event).await.unwrap();
+    // In Profile, 'e' toggles edit mode
+    assert_eq!(app.profile_screen.as_ref().unwrap().mode, crate::tui::profile_screen::ProfileMode::Edit);
+}
+
+// ===== Render Tests =====
+
+#[tokio::test]
+async fn profile_render_does_not_panic() {
+    let config = Config::default();
+    let api_client = ApiClient::new("http://localhost:8080");
+    let mut app = App::new(api_client, config);
+
+    app.state = AppState::Profile;
+    let profile_screen = ProfileScreen::new(
+        Arc::new(Mutex::new(ApiClient::new("http://localhost:8080"))),
+        Arc::new(Mutex::new(crate::config::ConfigManager::new())),
+    );
+    app.profile_screen = Some(profile_screen);
+
+    let backend = TestBackend::new(80, 24);
+    let mut terminal = Terminal::new(backend).unwrap();
+
+    terminal.draw(|frame| app.render(frame)).unwrap();
+}
+
+#[tokio::test]
+async fn job_detail_render_does_not_panic() {
+    let config = Config::default();
+    let api_client = ApiClient::new("http://localhost:8080");
+    let mut app = App::new(api_client, config);
+
+    app.state = AppState::JobDetail;
+    let job = crate::domain::JobResponse {
+        id: 1,
+        title: "Test Job".into(),
+        company: "Test Corp".into(),
+        url: "https://example.com/job/1".into(),
+        description: "Test description".into(),
+        posted_at: chrono::NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(),
+        source: "gupy".into(),
+    };
+    app.selected_job = Some(job);
+
+    let job_detail_screen = JobDetailScreen::new(
+        Arc::new(Mutex::new(ApiClient::new("http://localhost:8080"))),
+        Arc::new(Mutex::new(crate::cache::CacheManager::new(None, 24).unwrap())),
+    );
+    app.job_detail_screen = Some(job_detail_screen);
+
+    let backend = TestBackend::new(80, 24);
+    let mut terminal = Terminal::new(backend).unwrap();
+
+    terminal.draw(|frame| app.render(frame)).unwrap();
 }

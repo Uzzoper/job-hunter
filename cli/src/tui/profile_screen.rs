@@ -811,6 +811,16 @@ pub async fn handle_event(
                 app.state = crate::tui::app::AppState::Quitting;
                 return Ok(());
             }
+            KeyCode::Char('b') | KeyCode::Char('B') => {
+                if let Some(screen) = &mut app.profile_screen {
+                    if screen.mode == ProfileMode::Edit {
+                        screen.cancel_edit();
+                    } else {
+                        app.state = crate::tui::app::AppState::JobList;
+                    }
+                }
+                return Ok(());
+            }
             KeyCode::Esc => {
                 if let Some(screen) = &mut app.profile_screen {
                     if screen.mode == ProfileMode::Edit {
@@ -830,7 +840,7 @@ pub async fn handle_event(
         if let Some(screen) = &mut app.profile_screen {
             match key.code {
                 KeyCode::Char('e') | KeyCode::Char('E') => {
-                    if screen.mode == ProfileMode::View && !screen.loading.is_loading() && !screen.saving {
+                    if !screen.loading.is_loading() && !screen.saving {
                         screen.toggle_mode();
                     }
                 }

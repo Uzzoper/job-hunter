@@ -249,7 +249,7 @@ impl App {
         Ok(())
     }
 
-    fn render(&mut self, frame: &mut ratatui::Frame) {
+    pub(crate) fn render(&mut self, frame: &mut ratatui::Frame) {
         let area = frame.area();
         let chunks = ratatui::layout::Layout::default()
             .direction(ratatui::layout::Direction::Vertical)
@@ -363,7 +363,7 @@ impl App {
         frame.render_widget(popup, popup_area);
     }
 
-    async fn handle_event(&mut self, event: crossterm::event::Event) -> anyhow::Result<()> {
+    pub(crate) async fn handle_event(&mut self, event: crossterm::event::Event) -> anyhow::Result<()> {
         if let crossterm::event::Event::Key(key) = event
             && key.kind == crossterm::event::KeyEventKind::Press {
             if self.error_message.is_some() {
@@ -372,6 +372,11 @@ impl App {
 
             if self.state == AppState::Auth {
                 return auth_screen::handle_event(event, self).await;
+            }
+
+            // Delegate profile events (like auth)
+            if self.state == AppState::Profile {
+                return profile_screen::handle_event(event, self).await;
             }
 
             // When search is focused, intercept all keys for search handling before global match
@@ -412,19 +417,20 @@ impl App {
                     self.handle_back();
                 }
                 crossterm::event::KeyCode::Char('a') | crossterm::event::KeyCode::Char('A') => {
-                    if self.state == AppState::JobDetail {
+                    if self.state == AppState::JobDetail
+                        && let Some(screen) = &mut self.job_detail_screen {
+                        let _ = screen.analyze_job().await;
                     }
                 }
                 crossterm::event::KeyCode::Char('e') | crossterm::event::KeyCode::Char('E') => {
-                    if self.state == AppState::JobDetail {
+                    if self.state == AppState::JobDetail
+                        && let Some(screen) = &mut self.job_detail_screen {
+                        let _ = screen.generate_email().await;
                     }
                 }
                 crossterm::event::KeyCode::Char('r') | crossterm::event::KeyCode::Char('R')
                     if self.state == AppState::JobList => {
                     self.handle_refresh().await;
-                }
-                crossterm::event::KeyCode::Char('r') | crossterm::event::KeyCode::Char('R')
-                    if self.state == AppState::Profile => {
                 }
                 crossterm::event::KeyCode::Esc => {
                     self.handle_escape();

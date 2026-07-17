@@ -46,4 +46,4 @@ application-local.yaml
 org/
 
 # Scratch/debug files
-scratch_debug.java
+scratch_debug.javacli/libtest_check.rlib
