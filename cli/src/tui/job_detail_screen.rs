@@ -120,15 +120,9 @@ impl JobDetailScreen {
     }
 
     fn load_cached_data_if_needed(&mut self) {
-        if let Some(job_id) = self.pending_job_id.take() {
-            let cache = self.cache.clone();
-            if let Ok(rt) = tokio::runtime::Handle::try_current() {
-                rt.block_on(async move {
-                    let cache = cache.lock().await;
-                    let _ = cache.get_job(job_id);
-                });
-            }
-        }
+        // No-op: cache loading is now handled by apply_cached_data()
+        // called from handle_enter(). The previous implementation
+        // called rt.block_on() within a tokio runtime, causing a panic.
     }
 
     /// Load and apply cached analysis and email data
