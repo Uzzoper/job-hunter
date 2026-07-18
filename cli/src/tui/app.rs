@@ -408,6 +408,12 @@ impl App {
                         screen.focus_search();
                     }
                 }
+                crossterm::event::KeyCode::Char('f') if self.state == AppState::JobList
+                    && key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) => {
+                    if let Some(screen) = &mut self.job_list_screen {
+                        screen.focus_search();
+                    }
+                }
                 crossterm::event::KeyCode::Char('p') | crossterm::event::KeyCode::Char('P') => {
                     if self.state == AppState::JobList {
                         self.state = AppState::Profile;
