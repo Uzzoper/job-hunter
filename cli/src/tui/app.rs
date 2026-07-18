@@ -379,6 +379,16 @@ impl App {
                 return profile_screen::handle_event(event, self).await;
             }
 
+            // Delegate JobDetail events (like Auth/Profile)
+            // Uses take/putback to avoid double-borrow of self.job_detail_screen
+            if self.state == AppState::JobDetail {
+                if let Some(mut screen) = self.job_detail_screen.take() {
+                    let result = job_detail_screen::handle_event(event, self, &mut screen).await;
+                    self.job_detail_screen = Some(screen);
+                    return result;
+                }
+            }
+
             // When search is focused, intercept all keys for search handling before global match
             if self.state == AppState::JobList
                 && self.job_list_screen.as_ref().is_some_and(|s| s.search_focus == SearchFocus::Focused)
