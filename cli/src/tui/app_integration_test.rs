@@ -2,7 +2,7 @@ use crate::api::ApiClient;
 use crate::config::Config;
 use crate::tui::app::{App, AppState};
 use crate::tui::profile_screen::ProfileScreen;
-use crate::tui::job_detail_screen::JobDetailScreen;
+use crate::tui::job_detail_screen::{JobDetailScreen, LoadingState};
 use crate::tui::job_list_screen::SearchFocus;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::Terminal;
@@ -586,4 +586,21 @@ async fn handle_enter_sets_job_on_detail_screen() {
             .id,
         42
     );
+}
+
+#[tokio::test]
+async fn analyze_job_does_not_hang_when_job_none() {
+    let mut screen = JobDetailScreen::new(
+        Arc::new(Mutex::new(ApiClient::new("http://localhost:8080"))),
+        Arc::new(Mutex::new(crate::cache::CacheManager::new(None, 24).unwrap())),
+    );
+
+    assert!(screen.job.is_none());
+
+    let result = screen.analyze_job().await;
+    assert!(result.is_err());
+    assert_eq!(result.unwrap_err().to_string(), "No job selected");
+
+    assert!(!screen.loading_analysis.is_loading());
+    assert_eq!(screen.loading_analysis, LoadingState::Idle);
 }
