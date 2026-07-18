@@ -119,11 +119,6 @@ impl JobDetailScreen {
         self.pending_job_id = Some(job_id);
     }
 
-    fn load_cached_data_if_needed(&mut self) {
-        // No-op: cache loading is now handled by apply_cached_data()
-        // called from handle_enter(). The previous implementation
-        // called rt.block_on() within a tokio runtime, causing a panic.
-    }
 
     /// Load and apply cached analysis and email data
     pub fn apply_cached_data(&mut self) {
@@ -529,7 +524,7 @@ fn draw_score_gauge(&self, frame: &mut Frame, area: Rect, theme: &Theme) {
 
 
 pub fn draw(&mut self, frame: &mut Frame, area: Rect) {
-        self.load_cached_data_if_needed();
+
         let theme = Theme::detect();
         self.update_toast();
 
