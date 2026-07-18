@@ -3,6 +3,7 @@ use crate::config::Config;
 use crate::tui::app::{App, AppState};
 use crate::tui::profile_screen::ProfileScreen;
 use crate::tui::job_detail_screen::JobDetailScreen;
+use crate::tui::job_list_screen::SearchFocus;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;
@@ -390,4 +391,155 @@ async fn job_detail_render_does_not_panic() {
     let mut terminal = Terminal::new(backend).unwrap();
 
     terminal.draw(|frame| app.render(frame)).unwrap();
+}
+
+// ===== handle_enter Tests =====
+
+#[tokio::test]
+async fn handle_enter_selects_highlighted_job_not_first() {
+    let config = Config::default();
+    let api_client = ApiClient::new("http://localhost:8080");
+    let mut app = App::new(api_client, config);
+
+    app.state = AppState::JobList;
+
+    let jobs = vec![
+        crate::domain::JobResponse {
+            id: 1,
+            title: "Job 1".into(),
+            company: "Company 1".into(),
+            url: "https://example.com/1".into(),
+            description: "Description 1".into(),
+            posted_at: chrono::NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(),
+            source: "gupy".into(),
+        },
+        crate::domain::JobResponse {
+            id: 2,
+            title: "Job 2".into(),
+            company: "Company 2".into(),
+            url: "https://example.com/2".into(),
+            description: "Description 2".into(),
+            posted_at: chrono::NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(),
+            source: "gupy".into(),
+        },
+        crate::domain::JobResponse {
+            id: 3,
+            title: "Job 3".into(),
+            company: "Company 3".into(),
+            url: "https://example.com/3".into(),
+            description: "Description 3".into(),
+            posted_at: chrono::NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(),
+            source: "gupy".into(),
+        },
+    ];
+
+    if let Some(screen) = &mut app.job_list_screen {
+        screen.set_jobs(jobs);
+        screen.select_next(); // index 1
+        screen.select_next(); // index 2 (3rd job)
+    }
+
+    let event = crossterm::event::Event::Key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    app.handle_event(event).await.unwrap();
+
+    assert_eq!(app.state, AppState::JobDetail);
+    assert_eq!(app.selected_job.as_ref().unwrap().id, 3);
+}
+
+#[tokio::test]
+async fn handle_enter_on_empty_list_does_not_transition() {
+    let config = Config::default();
+    let api_client = ApiClient::new("http://localhost:8080");
+    let mut app = App::new(api_client, config);
+
+    app.state = AppState::JobList;
+    // app.jobs is empty, and job_list_screen has no jobs set
+
+    let event = crossterm::event::Event::Key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    app.handle_event(event).await.unwrap();
+
+    assert_eq!(app.state, AppState::JobList);
+    assert!(app.selected_job.is_none());
+}
+
+#[tokio::test]
+async fn handle_enter_with_search_focused_blurs_search() {
+    let config = Config::default();
+    let api_client = ApiClient::new("http://localhost:8080");
+    let mut app = App::new(api_client, config);
+
+    app.state = AppState::JobList;
+
+    // Focus search so Enter gets intercepted
+    if let Some(screen) = &mut app.job_list_screen {
+        screen.focus_search();
+    }
+
+    // Press Enter through handle_event (the routing layer)
+    let event = crossterm::event::Event::Key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    app.handle_event(event).await.unwrap();
+
+    // Search should be blurred, and state should NOT transition to JobDetail
+    assert_eq!(
+        app.job_list_screen.as_ref().unwrap().search_focus,
+        SearchFocus::Blurred
+    );
+    assert_eq!(app.state, AppState::JobList);
+}
+
+#[tokio::test]
+async fn handle_enter_after_filtering_selects_filtered_job() {
+    let config = Config::default();
+    let api_client = ApiClient::new("http://localhost:8080");
+    let mut app = App::new(api_client, config);
+
+    app.state = AppState::JobList;
+
+    let jobs = vec![
+        crate::domain::JobResponse {
+            id: 1,
+            title: "Java Developer".into(),
+            company: "Company 1".into(),
+            url: "https://example.com/1".into(),
+            description: "Java role".into(),
+            posted_at: chrono::NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(),
+            source: "gupy".into(),
+        },
+        crate::domain::JobResponse {
+            id: 2,
+            title: "Rust Developer".into(),
+            company: "Company 2".into(),
+            url: "https://example.com/2".into(),
+            description: "Rust role".into(),
+            posted_at: chrono::NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(),
+            source: "gupy".into(),
+        },
+        crate::domain::JobResponse {
+            id: 3,
+            title: "Junior Java Dev".into(),
+            company: "Company 3".into(),
+            url: "https://example.com/3".into(),
+            description: "Another Java role".into(),
+            posted_at: chrono::NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(),
+            source: "gupy".into(),
+        },
+    ];
+
+    if let Some(screen) = &mut app.job_list_screen {
+        screen.set_jobs(jobs);
+        // Filter for "Java" — leaves job id:1 and id:3
+        screen.focus_search();
+        for c in "Java".chars() {
+            screen.handle_search_char(c);
+        }
+        screen.blur_search();
+        // Navigate to the second filtered result (Junior Java Dev, id:3)
+        screen.select_next();
+    }
+
+    let event = crossterm::event::Event::Key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    app.handle_event(event).await.unwrap();
+
+    assert_eq!(app.state, AppState::JobDetail);
+    assert_eq!(app.selected_job.as_ref().unwrap().id, 3);
 }

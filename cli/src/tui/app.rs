@@ -504,7 +504,7 @@ impl App {
                 }
             }
             AppState::JobList => {
-                if let Some(job) = self.jobs.first().cloned() {
+                if let Some(job) = self.job_list_screen.as_ref().and_then(|s| s.selected_job().cloned()) {
                     self.selected_job = Some(job);
                     self.state = AppState::JobDetail;
                 }
