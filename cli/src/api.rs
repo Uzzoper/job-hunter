@@ -717,7 +717,7 @@ mod tests {
         mock.assert();
         assert!(result.is_ok());
         let profile = result.unwrap();
-        assert_eq!(profile.id, 1);
+        assert_eq!(profile.id, Some(1));
         assert_eq!(profile.user_id, 1);
         assert_eq!(profile.skills, vec!["Rust", "PostgreSQL", "Docker"]);
         assert_eq!(profile.tone, CompanyTone::Startup);

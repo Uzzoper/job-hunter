@@ -909,7 +909,7 @@ mod tests {
 
     fn sample_profile() -> ProfileResponse {
         ProfileResponse {
-            id: 1,
+            id: Some(1),
             user_id: 1,
             resume_text: "Experienced software developer with 5 years of experience in Rust, Java, and PostgreSQL. Passionate about building CLI tools and backend systems.".to_string(),
             skills: vec!["Rust".to_string(), "Java".to_string(), "PostgreSQL".to_string(), "Docker".to_string()],
