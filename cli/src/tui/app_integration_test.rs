@@ -342,6 +342,127 @@ async fn job_detail_e_ignored_in_non_jobdetail_state() {
     assert_eq!(app.profile_screen.as_ref().unwrap().mode, crate::tui::profile_screen::ProfileMode::Edit);
 }
 
+#[tokio::test]
+async fn job_detail_space_toggles_email_expanded() {
+    let config = Config::default();
+    let api_client = ApiClient::new("http://localhost:8080");
+    let mut app = App::new(api_client, config);
+
+    app.state = AppState::JobDetail;
+    let job = crate::domain::JobResponse {
+        id: 1,
+        title: "Test Job".into(),
+        company: "Test Corp".into(),
+        url: "https://example.com/job/1".into(),
+        description: "Test description".into(),
+        posted_at: chrono::NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(),
+        source: "gupy".into(),
+    };
+    app.selected_job = Some(job);
+
+    let screen = JobDetailScreen::new(
+        Arc::new(Mutex::new(ApiClient::new("http://localhost:8080"))),
+        Arc::new(Mutex::new(crate::cache::CacheManager::new(None, 24).unwrap())),
+    );
+    app.job_detail_screen = Some(screen);
+
+    let email = crate::domain::EmailDraftResponse {
+        id: 1,
+        job_id: 1,
+        subject: "Test Subject".into(),
+        body: "Test body".into(),
+        status: crate::domain::EmailStatus::Pending,
+        generated_at: chrono::NaiveDateTime::parse_from_str("2026-07-14T10:00:00", "%Y-%m-%dT%H:%M:%S").unwrap(),
+    };
+    app.job_detail_screen.as_mut().unwrap().email = Some(email);
+
+    assert!(!app.job_detail_screen.as_ref().unwrap().show_email_expanded);
+
+    let event = crossterm::event::Event::Key(KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE));
+    app.handle_event(event).await.unwrap();
+    assert!(app.job_detail_screen.as_ref().unwrap().show_email_expanded);
+
+    let event = crossterm::event::Event::Key(KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE));
+    app.handle_event(event).await.unwrap();
+    assert!(!app.job_detail_screen.as_ref().unwrap().show_email_expanded);
+}
+
+#[tokio::test]
+async fn job_detail_c_copies_email() {
+    let config = Config::default();
+    let api_client = ApiClient::new("http://localhost:8080");
+    let mut app = App::new(api_client, config);
+
+    app.state = AppState::JobDetail;
+    let job = crate::domain::JobResponse {
+        id: 1,
+        title: "Test Job".into(),
+        company: "Test Corp".into(),
+        url: "https://example.com/job/1".into(),
+        description: "Test description".into(),
+        posted_at: chrono::NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(),
+        source: "gupy".into(),
+    };
+    app.selected_job = Some(job);
+
+    let screen = JobDetailScreen::new(
+        Arc::new(Mutex::new(ApiClient::new("http://localhost:8080"))),
+        Arc::new(Mutex::new(crate::cache::CacheManager::new(None, 24).unwrap())),
+    );
+    app.job_detail_screen = Some(screen);
+
+    let email = crate::domain::EmailDraftResponse {
+        id: 1,
+        job_id: 1,
+        subject: "Test Subject".into(),
+        body: "Test body".into(),
+        status: crate::domain::EmailStatus::Pending,
+        generated_at: chrono::NaiveDateTime::parse_from_str("2026-07-14T10:00:00", "%Y-%m-%dT%H:%M:%S").unwrap(),
+    };
+    app.job_detail_screen.as_mut().unwrap().email = Some(email);
+
+    // handler ignores clipboard errors, so just verify no panic
+    let event = crossterm::event::Event::Key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::NONE));
+    app.handle_event(event).await.unwrap();
+
+    assert_eq!(app.state, AppState::JobDetail);
+}
+
+#[tokio::test]
+async fn job_detail_f_toggles_email_full() {
+    let config = Config::default();
+    let api_client = ApiClient::new("http://localhost:8080");
+    let mut app = App::new(api_client, config);
+
+    app.state = AppState::JobDetail;
+    let job = crate::domain::JobResponse {
+        id: 1,
+        title: "Test Job".into(),
+        company: "Test Corp".into(),
+        url: "https://example.com/job/1".into(),
+        description: "Test description".into(),
+        posted_at: chrono::NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(),
+        source: "gupy".into(),
+    };
+    app.selected_job = Some(job);
+
+    let screen = JobDetailScreen::new(
+        Arc::new(Mutex::new(ApiClient::new("http://localhost:8080"))),
+        Arc::new(Mutex::new(crate::cache::CacheManager::new(None, 24).unwrap())),
+    );
+    app.job_detail_screen = Some(screen);
+
+    assert!(!app.job_detail_screen.as_ref().unwrap().show_email_full);
+
+    let event = crossterm::event::Event::Key(KeyEvent::new(KeyCode::Char('f'), KeyModifiers::NONE));
+    app.handle_event(event).await.unwrap();
+    assert!(app.job_detail_screen.as_ref().unwrap().show_email_full);
+
+    let event = crossterm::event::Event::Key(KeyEvent::new(KeyCode::Char('f'), KeyModifiers::NONE));
+    app.handle_event(event).await.unwrap();
+    assert!(!app.job_detail_screen.as_ref().unwrap().show_email_full);
+}
+
 // ===== Render Tests =====
 
 #[tokio::test]
