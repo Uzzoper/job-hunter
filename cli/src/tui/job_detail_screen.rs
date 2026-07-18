@@ -134,7 +134,7 @@ impl JobDetailScreen {
     /// Load and apply cached analysis and email data
     pub fn apply_cached_data(&mut self) {
         if let Some(job) = &self.job {
-            let cache = self.cache.blocking_lock();
+            let Ok(cache) = self.cache.try_lock() else { return; };
             if let Ok(Some(cached_job)) = cache.get_job(job.id) {
                 if let Some(analysis_json) = cached_job.analysis_json
                     && let Ok(analysis) = serde_json::from_str::<JobAnalysis>(&analysis_json) {
