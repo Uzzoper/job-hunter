@@ -80,7 +80,7 @@ pub struct ProfileRequest {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProfileResponse {
-    pub id: i64,
+    pub id: Option<i64>,
     pub user_id: i64,
     pub resume_text: String,
     pub skills: Vec<String>,
@@ -275,7 +275,7 @@ mod tests {
     #[test]
     fn profile_response_serde_roundtrip() {
         let resp = ProfileResponse {
-            id: 1,
+            id: Some(1),
             user_id: 1,
             resume_text: "Experienced developer...".into(),
             skills: vec!["Rust".into(), "Java".into()],
