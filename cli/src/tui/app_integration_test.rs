@@ -543,3 +543,47 @@ async fn handle_enter_after_filtering_selects_filtered_job() {
     assert_eq!(app.state, AppState::JobDetail);
     assert_eq!(app.selected_job.as_ref().unwrap().id, 3);
 }
+
+#[tokio::test]
+async fn handle_enter_sets_job_on_detail_screen() {
+    let config = Config::default();
+    let api_client = ApiClient::new("http://localhost:8080");
+    let mut app = App::new(api_client, config);
+
+    app.state = AppState::JobList;
+
+    let jobs = vec![crate::domain::JobResponse {
+        id: 42,
+        title: "Test Job".into(),
+        company: "Test Company".into(),
+        url: "https://example.com/42".into(),
+        description: "Test Description".into(),
+        posted_at: chrono::NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(),
+        source: "gupy".into(),
+    }];
+
+    if let Some(screen) = &mut app.job_list_screen {
+        screen.set_jobs(jobs);
+    }
+
+    let job_detail_screen = JobDetailScreen::new(
+        Arc::new(Mutex::new(ApiClient::new("http://localhost:8080"))),
+        Arc::new(Mutex::new(crate::cache::CacheManager::new(None, 24).unwrap())),
+    );
+    app.job_detail_screen = Some(job_detail_screen);
+
+    let event = crossterm::event::Event::Key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    app.handle_event(event).await.unwrap();
+
+    assert_eq!(app.state, AppState::JobDetail);
+    assert_eq!(
+        app.job_detail_screen
+            .as_ref()
+            .unwrap()
+            .job
+            .as_ref()
+            .unwrap()
+            .id,
+        42
+    );
+}

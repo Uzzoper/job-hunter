@@ -505,6 +505,10 @@ impl App {
             }
             AppState::JobList => {
                 if let Some(job) = self.job_list_screen.as_ref().and_then(|s| s.selected_job().cloned()) {
+                    if let Some(screen) = &mut self.job_detail_screen {
+                        screen.set_job(job.clone());
+                        screen.apply_cached_data();
+                    }
                     self.selected_job = Some(job);
                     self.state = AppState::JobDetail;
                 }
