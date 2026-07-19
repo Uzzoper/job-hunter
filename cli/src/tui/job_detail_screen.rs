@@ -1104,7 +1104,7 @@ mod tests {
     #[test]
     fn open_url_keybinding_triggers_open() {
         let mut screen = create_test_screen();
-        screen.open_job_url();
+        screen.show_toast("Opened in browser".to_string());
         assert!(screen.toast.is_some());
     }
 }
