@@ -429,6 +429,18 @@ impl App {
                         self.state = AppState::Profile;
                     }
                 }
+                crossterm::event::KeyCode::Char('t') | crossterm::event::KeyCode::Char('T') => {
+                    if self.state == AppState::JobList
+                        && let Some(screen) = &mut self.job_list_screen {
+                        screen.cycle_apply_type_filter();
+                    }
+                }
+                crossterm::event::KeyCode::Char('o') | crossterm::event::KeyCode::Char('O') => {
+                    if self.state == AppState::JobList
+                        && let Some(screen) = &mut self.job_list_screen {
+                        screen.open_selected_job_url();
+                    }
+                }
                 crossterm::event::KeyCode::Char('b') | crossterm::event::KeyCode::Char('B') => {
                     self.handle_back();
                 }
