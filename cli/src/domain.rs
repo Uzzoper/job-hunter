@@ -140,6 +140,37 @@ impl std::fmt::Display for EmailStatus {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum ApplyType {
+    ExternalApply,
+    EmailAvailable,
+    Unknown,
+}
+
+impl ApplyType {
+    pub fn from_description(desc: impl AsRef<str>) -> Self {
+        let desc = desc.as_ref();
+        if desc.is_empty() {
+            return Self::ExternalApply;
+        }
+        if desc.trim().len() < 20 {
+            return Self::Unknown;
+        }
+        Self::EmailAvailable
+    }
+}
+
+impl std::fmt::Display for ApplyType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::ExternalApply => write!(f, "EXTERNAL_APPLY"),
+            Self::EmailAvailable => write!(f, "EMAIL_AVAILABLE"),
+            Self::Unknown => write!(f, "UNKNOWN"),
+        }
+    }
+}
+
 /// Cached job with optional analysis and email data.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -345,5 +376,32 @@ mod tests {
         let deserialized: CachedJob = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(job.id, deserialized.id);
         assert_eq!(job.match_score, deserialized.match_score);
+    }
+
+    #[test]
+    fn apply_type_from_description_empty() {
+        assert_eq!(ApplyType::from_description(""), ApplyType::ExternalApply);
+    }
+
+    #[test]
+    fn apply_type_from_description_non_empty() {
+        assert_eq!(ApplyType::from_description("Job description here"), ApplyType::EmailAvailable);
+    }
+
+    #[test]
+    fn apply_type_from_description_whitespace() {
+        assert_eq!(ApplyType::from_description("   "), ApplyType::Unknown);
+        assert_eq!(ApplyType::from_description("\t\n"), ApplyType::Unknown);
+    }
+
+    #[test]
+    fn apply_type_from_description_short() {
+        assert_eq!(ApplyType::from_description("Short"), ApplyType::Unknown);
+        assert_eq!(ApplyType::from_description("A".repeat(19)), ApplyType::Unknown);
+    }
+
+    #[test]
+    fn apply_type_from_description_boundary() {
+        assert_eq!(ApplyType::from_description("A".repeat(20)), ApplyType::EmailAvailable);
     }
 }
