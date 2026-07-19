@@ -10,6 +10,7 @@ use ratatui::{
     widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState},
 };
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -61,6 +62,60 @@ impl SearchFocus {
     }
 }
 
+/// Filter for job apply type
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ApplyTypeFilter {
+    #[default]
+    All,
+    ExternalApply,
+    EmailAvailable,
+    Unknown,
+}
+
+impl ApplyTypeFilter {
+    /// Cycle to the next filter state
+    pub fn cycle(&self) -> Self {
+        match self {
+            ApplyTypeFilter::All => ApplyTypeFilter::ExternalApply,
+            ApplyTypeFilter::ExternalApply => ApplyTypeFilter::EmailAvailable,
+            ApplyTypeFilter::EmailAvailable => ApplyTypeFilter::Unknown,
+            ApplyTypeFilter::Unknown => ApplyTypeFilter::All,
+        }
+    }
+
+    /// Get display text for the filter
+    pub fn display_text(&self) -> &str {
+        match self {
+            ApplyTypeFilter::All => "",
+            ApplyTypeFilter::ExternalApply => " 🔗 EXTERNAL",
+            ApplyTypeFilter::EmailAvailable => " 📧 EMAIL",
+            ApplyTypeFilter::Unknown => " ❓ UNKNOWN",
+        }
+    }
+}
+
+/// Toast notification for user feedback
+#[derive(Debug, Clone)]
+struct Toast {
+    message: String,
+    created_at: Instant,
+    duration: Duration,
+}
+
+impl Toast {
+    fn new(message: String) -> Self {
+        Self {
+            message,
+            created_at: Instant::now(),
+            duration: Duration::from_secs(3),
+        }
+    }
+
+    fn is_expired(&self) -> bool {
+        self.created_at.elapsed() > self.duration
+    }
+}
+
 pub struct JobListScreen {
     pub jobs: Vec<JobResponse>,
     pub filtered_jobs: Vec<JobResponse>,
@@ -74,8 +129,10 @@ pub struct JobListScreen {
     pub show_detail_panel: bool,
     pub from_cache: bool,
     pub cache_stale: bool,
+    pub apply_type_filter: ApplyTypeFilter,
     api_client: Arc<Mutex<ApiClient>>,
     cache: Arc<Mutex<CacheManager>>,
+    toast: Option<Toast>,
 }
 
 impl JobListScreen {
@@ -95,8 +152,10 @@ impl JobListScreen {
             show_detail_panel: true,
             from_cache: false,
             cache_stale: false,
+            apply_type_filter: ApplyTypeFilter::default(),
             api_client,
             cache,
+            toast: None,
         }
     }
 
@@ -155,9 +214,39 @@ impl JobListScreen {
         self.apply_filters();
     }
 
+    /// Cycle the apply type filter to the next state
+    pub fn cycle_apply_type_filter(&mut self) {
+        self.apply_type_filter = self.apply_type_filter.cycle();
+        self.apply_filters();
+    }
+
+    /// Show a toast notification
+    fn show_toast(&mut self, message: String) {
+        self.toast = Some(Toast::new(message));
+    }
+
+    /// Update toast state (remove expired toasts)
+    fn update_toast(&mut self) {
+        if let Some(toast) = &self.toast
+            && toast.is_expired() {
+            self.toast = None;
+        }
+    }
+
+    /// Open the selected job URL in the system browser
+    pub fn open_selected_job_url(&mut self) {
+        if let Some(job) = self.selected_job() {
+            match open::that(&job.url) {
+                Ok(()) => self.show_toast("Opened in browser".to_string()),
+                Err(e) => self.show_toast(format!("Failed to open URL: {}", e)),
+            }
+        }
+    }
+
     fn apply_filters(&mut self) {
         let query = self.search_query.to_lowercase();
         let min_score = self.min_score_filter;
+        let apply_type_filter = self.apply_type_filter;
 
         self.filtered_jobs = self
             .jobs
@@ -173,7 +262,14 @@ impl JobListScreen {
                     job.id > 0 && ms <= 100
                 });
 
-                matches_query && matches_score
+                let matches_apply_type = match apply_type_filter {
+                    ApplyTypeFilter::All => true,
+                    ApplyTypeFilter::ExternalApply => crate::domain::ApplyType::from_description(&job.description) == crate::domain::ApplyType::ExternalApply,
+                    ApplyTypeFilter::EmailAvailable => crate::domain::ApplyType::from_description(&job.description) == crate::domain::ApplyType::EmailAvailable,
+                    ApplyTypeFilter::Unknown => crate::domain::ApplyType::from_description(&job.description) == crate::domain::ApplyType::Unknown,
+                };
+
+                matches_query && matches_score && matches_apply_type
             })
             .cloned()
             .collect();
@@ -393,6 +489,12 @@ impl JobListScreen {
             stats_text.push_str(" [STALE] ");
         }
 
+        let filter_text = self.apply_type_filter.display_text();
+        if !filter_text.is_empty() {
+            stats_text.push_str(" | Filter:");
+            stats_text.push_str(filter_text);
+        }
+
         let stats = Paragraph::new(Text::styled(stats_text, theme.style_normal()))
             .block(
                 Block::default()
@@ -519,9 +621,18 @@ impl JobListScreen {
                 let title = truncate_text(&job.title, available_width);
                 let company = truncate_text(&job.company, available_width / 2);
 
+                // Determine apply type icon
+                let apply_type = crate::domain::ApplyType::from_description(&job.description);
+                let (icon_text, icon_style) = match apply_type {
+                    crate::domain::ApplyType::ExternalApply => (" 🔗", theme.style_bad()),
+                    crate::domain::ApplyType::EmailAvailable => (" 📧", theme.style_good()),
+                    crate::domain::ApplyType::Unknown => (" ❓", theme.style_warn()),
+                };
+
                 let line = if is_selected {
                     Line::from(vec![
                         Span::styled("► ", theme.style_selected()),
+                        Span::styled(icon_text, icon_style),
                         Span::styled(
                             format!("{} ", title),
                             theme.style_selected(),
@@ -535,6 +646,7 @@ impl JobListScreen {
                 } else {
                     Line::from(vec![
                         Span::styled("  ", theme.style_normal()),
+                        Span::styled(icon_text, icon_style),
                         Span::styled(
                             format!("{} ", title),
                             theme.style_normal(),
@@ -617,7 +729,7 @@ impl JobListScreen {
         let hotkeys = if self.search_focus == SearchFocus::Focused {
             " [Esc] Blur search  [Enter] Apply filter  [Backspace] Delete "
         } else {
-            " [↑/↓] Navigate  [Enter] Detail  [/] Search  [r] Refresh  [a] Analyze  [e] Email  [p] Profile  [q] Quit "
+            " [↑/↓] Navigate  [Enter] Detail  [/] Search  [r] Refresh  [a] Analyze  [e] Email  [p] Profile  [t] Filter  [o] Open  [q] Quit "
         };
 
         let hotkeys_widget = Paragraph::new(Text::styled(hotkeys, theme.style_dim()))
@@ -707,6 +819,12 @@ pub async fn handle_event(
             }
             KeyCode::Tab => {
                 screen.toggle_detail_panel();
+            }
+            KeyCode::Char('t') | KeyCode::Char('T') => {
+                screen.cycle_apply_type_filter();
+            }
+            KeyCode::Char('o') | KeyCode::Char('O') => {
+                screen.open_selected_job_url();
             }
             _ => {}
         }
@@ -1217,5 +1335,131 @@ mod tests {
         terminal.draw(|frame| {
             screen.draw(frame, frame.area(), &Theme::detect());
         }).unwrap();
+    }
+
+    // Helper to create jobs with different apply types
+    fn sample_jobs_with_apply_types() -> Vec<JobResponse> {
+        vec![
+            JobResponse {
+                id: 1,
+                title: "External Apply Job".into(),
+                company: "Company A".into(),
+                url: "https://example.com/job/1".into(),
+                description: "".into(),
+                posted_at: NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(),
+                source: "gupy".into(),
+            },
+            JobResponse {
+                id: 2,
+                title: "Email Available Job".into(),
+                company: "Company B".into(),
+                url: "https://example.com/job/2".into(),
+                description: "This is a long description with more than twenty characters".into(),
+                posted_at: NaiveDate::from_ymd_opt(2026, 7, 13).unwrap(),
+                source: "linkedin".into(),
+            },
+            JobResponse {
+                id: 3,
+                title: "Unknown Type Job".into(),
+                company: "Company C".into(),
+                url: "https://example.com/job/3".into(),
+                description: "Short".into(),
+                posted_at: NaiveDate::from_ymd_opt(2026, 7, 12).unwrap(),
+                source: "infojobs".into(),
+            },
+        ]
+    }
+
+    #[test]
+    fn apply_type_filter_all_shows_all_jobs() {
+        let mut screen = create_test_screen();
+        screen.set_jobs(sample_jobs_with_apply_types());
+
+        assert_eq!(screen.apply_type_filter, ApplyTypeFilter::All);
+        assert_eq!(screen.filtered_jobs.len(), 3);
+    }
+
+    #[test]
+    fn apply_type_filter_external_shows_only_external() {
+        let mut screen = create_test_screen();
+        screen.set_jobs(sample_jobs_with_apply_types());
+
+        screen.apply_type_filter = ApplyTypeFilter::ExternalApply;
+        screen.apply_filters();
+
+        assert_eq!(screen.filtered_jobs.len(), 1);
+        assert_eq!(screen.filtered_jobs[0].id, 1);
+        assert_eq!(screen.filtered_jobs[0].description, "");
+    }
+
+    #[test]
+    fn apply_type_filter_email_shows_only_email() {
+        let mut screen = create_test_screen();
+        screen.set_jobs(sample_jobs_with_apply_types());
+
+        screen.apply_type_filter = ApplyTypeFilter::EmailAvailable;
+        screen.apply_filters();
+
+        assert_eq!(screen.filtered_jobs.len(), 1);
+        assert_eq!(screen.filtered_jobs[0].id, 2);
+        assert!(screen.filtered_jobs[0].description.len() >= 20);
+    }
+
+    #[test]
+    fn apply_type_filter_unknown_shows_only_unknown() {
+        let mut screen = create_test_screen();
+        screen.set_jobs(sample_jobs_with_apply_types());
+
+        screen.apply_type_filter = ApplyTypeFilter::Unknown;
+        screen.apply_filters();
+
+        assert_eq!(screen.filtered_jobs.len(), 1);
+        assert_eq!(screen.filtered_jobs[0].id, 3);
+        assert!(screen.filtered_jobs[0].description.len() < 20 && !screen.filtered_jobs[0].description.is_empty());
+    }
+
+    #[test]
+    fn filter_cycle_keybinding_cycles_states() {
+        let mut screen = create_test_screen();
+        screen.set_jobs(sample_jobs_with_apply_types());
+
+        assert_eq!(screen.apply_type_filter, ApplyTypeFilter::All);
+
+        screen.cycle_apply_type_filter();
+        assert_eq!(screen.apply_type_filter, ApplyTypeFilter::ExternalApply);
+
+        screen.cycle_apply_type_filter();
+        assert_eq!(screen.apply_type_filter, ApplyTypeFilter::EmailAvailable);
+
+        screen.cycle_apply_type_filter();
+        assert_eq!(screen.apply_type_filter, ApplyTypeFilter::Unknown);
+
+        screen.cycle_apply_type_filter();
+        assert_eq!(screen.apply_type_filter, ApplyTypeFilter::All);
+    }
+
+    #[test]
+    fn open_url_keybinding_in_joblist_sets_toast() {
+        let mut screen = create_test_screen();
+        screen.set_jobs(sample_jobs_with_apply_types());
+
+        screen.show_toast("Opened in browser".to_string());
+        assert!(screen.toast.is_some());
+        assert_eq!(screen.toast.as_ref().unwrap().message, "Opened in browser");
+    }
+
+    #[test]
+    fn filter_indicator_shows_in_stats_bar() {
+        let mut screen = create_test_screen();
+        screen.set_jobs(sample_jobs_with_apply_types());
+
+        screen.apply_type_filter = ApplyTypeFilter::ExternalApply;
+        assert_eq!(screen.apply_type_filter, ApplyTypeFilter::ExternalApply);
+
+        screen.apply_type_filter = ApplyTypeFilter::EmailAvailable;
+        assert_eq!(screen.apply_type_filter, ApplyTypeFilter::EmailAvailable);
+
+        screen.apply_type_filter = ApplyTypeFilter::All;
+        assert_eq!(screen.apply_type_filter, ApplyTypeFilter::All);
     }
 }
