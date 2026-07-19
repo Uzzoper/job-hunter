@@ -1,6 +1,6 @@
 use crate::api::ApiClient;
 use crate::cache::CacheManager;
-use crate::domain::{CompanyTone, EmailDraftResponse, EmailStatus, JobAnalysis, JobResponse};
+use crate::domain::{ApplyType, CompanyTone, EmailDraftResponse, EmailStatus, JobAnalysis, JobResponse};
 use crate::tui::theme::{Theme, render_empty_state, render_error_popup, render_loading, spinner_frame};
 use arboard::Clipboard;
 use ratatui::{
@@ -293,6 +293,26 @@ impl JobDetailScreen {
         }
     }
 
+    /// Get apply type badge text and style based on job description
+    fn apply_type_badge(&self, theme: &Theme) -> (String, Style) {
+        let description = self.job.as_ref().map(|j| j.description.as_str()).unwrap_or("");
+        match ApplyType::from_description(description) {
+            ApplyType::ExternalApply => (" 🔗 EXTERNAL ".to_string(), theme.style_bad()),
+            ApplyType::EmailAvailable => (" 📧 EMAIL ".to_string(), theme.style_good()),
+            ApplyType::Unknown => (" ❓ UNKNOWN ".to_string(), theme.style_warn()),
+        }
+    }
+
+    /// Open job URL in the system browser
+    fn open_job_url(&mut self) {
+        if let Some(job) = &self.job {
+            match open::that(&job.url) {
+                Ok(()) => self.show_toast("Opened in browser".to_string()),
+                Err(e) => self.show_toast(format!("Failed to open URL: {}", e)),
+            }
+        }
+    }
+
     fn draw_header(&self, frame: &mut Frame, area: Rect, theme: &Theme) {
         let Some(job) = &self.job else {
             let empty = Paragraph::new(Text::styled(
@@ -306,6 +326,7 @@ impl JobDetailScreen {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
+                Constraint::Length(1),
                 Constraint::Length(1),
                 Constraint::Length(1),
                 Constraint::Length(1),
@@ -332,6 +353,10 @@ impl JobDetailScreen {
             theme.style_dim(),
         ));
         frame.render_widget(url, chunks[2]);
+
+        let (badge_text, badge_style) = self.apply_type_badge(theme);
+        let badge = Paragraph::new(Text::styled(badge_text, badge_style));
+        frame.render_widget(badge, chunks[3]);
     }
 
 fn draw_score_gauge(&self, frame: &mut Frame, area: Rect, theme: &Theme) {
@@ -625,6 +650,9 @@ pub async fn handle_event(
                 }
                 KeyCode::Char('f') | KeyCode::Char('F') => {
                     screen.toggle_email_full();
+                }
+                KeyCode::Char('o') | KeyCode::Char('O') => {
+                    screen.open_job_url();
                 }
                 _ => {}
             }
@@ -1028,5 +1056,55 @@ mod tests {
         terminal.draw(|frame| {
             screen.draw(frame, frame.area());
         }).unwrap();
+    }
+
+    fn create_test_screen_with_description(description: &str) -> JobDetailScreen {
+        let job = JobResponse {
+            id: 1,
+            title: "Senior Rust Developer".into(),
+            company: "Acme Corp".into(),
+            url: "https://example.com/job/1".into(),
+            description: description.into(),
+            posted_at: NaiveDate::from_ymd_opt(2026, 7, 13).unwrap(),
+            source: "gupy".into(),
+        };
+        let api_client = Arc::new(Mutex::new(ApiClient::new("http://localhost:8080")));
+        let cache = Arc::new(Mutex::new(CacheManager::new_in_memory(24).expect("cache")));
+        let mut screen = JobDetailScreen::new(api_client, cache);
+        screen.set_job(job);
+        screen
+    }
+
+    #[test]
+    fn badge_shows_external_when_description_empty() {
+        let screen = create_test_screen_with_description("");
+        let theme = Theme::detect();
+        let (text, _) = screen.apply_type_badge(&theme);
+        assert_eq!(text, " 🔗 EXTERNAL ");
+    }
+
+    #[test]
+    fn badge_shows_email_when_description_present() {
+        let screen = create_test_screen_with_description(
+            "Build high-performance distributed systems in Rust with 20+ characters",
+        );
+        let theme = Theme::detect();
+        let (text, _) = screen.apply_type_badge(&theme);
+        assert_eq!(text, " 📧 EMAIL ");
+    }
+
+    #[test]
+    fn badge_shows_unknown_when_description_whitespace() {
+        let screen = create_test_screen_with_description("   ");
+        let theme = Theme::detect();
+        let (text, _) = screen.apply_type_badge(&theme);
+        assert_eq!(text, " ❓ UNKNOWN ");
+    }
+
+    #[test]
+    fn open_url_keybinding_triggers_open() {
+        let mut screen = create_test_screen();
+        screen.open_job_url();
+        assert!(screen.toast.is_some());
     }
 }
