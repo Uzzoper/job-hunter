@@ -9,6 +9,7 @@ use ratatui::{
     text::{Line, Span, Text},
     widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState},
 };
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
@@ -133,6 +134,7 @@ pub struct JobListScreen {
     api_client: Arc<Mutex<ApiClient>>,
     cache: Arc<Mutex<CacheManager>>,
     toast: Option<Toast>,
+    score_cache: HashMap<i64, Option<i32>>,
 }
 
 impl JobListScreen {
@@ -156,11 +158,17 @@ impl JobListScreen {
             api_client,
             cache,
             toast: None,
+            score_cache: HashMap::new(),
         }
     }
 
     pub fn set_jobs(&mut self, jobs: Vec<JobResponse>) {
         self.jobs = jobs;
+        if let Ok(cache) = self.cache.try_lock()
+            && let Ok(scores) = cache.get_all_scores()
+        {
+            self.score_cache = scores;
+        }
         self.apply_filters();
         self.update_selection();
         self.status = LoadingState::Loaded;
@@ -434,19 +442,15 @@ impl JobListScreen {
 
     pub fn stats(&self) -> (usize, usize, Option<i32>) {
         let total = self.jobs.len();
-        let cache = match self.cache.try_lock() {
-            Ok(cache) => cache,
-            Err(_) => return (total, 0, None),
-        };
         let analyzed = self
             .jobs
             .iter()
-            .filter(|j| cache.get_job(j.id).ok().and_then(|cj| cj).and_then(|cj| cj.match_score).is_some())
+            .filter(|j| self.score_cache.get(&j.id).copied().flatten().is_some())
             .count();
         let scores: Vec<i32> = self
             .jobs
             .iter()
-            .filter_map(|j| cache.get_job(j.id).ok().and_then(|cj| cj).and_then(|cj| cj.match_score))
+            .filter_map(|j| self.score_cache.get(&j.id).copied().flatten())
             .collect();
         let avg_score = if scores.is_empty() {
             None
@@ -604,13 +608,14 @@ impl JobListScreen {
             .enumerate()
             .map(|(idx, job)| {
                 let is_selected = idx == self.selected_index;
-                let score_display = if let Some(score) = self.get_job_score(job) {
+                let score = self.get_job_score(job);
+                let score_display = if let Some(score) = score {
                     format!(" {}% ", score)
                 } else {
                     " --- ".to_string()
                 };
 
-                let score_style = if let Some(score) = self.get_job_score(job) {
+                let score_style = if let Some(score) = score {
                     theme.style_score_color(score)
                 } else {
                     theme.style_dim()
@@ -687,12 +692,7 @@ impl JobListScreen {
     }
 
     fn get_job_score(&self, job: &JobResponse) -> Option<i32> {
-        if let Ok(cache) = self.cache.try_lock()
-            && let Ok(Some(cached)) = cache.get_job(job.id)
-        {
-            return cached.match_score;
-        }
-        None
+        self.score_cache.get(&job.id).copied().flatten()
     }
 
     fn draw_detail_panel(&self, frame: &mut Frame, area: Rect, theme: &Theme) {
@@ -1461,5 +1461,41 @@ mod tests {
 
         screen.apply_type_filter = ApplyTypeFilter::All;
         assert_eq!(screen.apply_type_filter, ApplyTypeFilter::All);
+    }
+
+    #[test]
+    fn get_job_score_returns_cached_score() {
+        let mut screen = create_test_screen();
+        let jobs = sample_jobs();
+        screen.set_jobs(jobs.clone());
+
+        screen.score_cache.insert(1, Some(85));
+        screen.score_cache.insert(2, None);
+        screen.score_cache.insert(3, Some(92));
+
+        let job1 = &jobs[0];
+        let job2 = &jobs[1];
+        let job3 = &jobs[2];
+
+        assert_eq!(screen.get_job_score(job1), Some(85));
+        assert_eq!(screen.get_job_score(job2), None);
+        assert_eq!(screen.get_job_score(job3), Some(92));
+    }
+
+    #[test]
+    fn stats_uses_score_cache() {
+        let mut screen = create_test_screen();
+        let jobs = sample_jobs();
+        screen.set_jobs(jobs.clone());
+
+        screen.score_cache.insert(1, Some(80));
+        screen.score_cache.insert(2, Some(90));
+        screen.score_cache.insert(3, None);
+
+        let (total, analyzed, avg_score) = screen.stats();
+
+        assert_eq!(total, 3);
+        assert_eq!(analyzed, 2);
+        assert_eq!(avg_score, Some(85));
     }
 }
