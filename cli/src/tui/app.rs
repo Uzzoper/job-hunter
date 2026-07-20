@@ -319,7 +319,7 @@ impl App {
 
         let shortcuts = match self.state {
             AppState::Auth => " [Enter] Continue  [q] Quit ",
-            AppState::JobList => " [↑/↓] Navigate  [Enter] Detail  [r] Refresh  [p] Profile  [q] Quit ",
+            AppState::JobList => " ",
             AppState::JobDetail => " ",
             AppState::Profile => " [b] Back  [r] Refresh  [q] Quit ",
             AppState::Quitting => " ",
