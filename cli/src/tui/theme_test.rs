@@ -7,10 +7,10 @@ mod tests {
     fn cyberpunk_theme_has_correct_colors() {
         let theme = Theme::cyberpunk();
 
-        assert_eq!(theme.primary, Color::Rgb(0, 130, 90));
+        assert_eq!(theme.primary, Color::Rgb(0, 240, 255));
         assert_eq!(theme.secondary, Color::Rgb(0, 255, 80));
-        assert_eq!(theme.accent, Color::Rgb(0, 210, 130));
-        assert_eq!(theme.warn, Color::Rgb(250, 190, 50));
+        assert_eq!(theme.accent, Color::Rgb(0, 200, 180));
+        assert_eq!(theme.warn, Color::Rgb(255, 170, 0));
         assert_eq!(theme.bad, Color::Rgb(240, 70, 80));
         assert_eq!(theme.bg, Color::Rgb(13, 17, 23));
         assert_eq!(theme.surface, Color::Rgb(22, 27, 34));
@@ -23,9 +23,9 @@ mod tests {
     fn fallback_256_theme_has_correct_colors() {
         let theme = Theme::fallback_256();
 
-        assert_eq!(theme.primary, Color::Indexed(28));
+        assert_eq!(theme.primary, Color::Indexed(51));
         assert_eq!(theme.secondary, Color::Indexed(46));
-        assert_eq!(theme.accent, Color::Indexed(35));
+        assert_eq!(theme.accent, Color::Indexed(43));
         assert_eq!(theme.warn, Color::Indexed(214));
         assert_eq!(theme.bad, Color::Indexed(196));
         assert_eq!(theme.bg, Color::Indexed(234));
@@ -39,7 +39,7 @@ mod tests {
     fn title_style_uses_primary_and_bold() {
         let style = Theme::title();
 
-        assert_eq!(style.fg, Some(Color::Rgb(0, 130, 90)));
+        assert_eq!(style.fg, Some(Color::Rgb(0, 240, 255)));
         assert!(style.add_modifier.contains(Modifier::BOLD));
     }
 
@@ -55,7 +55,7 @@ mod tests {
     fn highlight_style_uses_accent() {
         let style = Theme::highlight();
 
-        assert_eq!(style.fg, Some(Color::Rgb(0, 210, 130)));
+        assert_eq!(style.fg, Some(Color::Rgb(0, 200, 180)));
     }
 
     #[test]
@@ -90,7 +90,7 @@ mod tests {
     fn warn_style_uses_amber() {
         let style = Theme::warn();
 
-        assert_eq!(style.fg, Some(Color::Rgb(250, 190, 50)));
+        assert_eq!(style.fg, Some(Color::Rgb(255, 170, 0)));
     }
 
     #[test]
@@ -108,13 +108,13 @@ mod tests {
     #[test]
     fn score_color_amber_for_50_to_79() {
         let style = Theme::score_color(50);
-        assert_eq!(style.fg, Some(Color::Rgb(250, 190, 50)));
+        assert_eq!(style.fg, Some(Color::Rgb(255, 170, 0)));
 
         let style = Theme::score_color(79);
-        assert_eq!(style.fg, Some(Color::Rgb(250, 190, 50)));
+        assert_eq!(style.fg, Some(Color::Rgb(255, 170, 0)));
 
         let style = Theme::score_color(65);
-        assert_eq!(style.fg, Some(Color::Rgb(250, 190, 50)));
+        assert_eq!(style.fg, Some(Color::Rgb(255, 170, 0)));
     }
 
     #[test]
@@ -132,7 +132,7 @@ mod tests {
     #[test]
     fn border_style_primary_when_focused() {
         let style = Theme::border(true);
-        assert_eq!(style.fg, Some(Color::Rgb(0, 130, 90)));
+        assert_eq!(style.fg, Some(Color::Rgb(0, 240, 255)));
     }
 
     #[test]
@@ -158,18 +158,18 @@ mod tests {
     #[test]
     fn default_theme_detects_true_color() {
         let theme = Theme::default();
-        assert!(theme.primary == Color::Rgb(0, 130, 90) || theme.primary == Color::Indexed(28));
+        assert!(theme.primary == Color::Rgb(0, 240, 255) || theme.primary == Color::Indexed(51));
     }
 
     #[test]
     fn fallback_256_title_style_uses_indexed_cyan() {
         let theme = Theme::fallback_256();
         let style = theme.style_title();
-        assert_eq!(style.fg, Some(Color::Indexed(28)));
+        assert_eq!(style.fg, Some(Color::Indexed(51)));
     }
 
     #[test]
-    fn fallback_256_selected_style_uses_indexed_magenta() {
+    fn fallback_256_selected_style_uses_indexed_green() {
         let theme = Theme::fallback_256();
         let style = theme.style_selected();
         assert_eq!(style.fg, Some(Color::Indexed(46)));
