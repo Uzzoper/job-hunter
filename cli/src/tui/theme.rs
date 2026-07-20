@@ -22,35 +22,35 @@ pub struct Theme {
 }
 
 impl Theme {
-    /// True-color cyberpunk theme (24-bit RGB).
+    /// Dark green theme (24-bit RGB).
     pub const fn cyberpunk() -> Self {
         Self {
-            primary: Color::Rgb(0, 240, 255),
-            secondary: Color::Rgb(255, 0, 170),
-            accent: Color::Rgb(255, 255, 0),
-            warn: Color::Rgb(255, 170, 0),
-            bad: Color::Rgb(255, 51, 85),
-            bg: Color::Rgb(13, 17, 23),
-            surface: Color::Rgb(22, 27, 34),
-            text: Color::Rgb(230, 230, 230),
-            dim: Color::Rgb(139, 148, 158),
-            good: Color::Rgb(0, 255, 136),
+            primary: Color::Rgb(0, 188, 120),    // emerald green
+            secondary: Color::Rgb(0, 220, 150),   // mint green
+            accent: Color::Rgb(50, 170, 160),     // teal
+            warn: Color::Rgb(220, 180, 70),       // amber
+            bad: Color::Rgb(230, 90, 90),         // soft red
+            bg: Color::Rgb(13, 17, 23),           // keep dark bg
+            surface: Color::Rgb(22, 27, 34),      // keep dark surface
+            text: Color::Rgb(230, 230, 230),      // keep light text
+            dim: Color::Rgb(139, 148, 158),       // keep dim gray
+            good: Color::Rgb(0, 200, 100),        // green for scores
         }
     }
 
     /// 256-color fallback theme (8-bit indexed colors).
     pub const fn fallback_256() -> Self {
         Self {
-            primary: Color::Indexed(51),
-            secondary: Color::Indexed(201),
-            accent: Color::Indexed(226),
-            warn: Color::Indexed(214),
-            bad: Color::Indexed(196),
-            bg: Color::Indexed(234),
-            surface: Color::Indexed(235),
-            text: Color::Indexed(252),
-            dim: Color::Indexed(240),
-            good: Color::Indexed(82),
+            primary: Color::Indexed(35),   // green
+            secondary: Color::Indexed(47), // light green
+            accent: Color::Indexed(37),    // teal
+            warn: Color::Indexed(214),     // orange (keep same, works)
+            bad: Color::Indexed(196),      // red (keep same)
+            bg: Color::Indexed(234),       // keep same
+            surface: Color::Indexed(235),  // keep same
+            text: Color::Indexed(252),     // keep same
+            dim: Color::Indexed(240),      // keep same
+            good: Color::Indexed(82),      // green (keep same)
         }
     }
 
