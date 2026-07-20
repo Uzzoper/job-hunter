@@ -621,6 +621,37 @@ pub async fn handle_event(
 
     if let crossterm::event::Event::Key(key) = event
         && key.kind == KeyEventKind::Press {
+            // If error popup is showing, only handle dismiss/retry/nav keys
+            if screen.analysis_error.is_some() || screen.email_error.is_some() {
+                match key.code {
+                    KeyCode::Enter => {
+                        screen.analysis_error = None;
+                        screen.email_error = None;
+                        screen.loading_analysis = LoadingState::Idle;
+                        screen.loading_email = LoadingState::Idle;
+                    }
+                    KeyCode::Char('a') | KeyCode::Char('A') => {
+                        if !screen.loading_analysis.is_loading() {
+                            let _ = screen.analyze_job().await;
+                        }
+                    }
+                    KeyCode::Char('e') | KeyCode::Char('E') => {
+                        if !screen.loading_email.is_loading() {
+                            let _ = screen.generate_email().await;
+                        }
+                    }
+                    KeyCode::Esc => {
+                        app.state = crate::tui::app::AppState::JobList;
+                        app.selected_job = None;
+                    }
+                    KeyCode::Char('q') | KeyCode::Char('Q') => {
+                        app.should_quit = true;
+                        app.state = crate::tui::app::AppState::Quitting;
+                    }
+                    _ => {}
+                }
+                return Ok(());
+            }
             match key.code {
                 KeyCode::Esc => {
                     app.state = crate::tui::app::AppState::JobList;
