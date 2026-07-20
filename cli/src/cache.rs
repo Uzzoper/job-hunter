@@ -1,6 +1,7 @@
 use crate::domain::{CachedJob, EmailDraftResponse, JobAnalysis, JobResponse};
 use chrono::{NaiveDate, NaiveDateTime, Utc};
 use rusqlite::{params, Connection};
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 use crate::error::Result;
@@ -152,6 +153,29 @@ impl CacheManager {
             Some(Err(e)) => Err(e.into()),
             None => Ok(None),
         }
+    }
+
+    /// Get match scores for all cached jobs.
+    ///
+    /// Returns a map of job ID → match score. Scores that are `NULL`
+    /// in the database (not yet analyzed) are returned as `None`.
+    pub fn get_all_scores(&self) -> Result<HashMap<i64, Option<i32>>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT id, match_score FROM cached_jobs")?;
+
+        let rows = stmt.query_map([], |row| {
+            let id: i64 = row.get(0)?;
+            let score: Option<i32> = row.get(1)?;
+            Ok((id, score))
+        })?;
+
+        let mut scores = HashMap::new();
+        for row in rows {
+            let (id, score) = row?;
+            scores.insert(id, score);
+        }
+        Ok(scores)
     }
 
     /// Save analysis results for a cached job.
@@ -508,6 +532,52 @@ mod tests {
         let manager = create_manager();
         let job = manager.get_job(999).expect("get nonexistent job");
         assert!(job.is_none());
+    }
+
+    // ------------------------------------------------------------------
+    // get_all_scores
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn get_all_scores_returns_map_of_all_jobs() {
+        let manager = create_manager();
+        manager.save_jobs(&sample_jobs()).expect("save jobs");
+        // Save analysis to set match_score on job 1
+        manager.save_analysis(1, &sample_analysis()).expect("save analysis");
+
+        let scores = manager.get_all_scores().expect("get all scores");
+        assert_eq!(scores.len(), 2);
+        // Job 1 has a match_score of 85
+        assert_eq!(scores.get(&1), Some(&Some(85)));
+        // Job 2 has no analysis — score is NULL
+        assert_eq!(scores.get(&2), Some(&None));
+    }
+
+    #[test]
+    fn get_all_scores_empty_when_no_jobs() {
+        let manager = create_manager();
+        let scores = manager.get_all_scores().expect("get all scores");
+        assert!(scores.is_empty(), "expected empty map");
+    }
+
+    #[test]
+    fn get_all_scores_handles_null_scores() {
+        let manager = create_manager();
+        // Save a job with NULL match_score (no analysis yet)
+        let jobs = vec![JobResponse {
+            id: 1,
+            title: "Null Score Job".into(),
+            company: "Acme".into(),
+            url: "https://example.com/null-score".into(),
+            description: "Not analyzed yet".into(),
+            posted_at: NaiveDate::from_ymd_opt(2026, 7, 15).unwrap(),
+            source: "gupy".into(),
+        }];
+        manager.save_jobs(&jobs).expect("save job");
+
+        let scores = manager.get_all_scores().expect("get all scores");
+        assert_eq!(scores.len(), 1);
+        assert_eq!(scores.get(&1), Some(&None), "unanalyzed job should have None score");
     }
 
     // ------------------------------------------------------------------
