@@ -22,13 +22,13 @@ pub struct Theme {
 }
 
 impl Theme {
-    /// Dark green + neon green theme (24-bit RGB).
+    /// Cyan + neon green theme (24-bit RGB).
     pub const fn cyberpunk() -> Self {
         Self {
-            primary: Color::Rgb(0, 130, 90),     // dark green
+            primary: Color::Rgb(0, 240, 255),    // cyan
             secondary: Color::Rgb(0, 255, 80),   // neon green — selection/focus
-            accent: Color::Rgb(0, 210, 130),     // mint green
-            warn: Color::Rgb(250, 190, 50),      // amber
+            accent: Color::Rgb(0, 200, 180),     // teal
+            warn: Color::Rgb(255, 170, 0),       // orange
             bad: Color::Rgb(240, 70, 80),        // red
             bg: Color::Rgb(13, 17, 23),          // keep
             surface: Color::Rgb(22, 27, 34),     // keep
@@ -41,9 +41,9 @@ impl Theme {
     /// 256-color fallback theme (8-bit indexed colors).
     pub const fn fallback_256() -> Self {
         Self {
-            primary: Color::Indexed(28),   // dark green
+            primary: Color::Indexed(51),   // cyan
             secondary: Color::Indexed(46), // neon green
-            accent: Color::Indexed(35),    // mint green
+            accent: Color::Indexed(43),    // teal
             warn: Color::Indexed(214),     // keep
             bad: Color::Indexed(196),      // keep
             bg: Color::Indexed(234),       // keep
