@@ -310,13 +310,8 @@ pub async fn submit(&mut self, app: &mut App) -> anyhow::Result<()> {
         ];
 
         let mut lines = Vec::new();
-        for (i, line) in logo_lines.iter().enumerate() {
-            let style = if i < 3 {
-                theme.style_title()
-            } else {
-                theme.style_dim()
-            };
-            lines.push(Line::from(Span::styled(*line, style)));
+        for line in logo_lines.iter() {
+            lines.push(Line::from(Span::styled(*line, theme.style_title())));
         }
 
         let logo_width = 62u16;
