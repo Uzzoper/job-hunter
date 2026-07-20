@@ -314,7 +314,7 @@ pub async fn submit(&mut self, app: &mut App) -> anyhow::Result<()> {
             let style = if i < 3 {
                 theme.style_title()
             } else {
-                theme.style_selected()
+                theme.style_dim()
             };
             lines.push(Line::from(Span::styled(*line, style)));
         }
