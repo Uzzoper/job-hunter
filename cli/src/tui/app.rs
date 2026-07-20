@@ -226,7 +226,7 @@ impl App {
             terminal.draw(|frame| self.render(frame))?;
 
             // Handle events with timeout to allow for resize handling
-            if crossterm::event::poll(std::time::Duration::from_millis(50))? {
+            if crossterm::event::poll(std::time::Duration::from_millis(100))? {
                 let event = crossterm::event::read()?;
                 
                 // Handle terminal resize
