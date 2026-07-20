@@ -22,35 +22,35 @@ pub struct Theme {
 }
 
 impl Theme {
-    /// Dark green theme (24-bit RGB).
+    /// Dark green + neon green theme (24-bit RGB).
     pub const fn cyberpunk() -> Self {
         Self {
-            primary: Color::Rgb(0, 188, 120),    // emerald green
-            secondary: Color::Rgb(0, 220, 150),   // mint green
-            accent: Color::Rgb(50, 170, 160),     // teal
-            warn: Color::Rgb(220, 180, 70),       // amber
-            bad: Color::Rgb(230, 90, 90),         // soft red
-            bg: Color::Rgb(13, 17, 23),           // keep dark bg
-            surface: Color::Rgb(22, 27, 34),      // keep dark surface
-            text: Color::Rgb(230, 230, 230),      // keep light text
-            dim: Color::Rgb(139, 148, 158),       // keep dim gray
-            good: Color::Rgb(0, 200, 100),        // green for scores
+            primary: Color::Rgb(0, 130, 90),     // dark green
+            secondary: Color::Rgb(0, 255, 80),   // neon green — selection/focus
+            accent: Color::Rgb(0, 210, 130),     // mint green
+            warn: Color::Rgb(250, 190, 50),      // amber
+            bad: Color::Rgb(240, 70, 80),        // red
+            bg: Color::Rgb(13, 17, 23),          // keep
+            surface: Color::Rgb(22, 27, 34),     // keep
+            text: Color::Rgb(230, 230, 230),     // keep
+            dim: Color::Rgb(139, 148, 158),      // keep
+            good: Color::Rgb(0, 255, 100),       // neon green for scores
         }
     }
 
     /// 256-color fallback theme (8-bit indexed colors).
     pub const fn fallback_256() -> Self {
         Self {
-            primary: Color::Indexed(35),   // green
-            secondary: Color::Indexed(47), // light green
-            accent: Color::Indexed(37),    // teal
-            warn: Color::Indexed(214),     // orange (keep same, works)
-            bad: Color::Indexed(196),      // red (keep same)
-            bg: Color::Indexed(234),       // keep same
-            surface: Color::Indexed(235),  // keep same
-            text: Color::Indexed(252),     // keep same
-            dim: Color::Indexed(240),      // keep same
-            good: Color::Indexed(82),      // green (keep same)
+            primary: Color::Indexed(28),   // dark green
+            secondary: Color::Indexed(46), // neon green
+            accent: Color::Indexed(35),    // mint green
+            warn: Color::Indexed(214),     // keep
+            bad: Color::Indexed(196),      // keep
+            bg: Color::Indexed(234),       // keep
+            surface: Color::Indexed(235),  // keep
+            text: Color::Indexed(252),     // keep
+            dim: Color::Indexed(240),      // keep
+            good: Color::Indexed(46),      // neon green for scores
         }
     }
 
