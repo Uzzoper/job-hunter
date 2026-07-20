@@ -272,6 +272,18 @@ pub async fn submit(&mut self, app: &mut App) -> anyhow::Result<()> {
     pub fn draw(&mut self, frame: &mut Frame, area: Rect) {
         let theme = Theme::detect();
 
+        // Full-area overlays for loading and error states — render before normal layout
+        if self.is_loading {
+            render_loading(frame, area, &theme, "Authenticating...");
+            return;
+        }
+
+        if let Some(error) = &self.error_message {
+            render_error_popup(frame, area, &theme, error, "[Enter] Dismiss  [r] Retry");
+            return;
+        }
+
+        // Normal layout — only when no error and not loading
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
@@ -297,8 +309,6 @@ pub async fn submit(&mut self, app: &mut App) -> anyhow::Result<()> {
             "  \\___/ \\___/|____/      |_| |_|\\___/|_| \\_| |_| |_____|_| \\_\\",
         ];
 
-        let subtitle = "  CYBERPUNK JOB HUNTER  ";
-
         let mut lines = Vec::new();
         for (i, line) in logo_lines.iter().enumerate() {
             let style = if i < 3 {
@@ -309,15 +319,12 @@ pub async fn submit(&mut self, app: &mut App) -> anyhow::Result<()> {
             lines.push(Line::from(Span::styled(*line, style)));
         }
 
-        let subtitle_style = theme.style_dim();
-        lines.push(Line::from(Span::styled(subtitle, subtitle_style)));
-
         let logo_width = 62u16;
         let logo_area = Rect {
             x: area.x + (area.width.saturating_sub(logo_width)) / 2,
             y: area.y,
             width: logo_width.min(area.width),
-            height: (logo_lines.len() + 1) as u16,
+            height: logo_lines.len() as u16,
         };
 
         frame.render_widget(Paragraph::new(lines), logo_area);
@@ -440,25 +447,14 @@ pub async fn submit(&mut self, app: &mut App) -> anyhow::Result<()> {
     }
 
     fn draw_status(&self, frame: &mut Frame, area: Rect, theme: &Theme) {
-        if self.is_loading {
-            render_loading(frame, area, theme, "Authenticating...");
-        } else if let Some(error) = &self.error_message {
-            let hint = if !error.is_empty() {
-                "[Enter] Dismiss  [r] Retry"
-            } else {
-                "[Enter] Dismiss"
-            };
-            render_error_popup(frame, area, theme, error, hint);
-        } else {
-            let shortcuts = match self.mode {
-                AuthMode::Login => " [Tab] Switch  [Enter] Login  [q] Quit ",
-                AuthMode::Register => " [Tab] Switch  [Enter] Register  [q] Quit ",
-            };
-            let para = Paragraph::new(Text::styled(shortcuts, theme.style_dim()))
-                .alignment(Alignment::Center)
-                .block(Block::default().borders(Borders::ALL).border_style(theme.style_dim()));
-            frame.render_widget(para, area);
-        }
+        let shortcuts = match self.mode {
+            AuthMode::Login => " [Tab] Switch  [Enter] Login  [q] Quit ",
+            AuthMode::Register => " [Tab] Switch  [Enter] Register  [q] Quit ",
+        };
+        let para = Paragraph::new(Text::styled(shortcuts, theme.style_dim()))
+            .alignment(Alignment::Center)
+            .block(Block::default().borders(Borders::ALL).border_style(theme.style_dim()));
+        frame.render_widget(para, area);
     }
 }
 
