@@ -22,6 +22,7 @@ toml = "0.8"
 # Terminal UI
 ratatui = "0.29"
 crossterm = "0.28"
+scopeguard = "1"
 
 # Local cache
 rusqlite = { version = "0.34", features = ["bundled"] }

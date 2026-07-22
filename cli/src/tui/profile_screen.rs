@@ -251,6 +251,19 @@ impl ProfileScreen {
         self.clear_validation_errors();
     }
 
+    /// Handle bracketed paste event - inserts entire pasted text at once
+    pub fn handle_paste(&mut self, text: &str) {
+        if self.mode != ProfileMode::Edit || self.saving || self.loading.is_loading() {
+            return;
+        }
+        match self.focused_field {
+            ProfileField::Resume => self.resume_text.push_str(text),
+            ProfileField::Skills => self.skills_text.push_str(text),
+            ProfileField::Tone => {} // Tone is selected via arrow keys
+        }
+        self.clear_validation_errors();
+    }
+
     /// Handle arrow keys for tone selection
     pub fn handle_up(&mut self) {
         if self.mode != ProfileMode::Edit || self.saving || self.loading.is_loading() {
@@ -811,6 +824,14 @@ pub async fn handle_event(
     app: &mut crate::tui::app::App,
 ) -> anyhow::Result<()> {
     use crossterm::event::{KeyCode, KeyEventKind};
+
+    // Handle bracketed paste events
+    if let crossterm::event::Event::Paste(text) = event {
+        if let Some(screen) = &mut app.profile_screen {
+            screen.handle_paste(&text);
+        }
+        return Ok(());
+    }
 
     if let crossterm::event::Event::Key(key) = event {
         if key.kind != KeyEventKind::Press {
