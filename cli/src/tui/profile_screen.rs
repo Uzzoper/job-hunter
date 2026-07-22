@@ -462,16 +462,17 @@ impl ProfileScreen {
             return;
         }
 
+        if self.mode == ProfileMode::Edit {
+            self.draw_edit_mode(frame, area, theme);
+            return;
+        }
+
         let Some(profile) = &self.profile else {
             render_empty_state(frame, area, theme, crate::tui::theme::empty_states::NO_PROFILE);
             return;
         };
 
-        if self.mode == ProfileMode::View {
-            self.draw_view_mode(frame, area, theme, profile);
-        } else {
-            self.draw_edit_mode(frame, area, theme);
-        }
+        self.draw_view_mode(frame, area, theme, profile);
     }
 
     fn draw_view_mode(&self, frame: &mut Frame, area: Rect, theme: &Theme, profile: &ProfileResponse) {
