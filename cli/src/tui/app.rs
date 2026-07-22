@@ -321,7 +321,7 @@ impl App {
             AppState::Auth => " [Enter] Continue  [q] Quit ",
             AppState::JobList => " ",
             AppState::JobDetail => " ",
-            AppState::Profile => " [b] Back  [r] Refresh  [q] Quit ",
+            AppState::Profile => " ",
             AppState::Quitting => " ",
         };
 
