@@ -243,6 +243,12 @@ impl App {
                         continue;
                     }
                 
+                // Handle bracketed paste events
+                if let Event::Paste(_) = event {
+                    self.handle_event(event).await?;
+                    continue;
+                }
+                
                 self.handle_event(event).await?;
             }
         }
@@ -368,6 +374,14 @@ impl App {
     }
 
     pub(crate) async fn handle_event(&mut self, event: crossterm::event::Event) -> anyhow::Result<()> {
+        // Handle bracketed paste events - delegate to active screen
+        if let crossterm::event::Event::Paste(ref _data) = event {
+            if self.state == AppState::Profile {
+                return profile_screen::handle_event(event, self).await;
+            }
+            return Ok(());
+        }
+
         if let crossterm::event::Event::Key(key) = event
             && key.kind == crossterm::event::KeyEventKind::Press {
             if self.error_message.is_some() {

@@ -16,6 +16,9 @@ pub use theme::Theme;
 
 use crate::api::ApiClient;
 use crate::config::Config;
+use crossterm::event::{DisableBracketedPaste, EnableBracketedPaste};
+use crossterm::execute;
+use scopeguard::defer;
 
 /// Entry point for TUI mode.
 pub async fn run(
@@ -23,9 +26,12 @@ pub async fn run(
     config: Config,
 ) -> anyhow::Result<()> {
     let mut terminal = ratatui::init();
-    let result = app::App::new(api_client, config)
+    execute!(std::io::stdout(), EnableBracketedPaste)?;
+    defer! {
+        let _ = execute!(std::io::stdout(), DisableBracketedPaste);
+        ratatui::restore();
+    }
+    app::App::new(api_client, config)
         .run(&mut terminal)
-        .await;
-    ratatui::restore();
-    result
+        .await
 }
