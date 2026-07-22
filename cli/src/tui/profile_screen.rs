@@ -239,6 +239,18 @@ impl ProfileScreen {
         self.clear_validation_errors();
     }
 
+    /// Handle newline (Enter) in edit mode - inserts newline in Resume field
+    pub fn handle_newline(&mut self) {
+        if self.mode != ProfileMode::Edit || self.saving || self.loading.is_loading() {
+            return;
+        }
+        match self.focused_field {
+            ProfileField::Resume => self.resume_text.push('\n'),
+            ProfileField::Skills | ProfileField::Tone => {} // handled by caller
+        }
+        self.clear_validation_errors();
+    }
+
     /// Handle arrow keys for tone selection
     pub fn handle_up(&mut self) {
         if self.mode != ProfileMode::Edit || self.saving || self.loading.is_loading() {
@@ -837,6 +849,20 @@ pub async fn handle_event(
             _ => {}
         }
 
+        if key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) {
+            match key.code {
+                KeyCode::Char('s') | KeyCode::Char('S') => {
+                    if let Some(screen) = &mut app.profile_screen {
+                        if screen.mode == ProfileMode::Edit && !screen.saving && !screen.loading.is_loading() {
+                            let _ = screen.save_profile().await;
+                        }
+                    }
+                    return Ok(());
+                }
+                _ => {}
+            }
+        }
+
         // Delegate to profile screen
         if let Some(screen) = &mut app.profile_screen {
             match key.code {
@@ -862,7 +888,12 @@ pub async fn handle_event(
                 }
                 KeyCode::Enter => {
                     if screen.mode == ProfileMode::Edit && !screen.saving && !screen.loading.is_loading() {
-                        let _ = screen.save_profile().await;
+                        match screen.focused_field {
+                            ProfileField::Resume => screen.handle_newline(),
+                            ProfileField::Skills | ProfileField::Tone => {
+                                let _ = screen.save_profile().await;
+                            }
+                        }
                     }
                 }
                 KeyCode::Up => {
