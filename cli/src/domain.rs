@@ -171,6 +171,144 @@ impl std::fmt::Display for ApplyType {
     }
 }
 
+/// Seniority level of a job position, derived from the title.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum SeniorityLevel {
+    Junior,
+    Pleno,
+    Senior,
+    Unknown,
+}
+
+impl SeniorityLevel {
+    /// Classify a job title into a seniority level.
+    ///
+    /// Checks in order of specificity: Senior > Pleno > Junior > Unknown.
+    /// Matching is case-insensitive and uses substring matching on the title.
+    pub fn from_title(title: impl AsRef<str>) -> Self {
+        let title = title.as_ref().to_lowercase();
+
+        // Senior keywords (checked first - highest precedence)
+        if title.contains("senior")
+            || title.contains("sr")
+            || title.contains("lead")
+            || title.contains("principal")
+            || title.contains("staff")
+            || title.contains("sênior")
+            || title.contains("specialist")
+            || title.contains("tech lead")
+        {
+            return Self::Senior;
+        }
+
+        // Pleno keywords
+        if title.contains("pleno")
+            || title.contains("mid")
+            || title.contains("mid-level")
+            || title.contains("middle")
+            || title.contains("pl.")
+        {
+            return Self::Pleno;
+        }
+
+        // Junior keywords
+        if title.contains("junior")
+            || title.contains("jr")
+            || title.contains("trainee")
+            || title.contains("estagiário")
+            || title.contains("estagiario")
+            || title.contains("júnior")
+            || title.contains("jr.")
+        {
+            return Self::Junior;
+        }
+
+        Self::Unknown
+    }
+}
+
+impl std::fmt::Display for SeniorityLevel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Junior => write!(f, "JUNIOR"),
+            Self::Pleno => write!(f, "PLENO"),
+            Self::Senior => write!(f, "SENIOR"),
+            Self::Unknown => write!(f, "UNKNOWN"),
+        }
+    }
+}
+
+/// Check if a job title suggests a development/engineering role.
+///
+/// Returns true if the title contains positive signals for dev roles
+/// AND does not contain negative signals that override them.
+/// Only checks the title (not description) for performance.
+pub fn is_dev_role(title: impl AsRef<str>) -> bool {
+    let title = title.as_ref().to_lowercase();
+
+    // Negative signals (override positive)
+    let negative_signals = [
+        "designer",
+        "product manager",
+        "suporte",
+        "administrativo",
+        "vendas",
+        "rh",
+        "marketing",
+        "assistente",
+        "coordenador",
+        "gerente",
+        "comercial",
+        "financeiro",
+        "jurídico",
+        "sac",
+        "atendimento",
+    ];
+
+    if negative_signals.iter().any(|s| title.contains(s)) {
+        return false;
+    }
+
+    // Positive signals
+    let positive_signals = [
+        "dev",
+        "developer",
+        "software",
+        "engineer",
+        "engenheiro",
+        "programador",
+        "desenvolvedor",
+        "backend",
+        "back-end",
+        "frontend",
+        "front-end",
+        "fullstack",
+        "full stack",
+        "full-stack",
+        "mobile",
+        "ios",
+        "android",
+        "data",
+        "qa",
+        "quality",
+        "analista de sistemas",
+        "sysadmin",
+        "devops",
+        "sre",
+        "infra",
+        "cloud",
+        "machine learning",
+        "ml",
+        "ai",
+        "inteligência artificial",
+        "ciência de dados",
+        "dados",
+    ];
+
+    positive_signals.iter().any(|s| title.contains(s))
+}
+
 /// Cached job with optional analysis and email data.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -403,5 +541,152 @@ mod tests {
     #[test]
     fn apply_type_from_description_boundary() {
         assert_eq!(ApplyType::from_description("A".repeat(20)), ApplyType::EmailAvailable);
+    }
+
+    // --- SeniorityLevel::from_title tests ---
+    #[test]
+    fn seniority_junior_detected() {
+        assert_eq!(SeniorityLevel::from_title("Junior Dev"), SeniorityLevel::Junior);
+    }
+
+    #[test]
+    fn seniority_junior_abbreviation() {
+        assert_eq!(SeniorityLevel::from_title("Jr. Developer"), SeniorityLevel::Junior);
+    }
+
+    #[test]
+    fn seniority_junior_portuguese() {
+        assert_eq!(SeniorityLevel::from_title("Desenvolvedor Júnior"), SeniorityLevel::Junior);
+    }
+
+    #[test]
+    fn seniority_trainee_detected() {
+        assert_eq!(SeniorityLevel::from_title("Trainee"), SeniorityLevel::Junior);
+    }
+
+    #[test]
+    fn seniority_estagiario_detected() {
+        assert_eq!(SeniorityLevel::from_title("Estagiário de TI"), SeniorityLevel::Junior);
+    }
+
+    #[test]
+    fn seniority_pleno_detected() {
+        assert_eq!(SeniorityLevel::from_title("Dev Pleno"), SeniorityLevel::Pleno);
+    }
+
+    #[test]
+    fn seniority_mid_detected() {
+        assert_eq!(SeniorityLevel::from_title("Mid-level Engineer"), SeniorityLevel::Pleno);
+    }
+
+    #[test]
+    fn seniority_senior_detected() {
+        assert_eq!(SeniorityLevel::from_title("Senior Developer"), SeniorityLevel::Senior);
+    }
+
+    #[test]
+    fn seniority_sr_abbreviation() {
+        assert_eq!(SeniorityLevel::from_title("Sr. Eng"), SeniorityLevel::Senior);
+    }
+
+    #[test]
+    fn seniority_lead_detected() {
+        assert_eq!(SeniorityLevel::from_title("Tech Lead"), SeniorityLevel::Senior);
+    }
+
+    #[test]
+    fn seniority_specialist_detected() {
+        assert_eq!(SeniorityLevel::from_title("Specialist"), SeniorityLevel::Senior);
+    }
+
+    #[test]
+    fn seniority_unknown_for_generic() {
+        assert_eq!(SeniorityLevel::from_title("Developer"), SeniorityLevel::Unknown);
+    }
+
+    #[test]
+    fn seniority_unknown_for_empty() {
+        assert_eq!(SeniorityLevel::from_title(""), SeniorityLevel::Unknown);
+    }
+
+    #[test]
+    fn seniority_senior_takes_precedence() {
+        assert_eq!(SeniorityLevel::from_title("Senior Pleno"), SeniorityLevel::Senior);
+    }
+
+    // --- is_dev_role tests ---
+    #[test]
+    fn dev_role_developer_detected() {
+        assert!(is_dev_role("Developer"));
+    }
+
+    #[test]
+    fn dev_role_engineer_detected() {
+        assert!(is_dev_role("Software Engineer"));
+    }
+
+    #[test]
+    fn dev_role_desenvolvedor_detected() {
+        assert!(is_dev_role("Desenvolvedor"));
+    }
+
+    #[test]
+    fn dev_role_programador_detected() {
+        assert!(is_dev_role("Programador"));
+    }
+
+    #[test]
+    fn dev_role_backend_detected() {
+        assert!(is_dev_role("Backend Developer"));
+    }
+
+    #[test]
+    fn dev_role_frontend_detected() {
+        assert!(is_dev_role("Front-end"));
+    }
+
+    #[test]
+    fn dev_role_data_detected() {
+        assert!(is_dev_role("Data Engineer"));
+    }
+
+    #[test]
+    fn dev_role_devops_detected() {
+        assert!(is_dev_role("DevOps Engineer"));
+    }
+
+    #[test]
+    fn dev_role_non_dev_excluded() {
+        assert!(!is_dev_role("Designer"));
+    }
+
+    #[test]
+    fn dev_role_product_manager_excluded() {
+        assert!(!is_dev_role("Product Manager"));
+    }
+
+    #[test]
+    fn dev_role_suporte_excluded() {
+        assert!(!is_dev_role("Suporte Técnico"));
+    }
+
+    #[test]
+    fn dev_role_negative_overrides_positive() {
+        assert!(!is_dev_role("Dev Marketing"));
+    }
+
+    #[test]
+    fn dev_role_empty_title_returns_false() {
+        assert!(!is_dev_role(""));
+    }
+
+    #[test]
+    fn dev_role_qa_detected() {
+        assert!(is_dev_role("QA Analyst"));
+    }
+
+    #[test]
+    fn dev_role_mobile_detected() {
+        assert!(is_dev_role("Android Developer"));
     }
 }

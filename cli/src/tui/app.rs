@@ -325,6 +325,10 @@ impl App {
             AppState::Quitting => " ",
         };
 
+        if shortcuts.trim().is_empty() {
+            return;
+        }
+
         let footer = Paragraph::new(Text::styled(shortcuts, Theme::dim()))
             .block(Block::default().borders(Borders::ALL).border_style(Theme::dim()));
         frame.render_widget(footer, area);
@@ -381,13 +385,12 @@ impl App {
 
             // Delegate JobDetail events (like Auth/Profile)
             // Uses take/putback to avoid double-borrow of self.job_detail_screen
-            if self.state == AppState::JobDetail {
-                if let Some(mut screen) = self.job_detail_screen.take() {
+            if self.state == AppState::JobDetail
+                && let Some(mut screen) = self.job_detail_screen.take() {
                     let result = job_detail_screen::handle_event(event, self, &mut screen).await;
                     self.job_detail_screen = Some(screen);
                     return result;
                 }
-            }
 
             // When search is focused, intercept all keys for search handling before global match
             if self.state == AppState::JobList
@@ -433,6 +436,18 @@ impl App {
                     if self.state == AppState::JobList
                         && let Some(screen) = &mut self.job_list_screen {
                         screen.cycle_apply_type_filter();
+                    }
+                }
+                crossterm::event::KeyCode::Char('s') | crossterm::event::KeyCode::Char('S') => {
+                    if self.state == AppState::JobList
+                        && let Some(screen) = &mut self.job_list_screen {
+                        screen.cycle_seniority_filter();
+                    }
+                }
+                crossterm::event::KeyCode::Char('d') | crossterm::event::KeyCode::Char('D') => {
+                    if self.state == AppState::JobList
+                        && let Some(screen) = &mut self.job_list_screen {
+                        screen.toggle_dev_only();
                     }
                 }
                 crossterm::event::KeyCode::Char('o') | crossterm::event::KeyCode::Char('O') => {

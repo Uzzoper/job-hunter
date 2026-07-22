@@ -95,6 +95,54 @@ impl ApplyTypeFilter {
     }
 }
 
+/// Filter for job seniority level
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SeniorityFilter {
+    #[default]
+    All,
+    Junior,
+    JuniorPleno,
+    SeniorLead,
+    Unknown,
+}
+
+impl SeniorityFilter {
+    /// Cycle to the next filter state
+    pub fn cycle(&self) -> Self {
+        match self {
+            SeniorityFilter::All => SeniorityFilter::Junior,
+            SeniorityFilter::Junior => SeniorityFilter::JuniorPleno,
+            SeniorityFilter::JuniorPleno => SeniorityFilter::SeniorLead,
+            SeniorityFilter::SeniorLead => SeniorityFilter::Unknown,
+            SeniorityFilter::Unknown => SeniorityFilter::All,
+        }
+    }
+
+    /// Get display text for the filter
+    pub fn display_text(&self) -> &str {
+        match self {
+            SeniorityFilter::All => "",
+            SeniorityFilter::Junior => " 👶 JR",
+            SeniorityFilter::JuniorPleno => " 🎓 JR+PL",
+            SeniorityFilter::SeniorLead => " 👑 SR+LD",
+            SeniorityFilter::Unknown => " ❓ UNK",
+        }
+    }
+
+    /// Check if a seniority level matches this filter
+    pub fn matches(&self, level: crate::domain::SeniorityLevel) -> bool {
+        match self {
+            SeniorityFilter::All => true,
+            SeniorityFilter::Junior => level == crate::domain::SeniorityLevel::Junior,
+            SeniorityFilter::JuniorPleno => {
+                level == crate::domain::SeniorityLevel::Junior || level == crate::domain::SeniorityLevel::Pleno
+            }
+            SeniorityFilter::SeniorLead => level == crate::domain::SeniorityLevel::Senior,
+            SeniorityFilter::Unknown => level == crate::domain::SeniorityLevel::Unknown,
+        }
+    }
+}
+
 /// Toast notification for user feedback
 #[derive(Debug, Clone)]
 struct Toast {
@@ -131,6 +179,8 @@ pub struct JobListScreen {
     pub from_cache: bool,
     pub cache_stale: bool,
     pub apply_type_filter: ApplyTypeFilter,
+    pub seniority_filter: SeniorityFilter,
+    pub dev_only: bool,
     api_client: Arc<Mutex<ApiClient>>,
     cache: Arc<Mutex<CacheManager>>,
     toast: Option<Toast>,
@@ -155,6 +205,8 @@ impl JobListScreen {
             from_cache: false,
             cache_stale: false,
             apply_type_filter: ApplyTypeFilter::default(),
+            seniority_filter: SeniorityFilter::default(),
+            dev_only: false,
             api_client,
             cache,
             toast: None,
@@ -228,6 +280,18 @@ impl JobListScreen {
         self.apply_filters();
     }
 
+    /// Cycle the seniority filter to the next state
+    pub fn cycle_seniority_filter(&mut self) {
+        self.seniority_filter = self.seniority_filter.cycle();
+        self.apply_filters();
+    }
+
+    /// Toggle the dev-only filter
+    pub fn toggle_dev_only(&mut self) {
+        self.dev_only = !self.dev_only;
+        self.apply_filters();
+    }
+
     /// Show a toast notification
     fn show_toast(&mut self, message: String) {
         self.toast = Some(Toast::new(message));
@@ -255,6 +319,8 @@ impl JobListScreen {
         let query = self.search_query.to_lowercase();
         let min_score = self.min_score_filter;
         let apply_type_filter = self.apply_type_filter;
+        let seniority_filter = self.seniority_filter;
+        let dev_only = self.dev_only;
 
         self.filtered_jobs = self
             .jobs
@@ -277,7 +343,14 @@ impl JobListScreen {
                     ApplyTypeFilter::Unknown => crate::domain::ApplyType::from_description(&job.description) == crate::domain::ApplyType::Unknown,
                 };
 
-                matches_query && matches_score && matches_apply_type
+                let matches_seniority = match seniority_filter {
+                    SeniorityFilter::All => true,
+                    _ => seniority_filter.matches(crate::domain::SeniorityLevel::from_title(&job.title)),
+                };
+
+                let matches_dev = !dev_only || crate::domain::is_dev_role(&job.title);
+
+                matches_query && matches_score && matches_apply_type && matches_seniority && matches_dev
             })
             .cloned()
             .collect();
@@ -497,6 +570,16 @@ impl JobListScreen {
         if !filter_text.is_empty() {
             stats_text.push_str(" | Filter:");
             stats_text.push_str(filter_text);
+        }
+
+        let seniority_text = self.seniority_filter.display_text();
+        if !seniority_text.is_empty() {
+            stats_text.push_str(" | Seniority:");
+            stats_text.push_str(seniority_text);
+        }
+
+        if self.dev_only {
+            stats_text.push_str(" 💻 DEV");
         }
 
         let stats = Paragraph::new(Text::styled(stats_text, theme.style_normal()))
@@ -729,7 +812,7 @@ impl JobListScreen {
         let hotkeys = if self.search_focus == SearchFocus::Focused {
             " [Esc] Blur search  [Enter] Apply filter  [Backspace] Delete "
         } else {
-            " [↑/↓] Navigate  [Enter] Detail  [/] Search  [r] Refresh  [a] Analyze  [e] Email  [p] Profile  [t] Filter  [o] Open  [q] Quit "
+            " [↑/↓] Navigate  [Enter] Detail  [/] Search  [r] Refresh  [a] Analyze  [e] Email  [p] Profile  [t] Apply  [s] Seniority  [d] Dev  [o] Open  [q] Quit "
         };
 
         let hotkeys_widget = Paragraph::new(Text::styled(hotkeys, theme.style_dim()))
@@ -822,6 +905,12 @@ pub async fn handle_event(
             }
             KeyCode::Char('t') | KeyCode::Char('T') => {
                 screen.cycle_apply_type_filter();
+            }
+            KeyCode::Char('s') | KeyCode::Char('S') => {
+                screen.cycle_seniority_filter();
+            }
+            KeyCode::Char('d') | KeyCode::Char('D') => {
+                screen.toggle_dev_only();
             }
             KeyCode::Char('o') | KeyCode::Char('O') => {
                 screen.open_selected_job_url();
@@ -1497,5 +1586,230 @@ mod tests {
         assert_eq!(total, 3);
         assert_eq!(analyzed, 2);
         assert_eq!(avg_score, Some(85));
+    }
+
+    // --- SeniorityFilter tests ---
+    #[test]
+    fn seniority_filter_default_is_all() {
+        let screen = create_test_screen();
+        assert_eq!(screen.seniority_filter, SeniorityFilter::All);
+    }
+
+    #[test]
+    fn seniority_filter_cycle_returns_to_all() {
+        let mut screen = create_test_screen();
+        assert_eq!(screen.seniority_filter, SeniorityFilter::All);
+
+        screen.cycle_seniority_filter();
+        assert_eq!(screen.seniority_filter, SeniorityFilter::Junior);
+
+        screen.cycle_seniority_filter();
+        assert_eq!(screen.seniority_filter, SeniorityFilter::JuniorPleno);
+
+        screen.cycle_seniority_filter();
+        assert_eq!(screen.seniority_filter, SeniorityFilter::SeniorLead);
+
+        screen.cycle_seniority_filter();
+        assert_eq!(screen.seniority_filter, SeniorityFilter::Unknown);
+
+        screen.cycle_seniority_filter();
+        assert_eq!(screen.seniority_filter, SeniorityFilter::All);
+    }
+
+    #[test]
+    fn seniority_filter_cycle_states() {
+        let mut screen = create_test_screen();
+        let states = [
+            SeniorityFilter::All,
+            SeniorityFilter::Junior,
+            SeniorityFilter::JuniorPleno,
+            SeniorityFilter::SeniorLead,
+            SeniorityFilter::Unknown,
+        ];
+
+        for (i, expected) in states.iter().enumerate() {
+            assert_eq!(screen.seniority_filter, *expected, "step {}", i);
+            if i < states.len() - 1 {
+                screen.cycle_seniority_filter();
+            }
+        }
+    }
+
+    #[test]
+    fn seniority_filter_matches_all() {
+        let mut screen = create_test_screen();
+        screen.seniority_filter = SeniorityFilter::All;
+
+        let jobs = vec![
+            JobResponse { id: 1, title: "Junior Dev".into(), company: "A".into(), url: "".into(), description: "".into(), posted_at: NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(), source: "gupy".into() },
+            JobResponse { id: 2, title: "Senior Engineer".into(), company: "B".into(), url: "".into(), description: "".into(), posted_at: NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(), source: "linkedin".into() },
+            JobResponse { id: 3, title: "Pleno Developer".into(), company: "C".into(), url: "".into(), description: "".into(), posted_at: NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(), source: "infojobs".into() },
+        ];
+        screen.set_jobs(jobs);
+        screen.apply_filters();
+
+        assert_eq!(screen.filtered_jobs.len(), 3);
+    }
+
+    #[test]
+    fn seniority_filter_matches_junior() {
+        let mut screen = create_test_screen();
+        screen.seniority_filter = SeniorityFilter::Junior;
+
+        let jobs = vec![
+            JobResponse { id: 1, title: "Junior Dev".into(), company: "A".into(), url: "".into(), description: "".into(), posted_at: NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(), source: "gupy".into() },
+            JobResponse { id: 2, title: "Senior Engineer".into(), company: "B".into(), url: "".into(), description: "".into(), posted_at: NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(), source: "linkedin".into() },
+        ];
+        screen.set_jobs(jobs);
+        screen.apply_filters();
+
+        assert_eq!(screen.filtered_jobs.len(), 1);
+        assert_eq!(screen.filtered_jobs[0].id, 1);
+    }
+
+    #[test]
+    fn seniority_filter_matches_junior_pleno() {
+        let mut screen = create_test_screen();
+        screen.seniority_filter = SeniorityFilter::JuniorPleno;
+
+        let jobs = vec![
+            JobResponse { id: 1, title: "Junior Dev".into(), company: "A".into(), url: "".into(), description: "".into(), posted_at: NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(), source: "gupy".into() },
+            JobResponse { id: 2, title: "Pleno Developer".into(), company: "B".into(), url: "".into(), description: "".into(), posted_at: NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(), source: "linkedin".into() },
+            JobResponse { id: 3, title: "Senior Engineer".into(), company: "C".into(), url: "".into(), description: "".into(), posted_at: NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(), source: "infojobs".into() },
+        ];
+        screen.set_jobs(jobs);
+        screen.apply_filters();
+
+        assert_eq!(screen.filtered_jobs.len(), 2);
+        assert!(screen.filtered_jobs.iter().all(|j| j.id == 1 || j.id == 2));
+    }
+
+    #[test]
+    fn seniority_filter_matches_senior_lead() {
+        let mut screen = create_test_screen();
+        screen.seniority_filter = SeniorityFilter::SeniorLead;
+
+        let jobs = vec![
+            JobResponse { id: 1, title: "Junior Dev".into(), company: "A".into(), url: "".into(), description: "".into(), posted_at: NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(), source: "gupy".into() },
+            JobResponse { id: 2, title: "Senior Engineer".into(), company: "B".into(), url: "".into(), description: "".into(), posted_at: NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(), source: "linkedin".into() },
+            JobResponse { id: 3, title: "Tech Lead".into(), company: "C".into(), url: "".into(), description: "".into(), posted_at: NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(), source: "infojobs".into() },
+        ];
+        screen.set_jobs(jobs);
+        screen.apply_filters();
+
+        assert_eq!(screen.filtered_jobs.len(), 2);
+        assert!(screen.filtered_jobs.iter().all(|j| j.id == 2 || j.id == 3));
+    }
+
+    #[test]
+    fn seniority_filter_matches_unknown() {
+        let mut screen = create_test_screen();
+        screen.seniority_filter = SeniorityFilter::Unknown;
+
+        let jobs = vec![
+            JobResponse { id: 1, title: "Developer".into(), company: "A".into(), url: "".into(), description: "".into(), posted_at: NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(), source: "gupy".into() },
+            JobResponse { id: 2, title: "Junior Dev".into(), company: "B".into(), url: "".into(), description: "".into(), posted_at: NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(), source: "linkedin".into() },
+        ];
+        screen.set_jobs(jobs);
+        screen.apply_filters();
+
+        assert_eq!(screen.filtered_jobs.len(), 1);
+        assert_eq!(screen.filtered_jobs[0].id, 1);
+    }
+
+    // --- Dev filter tests ---
+    #[test]
+    fn dev_filter_toggle() {
+        let mut screen = create_test_screen();
+        assert!(!screen.dev_only);
+
+        screen.toggle_dev_only();
+        assert!(screen.dev_only);
+
+        screen.toggle_dev_only();
+        assert!(!screen.dev_only);
+    }
+
+    #[test]
+    fn dev_filter_shows_only_dev_jobs() {
+        let mut screen = create_test_screen();
+        screen.dev_only = true;
+
+        let jobs = vec![
+            JobResponse { id: 1, title: "Software Developer".into(), company: "A".into(), url: "".into(), description: "".into(), posted_at: NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(), source: "gupy".into() },
+            JobResponse { id: 2, title: "Designer".into(), company: "B".into(), url: "".into(), description: "".into(), posted_at: NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(), source: "linkedin".into() },
+            JobResponse { id: 3, title: "Backend Engineer".into(), company: "C".into(), url: "".into(), description: "".into(), posted_at: NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(), source: "infojobs".into() },
+        ];
+        screen.set_jobs(jobs);
+        screen.apply_filters();
+
+        assert_eq!(screen.filtered_jobs.len(), 2);
+        assert!(screen.filtered_jobs.iter().all(|j| j.id == 1 || j.id == 3));
+    }
+
+    // --- Combined filters tests ---
+    #[test]
+    fn seniority_and_dev_filter_combine() {
+        let mut screen = create_test_screen();
+        screen.seniority_filter = SeniorityFilter::Junior;
+        screen.dev_only = true;
+
+        let jobs = vec![
+            JobResponse { id: 1, title: "Junior Developer".into(), company: "A".into(), url: "".into(), description: "".into(), posted_at: NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(), source: "gupy".into() },
+            JobResponse { id: 2, title: "Junior Designer".into(), company: "B".into(), url: "".into(), description: "".into(), posted_at: NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(), source: "linkedin".into() },
+            JobResponse { id: 3, title: "Senior Developer".into(), company: "C".into(), url: "".into(), description: "".into(), posted_at: NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(), source: "infojobs".into() },
+        ];
+        screen.set_jobs(jobs);
+        screen.apply_filters();
+
+        assert_eq!(screen.filtered_jobs.len(), 1);
+        assert_eq!(screen.filtered_jobs[0].id, 1);
+    }
+
+    #[test]
+    fn seniority_dev_and_apply_type_combine() {
+        let mut screen = create_test_screen();
+        screen.seniority_filter = SeniorityFilter::Junior;
+        screen.dev_only = true;
+        screen.apply_type_filter = ApplyTypeFilter::EmailAvailable;
+
+        let jobs = vec![
+            JobResponse { id: 1, title: "Junior Developer".into(), company: "A".into(), url: "".into(), description: "This is a long description with more than twenty characters".into(), posted_at: NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(), source: "gupy".into() },
+            JobResponse { id: 2, title: "Junior Developer".into(), company: "B".into(), url: "".into(), description: "Short".into(), posted_at: NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(), source: "linkedin".into() },
+            JobResponse { id: 3, title: "Senior Developer".into(), company: "C".into(), url: "".into(), description: "This is a long description with more than twenty characters".into(), posted_at: NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(), source: "infojobs".into() },
+        ];
+        screen.set_jobs(jobs);
+        screen.apply_filters();
+
+        assert_eq!(screen.filtered_jobs.len(), 1);
+        assert_eq!(screen.filtered_jobs[0].id, 1);
+    }
+
+    #[test]
+    fn seniority_filter_indicator_in_stats() {
+        let mut screen = create_test_screen();
+        screen.seniority_filter = SeniorityFilter::Junior;
+        assert_eq!(screen.seniority_filter.display_text(), " 👶 JR");
+
+        screen.seniority_filter = SeniorityFilter::JuniorPleno;
+        assert_eq!(screen.seniority_filter.display_text(), " 🎓 JR+PL");
+
+        screen.seniority_filter = SeniorityFilter::SeniorLead;
+        assert_eq!(screen.seniority_filter.display_text(), " 👑 SR+LD");
+
+        screen.seniority_filter = SeniorityFilter::Unknown;
+        assert_eq!(screen.seniority_filter.display_text(), " ❓ UNK");
+
+        screen.seniority_filter = SeniorityFilter::All;
+        assert_eq!(screen.seniority_filter.display_text(), "");
+    }
+
+    #[test]
+    fn dev_filter_indicator_in_stats() {
+        let mut screen = create_test_screen();
+        assert!(!screen.dev_only);
+
+        screen.dev_only = true;
+        assert!(screen.dev_only);
     }
 }
