@@ -374,11 +374,10 @@ impl App {
     }
 
     pub(crate) async fn handle_event(&mut self, event: crossterm::event::Event) -> anyhow::Result<()> {
-        // Handle bracketed paste events - delegate to active screen
-        if let crossterm::event::Event::Paste(ref _data) = event {
-            if self.state == AppState::Profile {
-                return profile_screen::handle_event(event, self).await;
-            }
+        if matches!(event, crossterm::event::Event::Paste(_)) && self.state == AppState::Profile {
+            return profile_screen::handle_event(event, self).await;
+        }
+        if matches!(event, crossterm::event::Event::Paste(_)) {
             return Ok(());
         }
 

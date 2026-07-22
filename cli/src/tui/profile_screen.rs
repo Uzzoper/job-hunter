@@ -128,6 +128,7 @@ pub struct ProfileScreen {
     pub loading: LoadingState,
     pub saving: bool,
     pub validation_errors: Vec<String>,
+    pub resume_scroll: u16,
     api_client: Arc<Mutex<ApiClient>>,
     config_manager: Arc<Mutex<ConfigManager>>,
     toast: Option<Toast>,
@@ -149,6 +150,7 @@ impl ProfileScreen {
             loading: LoadingState::Idle,
             saving: false,
             validation_errors: Vec::new(),
+            resume_scroll: 0,
             api_client,
             config_manager,
             toast: None,
@@ -262,6 +264,18 @@ impl ProfileScreen {
             ProfileField::Tone => {} // Tone is selected via arrow keys
         }
         self.clear_validation_errors();
+    }
+
+    pub fn handle_scroll_up(&mut self) {
+        if self.mode == ProfileMode::Edit && self.focused_field == ProfileField::Resume {
+            self.resume_scroll = self.resume_scroll.saturating_sub(1);
+        }
+    }
+
+    pub fn handle_scroll_down(&mut self) {
+        if self.mode == ProfileMode::Edit && self.focused_field == ProfileField::Resume {
+            self.resume_scroll = self.resume_scroll.saturating_add(1);
+        }
     }
 
     /// Handle arrow keys for tone selection
@@ -409,7 +423,6 @@ impl ProfileScreen {
         Ok(())
     }
 
-    /// Cancel edit mode, revert to view mode with original data
     pub fn cancel_edit(&mut self) {
         if let Some(profile) = &self.profile {
             self.resume_text = profile.resume_text.clone();
@@ -420,6 +433,7 @@ impl ProfileScreen {
                 CompanyTone::Startup => 2,
             };
         }
+        self.resume_scroll = 0;
         self.mode = ProfileMode::View;
         self.clear_validation_errors();
     }
@@ -631,6 +645,7 @@ fn draw_resume_view(&self, frame: &mut Frame, area: Rect, theme: &Theme, profile
                     .title(Span::styled(" Resume ", title_style))
                     .title_bottom(Span::styled(count_text, count_style)),
             )
+            .scroll((self.resume_scroll, 0))
             .wrap(Wrap { trim: false });
 
         frame.render_widget(content, area);
@@ -919,12 +934,20 @@ pub async fn handle_event(
                 }
                 KeyCode::Up => {
                     if screen.mode == ProfileMode::Edit && !screen.saving && !screen.loading.is_loading() {
-                        screen.handle_up();
+                        if screen.focused_field == ProfileField::Resume {
+                            screen.handle_scroll_up();
+                        } else {
+                            screen.handle_up();
+                        }
                     }
                 }
                 KeyCode::Down => {
                     if screen.mode == ProfileMode::Edit && !screen.saving && !screen.loading.is_loading() {
-                        screen.handle_down();
+                        if screen.focused_field == ProfileField::Resume {
+                            screen.handle_scroll_down();
+                        } else {
+                            screen.handle_down();
+                        }
                     }
                 }
                 KeyCode::Backspace => {
@@ -1367,5 +1390,135 @@ mod tests {
         screen.show_toast("Test message".to_string());
         assert!(screen.toast.is_some());
         assert_eq!(screen.toast.as_ref().unwrap().message, "Test message");
+    }
+
+    #[test]
+    fn handle_paste_resume_appends_text() {
+        let mut screen = create_test_screen();
+        screen.toggle_mode();
+        screen.focused_field = ProfileField::Resume;
+        screen.handle_paste("JUAN ANTONIO PERUZZO\n(42) 99833-1363 • juanperuzzo.dev");
+        assert_eq!(screen.resume_text, "JUAN ANTONIO PERUZZO\n(42) 99833-1363 • juanperuzzo.dev");
+    }
+
+    #[test]
+    fn handle_paste_skills_appends_text() {
+        let mut screen = create_test_screen();
+        screen.toggle_mode();
+        screen.focused_field = ProfileField::Skills;
+        screen.handle_paste("Java, TypeScript, Spring Boot");
+        assert_eq!(screen.skills_text, "Java, TypeScript, Spring Boot");
+    }
+
+    #[test]
+    fn handle_paste_tone_ignored() {
+        let mut screen = create_test_screen();
+        screen.toggle_mode();
+        screen.focused_field = ProfileField::Tone;
+        screen.handle_paste("any text");
+        assert_eq!(screen.resume_text, "");
+        assert_eq!(screen.skills_text, "");
+    }
+
+    #[test]
+    fn handle_paste_in_view_mode_ignored() {
+        let mut screen = create_test_screen();
+        screen.focused_field = ProfileField::Resume;
+        screen.handle_paste("some text");
+        assert_eq!(screen.resume_text, "");
+    }
+
+    #[test]
+    fn handle_paste_multi_line() {
+        let mut screen = create_test_screen();
+        screen.toggle_mode();
+        screen.focused_field = ProfileField::Resume;
+        screen.handle_paste("Line 1\nLine 2\nLine 3");
+        assert_eq!(screen.resume_text, "Line 1\nLine 2\nLine 3");
+        assert_eq!(screen.resume_text.lines().count(), 3);
+    }
+
+    #[test]
+    fn handle_paste_with_keyboard_shortcut_chars() {
+        let mut screen = create_test_screen();
+        screen.toggle_mode();
+        screen.focused_field = ProfileField::Resume;
+        screen.handle_paste("Desenvolvedor Busco sólida Banco de Dados Backend Frontend bem");
+        assert_eq!(screen.resume_text, "Desenvolvedor Busco sólida Banco de Dados Backend Frontend bem");
+    }
+
+    #[test]
+    fn handle_paste_preserves_unicode() {
+        let mut screen = create_test_screen();
+        screen.toggle_mode();
+        screen.focused_field = ProfileField::Resume;
+        screen.handle_paste("• — → ✅");
+        assert_eq!(screen.resume_text, "• — → ✅");
+    }
+
+    #[test]
+    fn handle_paste_appends_to_existing_text() {
+        let mut screen = create_test_screen();
+        screen.toggle_mode();
+        screen.focused_field = ProfileField::Resume;
+        screen.resume_text = "Previous text. ".to_string();
+        screen.handle_paste("Pasted text.");
+        assert_eq!(screen.resume_text, "Previous text. Pasted text.");
+    }
+
+    #[test]
+    fn resume_scroll_starts_at_zero() {
+        let screen = create_test_screen();
+        assert_eq!(screen.resume_scroll, 0);
+    }
+
+    #[test]
+    fn handle_scroll_down_increments_scroll() {
+        let mut screen = create_test_screen();
+        screen.toggle_mode();
+        screen.focused_field = ProfileField::Resume;
+        screen.handle_scroll_down();
+        assert_eq!(screen.resume_scroll, 1);
+        screen.handle_scroll_down();
+        assert_eq!(screen.resume_scroll, 2);
+    }
+
+    #[test]
+    fn handle_scroll_up_decrements_scroll() {
+        let mut screen = create_test_screen();
+        screen.toggle_mode();
+        screen.focused_field = ProfileField::Resume;
+        screen.resume_scroll = 5;
+        screen.handle_scroll_up();
+        assert_eq!(screen.resume_scroll, 4);
+    }
+
+    #[test]
+    fn handle_scroll_up_does_not_go_below_zero() {
+        let mut screen = create_test_screen();
+        screen.toggle_mode();
+        screen.focused_field = ProfileField::Resume;
+        screen.handle_scroll_up();
+        assert_eq!(screen.resume_scroll, 0);
+    }
+
+    #[test]
+    fn handle_scroll_ignored_when_not_focused_on_resume() {
+        let mut screen = create_test_screen();
+        screen.toggle_mode();
+        screen.focused_field = ProfileField::Skills;
+        screen.handle_scroll_down();
+        assert_eq!(screen.resume_scroll, 0);
+    }
+
+    #[test]
+    fn cancel_edit_resets_scroll() {
+        let mut screen = create_test_screen();
+        let profile = sample_profile();
+        screen.set_profile(profile);
+        screen.toggle_mode();
+        screen.resume_scroll = 10;
+        screen.cancel_edit();
+        assert_eq!(screen.resume_scroll, 0);
     }
 }
