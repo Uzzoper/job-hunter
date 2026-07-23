@@ -48,3 +48,4 @@ org/
 # Scratch/debug files
 scratch_debug.java
 cli/libtest_check.rlib
+spring-boot.log
