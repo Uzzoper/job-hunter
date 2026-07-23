@@ -159,7 +159,7 @@ impl ProfileScreen {
 
     /// Set the profile data and populate edit fields
     pub fn set_profile(&mut self, profile: ProfileResponse) {
-        self.resume_text = profile.resume_text.clone();
+        self.resume_text = Self::sanitize_text(&profile.resume_text);
         self.skills_text = profile.skills.join(", ");
         self.tone_selection = match profile.tone {
             CompanyTone::Formal => 0,
@@ -173,6 +173,12 @@ impl ProfileScreen {
     /// Clear validation errors
     pub fn clear_validation_errors(&mut self) {
         self.validation_errors.clear();
+    }
+
+    /// Sanitize text for TUI display: remove \r (carriage return) and
+    /// replace bullet (U+F0B7) with "- " for cleaner rendering.
+    fn sanitize_text(s: &str) -> String {
+        s.replace('\r', "").replace('\u{f0b7}', "- ")
     }
 
     /// Show a toast notification
@@ -258,9 +264,10 @@ impl ProfileScreen {
         if self.mode != ProfileMode::Edit || self.saving || self.loading.is_loading() {
             return;
         }
+        let text = Self::sanitize_text(text);
         match self.focused_field {
-            ProfileField::Resume => self.resume_text.push_str(text),
-            ProfileField::Skills => self.skills_text.push_str(text),
+            ProfileField::Resume => self.resume_text.push_str(&text),
+            ProfileField::Skills => self.skills_text.push_str(&text),
             ProfileField::Tone => {} // Tone is selected via arrow keys
         }
         self.clear_validation_errors();
@@ -425,7 +432,7 @@ impl ProfileScreen {
 
     pub fn cancel_edit(&mut self) {
         if let Some(profile) = &self.profile {
-            self.resume_text = profile.resume_text.clone();
+            self.resume_text = Self::sanitize_text(&profile.resume_text);
             self.skills_text = profile.skills.join(", ");
             self.tone_selection = match profile.tone {
                 CompanyTone::Formal => 0,
@@ -854,13 +861,16 @@ pub async fn handle_event(
         }
 
         // Handle global keys first
+        // NOTE: 'q', 'b', 'e' shortcuts are guarded by mode check so they don't
+        // conflict with typing those characters in text fields during Edit mode.
+        let is_editing = app.profile_screen.as_ref().is_some_and(|s| s.mode == ProfileMode::Edit);
         match key.code {
-            KeyCode::Char('q') | KeyCode::Char('Q') => {
+            KeyCode::Char('q') | KeyCode::Char('Q') if !is_editing => {
                 app.should_quit = true;
                 app.state = crate::tui::app::AppState::Quitting;
                 return Ok(());
             }
-            KeyCode::Char('b') | KeyCode::Char('B') => {
+            KeyCode::Char('b') | KeyCode::Char('B') if !is_editing => {
                 if let Some(screen) = &mut app.profile_screen {
                     if screen.mode == ProfileMode::Edit {
                         screen.cancel_edit();
@@ -902,15 +912,15 @@ pub async fn handle_event(
         // Delegate to profile screen
         if let Some(screen) = &mut app.profile_screen {
             match key.code {
-                KeyCode::Char('e') | KeyCode::Char('E') => {
-                    if !screen.loading.is_loading() && !screen.saving {
-                        screen.toggle_mode();
-                    }
+                KeyCode::Char('e') | KeyCode::Char('E')
+                    if screen.mode == ProfileMode::View && !screen.loading.is_loading() && !screen.saving =>
+                {
+                    screen.toggle_mode();
                 }
-                KeyCode::Char('r') | KeyCode::Char('R') => {
-                    if screen.mode == ProfileMode::View && !screen.loading.is_loading() && !screen.saving {
-                        let _ = screen.load_profile().await;
-                    }
+                KeyCode::Char('r') | KeyCode::Char('R')
+                    if screen.mode == ProfileMode::View && !screen.loading.is_loading() && !screen.saving =>
+                {
+                    let _ = screen.load_profile().await;
                 }
                 KeyCode::Tab => {
                     if screen.mode == ProfileMode::Edit && !screen.saving && !screen.loading.is_loading() {

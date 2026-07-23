@@ -139,11 +139,16 @@ async fn profile_e_toggles_edit_mode() {
     // Assert edit mode
     assert_eq!(app.profile_screen.as_ref().unwrap().mode, crate::tui::profile_screen::ProfileMode::Edit);
 
-    // Press 'e' again to return to view mode
+    // Press 'e' again — in Edit mode 'e' should insert char, NOT toggle mode
     let event = crossterm::event::Event::Key(KeyEvent::new(KeyCode::Char('e'), KeyModifiers::NONE));
     app.handle_event(event).await.unwrap();
 
-    // Assert view mode
+    // Assert still in edit mode ('e' inserted as char, didn't toggle)
+    assert_eq!(app.profile_screen.as_ref().unwrap().mode, crate::tui::profile_screen::ProfileMode::Edit);
+
+    // Press 'Esc' to return to view mode
+    let event = crossterm::event::Event::Key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+    app.handle_event(event).await.unwrap();
     assert_eq!(app.profile_screen.as_ref().unwrap().mode, crate::tui::profile_screen::ProfileMode::View);
 }
 
@@ -187,13 +192,13 @@ async fn profile_b_cancels_edit_then_exits() {
     app.handle_event(event).await.unwrap();
     assert_eq!(app.profile_screen.as_ref().unwrap().mode, crate::tui::profile_screen::ProfileMode::Edit);
 
-    // Press 'b' to cancel edit (should return to view mode)
-    let event = crossterm::event::Event::Key(KeyEvent::new(KeyCode::Char('b'), KeyModifiers::NONE));
+    // Press 'Esc' to cancel edit (returns to view mode)
+    let event = crossterm::event::Event::Key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
     app.handle_event(event).await.unwrap();
     assert_eq!(app.profile_screen.as_ref().unwrap().mode, crate::tui::profile_screen::ProfileMode::View);
     assert_eq!(app.state, AppState::Profile); // Still in profile
 
-    // Press 'b' again to exit to job list
+    // Press 'b' to exit to job list (now in View mode, so 'b' navigates)
     let event = crossterm::event::Event::Key(KeyEvent::new(KeyCode::Char('b'), KeyModifiers::NONE));
     app.handle_event(event).await.unwrap();
     assert_eq!(app.state, AppState::JobList);
