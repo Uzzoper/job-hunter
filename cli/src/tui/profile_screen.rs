@@ -129,6 +129,8 @@ pub struct ProfileScreen {
     pub saving: bool,
     pub validation_errors: Vec<String>,
     pub resume_scroll: u16,
+    pub resume_cursor: usize,
+    pub skills_cursor: usize,
     api_client: Arc<Mutex<ApiClient>>,
     config_manager: Arc<Mutex<ConfigManager>>,
     toast: Option<Toast>,
@@ -151,6 +153,8 @@ impl ProfileScreen {
             saving: false,
             validation_errors: Vec::new(),
             resume_scroll: 0,
+            resume_cursor: 0,
+            skills_cursor: 0,
             api_client,
             config_manager,
             toast: None,
@@ -168,6 +172,8 @@ impl ProfileScreen {
         };
         self.profile = Some(profile);
         self.clear_validation_errors();
+        self.resume_cursor = 0;
+        self.skills_cursor = 0;
     }
 
     /// Clear validation errors
@@ -223,11 +229,78 @@ impl ProfileScreen {
             return;
         }
         match self.focused_field {
-            ProfileField::Resume => self.resume_text.push(c),
-            ProfileField::Skills => self.skills_text.push(c),
+            ProfileField::Resume => {
+                let byte_pos = self.char_to_byte_index(&self.resume_text, self.resume_cursor);
+                self.resume_text.insert(byte_pos, c);
+                self.resume_cursor += 1;
+            }
+            ProfileField::Skills => {
+                let byte_pos = self.char_to_byte_index(&self.skills_text, self.skills_cursor);
+                self.skills_text.insert(byte_pos, c);
+                self.skills_cursor += 1;
+            }
             ProfileField::Tone => {} // Tone is selected via arrow keys
         }
         self.clear_validation_errors();
+    }
+
+    /// Convert character index to byte index for String operations
+    fn char_to_byte_index(&self, text: &str, char_index: usize) -> usize {
+        text.char_indices()
+            .nth(char_index)
+            .map(|(i, _)| i)
+            .unwrap_or(text.len())
+    }
+
+    /// Calculate visual cursor position (col, row) from character index
+    /// Accounts for explicit newlines and text wrapping within field_width
+    fn cursor_visual_position(&self, text: &str, cursor: usize, field_width: u16) -> (u16, u16) {
+        let width = field_width as usize;
+        if width == 0 {
+            return (0, 0);
+        }
+
+        let mut visual_row = 0;
+        let mut visual_col = 0;
+        let mut char_idx = 0;
+
+        for line in text.split('\n') {
+            let line_chars: Vec<char> = line.chars().collect();
+            let line_len = line_chars.len();
+
+            if char_idx + line_len >= cursor {
+                // Cursor is on this logical line
+                let cursor_in_line = cursor - char_idx;
+                // Calculate how many visual lines this logical line wraps to
+                let _wrapped_lines = if line_len == 0 {
+                    1
+                } else {
+                    (line_len + width - 1) / width
+                };
+                // Find which wrapped line the cursor is on
+                let target_wrapped_line = cursor_in_line / width;
+                visual_row += target_wrapped_line as u16;
+                visual_col = (cursor_in_line % width) as u16;
+                return (visual_col, visual_row);
+            }
+
+            // Cursor is past this logical line
+            let wrapped_lines = if line_len == 0 {
+                1
+            } else {
+                (line_len + width - 1) / width
+            };
+            visual_row += wrapped_lines as u16;
+            char_idx += line_len + 1; // +1 for the newline character
+        }
+
+        // Cursor is at the very end (after all text)
+        // Handle case where text ends with newline
+        if text.ends_with('\n') {
+            visual_row += 1;
+            visual_col = 0;
+        }
+        (visual_col, visual_row)
     }
 
     /// Handle backspace in edit mode
@@ -237,10 +310,18 @@ impl ProfileScreen {
         }
         match self.focused_field {
             ProfileField::Resume => {
-                self.resume_text.pop();
+                if self.resume_cursor > 0 {
+                    let byte_pos = self.char_to_byte_index(&self.resume_text, self.resume_cursor - 1);
+                    self.resume_text.remove(byte_pos);
+                    self.resume_cursor -= 1;
+                }
             }
             ProfileField::Skills => {
-                self.skills_text.pop();
+                if self.skills_cursor > 0 {
+                    let byte_pos = self.char_to_byte_index(&self.skills_text, self.skills_cursor - 1);
+                    self.skills_text.remove(byte_pos);
+                    self.skills_cursor -= 1;
+                }
             }
             ProfileField::Tone => {}
         }
@@ -253,7 +334,11 @@ impl ProfileScreen {
             return;
         }
         match self.focused_field {
-            ProfileField::Resume => self.resume_text.push('\n'),
+            ProfileField::Resume => {
+                let byte_pos = self.char_to_byte_index(&self.resume_text, self.resume_cursor);
+                self.resume_text.insert(byte_pos, '\n');
+                self.resume_cursor += 1;
+            }
             ProfileField::Skills | ProfileField::Tone => {} // handled by caller
         }
         self.clear_validation_errors();
@@ -266,8 +351,16 @@ impl ProfileScreen {
         }
         let text = Self::sanitize_text(text);
         match self.focused_field {
-            ProfileField::Resume => self.resume_text.push_str(&text),
-            ProfileField::Skills => self.skills_text.push_str(&text),
+            ProfileField::Resume => {
+                let byte_pos = self.char_to_byte_index(&self.resume_text, self.resume_cursor);
+                self.resume_text.insert_str(byte_pos, &text);
+                self.resume_cursor += text.chars().count();
+            }
+            ProfileField::Skills => {
+                let byte_pos = self.char_to_byte_index(&self.skills_text, self.skills_cursor);
+                self.skills_text.insert_str(byte_pos, &text);
+                self.skills_cursor += text.chars().count();
+            }
             ProfileField::Tone => {} // Tone is selected via arrow keys
         }
         self.clear_validation_errors();
@@ -309,6 +402,40 @@ impl ProfileScreen {
             }
         } else {
             self.focus_next();
+        }
+    }
+
+    /// Handle left arrow for cursor navigation within Resume or Skills text
+    pub fn handle_left(&mut self) {
+        if self.mode != ProfileMode::Edit || self.saving || self.loading.is_loading() {
+            return;
+        }
+        match self.focused_field {
+            ProfileField::Resume => {
+                self.resume_cursor = self.resume_cursor.saturating_sub(1);
+            }
+            ProfileField::Skills => {
+                self.skills_cursor = self.skills_cursor.saturating_sub(1);
+            }
+            ProfileField::Tone => {}
+        }
+    }
+
+    /// Handle right arrow for cursor navigation within Resume or Skills text
+    pub fn handle_right(&mut self) {
+        if self.mode != ProfileMode::Edit || self.saving || self.loading.is_loading() {
+            return;
+        }
+        match self.focused_field {
+            ProfileField::Resume => {
+                let max = self.resume_text.chars().count();
+                self.resume_cursor = self.resume_cursor.saturating_add(1).min(max);
+            }
+            ProfileField::Skills => {
+                let max = self.skills_text.chars().count();
+                self.skills_cursor = self.skills_cursor.saturating_add(1).min(max);
+            }
+            ProfileField::Tone => {}
         }
     }
 
@@ -441,6 +568,8 @@ impl ProfileScreen {
             };
         }
         self.resume_scroll = 0;
+        self.resume_cursor = 0;
+        self.skills_cursor = 0;
         self.mode = ProfileMode::View;
         self.clear_validation_errors();
     }
@@ -660,8 +789,10 @@ fn draw_resume_view(&self, frame: &mut Frame, area: Rect, theme: &Theme, profile
         // Set cursor position for resume field
         if is_focused {
             let inner = area.inner(Margin { vertical: 1, horizontal: 1 });
-            let cursor_x = inner.x + (self.resume_text.chars().count() as u16).min(inner.width.saturating_sub(1));
-            let cursor_y = inner.y;
+            let (cursor_col, cursor_row) = self.cursor_visual_position(&self.resume_text, self.resume_cursor, inner.width);
+            // Adjust for scroll offset
+            let cursor_y = inner.y.saturating_add(cursor_row).saturating_sub(self.resume_scroll);
+            let cursor_x = inner.x + cursor_col.min(inner.width.saturating_sub(1));
             frame.set_cursor_position((cursor_x, cursor_y));
         }
     }
@@ -698,8 +829,9 @@ fn draw_resume_view(&self, frame: &mut Frame, area: Rect, theme: &Theme, profile
 
         if is_focused {
             let inner = area.inner(Margin { vertical: 1, horizontal: 1 });
-            let cursor_x = inner.x + (self.skills_text.chars().count() as u16).min(inner.width.saturating_sub(1));
-            let cursor_y = inner.y;
+            let (cursor_col, cursor_row) = self.cursor_visual_position(&self.skills_text, self.skills_cursor, inner.width);
+            let cursor_y = inner.y + cursor_row;
+            let cursor_x = inner.x + cursor_col.min(inner.width.saturating_sub(1));
             frame.set_cursor_position((cursor_x, cursor_y));
         }
     }
@@ -957,6 +1089,20 @@ pub async fn handle_event(
                             screen.handle_scroll_down();
                         } else {
                             screen.handle_down();
+                        }
+                    }
+                }
+                KeyCode::Left => {
+                    if screen.mode == ProfileMode::Edit && !screen.saving && !screen.loading.is_loading() {
+                        if screen.focused_field == ProfileField::Resume || screen.focused_field == ProfileField::Skills {
+                            screen.handle_left();
+                        }
+                    }
+                }
+                KeyCode::Right => {
+                    if screen.mode == ProfileMode::Edit && !screen.saving && !screen.loading.is_loading() {
+                        if screen.focused_field == ProfileField::Resume || screen.focused_field == ProfileField::Skills {
+                            screen.handle_right();
                         }
                     }
                 }
@@ -1472,6 +1618,8 @@ mod tests {
         screen.toggle_mode();
         screen.focused_field = ProfileField::Resume;
         screen.resume_text = "Previous text. ".to_string();
+        // Set cursor to end to test append behavior (regression test)
+        screen.resume_cursor = screen.resume_text.chars().count();
         screen.handle_paste("Pasted text.");
         assert_eq!(screen.resume_text, "Previous text. Pasted text.");
     }
@@ -1530,5 +1678,236 @@ mod tests {
         screen.resume_scroll = 10;
         screen.cancel_edit();
         assert_eq!(screen.resume_scroll, 0);
+    }
+
+    #[test]
+    fn handle_left_at_zero_should_not_move() {
+        let mut screen = create_test_screen();
+        screen.toggle_mode();
+        screen.focused_field = ProfileField::Resume;
+        screen.resume_text = "Hello".to_string();
+        screen.resume_cursor = 0;
+        screen.handle_left();
+        assert_eq!(screen.resume_cursor, 0);
+
+        // Skills field
+        screen.focused_field = ProfileField::Skills;
+        screen.skills_text = "Rust, Java".to_string();
+        screen.skills_cursor = 0;
+        screen.handle_left();
+        assert_eq!(screen.skills_cursor, 0);
+    }
+
+    #[test]
+    fn handle_left_moves_back_one() {
+        let mut screen = create_test_screen();
+        screen.toggle_mode();
+        screen.focused_field = ProfileField::Resume;
+        screen.resume_text = "Hello".to_string();
+        screen.resume_cursor = 3;
+        screen.handle_left();
+        assert_eq!(screen.resume_cursor, 2);
+    }
+
+    #[test]
+    fn handle_right_at_end_should_not_move() {
+        let mut screen = create_test_screen();
+        screen.toggle_mode();
+        screen.focused_field = ProfileField::Resume;
+        screen.resume_text = "Hi".to_string();
+        screen.resume_cursor = 2;
+        screen.handle_right();
+        assert_eq!(screen.resume_cursor, 2);
+    }
+
+    #[test]
+    fn handle_right_moves_forward_one() {
+        let mut screen = create_test_screen();
+        screen.toggle_mode();
+        screen.focused_field = ProfileField::Resume;
+        screen.resume_text = "Hi".to_string();
+        screen.resume_cursor = 0;
+        screen.handle_right();
+        assert_eq!(screen.resume_cursor, 1);
+    }
+
+    #[test]
+    fn handle_left_skills_field() {
+        let mut screen = create_test_screen();
+        screen.toggle_mode();
+        screen.focused_field = ProfileField::Skills;
+        screen.skills_text = "Rust, Java".to_string();
+        screen.skills_cursor = 5;
+        screen.handle_left();
+        assert_eq!(screen.skills_cursor, 4);
+    }
+
+    #[test]
+    fn handle_right_skills_field() {
+        let mut screen = create_test_screen();
+        screen.toggle_mode();
+        screen.focused_field = ProfileField::Skills;
+        screen.skills_text = "Rust, Java".to_string();
+        screen.skills_cursor = 0;
+        screen.handle_right();
+        assert_eq!(screen.skills_cursor, 1);
+    }
+
+    #[test]
+    fn handle_left_right_with_unicode_characters() {
+        let mut screen = create_test_screen();
+        screen.toggle_mode();
+        screen.focused_field = ProfileField::Resume;
+        screen.resume_text = "Hello 世界".to_string(); // 8 chars: H e l l o space 世 界
+        screen.resume_cursor = 8;
+        screen.handle_left();
+        assert_eq!(screen.resume_cursor, 7);
+        screen.handle_right();
+        assert_eq!(screen.resume_cursor, 8);
+        // At end, right should not move
+        screen.handle_right();
+        assert_eq!(screen.resume_cursor, 8);
+    }
+
+    #[test]
+    fn handle_char_at_cursor_inserts_in_middle() {
+        let mut screen = create_test_screen();
+        screen.toggle_mode();
+        screen.focused_field = ProfileField::Resume;
+        screen.resume_text = "Hello World".to_string();
+        screen.resume_cursor = 5; // After "Hello"
+        screen.handle_char('X');
+        assert_eq!(screen.resume_text, "HelloX World");
+        assert_eq!(screen.resume_cursor, 6);
+    }
+
+    #[test]
+    fn handle_char_at_end_appends() {
+        let mut screen = create_test_screen();
+        screen.toggle_mode();
+        screen.focused_field = ProfileField::Resume;
+        screen.resume_text = "Hello".to_string();
+        screen.resume_cursor = 5; // At end
+        screen.handle_char('X');
+        assert_eq!(screen.resume_text, "HelloX");
+        assert_eq!(screen.resume_cursor, 6);
+    }
+
+    #[test]
+    fn handle_char_advances_cursor() {
+        let mut screen = create_test_screen();
+        screen.toggle_mode();
+        screen.focused_field = ProfileField::Resume;
+        screen.resume_text = "Hi".to_string();
+        screen.resume_cursor = 1;
+        screen.handle_char('X');
+        assert_eq!(screen.resume_cursor, 2);
+    }
+
+    #[test]
+    fn handle_backspace_at_middle_removes_before_cursor() {
+        let mut screen = create_test_screen();
+        screen.toggle_mode();
+        screen.focused_field = ProfileField::Resume;
+        screen.resume_text = "Hello World".to_string();
+        screen.resume_cursor = 6; // After "Hello "
+        screen.handle_backspace();
+        assert_eq!(screen.resume_text, "HelloWorld");
+        assert_eq!(screen.resume_cursor, 5);
+    }
+
+    #[test]
+    fn handle_backspace_at_zero_does_nothing() {
+        let mut screen = create_test_screen();
+        screen.toggle_mode();
+        screen.focused_field = ProfileField::Resume;
+        screen.resume_text = "Hello".to_string();
+        screen.resume_cursor = 0;
+        screen.handle_backspace();
+        assert_eq!(screen.resume_text, "Hello");
+        assert_eq!(screen.resume_cursor, 0);
+    }
+
+    #[test]
+    fn handle_backspace_moves_cursor_back() {
+        let mut screen = create_test_screen();
+        screen.toggle_mode();
+        screen.focused_field = ProfileField::Resume;
+        screen.resume_text = "Hello".to_string();
+        screen.resume_cursor = 3;
+        screen.handle_backspace();
+        assert_eq!(screen.resume_cursor, 2);
+    }
+
+    #[test]
+    fn handle_newline_at_cursor_splits_text() {
+        let mut screen = create_test_screen();
+        screen.toggle_mode();
+        screen.focused_field = ProfileField::Resume;
+        screen.resume_text = "Line1Line2".to_string();
+        screen.resume_cursor = 5; // After "Line1"
+        screen.handle_newline();
+        assert_eq!(screen.resume_text, "Line1\nLine2");
+        assert_eq!(screen.resume_cursor, 6);
+    }
+
+    #[test]
+    fn handle_paste_at_cursor_inserts_and_advances() {
+        let mut screen = create_test_screen();
+        screen.toggle_mode();
+        screen.focused_field = ProfileField::Resume;
+        screen.resume_text = "Hello World".to_string();
+        screen.resume_cursor = 5; // After "Hello"
+        screen.handle_paste("X");
+        assert_eq!(screen.resume_text, "HelloX World");
+        assert_eq!(screen.resume_cursor, 6);
+    }
+
+    #[test]
+    fn handle_paste_at_end_appends() {
+        let mut screen = create_test_screen();
+        screen.toggle_mode();
+        screen.focused_field = ProfileField::Resume;
+        screen.resume_text = "Hello".to_string();
+        screen.resume_cursor = 5; // At end
+        screen.handle_paste(" World");
+        assert_eq!(screen.resume_text, "Hello World");
+        assert_eq!(screen.resume_cursor, 11);
+    }
+
+    #[test]
+    fn handle_char_skills_at_cursor_inserts_in_middle() {
+        let mut screen = create_test_screen();
+        screen.toggle_mode();
+        screen.focused_field = ProfileField::Skills;
+        screen.skills_text = "Rust, Java".to_string();
+        screen.skills_cursor = 4; // After "Rust"
+        screen.handle_char('X');
+        assert_eq!(screen.skills_text, "RustX, Java");
+        assert_eq!(screen.skills_cursor, 5);
+    }
+
+    #[test]
+    fn handle_backspace_skills_at_middle_removes_before_cursor() {
+        let mut screen = create_test_screen();
+        screen.toggle_mode();
+        screen.focused_field = ProfileField::Skills;
+        screen.skills_text = "Rust, Java".to_string();
+        screen.skills_cursor = 5; // After "Rust,"
+        screen.handle_backspace();
+        assert_eq!(screen.skills_text, "Rust Java");
+        assert_eq!(screen.skills_cursor, 4);
+    }
+
+    #[test]
+    fn handle_paste_skills_at_cursor_inserts_and_advances() {
+        let mut screen = create_test_screen();
+        screen.toggle_mode();
+        screen.focused_field = ProfileField::Skills;
+        screen.skills_text = "Rust, Java".to_string();
+        screen.skills_cursor = 4; // After "Rust"
+        screen.handle_paste("Go");
+        assert_eq!(screen.skills_text, "RustGo, Java");
+        assert_eq!(screen.skills_cursor, 6);
     }
 }

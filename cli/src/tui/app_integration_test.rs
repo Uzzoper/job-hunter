@@ -730,3 +730,128 @@ async fn analyze_job_does_not_hang_when_job_none() {
     assert!(!screen.loading_analysis.is_loading());
     assert_eq!(screen.loading_analysis, LoadingState::Idle);
 }
+
+// ===== Profile Cursor Navigation Tests =====
+
+#[tokio::test]
+async fn profile_cursor_moves_left_and_right() {
+    let config = Config::default();
+    let api_client = ApiClient::new("http://localhost:8080");
+    let mut app = App::new(api_client, config);
+
+    app.state = AppState::Profile;
+    let profile_screen = ProfileScreen::new(
+        Arc::new(Mutex::new(ApiClient::new("http://localhost:8080"))),
+        Arc::new(Mutex::new(crate::config::ConfigManager::new())),
+    );
+    app.profile_screen = Some(profile_screen);
+
+    // Enter edit mode
+    let event = crossterm::event::Event::Key(KeyEvent::new(KeyCode::Char('e'), KeyModifiers::NONE));
+    app.handle_event(event).await.unwrap();
+    assert_eq!(app.profile_screen.as_ref().unwrap().mode, crate::tui::profile_screen::ProfileMode::Edit);
+
+    // Type some text
+    for c in "Hello World".chars() {
+        let event = crossterm::event::Event::Key(KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE));
+        app.handle_event(event).await.unwrap();
+    }
+    assert_eq!(app.profile_screen.as_ref().unwrap().resume_text, "Hello World");
+    assert_eq!(app.profile_screen.as_ref().unwrap().resume_cursor, 11);
+
+    // Move cursor left 6 times (to after "Hello")
+    for _ in 0..6 {
+        let event = crossterm::event::Event::Key(KeyEvent::new(KeyCode::Left, KeyModifiers::NONE));
+        app.handle_event(event).await.unwrap();
+    }
+    assert_eq!(app.profile_screen.as_ref().unwrap().resume_cursor, 5);
+
+    // Insert 'X' at cursor
+    let event = crossterm::event::Event::Key(KeyEvent::new(KeyCode::Char('X'), KeyModifiers::NONE));
+    app.handle_event(event).await.unwrap();
+    assert_eq!(app.profile_screen.as_ref().unwrap().resume_text, "HelloX World");
+    assert_eq!(app.profile_screen.as_ref().unwrap().resume_cursor, 6);
+
+    // Move cursor right 6 times (to end)
+    for _ in 0..6 {
+        let event = crossterm::event::Event::Key(KeyEvent::new(KeyCode::Right, KeyModifiers::NONE));
+        app.handle_event(event).await.unwrap();
+    }
+    assert_eq!(app.profile_screen.as_ref().unwrap().resume_cursor, 12);
+
+    // Backspace should delete before cursor (deletes 'd' at position 11)
+    let event = crossterm::event::Event::Key(KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE));
+    app.handle_event(event).await.unwrap();
+    assert_eq!(app.profile_screen.as_ref().unwrap().resume_text, "HelloX Worl");
+    assert_eq!(app.profile_screen.as_ref().unwrap().resume_cursor, 11);
+}
+
+#[tokio::test]
+async fn profile_cursor_skills_field() {
+    let config = Config::default();
+    let api_client = ApiClient::new("http://localhost:8080");
+    let mut app = App::new(api_client, config);
+
+    app.state = AppState::Profile;
+    let profile_screen = ProfileScreen::new(
+        Arc::new(Mutex::new(ApiClient::new("http://localhost:8080"))),
+        Arc::new(Mutex::new(crate::config::ConfigManager::new())),
+    );
+    app.profile_screen = Some(profile_screen);
+
+    // Enter edit mode
+    let event = crossterm::event::Event::Key(KeyEvent::new(KeyCode::Char('e'), KeyModifiers::NONE));
+    app.handle_event(event).await.unwrap();
+
+    // Tab to Skills field
+    let event = crossterm::event::Event::Key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+    app.handle_event(event).await.unwrap();
+    assert_eq!(app.profile_screen.as_ref().unwrap().focused_field, crate::tui::profile_screen::ProfileField::Skills);
+
+    // Type skills
+    for c in "Rust, Java".chars() {
+        let event = crossterm::event::Event::Key(KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE));
+        app.handle_event(event).await.unwrap();
+    }
+    assert_eq!(app.profile_screen.as_ref().unwrap().skills_text, "Rust, Java");
+    assert_eq!(app.profile_screen.as_ref().unwrap().skills_cursor, 10);
+
+    // Move cursor left 5 times (to after "Rust," - position 5 is the space after comma)
+    for _ in 0..5 {
+        let event = crossterm::event::Event::Key(KeyEvent::new(KeyCode::Left, KeyModifiers::NONE));
+        app.handle_event(event).await.unwrap();
+    }
+    assert_eq!(app.profile_screen.as_ref().unwrap().skills_cursor, 5);
+
+    // Insert 'Go' at cursor (after "Rust,")
+    for c in "Go".chars() {
+        let event = crossterm::event::Event::Key(KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE));
+        app.handle_event(event).await.unwrap();
+    }
+    assert_eq!(app.profile_screen.as_ref().unwrap().skills_text, "Rust,Go Java");
+    assert_eq!(app.profile_screen.as_ref().unwrap().skills_cursor, 7);
+}
+
+#[tokio::test]
+async fn profile_cursor_left_right_ignored_in_view_mode() {
+    let config = Config::default();
+    let api_client = ApiClient::new("http://localhost:8080");
+    let mut app = App::new(api_client, config);
+
+    app.state = AppState::Profile;
+    let profile_screen = ProfileScreen::new(
+        Arc::new(Mutex::new(ApiClient::new("http://localhost:8080"))),
+        Arc::new(Mutex::new(crate::config::ConfigManager::new())),
+    );
+    app.profile_screen = Some(profile_screen);
+
+    // In View mode, Left/Right should not affect cursor
+    let event = crossterm::event::Event::Key(KeyEvent::new(KeyCode::Left, KeyModifiers::NONE));
+    app.handle_event(event).await.unwrap();
+    let event = crossterm::event::Event::Key(KeyEvent::new(KeyCode::Right, KeyModifiers::NONE));
+    app.handle_event(event).await.unwrap();
+
+    // Cursor should remain at 0
+    assert_eq!(app.profile_screen.as_ref().unwrap().resume_cursor, 0);
+    assert_eq!(app.profile_screen.as_ref().unwrap().skills_cursor, 0);
+}
