@@ -47,5 +47,6 @@ org/
 
 # Scratch/debug files
 scratch_debug.java
-cli/libtest_check.rlib
+# Rust CLI compiled artifacts
+cli/*.rlib
 spring-boot.log
