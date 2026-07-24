@@ -24,9 +24,10 @@ pub async fn handle_list(
     refresh: bool,
     api_url: &str,
     token: &Option<String>,
+    cache_path: Option<&str>,
 ) -> anyhow::Result<()> {
     let config = config::load(None)?;
-    let cache = CacheManager::new(None, config.cache_ttl_hours)?;
+    let cache = CacheManager::new(cache_path.map(std::path::PathBuf::from), config.cache_ttl_hours)?;
 
     // Check cache integrity on startup
     if let Some(warning) = cache.ensure_integrity()? {
@@ -235,9 +236,10 @@ pub async fn handle_fetch(
     source: Option<String>,
     api_url: &str,
     token: &Option<String>,
+    cache_path: Option<&str>,
 ) -> anyhow::Result<()> {
     let config = crate::config::load(None)?;
-    let cache = crate::cache::CacheManager::new(None, config.cache_ttl_hours)?;
+    let cache = crate::cache::CacheManager::new(cache_path.map(std::path::PathBuf::from), config.cache_ttl_hours)?;
 
     let client = ApiClient::new(api_url).with_token(token.clone().unwrap_or_default());
 
@@ -363,6 +365,7 @@ mod tests {
             None, None, None, false, false,
             false, false,
             &server.url(""), &token,
+            None,
         ).await;
 
         assert!(result.is_ok(), "handler should succeed: {result:?}");
@@ -388,6 +391,7 @@ let result = handle_list(
             None, None, None, false, false,
             false, false,
             &server.url(""), &token,
+            None,
         ).await;
 
         assert!(result.is_ok(), "CSV export should succeed: {result:?}");
@@ -412,6 +416,7 @@ let result = handle_list(
             None, None, None, true, false,
             false, false,
             &server.url(""), &token,
+            None,
         ).await;
 
         assert!(result.is_ok(), "JSON output should succeed: {result:?}");
@@ -438,6 +443,7 @@ let result = handle_list(
             None, None, None, false, true,
             false, false,
             &server.url(""), &token,
+            None,
         ).await;
 
         assert!(result.is_ok(), "keyword filter should succeed: {result:?}");
@@ -464,6 +470,7 @@ let result = handle_list(
             Some("rust".into()), None, None, false, false,
             false, false,
             &server.url(""), &token,
+            None,
         ).await;
 
         assert!(result.is_ok(), "source filter should succeed: {result:?}");
@@ -486,6 +493,7 @@ let result = handle_list(
             None, None, None, false, false,
             false, false,
             &server.url(""), &token,
+            None,
         ).await;
 
         assert!(result.is_ok(), "empty list should succeed: {result:?}");
@@ -513,6 +521,7 @@ let result = handle_list(
             None, None, None, false, false,
             false, false,
             &server.url(""), &token,
+            None,
         ).await;
 
         assert!(result.is_err(), "should return error on 401");
@@ -685,7 +694,7 @@ let result = handle_list(
                 .json_body(json!([]));
         });
 
-        let result = handle_fetch(None, &server.url(""), &token).await;
+        let result = handle_fetch(None, &server.url(""), &token, None).await;
 
         assert!(result.is_ok(), "fetch all should succeed: {result:?}");
         fetch_mock.assert();
@@ -719,6 +728,7 @@ let result = handle_list(
             Some("linkedin".into()),
             &server.url(""),
             &token,
+            None,
         ).await;
 
         assert!(result.is_ok(), "fetch linkedin should succeed: {result:?}");
@@ -735,6 +745,7 @@ let result = handle_list(
             Some("gupy".into()),
             &server.url(""),
             &token,
+            None,
         ).await;
 
         assert!(result.is_ok(), "unknown source should return Ok with error message");
@@ -754,8 +765,7 @@ let result = handle_list(
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(dir.join("job-hunter")).expect("create cache dir");
 
-        let prev_xdg = std::env::var("XDG_CONFIG_HOME").ok();
-        unsafe { std::env::set_var("XDG_CONFIG_HOME", &dir); }
+        let cache_path = dir.join("job-hunter").join("cache.db");
 
         let fetch_mock = server.mock(|when, then| {
             when.method(Method::POST).path("/api/jobs/fetch");
@@ -774,23 +784,17 @@ let result = handle_list(
                 ]));
         });
 
-        let result = handle_fetch(None, &server.url(""), &token).await;
+        let result = handle_fetch(None, &server.url(""), &token, Some(cache_path.to_str().unwrap())).await;
         assert!(result.is_ok(), "fetch should succeed: {result:?}");
         fetch_mock.assert();
         get_mock.assert();
 
-        let cache_path = dir.join("job-hunter").join("cache.db");
         let cache = CacheManager::new(Some(cache_path), 24).expect("open cache");
         let cached = cache.get_all_jobs(None).expect("get cached jobs");
         assert_eq!(cached.len(), 2, "cache should have 2 jobs after fetch");
         assert_eq!(cached[0].title, "Rust Dev");
         assert_eq!(cached[1].title, "Go Dev");
 
-        if let Some(xdg) = prev_xdg {
-            unsafe { std::env::set_var("XDG_CONFIG_HOME", xdg); }
-        } else {
-            unsafe { std::env::remove_var("XDG_CONFIG_HOME"); }
-        }
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -853,11 +857,8 @@ let result = handle_list(
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(dir.join("job-hunter")).expect("create cache dir");
 
-        let prev_xdg = std::env::var("XDG_CONFIG_HOME").ok();
-        unsafe { std::env::set_var("XDG_CONFIG_HOME", &dir); }
-
         let cache_path = dir.join("job-hunter").join("cache.db");
-        let cache = CacheManager::new(Some(cache_path), 24).expect("create cache");
+        let cache = CacheManager::new(Some(cache_path.clone()), 24).expect("create cache");
         cache.save_jobs(&[
             JobResponse {
                 id: 1,
@@ -875,15 +876,11 @@ let result = handle_list(
             None, None, None, false, false,
             true, false,
             &server.url(""), &token,
+            Some(cache_path.to_str().unwrap()),
         ).await;
 
         assert!(result.is_ok(), "offline list should succeed: {result:?}");
 
-        if let Some(xdg) = prev_xdg {
-            unsafe { std::env::set_var("XDG_CONFIG_HOME", xdg); }
-        } else {
-            unsafe { std::env::remove_var("XDG_CONFIG_HOME"); }
-        }
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -897,8 +894,7 @@ let result = handle_list(
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(dir.join("job-hunter")).expect("create cache dir");
 
-        let prev_xdg = std::env::var("XDG_CONFIG_HOME").ok();
-        unsafe { std::env::set_var("XDG_CONFIG_HOME", &dir); }
+        let cache_path = dir.join("job-hunter").join("cache.db");
 
         let mock = server.mock(|when, then| {
             when.method(Method::GET).path("/api/jobs");
@@ -914,22 +910,17 @@ let result = handle_list(
             None, None, None, false, false,
             false, true,
             &server.url(""), &token,
+            Some(cache_path.to_str().unwrap()),
         ).await;
 
         assert!(result.is_ok(), "refresh list should succeed: {result:?}");
         mock.assert();
 
-        let cache_path = dir.join("job-hunter").join("cache.db");
         let cache = CacheManager::new(Some(cache_path), 24).expect("open cache");
         let cached = cache.get_all_jobs(None).expect("get cached");
         assert_eq!(cached.len(), 2, "cache should have 2 jobs after refresh");
         assert_eq!(cached[0].title, "Refreshed Job 1");
 
-        if let Some(xdg) = prev_xdg {
-            unsafe { std::env::set_var("XDG_CONFIG_HOME", xdg); }
-        } else {
-            unsafe { std::env::remove_var("XDG_CONFIG_HOME"); }
-        }
         let _ = std::fs::remove_dir_all(&dir);
     }
 
