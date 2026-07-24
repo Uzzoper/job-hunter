@@ -98,7 +98,7 @@ async fn tui_app_render_does_not_panic() {
 }
 
 #[tokio::test]
-async fn tui_app_run_exits_cleanly_on_quit() {
+async fn tui_app_render_and_handle_event_does_not_panic() {
     let config = Config::default();
     let api_client = ApiClient::new("http://localhost:8080");
     let mut app = App::new(api_client, config);
@@ -228,8 +228,8 @@ async fn profile_esc_cancels_edit_then_exits() {
     assert_eq!(app.profile_screen.as_ref().unwrap().mode, crate::tui::profile_screen::ProfileMode::View);
     assert_eq!(app.state, AppState::Profile); // Still in profile
 
-    // Press Esc again to exit to job list
-    let event = crossterm::event::Event::Key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+    // Press Q to exit to job list
+    let event = crossterm::event::Event::Key(KeyEvent::new(KeyCode::Char('q'), KeyModifiers::NONE));
     app.handle_event(event).await.unwrap();
     assert_eq!(app.state, AppState::JobList);
 }

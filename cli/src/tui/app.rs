@@ -304,7 +304,7 @@ impl App {
         use ratatui::text::Text;
 
         let shortcuts = match self.state {
-            AppState::Auth => " [Enter] Continue  [q] Quit ",
+            AppState::Auth => " [Enter] Continue  [Esc] Quit ",
             AppState::JobList => " ",
             AppState::JobDetail => " ",
             AppState::Profile => " ",
@@ -404,8 +404,7 @@ impl App {
 
             match key.code {
                 crossterm::event::KeyCode::Char('q') | crossterm::event::KeyCode::Char('Q') => {
-                    self.should_quit = true;
-                    self.state = AppState::Quitting;
+                    self.handle_back();
                 }
                 crossterm::event::KeyCode::Char('/') if self.state == AppState::JobList => {
                     if let Some(screen) = &mut self.job_list_screen {
@@ -467,7 +466,8 @@ impl App {
                     self.handle_refresh().await;
                 }
                 crossterm::event::KeyCode::Esc => {
-                    self.handle_escape();
+                    self.should_quit = true;
+                    self.state = AppState::Quitting;
                 }
                 crossterm::event::KeyCode::Tab => {
                     self.handle_tab();
