@@ -40,24 +40,15 @@ impl ApiClient {
         }
     }
 
-    /// Set the JWT authentication token (builder pattern).
-    ///
-    /// The token will be sent as `Authorization: Bearer <token>` on
-    /// all subsequent requests.
     pub fn with_token(mut self, token: impl Into<String>) -> Self {
         self.token = Some(token.into());
         self
     }
 
-    /// Set the JWT authentication token.
-    ///
-    /// The token will be sent as `Authorization: Bearer <token>` on
-    /// all subsequent requests.
     pub fn set_token(&mut self, token: &str) {
         self.token = Some(token.to_string());
     }
 
-    /// Remove the stored authentication token.
     pub fn clear_token(&mut self) {
         self.token = None;
     }
@@ -104,9 +95,6 @@ impl ApiClient {
     // Auth endpoints
     // =========================================================================
 
-    /// Register a new user.
-    ///
-    /// `POST /api/auth/register`
     pub async fn register(&self, req: &AuthRequest) -> Result<AuthResponse> {
         let resp = self
             .request(Method::POST, "/api/auth/register")
@@ -116,9 +104,6 @@ impl ApiClient {
         self.handle_response(resp).await
     }
 
-    /// Log in and receive a JWT token.
-    ///
-    /// `POST /api/auth/login`
     pub async fn login(&self, req: &LoginRequest) -> Result<AuthResponse> {
         let resp = self
             .request(Method::POST, "/api/auth/login")
@@ -132,17 +117,11 @@ impl ApiClient {
     // Jobs endpoints
     // =========================================================================
 
-    /// List all jobs.
-    ///
-    /// `GET /api/jobs`
     pub async fn get_jobs(&self) -> Result<Vec<JobResponse>> {
         let resp = self.request(Method::GET, "/api/jobs").send().await?;
         self.handle_response(resp).await
     }
 
-    /// Get a single job by ID.
-    ///
-    /// `GET /api/jobs/{id}`
     pub async fn get_job(&self, id: i64) -> Result<JobResponse> {
         let resp = self
             .request(Method::GET, &format!("/api/jobs/{id}"))
@@ -151,9 +130,6 @@ impl ApiClient {
         self.handle_response(resp).await
     }
 
-    /// Trigger scraping from all providers (Gupy, InfoJobs, LinkedIn).
-    ///
-    /// `POST /api/jobs/fetch`
     pub async fn fetch_jobs(&self) -> Result<FetchResponse> {
         let resp = self
             .request(Method::POST, "/api/jobs/fetch")
@@ -162,9 +138,6 @@ impl ApiClient {
         self.handle_response(resp).await
     }
 
-    /// Trigger scraping from LinkedIn only.
-    ///
-    /// `POST /api/jobs/fetch/linkedin`
     pub async fn fetch_linkedin(&self) -> Result<FetchResponse> {
         let resp = self
             .request(Method::POST, "/api/jobs/fetch/linkedin")
@@ -177,9 +150,6 @@ impl ApiClient {
     // Analysis endpoint
     // =========================================================================
 
-    /// Analyze a job with AI.
-    ///
-    /// `POST /api/jobs/{id}/analyze`
     pub async fn analyze_job(&self, job_id: i64) -> Result<JobAnalysis> {
         let resp = self
             .request(Method::POST, &format!("/api/jobs/{job_id}/analyze"))
@@ -192,9 +162,6 @@ impl ApiClient {
     // Email endpoints
     // =========================================================================
 
-    /// Get the generated email draft for a job.
-    ///
-    /// `GET /api/jobs/{id}/email`
     pub async fn get_email(&self, job_id: i64) -> Result<EmailDraftResponse> {
         let resp = self
             .request(Method::GET, &format!("/api/jobs/{job_id}/email"))
@@ -203,9 +170,6 @@ impl ApiClient {
         self.handle_response(resp).await
     }
 
-    /// Generate a new email draft for a job.
-    ///
-    /// `POST /api/jobs/{id}/email`
     pub async fn generate_email(&self, job_id: i64) -> Result<EmailDraftResponse> {
         let resp = self
             .request(Method::POST, &format!("/api/jobs/{job_id}/email"))
@@ -218,17 +182,11 @@ impl ApiClient {
     // Profile endpoints
     // =========================================================================
 
-    /// Get the authenticated user's profile.
-    ///
-    /// `GET /api/profile`
     pub async fn get_profile(&self) -> Result<ProfileResponse> {
         let resp = self.request(Method::GET, "/api/profile").send().await?;
         self.handle_response(resp).await
     }
 
-    /// Update the authenticated user's profile.
-    ///
-    /// `PUT /api/profile`
     pub async fn update_profile(&self, req: &ProfileRequest) -> Result<ProfileResponse> {
         let resp = self
             .request(Method::PUT, "/api/profile")
