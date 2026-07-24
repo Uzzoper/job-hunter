@@ -47,7 +47,7 @@ mod cli_parsing {
     fn parse_no_args_creates_cli_with_no_command() {
         let cli = Cli::try_parse_from(["jh-cli"]).expect("parse should succeed");
         assert!(cli.command.is_none());
-        assert_eq!(cli.api_url, "http://localhost:8080");
+        assert!(cli.api_url.is_none());
         assert!(!cli.tui);
     }
 
@@ -230,7 +230,7 @@ mod cli_parsing {
             "jh-cli", "--api-url", "https://api.example.com", "list",
         ])
         .expect("parse should succeed");
-        assert_eq!(cli.api_url, "https://api.example.com");
+        assert_eq!(cli.api_url.as_deref(), Some("https://api.example.com"));
     }
 
     #[test]

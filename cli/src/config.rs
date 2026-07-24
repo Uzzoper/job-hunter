@@ -5,7 +5,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 /// Default base URL for the Job Hunter API.
-const DEFAULT_BASE_URL: &str = "http://localhost:8080";
+pub const DEFAULT_BASE_URL: &str = "http://localhost:8080";
 /// Default cache TTL in hours.
 const DEFAULT_CACHE_TTL_HOURS: u64 = 24;
 

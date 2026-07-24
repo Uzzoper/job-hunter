@@ -19,9 +19,9 @@ pub struct Cli {
     #[command(subcommand)]
     pub command: Option<Command>,
 
-    /// API base URL
-    #[arg(short = 'u', long, default_value = "http://localhost:8080")]
-    pub api_url: String,
+    /// API base URL (overrides config)
+    #[arg(short = 'u', long)]
+    pub api_url: Option<String>,
 
     /// Config file path
     #[arg(short = 'c', long)]
