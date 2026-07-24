@@ -137,7 +137,6 @@ pub struct ProfileScreen {
 }
 
 impl ProfileScreen {
-    /// Create a new ProfileScreen
     pub fn new(
         api_client: Arc<Mutex<ApiClient>>,
         config_manager: Arc<Mutex<ConfigManager>>,
@@ -176,7 +175,6 @@ impl ProfileScreen {
         self.skills_cursor = 0;
     }
 
-    /// Clear validation errors
     pub fn clear_validation_errors(&mut self) {
         self.validation_errors.clear();
     }
@@ -187,12 +185,10 @@ impl ProfileScreen {
         s.replace('\r', "").replace('\u{f0b7}', "- ")
     }
 
-    /// Show a toast notification
     fn show_toast(&mut self, message: String) {
         self.toast = Some(Toast::new(message));
     }
 
-    /// Update toast state
     fn update_toast(&mut self) {
         if let Some(toast) = &self.toast
             && toast.is_expired() {
@@ -200,7 +196,6 @@ impl ProfileScreen {
             }
     }
 
-    /// Toggle between view and edit mode
     pub fn toggle_mode(&mut self) {
         self.mode = self.mode.toggle();
         if self.mode == ProfileMode::Edit {
@@ -209,14 +204,12 @@ impl ProfileScreen {
         self.clear_validation_errors();
     }
 
-    /// Focus next field in edit mode
     pub fn focus_next(&mut self) {
         if self.mode == ProfileMode::Edit {
             self.focused_field = self.focused_field.next();
         }
     }
 
-    /// Focus previous field in edit mode
     pub fn focus_prev(&mut self) {
         if self.mode == ProfileMode::Edit {
             self.focused_field = self.focused_field.prev();
@@ -463,7 +456,6 @@ impl ProfileScreen {
         self.validation_errors.is_empty()
     }
 
-    /// Get selected tone
     fn selected_tone(&self) -> CompanyTone {
         match self.tone_selection {
             0 => CompanyTone::Formal,
