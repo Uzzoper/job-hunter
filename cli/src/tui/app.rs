@@ -229,7 +229,6 @@ impl App {
             if crossterm::event::poll(std::time::Duration::from_millis(100))? {
                 let event = crossterm::event::read()?;
                 
-                // Handle terminal resize
                 if let Event::Resize(_, _) = event {
                     // Terminal was resized, just redraw on next iteration
                     continue;
@@ -391,12 +390,10 @@ impl App {
                 return auth_screen::handle_event(event, self).await;
             }
 
-            // Delegate profile events (like auth)
             if self.state == AppState::Profile {
                 return profile_screen::handle_event(event, self).await;
             }
 
-            // Delegate JobDetail events (like Auth/Profile)
             // Uses take/putback to avoid double-borrow of self.job_detail_screen
             if self.state == AppState::JobDetail
                 && let Some(mut screen) = self.job_detail_screen.take() {
@@ -517,7 +514,6 @@ impl App {
             }
             crossterm::event::KeyCode::Char('r') | crossterm::event::KeyCode::Char('R') => {
                 self.clear_error();
-                // TODO: retry last operation
             }
             _ => {}
         }
@@ -542,8 +538,6 @@ impl App {
     }
 
     fn handle_tab(&mut self) {
-        if self.state == AppState::JobList {
-        }
     }
 
     fn handle_enter(&mut self) -> anyhow::Result<()> {
