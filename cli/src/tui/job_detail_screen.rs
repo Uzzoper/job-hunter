@@ -553,7 +553,6 @@ pub fn draw(&mut self, frame: &mut Frame, area: Rect) {
         let theme = Theme::detect();
         self.update_toast();
 
-        // Handle loading states
         if self.loading_analysis.is_loading() || self.loading_email.is_loading() {
             let msg = if self.loading_analysis.is_loading() {
                 "Analyzing job with AI..."
@@ -564,7 +563,6 @@ pub fn draw(&mut self, frame: &mut Frame, area: Rect) {
             return;
         }
 
-        // Handle error states
         if let Some(err) = &self.analysis_error {
             render_error_popup(frame, area, &theme, err, "[Enter] Dismiss  [a] Retry");
             return;

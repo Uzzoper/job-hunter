@@ -634,19 +634,16 @@ impl JobListScreen {
     }
 
     fn draw_main_content(&mut self, frame: &mut Frame, area: Rect, theme: &Theme) {
-        // Handle loading state
         if self.status.is_loading() {
             render_loading(frame, area, theme, "Fetching jobs...");
             return;
         }
 
-        // Handle error state
         if let Some(error) = self.status.error_message() {
             render_error_popup(frame, area, theme, error, "[Enter] Dismiss  [r] Retry");
             return;
         }
 
-        // Handle empty state
         if self.filtered_jobs.is_empty() {
             let msg = if self.from_cache {
                 "No cached jobs available.\nPress 'r' to fetch jobs from the server."
