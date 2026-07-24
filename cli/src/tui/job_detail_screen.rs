@@ -1,6 +1,6 @@
 use crate::api::ApiClient;
 use crate::cache::CacheManager;
-use crate::domain::{ApplyType, CompanyTone, EmailDraftResponse, EmailStatus, JobAnalysis, JobResponse};
+use crate::domain::{ApplyType, EmailDraftResponse, EmailStatus, JobAnalysis, JobResponse};
 use crate::tui::theme::{Theme, render_empty_state, render_error_popup, render_loading, spinner_frame};
 use crate::tui::Toast;
 use arboard::Clipboard;
@@ -232,16 +232,8 @@ impl JobDetailScreen {
         self.show_email_full = !self.show_email_full;
     }
 
-    /// Get the match score color style
-    fn score_style(&self, theme: &Theme) -> Style {
-        if let Some(analysis) = &self.analysis {
-            theme.style_score_color(analysis.match_score)
-        } else {
-            theme.style_dim()
-        }
-    }
-
     /// Get the match score display text
+    #[allow(dead_code)]
     fn score_text(&self) -> String {
         if let Some(analysis) = &self.analysis {
             format!("{}%", analysis.match_score)
@@ -250,20 +242,8 @@ impl JobDetailScreen {
         }
     }
 
-    /// Get company tone badge style
-    fn tone_style(&self, theme: &Theme) -> Style {
-        if let Some(analysis) = &self.analysis {
-            match analysis.company_tone {
-                CompanyTone::Formal => theme.style_bad(),
-                CompanyTone::Casual => theme.style_good(),
-                CompanyTone::Startup => theme.style_warn(),
-            }
-        } else {
-            theme.style_dim()
-        }
-    }
-
     /// Get company tone display text
+    #[allow(dead_code)]
     fn tone_text(&self) -> String {
         if let Some(analysis) = &self.analysis {
             format!("{}", analysis.company_tone)

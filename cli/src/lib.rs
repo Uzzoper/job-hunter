@@ -1,5 +1,5 @@
 // Allow dead code during scaffolding — will be removed in later tasks
-#![allow(dead_code)]
+
 
 pub mod domain;
 pub mod api;

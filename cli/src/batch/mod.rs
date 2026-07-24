@@ -4,47 +4,6 @@ mod jobs;
 mod profile;
 
 use crate::config::Config;
-use clap::Subcommand;
-
-#[derive(Subcommand)]
-pub enum BatchCommand {
-    Auth {
-        #[command(subcommand)]
-        action: super::AuthAction,
-    },
-    List {
-        keyword: Option<String>,
-        min_score: Option<u8>,
-        source: Option<String>,
-        csv: bool,
-        json: bool,
-        offline: bool,
-        refresh: bool,
-    },
-    Detail {
-        id: i64,
-        json: bool,
-    },
-    Fetch {
-        source: Option<String>,
-    },
-    Analyze {
-        job_id: String,
-    },
-    Email {
-        #[command(subcommand)]
-        action: super::EmailAction,
-    },
-    Profile {
-        #[command(subcommand)]
-        action: super::ProfileAction,
-    },
-    Export {
-        output: String,
-        keyword: Option<String>,
-    },
-    ClearCache,
-}
 
 pub async fn run(
     command: crate::Command,

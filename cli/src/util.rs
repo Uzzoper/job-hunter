@@ -1,15 +1,7 @@
-use chrono::{DateTime, Utc};
 use std::io::Write;
 use std::process::{Command, Stdio};
 
 use crate::domain::{CachedJob, JobResponse};
-
-pub fn format_datetime(dt: &Option<DateTime<Utc>>) -> String {
-    match dt {
-        Some(d) => d.format("%Y-%m-%d %H:%M UTC").to_string(),
-        None => "N/A".into(),
-    }
-}
 
 pub fn truncate(s: &str, max_len: usize) -> String {
     if s.len() <= max_len {
@@ -17,14 +9,6 @@ pub fn truncate(s: &str, max_len: usize) -> String {
     } else {
         format!("{}…", &s[..max_len.saturating_sub(1)])
     }
-}
-
-pub fn read_line(prompt: &str) -> String {
-    print!("{prompt}");
-    std::io::Write::flush(&mut std::io::stdout()).ok();
-    let mut input = String::new();
-    std::io::stdin().read_line(&mut input).ok();
-    input.trim().to_string()
 }
 
 pub fn parse_job_id(s: &str) -> anyhow::Result<i64> {

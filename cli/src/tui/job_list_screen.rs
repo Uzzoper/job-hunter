@@ -276,14 +276,6 @@ impl JobListScreen {
         self.toast = Some(Toast::new(message));
     }
 
-    /// Update toast state (remove expired toasts)
-    fn update_toast(&mut self) {
-        if let Some(toast) = &self.toast
-            && toast.is_expired() {
-            self.toast = None;
-        }
-    }
-
     /// Open the selected job URL in the system browser
     pub fn open_selected_job_url(&mut self) {
         if let Some(job) = self.selected_job() {
@@ -800,101 +792,6 @@ impl JobListScreen {
             .alignment(ratatui::layout::Alignment::Center);
         frame.render_widget(hotkeys_widget, area);
     }
-}
-
-pub async fn handle_event(
-    event: crossterm::event::Event,
-    app: &mut crate::tui::app::App,
-    screen: &mut JobListScreen,
-) -> anyhow::Result<()> {
-    use crossterm::event::{KeyCode, KeyModifiers};
-
-    if let crossterm::event::Event::Key(key) = event {
-        if screen.search_focus == SearchFocus::Focused {
-            match key.code {
-                KeyCode::Esc => {
-                    screen.blur_search();
-                }
-                KeyCode::Enter => {
-                    screen.blur_search();
-                }
-                KeyCode::Backspace => {
-                    screen.handle_search_backspace();
-                }
-                KeyCode::Char(c) => {
-                    screen.handle_search_char(c);
-                }
-                KeyCode::Left => {}
-                KeyCode::Right => {}
-                _ => {}
-            }
-            return Ok(());
-        }
-
-        match key.code {
-            KeyCode::Char('q') | KeyCode::Char('Q') => {
-                app.should_quit = true;
-                app.state = crate::tui::app::AppState::Quitting;
-            }
-            KeyCode::Esc => {
-                if screen.search_focus == SearchFocus::Focused {
-                    screen.blur_search();
-                } else {
-                    app.handle_escape();
-                }
-            }
-            KeyCode::Up | KeyCode::Char('k') => {
-                screen.select_prev();
-            }
-            KeyCode::Down | KeyCode::Char('j') => {
-                screen.select_next();
-            }
-            KeyCode::Enter => {
-                if let Some(job) = screen.selected_job().cloned() {
-                    app.selected_job = Some(job);
-                    app.state = crate::tui::app::AppState::JobDetail;
-                }
-            }
-            KeyCode::Char('/') | KeyCode::Char('f') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                screen.focus_search();
-            }
-            KeyCode::Char('r') | KeyCode::Char('R') => {
-                let _ = screen.fetch_jobs().await;
-            }
-            KeyCode::Char('a') | KeyCode::Char('A') => {
-                if let Some(job) = screen.selected_job() {
-                    app.selected_job = Some(job.clone());
-                    app.state = crate::tui::app::AppState::JobDetail;
-                }
-            }
-            KeyCode::Char('e') | KeyCode::Char('E') => {
-                if let Some(job) = screen.selected_job() {
-                    app.selected_job = Some(job.clone());
-                    app.state = crate::tui::app::AppState::JobDetail;
-                }
-            }
-            KeyCode::Char('p') | KeyCode::Char('P') => {
-                app.state = crate::tui::app::AppState::Profile;
-            }
-            KeyCode::Tab => {
-                screen.toggle_detail_panel();
-            }
-            KeyCode::Char('t') | KeyCode::Char('T') => {
-                screen.cycle_apply_type_filter();
-            }
-            KeyCode::Char('s') | KeyCode::Char('S') => {
-                screen.cycle_seniority_filter();
-            }
-            KeyCode::Char('d') | KeyCode::Char('D') => {
-                screen.toggle_dev_only();
-            }
-            KeyCode::Char('o') | KeyCode::Char('O') => {
-                screen.open_selected_job_url();
-            }
-            _ => {}
-        }
-    }
-    Ok(())
 }
 
 pub fn draw(frame: &mut Frame, area: Rect, app: &mut crate::tui::app::App) {
