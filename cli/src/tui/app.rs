@@ -21,22 +21,11 @@ pub enum AppState {
     Quitting,
 }
 
-/// Transition state for smooth screen transitions
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TransitionState {
-    None,
-    FadingOut,
-    FadingIn,
-    Entering,
-}
-
 pub struct App {
     pub api_client: Arc<Mutex<ApiClient>>,
     pub config: Config,
     pub cache: Arc<Mutex<CacheManager>>,
     pub state: AppState,
-    pub prev_state: AppState,
-    pub transition: TransitionState,
     pub token: Option<String>,
     pub auth: Option<AuthResponse>,
     pub jobs: Vec<JobResponse>,
@@ -67,8 +56,6 @@ impl App {
             config,
             cache,
             state: AppState::Auth,
-            prev_state: AppState::Auth,
-            transition: TransitionState::None,
             token: None,
             auth: None,
             jobs: Vec::new(),
@@ -96,16 +83,10 @@ impl App {
     }
 
     pub fn transition_to(&mut self, new_state: AppState) {
-        self.prev_state = self.state;
         self.state = new_state;
-        self.transition = TransitionState::Entering;
         if new_state == AppState::JobList {
             self.load_jobs_on_startup();
         }
-    }
-
-    pub fn complete_transition(&mut self) {
-        self.transition = TransitionState::None;
     }
 
     fn load_jobs_on_startup(&mut self) {
