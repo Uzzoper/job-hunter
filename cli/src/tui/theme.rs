@@ -1,5 +1,5 @@
 use ratatui::{
-    layout::{Alignment, Constraint, Direction, Layout, Rect},
+    layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
     widgets::{Block, Borders, Clear, Paragraph, Wrap},
@@ -254,15 +254,6 @@ impl Theme {
         }
     }
 
-    /// Instance method for surface style.
-    pub fn style_surface(&self) -> Style {
-        Style::default().bg(self.surface).fg(self.text)
-    }
-
-    /// Instance method for bg style.
-    pub fn style_bg(&self) -> Style {
-        Style::default().bg(self.bg).fg(self.text)
-    }
 }
 
 impl Default for Theme {
@@ -365,70 +356,5 @@ pub fn truncate_text(text: &str, max_width: usize) -> String {
     }
 }
 
-/// Wrap text to fit within a given width, returning lines.
-pub fn wrap_text(text: &str, width: usize) -> Vec<String> {
-    if width == 0 {
-        return vec![text.to_string()];
-    }
 
-    let mut lines = Vec::new();
-    let mut current_line = String::new();
-
-    for word in text.split_whitespace() {
-        if current_line.is_empty() {
-            current_line = word.to_string();
-        } else if current_line.len() + 1 + word.len() <= width {
-            current_line.push(' ');
-            current_line.push_str(word);
-        } else {
-            lines.push(current_line);
-            current_line = word.to_string();
-        }
-    }
-
-    if !current_line.is_empty() {
-        lines.push(current_line);
-    }
-
-    if lines.is_empty() {
-        lines.push(String::new());
-    }
-
-    lines
-}
-
-/// Empty state messages for different screens.
-pub mod empty_states {
-    pub const NO_JOBS: &str = "No jobs found.\nPress 'r' to fetch jobs from the server.";
-    pub const NO_JOBS_CACHED: &str = "No cached jobs available.\nPress 'r' to fetch jobs from the server.";
-    pub const NO_ANALYSIS: &str = "No analysis available.\nPress 'a' to analyze this job with AI.";
-    pub const NO_EMAIL: &str = "No email draft generated.\nPress 'e' to generate an email draft.";
-    pub const NO_PROFILE: &str = "No profile loaded.\nPress 'r' to refresh or 'e' to edit.";
-    pub const NO_TOKEN: &str = "Not authenticated.\nPress Enter to login or register.";
-}
-
-/// Render a toast notification at the top of the screen.
-pub fn render_toast(frame: &mut Frame, area: Rect, theme: &Theme, message: &str) {
-    let toast_area = Rect {
-        x: area.x + (area.width.saturating_sub(60)) / 2,
-        y: area.y + 2,
-        width: 60.min(area.width),
-        height: 3,
-    };
-
-    frame.render_widget(Clear, toast_area);
-
-    let toast_widget = Paragraph::new(Text::styled(
-        format!(" {} ", message),
-        theme.style_good(),
-    ))
-    .block(
-        Block::default()
-            .borders(Borders::ALL)
-            .border_style(theme.style_good()),
-    )
-    .alignment(Alignment::Center);
-
-    frame.render_widget(toast_widget, toast_area);
-}
 

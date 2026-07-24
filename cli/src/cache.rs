@@ -376,14 +376,6 @@ impl CacheManager {
         Ok(())
     }
 
-    /// Get all cached jobs with their analysis and email data.
-    ///
-    /// Returns jobs ordered by ID. Includes all columns: match_score,
-    /// analysis_json, email_subject, email_body, email_status, cached_at.
-    pub fn get_cached_jobs_with_analysis(&self) -> Result<Vec<CachedJob>> {
-        self.get_all_jobs(None)
-    }
-
     /// Check cache integrity and auto-rebuild if corrupted.
     ///
     /// Runs `PRAGMA integrity_check`. If corruption is detected, clears

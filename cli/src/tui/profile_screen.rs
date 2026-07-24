@@ -500,11 +500,6 @@ impl ProfileScreen {
 
         let client = self.api_client.clone();
         let config_manager = self.config_manager.clone();
-        let _config_path = {
-            let cm = config_manager.lock().await;
-            cm.path().to_path_buf()
-        };
-
         let result = client.lock().await.update_profile(&request).await;
 
         self.saving = false;
@@ -614,7 +609,7 @@ impl ProfileScreen {
         }
 
         let Some(profile) = &self.profile else {
-            render_empty_state(frame, area, theme, crate::tui::theme::empty_states::NO_PROFILE);
+            render_empty_state(frame, area, theme, "No profile loaded.\nPress 'r' to refresh or 'e' to edit.");
             return;
         };
 
