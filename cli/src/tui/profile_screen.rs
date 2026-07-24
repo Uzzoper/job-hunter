@@ -875,12 +875,12 @@ fn draw_resume_view(&self, frame: &mut Frame, area: Rect, theme: &Theme, profile
 
     fn draw_footer(&self, frame: &mut Frame, area: Rect, theme: &Theme) {
         let shortcuts = match self.mode {
-            ProfileMode::View => " [e] Edit  [r] Reload  [Esc/b] Back  [q] Quit ",
+            ProfileMode::View => " [e] Edit  [r] Reload  [q/b] Back  [Esc] Quit ",
             ProfileMode::Edit => {
                 if self.saving {
                     " [Enter] Saving...  [Esc] Cancel "
                 } else {
-                    " [Tab/↑↓] Navigate  [Enter] Save  [Esc] Cancel  [q] Quit "
+                    " [Tab/↑↓] Navigate  [Enter] Save  [Esc] Cancel "
                 }
             }
         };
@@ -964,8 +964,7 @@ pub async fn handle_event(
         let is_editing = app.profile_screen.as_ref().is_some_and(|s| s.mode == ProfileMode::Edit);
         match key.code {
             KeyCode::Char('q') | KeyCode::Char('Q') if !is_editing => {
-                app.should_quit = true;
-                app.state = crate::tui::app::AppState::Quitting;
+                app.state = crate::tui::app::AppState::JobList;
                 return Ok(());
             }
             KeyCode::Char('b') | KeyCode::Char('B') if !is_editing => {
@@ -979,14 +978,13 @@ pub async fn handle_event(
                 return Ok(());
             }
             KeyCode::Esc => {
-                if let Some(screen) = &mut app.profile_screen {
-                    if screen.mode == ProfileMode::Edit {
+                if is_editing {
+                    if let Some(screen) = &mut app.profile_screen {
                         screen.cancel_edit();
-                    } else {
-                        app.state = crate::tui::app::AppState::JobList;
                     }
                 } else {
-                    app.state = crate::tui::app::AppState::JobList;
+                    app.should_quit = true;
+                    app.state = crate::tui::app::AppState::Quitting;
                 }
                 return Ok(());
             }

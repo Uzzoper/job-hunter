@@ -443,7 +443,7 @@ fn draw_score_gauge(&self, frame: &mut Frame, area: Rect, theme: &Theme) {
     fn draw_action_bar(&self, frame: &mut Frame, area: Rect, theme: &Theme) {
         let mut hotkeys = vec![];
 
-        hotkeys.push(Span::styled(" [Esc] Back ", theme.style_dim()));
+        hotkeys.push(Span::styled(" [q] Back  [Esc] Quit ", theme.style_dim()));
         hotkeys.push(Span::styled(" | ", theme.style_dim()));
 
         if self.analysis.is_none() && !self.loading_analysis.is_loading() {
@@ -532,7 +532,7 @@ pub fn draw(&mut self, frame: &mut Frame, area: Rect) {
         }
 
         let Some(_job) = &self.job else {
-            render_empty_state(frame, area, &theme, "No job selected.\nPress Esc to go back.");
+            render_empty_state(frame, area, &theme, "No job selected.\nPress Q to go back.");
             return;
         };
 
@@ -598,12 +598,12 @@ pub async fn handle_event(
                         }
                     }
                     KeyCode::Esc => {
-                        app.state = crate::tui::app::AppState::JobList;
-                        app.selected_job = None;
-                    }
-                    KeyCode::Char('q') | KeyCode::Char('Q') => {
                         app.should_quit = true;
                         app.state = crate::tui::app::AppState::Quitting;
+                    }
+                    KeyCode::Char('q') | KeyCode::Char('Q') => {
+                        app.state = crate::tui::app::AppState::JobList;
+                        app.selected_job = None;
                     }
                     _ => {}
                 }
@@ -611,12 +611,12 @@ pub async fn handle_event(
             }
             match key.code {
                 KeyCode::Esc => {
-                    app.state = crate::tui::app::AppState::JobList;
-                    app.selected_job = None;
-                }
-                KeyCode::Char('q') | KeyCode::Char('Q') => {
                     app.should_quit = true;
                     app.state = crate::tui::app::AppState::Quitting;
+                }
+                KeyCode::Char('q') | KeyCode::Char('Q') => {
+                    app.state = crate::tui::app::AppState::JobList;
+                    app.selected_job = None;
                 }
                 KeyCode::Char('a') | KeyCode::Char('A') => {
                     if !screen.loading_analysis.is_loading() {
