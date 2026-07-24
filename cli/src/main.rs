@@ -10,7 +10,10 @@ async fn main() -> anyhow::Result<()> {
 
     let config = config::load(cli.config.as_deref())?;
     let token: Option<String> = cli.token.or_else(|| config.token.clone());
-    let api_url = cli.api_url;
+    let api_url = cli
+        .api_url
+        .or_else(|| Some(config.base_url.clone()))
+        .unwrap_or_else(|| config::DEFAULT_BASE_URL.to_string());
 
     let mut api_client = ApiClient::new(&api_url);
     if let Some(ref token) = token {
