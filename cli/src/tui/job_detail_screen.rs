@@ -443,7 +443,7 @@ fn draw_score_gauge(&self, frame: &mut Frame, area: Rect, theme: &Theme) {
     fn draw_action_bar(&self, frame: &mut Frame, area: Rect, theme: &Theme) {
         let mut hotkeys = vec![];
 
-        hotkeys.push(Span::styled(" [q] Back  [Esc] Quit ", theme.style_dim()));
+        hotkeys.push(Span::styled(" [q] Back ", theme.style_dim()));
         hotkeys.push(Span::styled(" | ", theme.style_dim()));
 
         if self.analysis.is_none() && !self.loading_analysis.is_loading() {
@@ -470,7 +470,7 @@ fn draw_score_gauge(&self, frame: &mut Frame, area: Rect, theme: &Theme) {
             hotkeys.push(Span::styled(" [c] Copy ", theme.style_dim()));
         }
         hotkeys.push(Span::styled(" | ", theme.style_dim()));
-        hotkeys.push(Span::styled(" [q] Quit ", theme.style_dim()));
+        hotkeys.push(Span::styled(" [Esc] Quit ", theme.style_dim()));
 
         let action_bar = Paragraph::new(Line::from(hotkeys))
             .block(
