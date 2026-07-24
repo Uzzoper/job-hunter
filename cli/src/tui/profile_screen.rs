@@ -247,7 +247,7 @@ impl ProfileScreen {
                 let _wrapped_lines = if line_len == 0 {
                     1
                 } else {
-                    (line_len + width - 1) / width
+                    line_len.div_ceil(width)
                 };
                 // Find which wrapped line the cursor is on
                 let target_wrapped_line = cursor_in_line / width;
@@ -260,7 +260,7 @@ impl ProfileScreen {
             let wrapped_lines = if line_len == 0 {
                 1
             } else {
-                (line_len + width - 1) / width
+                line_len.div_ceil(width)
             };
             visual_row += wrapped_lines as u16;
             char_idx += line_len + 1; // +1 for the newline character
@@ -994,10 +994,10 @@ pub async fn handle_event(
         if key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) {
             match key.code {
                 KeyCode::Char('s') | KeyCode::Char('S') => {
-                    if let Some(screen) = &mut app.profile_screen {
-                        if screen.mode == ProfileMode::Edit && !screen.saving && !screen.loading.is_loading() {
-                            let _ = screen.save_profile().await;
-                        }
+                    if let Some(screen) = &mut app.profile_screen
+                        && screen.mode == ProfileMode::Edit && !screen.saving && !screen.loading.is_loading()
+                    {
+                        let _ = screen.save_profile().await;
                     }
                     return Ok(());
                 }
@@ -1057,17 +1057,17 @@ pub async fn handle_event(
                     }
                 }
                 KeyCode::Left => {
-                    if screen.mode == ProfileMode::Edit && !screen.saving && !screen.loading.is_loading() {
-                        if screen.focused_field == ProfileField::Resume || screen.focused_field == ProfileField::Skills {
-                            screen.handle_left();
-                        }
+                    if screen.mode == ProfileMode::Edit && !screen.saving && !screen.loading.is_loading()
+                        && (screen.focused_field == ProfileField::Resume || screen.focused_field == ProfileField::Skills)
+                    {
+                        screen.handle_left();
                     }
                 }
                 KeyCode::Right => {
-                    if screen.mode == ProfileMode::Edit && !screen.saving && !screen.loading.is_loading() {
-                        if screen.focused_field == ProfileField::Resume || screen.focused_field == ProfileField::Skills {
-                            screen.handle_right();
-                        }
+                    if screen.mode == ProfileMode::Edit && !screen.saving && !screen.loading.is_loading()
+                        && (screen.focused_field == ProfileField::Resume || screen.focused_field == ProfileField::Skills)
+                    {
+                        screen.handle_right();
                     }
                 }
                 KeyCode::Backspace => {
