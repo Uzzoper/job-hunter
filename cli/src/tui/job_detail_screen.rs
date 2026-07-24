@@ -2,6 +2,7 @@ use crate::api::ApiClient;
 use crate::cache::CacheManager;
 use crate::domain::{ApplyType, CompanyTone, EmailDraftResponse, EmailStatus, JobAnalysis, JobResponse};
 use crate::tui::theme::{Theme, render_empty_state, render_error_popup, render_loading, spinner_frame};
+use crate::tui::Toast;
 use arboard::Clipboard;
 use ratatui::{
     Frame,
@@ -11,7 +12,7 @@ use ratatui::{
     widgets::{Block, Borders, Gauge, List, ListItem, Paragraph, Wrap},
 };
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+
 use tokio::sync::Mutex;
 
 /// Loading state for async operations
@@ -37,28 +38,6 @@ impl LoadingState {
             LoadingState::Error(msg) => Some(msg),
             _ => None,
         }
-    }
-}
-
-/// Toast notification for user feedback
-#[derive(Debug, Clone)]
-struct Toast {
-    message: String,
-    created_at: Instant,
-    duration: Duration,
-}
-
-impl Toast {
-    fn new(message: String) -> Self {
-        Self {
-            message,
-            created_at: Instant::now(),
-            duration: Duration::from_secs(3),
-        }
-    }
-
-    fn is_expired(&self) -> bool {
-        self.created_at.elapsed() > self.duration
     }
 }
 

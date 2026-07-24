@@ -2,6 +2,7 @@ use crate::api::ApiClient;
 use crate::cache::CacheManager;
 use crate::domain::JobResponse;
 use crate::tui::theme::{render_empty_state, render_error_popup, render_loading, Theme, truncate_text};
+use crate::tui::Toast;
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
@@ -11,7 +12,7 @@ use ratatui::{
 };
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+
 use tokio::sync::Mutex;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -140,28 +141,6 @@ impl SeniorityFilter {
             SeniorityFilter::SeniorLead => level == crate::domain::SeniorityLevel::Senior,
             SeniorityFilter::Unknown => level == crate::domain::SeniorityLevel::Unknown,
         }
-    }
-}
-
-/// Toast notification for user feedback
-#[derive(Debug, Clone)]
-struct Toast {
-    message: String,
-    created_at: Instant,
-    duration: Duration,
-}
-
-impl Toast {
-    fn new(message: String) -> Self {
-        Self {
-            message,
-            created_at: Instant::now(),
-            duration: Duration::from_secs(3),
-        }
-    }
-
-    fn is_expired(&self) -> bool {
-        self.created_at.elapsed() > self.duration
     }
 }
 
