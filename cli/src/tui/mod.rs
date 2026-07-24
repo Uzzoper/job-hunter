@@ -4,6 +4,7 @@ mod auth_screen;
 mod job_list_screen;
 mod job_detail_screen;
 mod profile_screen;
+mod toast;
 
 #[cfg(test)]
 mod theme_test;
@@ -13,6 +14,7 @@ mod app_integration_test;
 
 pub use app::{App, AppState};
 pub use theme::Theme;
+pub use toast::Toast;
 
 use crate::api::ApiClient;
 use crate::config::Config;

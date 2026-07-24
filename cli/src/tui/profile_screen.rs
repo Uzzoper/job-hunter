@@ -2,6 +2,7 @@ use crate::api::ApiClient;
 use crate::config::ConfigManager;
 use crate::domain::{CompanyTone, ProfileRequest, ProfileResponse};
 use crate::tui::theme::{Theme, render_empty_state, render_error_popup, render_loading};
+use crate::tui::Toast;
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Direction, Layout, Margin, Rect},
@@ -92,28 +93,6 @@ impl LoadingState {
             LoadingState::Error(msg) => Some(msg),
             _ => None,
         }
-    }
-}
-
-/// Toast notification for user feedback
-#[derive(Debug, Clone)]
-struct Toast {
-    message: String,
-    created_at: std::time::Instant,
-    duration: std::time::Duration,
-}
-
-impl Toast {
-    fn new(message: String) -> Self {
-        Self {
-            message,
-            created_at: std::time::Instant::now(),
-            duration: std::time::Duration::from_secs(3),
-        }
-    }
-
-    fn is_expired(&self) -> bool {
-        self.created_at.elapsed() > self.duration
     }
 }
 
