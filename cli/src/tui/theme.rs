@@ -365,30 +365,6 @@ pub fn truncate_text(text: &str, max_width: usize) -> String {
     }
 }
 
-/// Render a centered info popup modal.
-pub fn render_info_popup(
-    frame: &mut Frame,
-    area: Rect,
-    theme: &Theme,
-    title: &str,
-    message: &str,
-) {
-    let popup_area = centered_rect(60, 25, area);
-    frame.render_widget(Clear, popup_area);
-
-    let info_text = format!(" {}\n\n{}\n\n[Enter] Dismiss", title, message);
-    let popup = Paragraph::new(Text::styled(info_text, theme.style_normal()))
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .border_style(theme.style_border(true))
-                .title(Span::styled(format!(" {} ", title), theme.style_title())),
-        )
-        .centered()
-        .wrap(Wrap { trim: false });
-    frame.render_widget(popup, popup_area);
-}
-
 /// Wrap text to fit within a given width, returning lines.
 pub fn wrap_text(text: &str, width: usize) -> Vec<String> {
     if width == 0 {
@@ -431,30 +407,6 @@ pub mod empty_states {
     pub const NO_TOKEN: &str = "Not authenticated.\nPress Enter to login or register.";
 }
 
-/// Render a confirmation dialog with Yes/No options.
-pub fn render_confirm_dialog(
-    frame: &mut Frame,
-    area: Rect,
-    theme: &Theme,
-    title: &str,
-    message: &str,
-) {
-    let popup_area = centered_rect(60, 25, area);
-    frame.render_widget(Clear, popup_area);
-
-    let info_text = format!(" {}\n\n{}\n\n[Y] Yes  [N] No ", title, message);
-    let popup = Paragraph::new(Text::styled(info_text, theme.style_normal()))
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .border_style(theme.style_warn())
-                .title(Span::styled(format!(" {} ", title), theme.style_title())),
-        )
-        .centered()
-        .wrap(Wrap { trim: false });
-    frame.render_widget(popup, popup_area);
-}
-
 /// Render a toast notification at the top of the screen.
 pub fn render_toast(frame: &mut Frame, area: Rect, theme: &Theme, message: &str) {
     let toast_area = Rect {
@@ -480,62 +432,3 @@ pub fn render_toast(frame: &mut Frame, area: Rect, theme: &Theme, message: &str)
     frame.render_widget(toast_widget, toast_area);
 }
 
-/// Render a scrollable text area for long content.
-pub fn render_scrollable_text(
-    frame: &mut Frame,
-    area: Rect,
-    theme: &Theme,
-    title: &str,
-    content: &str,
-    scroll_offset: usize,
-) {
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(theme.style_border(false))
-        .title(Span::styled(format!(" {} ", title), theme.style_title()));
-
-    let inner = block.inner(area);
-    frame.render_widget(block, area);
-
-    let lines: Vec<Line> = content
-        .lines()
-        .skip(scroll_offset)
-        .take(inner.height as usize)
-        .map(|line| Line::from(Span::styled(line, theme.style_normal())))
-        .collect();
-
-    let paragraph = Paragraph::new(Text::from(lines))
-        .wrap(Wrap { trim: false })
-        .scroll((scroll_offset as u16, 0));
-
-    frame.render_widget(paragraph, inner);
-}
-
-/// Debouncer for rapid key presses.
-pub struct Debouncer {
-    last_press: std::time::Instant,
-    min_interval: std::time::Duration,
-}
-
-impl Debouncer {
-    pub fn new(min_interval_ms: u64) -> Self {
-        Self {
-            last_press: std::time::Instant::now(),
-            min_interval: std::time::Duration::from_millis(min_interval_ms),
-        }
-    }
-
-    pub fn should_process(&mut self) -> bool {
-        let now = std::time::Instant::now();
-        if now.duration_since(self.last_press) >= self.min_interval {
-            self.last_press = now;
-            true
-        } else {
-            false
-        }
-    }
-
-    pub fn reset(&mut self) {
-        self.last_press = std::time::Instant::now();
-    }
-}
