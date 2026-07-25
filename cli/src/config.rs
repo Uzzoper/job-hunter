@@ -124,20 +124,25 @@ impl ConfigManager {
 
         let tmp_path = self.path.with_extension("toml.tmp");
         {
+            #[cfg(unix)]
+            let options = {
+                use std::os::unix::fs::OpenOptionsExt;
+                let mut o = std::fs::OpenOptions::new();
+                o.create(true).write(true).truncate(true).mode(0o600);
+                o
+            };
+            #[cfg(not(unix))]
+            let options = {
+                let mut o = std::fs::OpenOptions::new();
+                o.create(true).write(true).truncate(true);
+                o
+            };
+
             let mut file =
-                fs::File::create(&tmp_path).context("creating temp config file")?;
+                options.open(&tmp_path).context("creating temp config file")?;
             file.write_all(content.as_bytes())
                 .context("writing config")?;
             file.flush().context("flushing config")?;
-        }
-
-        #[cfg(unix)]
-        {
-            let mut perms =
-                fs::metadata(&tmp_path).context("reading temp file metadata")?.permissions();
-            std::os::unix::fs::PermissionsExt::set_mode(&mut perms, 0o600);
-            fs::set_permissions(&tmp_path, perms)
-                .context("setting config file permissions")?;
         }
 
         fs::rename(&tmp_path, &self.path).context("renaming temp config file")?;

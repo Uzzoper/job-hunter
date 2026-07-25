@@ -115,13 +115,17 @@ pub enum AuthAction {
     /// Log in with email and password
     Login {
         email: String,
-        password: String,
+        /// Password (prompted interactively if omitted)
+        #[arg(short = 'p', long)]
+        password: Option<String>,
     },
     /// Register a new account
     Register {
         name: String,
         email: String,
-        password: String,
+        /// Password (prompted interactively if omitted)
+        #[arg(short = 'p', long)]
+        password: Option<String>,
     },
     /// Clear stored credentials and log out
     Logout,
