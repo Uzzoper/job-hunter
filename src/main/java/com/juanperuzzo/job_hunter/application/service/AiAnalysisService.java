@@ -52,12 +52,16 @@ public class AiAnalysisService implements AnalyzeJobUseCase {
         try {
             String prompt = buildPrompt(job, profile);
             String response = aiPort.complete(prompt);
-            JobAnalysis analysis = parseAnalysis(response);
-            return jobAnalysisRepository.save(new JobAnalysis(
-                    null, job.id(), userId, analysis.matchScore(),
-                    analysis.matchedSkills(), analysis.missingSkills(),
-                    analysis.companyTone(), analysis.summary()
-            ));
+            JobAnalysis parsed = parseAnalysis(response);
+            var existingId = jobAnalysisRepository.findByJobIdAndUserId(job.id(), userId)
+                    .map(JobAnalysis::id)
+                    .orElse(null);
+            var analysis = new JobAnalysis(
+                    existingId, job.id(), userId, parsed.matchScore(),
+                    parsed.matchedSkills(), parsed.missingSkills(),
+                    parsed.companyTone(), parsed.summary()
+            );
+            return jobAnalysisRepository.save(analysis);
         } catch (AiException e) {
             throw e;
         } catch (Exception e) {
