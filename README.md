@@ -5,9 +5,10 @@
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-blue?logo=postgresql)
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker)
 ![Rust](https://img.shields.io/badge/Rust-2024-ed760e?logo=rust)
+![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript)
 ![License](https://img.shields.io/badge/license-GPL--3.0-blue)
 
-A Spring Boot application (REST API) + Rust CLI/TUI client that automates the search for junior developer job listings, analyzes each one with AI, and generates a personalized application email — ready to send.
+A Spring Boot application (REST API) + Node.js/Playwright scraper microservice + Rust CLI/TUI client that automates the search for junior developer job listings, analyzes each one with AI, and generates a personalized application email — ready to send.
 
 ---
 
