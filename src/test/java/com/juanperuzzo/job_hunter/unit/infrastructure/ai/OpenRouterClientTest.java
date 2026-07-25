@@ -26,7 +26,7 @@ class OpenRouterClientTest {
         openRouterClient = new OpenRouterClient(
                 "http://localhost:8089",
                 "test-api-key",
-                "minimax/minimax-m2.5",
+                "meta-llama/llama-3.3-70b-instruct:free",
                 5
         );
     }
@@ -112,7 +112,7 @@ class OpenRouterClientTest {
         assertEquals("AI response", result);
 
         wireMockServer.verify(postRequestedFor(urlEqualTo("/chat/completions"))
-                .withRequestBody(matchingJsonPath("$.model", equalTo("minimax/minimax-m2.5")))
+                .withRequestBody(matchingJsonPath("$.model", equalTo("meta-llama/llama-3.3-70b-instruct:free")))
                 .withRequestBody(matchingJsonPath("$.messages[0].role", equalTo("user")))
                 .withRequestBody(matchingJsonPath("$.messages[0].content")));
     }

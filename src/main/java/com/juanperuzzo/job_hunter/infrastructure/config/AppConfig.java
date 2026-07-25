@@ -19,6 +19,7 @@ import com.juanperuzzo.job_hunter.application.port.out.UserProfileRepository;
 import com.juanperuzzo.job_hunter.application.service.AuthService;
 import com.juanperuzzo.job_hunter.application.service.UserProfileService;
 import com.juanperuzzo.job_hunter.infrastructure.security.JwtTokenService;
+import com.juanperuzzo.job_hunter.infrastructure.scraper.retry.ExponentialBackoffRetry;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -181,8 +182,9 @@ public class AppConfig {
             @Value("${ai.openrouter.base-url}") String baseUrl,
             @Value("${ai.openrouter.api-key}") String apiKey,
             @Value("${ai.openrouter.model}") String model,
-            @Value("${ai.openrouter.timeout-seconds}") int timeoutSeconds) {
-        return new OpenRouterClient(baseUrl, apiKey, model, timeoutSeconds);
+            @Value("${ai.openrouter.timeout-seconds}") int timeoutSeconds,
+            ExponentialBackoffRetry exponentialBackoffRetry) {
+        return new OpenRouterClient(baseUrl, apiKey, model, timeoutSeconds, exponentialBackoffRetry);
     }
 
     @Bean
