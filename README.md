@@ -4,9 +4,11 @@
 ![Spring Boot](https://img.shields.io/badge/Spring_Boot-4.0.6-brightgreen?logo=springboot)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-blue?logo=postgresql)
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker)
+![Rust](https://img.shields.io/badge/Rust-2024-ed760e?logo=rust)
+![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript)
 ![License](https://img.shields.io/badge/license-GPL--3.0-blue)
 
-A Spring Boot application that automates the search for junior developer job listings, analyzes each one with AI, and generates a personalized application email — ready to send.
+A Spring Boot application (REST API) + Node.js/Playwright scraper microservice + Rust CLI/TUI client that automates the search for junior developer job listings, analyzes each one with AI, and generates a personalized application email — ready to send.
 
 ---
 
@@ -55,6 +57,37 @@ flowchart TB
 2. Each listing is saved to PostgreSQL — duplicates are skipped by URL.
 3. On demand, the AI analyzes the listing against your profile and returns a match score (0–100), matched/missing skills, and company tone.
 4. The AI then generates a personalized application email in Brazilian Portuguese, tailored to the company tone and mentioning a relevant portfolio project.
+
+---
+
+## CLI / TUI
+
+The project includes a **Rust** binary (`jh-cli`) with two interaction modes for the Spring Boot backend:
+
+| Mode | Trigger | Description |
+|------|---------|-------------|
+| **TUI** (default) | No subcommand or `-T`/`--tui` | Interactive terminal UI — browse, filter, analyze jobs, manage profile |
+| **Batch** | Any subcommand | Non-interactive commands for scripting and CI |
+
+### Batch Commands
+
+| Command | Description |
+|---------|-------------|
+| `jh-cli auth login <email> [password]` | Authenticate and store token |
+| `jh-cli auth register <name> <email> [password]` | Create a new account |
+| `jh-cli auth logout` | Clear stored credentials |
+| `jh-cli list [--keyword] [--min-score] [--source] [--csv\|--json]` | List jobs with filters and format flags |
+| `jh-cli detail <id> [--json]` | Show full job detail |
+| `jh-cli fetch [source]` | Trigger backend scraping (all providers or a specific one) |
+| `jh-cli analyze <job-id> [--json]` | Trigger AI analysis for a job |
+| `jh-cli email show <job-id> [--json] [--copy]` | View generated email draft (optionally copy to clipboard) |
+| `jh-cli email generate <job-id>` | Generate a new email draft |
+| `jh-cli profile show [--json]` | View current profile |
+| `jh-cli profile edit [--resume] [--skills] [--tone]` | Update profile fields |
+| `jh-cli export <output> [--keyword]` | Export jobs to a CSV file |
+| `jh-cli clear-cache` | Clear local SQLite cache |
+
+> Full spec at [`docs/specs/cli-tui-spec.md`](docs/specs/cli-tui-spec.md)
 
 ---
 
@@ -118,7 +151,10 @@ sequenceDiagram
 
 | Layer | Technology |
 |---|---|
-| Language | Java 21 |
+| Language | Java 21 / Rust 2024 |
+| CLI Framework | Rust + Clap + Ratatui + Crossterm |
+| HTTP Client (CLI) | Reqwest (Rust) |
+| Local Cache | SQLite via Rusqlite (Rust) |
 | Framework | Spring Boot 4.0.6 |
 | Architecture | Clean Architecture |
 | Database | PostgreSQL 16 (Docker) |
@@ -127,8 +163,8 @@ sequenceDiagram
 | Scraping | RestClient + Jsoup |
 | Browser Automation | Playwright (Node.js + TypeScript, separate container) |
 | AI | OpenRouter API (MiniMax M2.5) |
-| Tests | JUnit 5 + Mockito + WireMock |
-| Build | Maven |
+| Tests | JUnit 5 + Mockito + WireMock / Rust async tests |
+| Build | Maven / Cargo |
 
 ---
 
@@ -163,8 +199,15 @@ flowchart BT
         W3["exception/ — GlobalExceptionHandler"]
     end
 
+    subgraph CLI["🟤 CLI (Rust)"]
+        C1["jh-cli — TUI (Ratatui)<br/>+ Batch (Clap)"]
+        C2["api/ — ApiClient (Reqwest)"]
+        C3["cache/ — CacheManager (Rusqlite)"]
+    end
+
     LS[/"⚙️ LinkedIn Scraper<br/>(Node.js + Playwright)"/]
 
+    CLI -->|"HTTP JSON"| Web
     Web --> Application
     Infrastructure --> Application
     Application --> Domain
@@ -239,6 +282,7 @@ Each source is wrapped by a **Provider** that selects the right **Strategy** (RE
 - Java 21
 - Docker + Docker Compose
 - An [OpenRouter](https://openrouter.ai) API key (free tier works)
+- Rust 2024 edition (for the CLI binary — `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`)
 
 ### Setup
 
@@ -283,6 +327,23 @@ jwt:
 
 The application will start on `http://localhost:8080`. Flyway runs automatically and creates the database schema on first startup.
 
+**5. Build and run the CLI**
+
+```bash
+cd cli
+cargo build --release
+./target/release/jh-cli --help
+```
+
+Start the TUI (default mode, no subcommand needed):
+
+```bash
+./target/release/jh-cli        # interactive TUI
+./target/release/jh-cli list   # batch mode — list jobs
+```
+
+> The CLI auto-detects mode: no subcommand → TUI; any subcommand → batch.
+
 ---
 
 ## API
@@ -309,11 +370,14 @@ The application will start on `http://localhost:8080`. Flyway runs automatically
 # Backend (Java)
 ./mvnw test
 
+# CLI (Rust)
+cd cli && cargo test
+
 # LinkedIn microservice (Node.js)
 cd linkedin-scraper && npm test
 ```
 
-The test suite uses WireMock to simulate HTTP servers for the scraper and AI client — no real API calls are made during testing. The LinkedIn microservice has its own Jest test suite with Playwright fixtures.
+The Java test suite uses WireMock to simulate HTTP servers for the scraper and AI client — no real API calls are made during testing. The Rust CLI uses `httpmock` for the same purpose. The LinkedIn microservice has its own Jest test suite with Playwright fixtures.
 
 ---
 
