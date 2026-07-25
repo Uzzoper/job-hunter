@@ -10,6 +10,7 @@ import com.juanperuzzo.job_hunter.application.service.AiAnalysisService;
 import com.juanperuzzo.job_hunter.application.service.EmailGenerationService;
 import com.juanperuzzo.job_hunter.application.service.FetchJobsService;
 import com.juanperuzzo.job_hunter.application.service.FetchSourceJobsService;
+import com.juanperuzzo.job_hunter.infrastructure.ai.OllamaClient;
 import com.juanperuzzo.job_hunter.infrastructure.ai.OpenRouterClient;
 import com.juanperuzzo.job_hunter.application.port.out.PasswordHasher;
 import com.juanperuzzo.job_hunter.application.port.out.TokenProvider;
@@ -178,6 +179,7 @@ public class AppConfig {
     }
 
     @Bean
+    @ConditionalOnProperty(name = "ai.provider", havingValue = "openrouter", matchIfMissing = true)
     public OpenRouterClient openRouterClient(
             @Value("${ai.openrouter.base-url}") String baseUrl,
             @Value("${ai.openrouter.api-key}") String apiKey,
@@ -185,6 +187,15 @@ public class AppConfig {
             @Value("${ai.openrouter.timeout-seconds}") int timeoutSeconds,
             ExponentialBackoffRetry exponentialBackoffRetry) {
         return new OpenRouterClient(baseUrl, apiKey, model, timeoutSeconds, exponentialBackoffRetry);
+    }
+
+    @Bean
+    @ConditionalOnProperty(name = "ai.provider", havingValue = "ollama")
+    public OllamaClient ollamaClient(
+            @Value("${ai.ollama.base-url}") String baseUrl,
+            @Value("${ai.ollama.model}") String model,
+            @Value("${ai.ollama.timeout-seconds}") int timeoutSeconds) {
+        return new OllamaClient(baseUrl, model, timeoutSeconds);
     }
 
     @Bean
