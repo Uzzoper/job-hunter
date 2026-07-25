@@ -6,6 +6,7 @@ import org.slf4j.LoggerFactory;
 
 import java.net.SocketTimeoutException;
 import java.time.Duration;
+import java.util.Map;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Supplier;
 
@@ -17,12 +18,18 @@ public class ExponentialBackoffRetry implements RetryStrategy {
     private final long baseDelayMillis;
     private final long maxDelayMillis;
     private final long maxJitterMillis;
+    private final Map<Integer, Integer> retryStatuses;
 
     public ExponentialBackoffRetry(int maxAttempts, Duration baseDelay, Duration maxDelay, Duration maxJitter) {
         this.maxAttempts = maxAttempts;
         this.baseDelayMillis = baseDelay.toMillis();
         this.maxDelayMillis = maxDelay.toMillis();
         this.maxJitterMillis = maxJitter.toMillis();
+        this.retryStatuses = Map.of(429, 3);
+    }
+
+    public Map<Integer, Integer> getRetryStatuses() {
+        return retryStatuses;
     }
 
     @Override
