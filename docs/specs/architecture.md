@@ -242,6 +242,36 @@ They serve different layers. The `TokenBucketRateLimiter` controls HTTP request 
 
 ---
 
+## CLI / TUI Client (Rust)
+
+Separate crate at `cli/`. Two modes:
+
+| Mode | Entry | Spec |
+|------|-------|------|
+| **TUI** (interactive) | `jh-cli` (no args) | `docs/specs/cli-tui-spec.md` |
+| **Batch** (scriptable) | `jh-cli <cmd>` | `docs/specs/cli-tui-spec.md` |
+
+Architecture:
+```
+Spring Boot API (localhost:8080)
+       ▲
+       │ HTTP/JSON + JWT
+       ▼
+┌──────────────────┐
+│  jh-cli (Rust)   │
+├──────────────────┤
+│  ApiClient       │  ← Reqwest + Tokio
+│  CacheManager    │  ← Rusqlite (SQLite, local)
+│  ConfigManager   │  ← TOML + env vars
+│  TUI (Ratatui)   │  ← Crossterm
+│  Batch (Clap)    │  ← Subcommands
+└──────────────────┘
+```
+
+See `docs/specs/cli-tui-spec.md` for full command reference, keybindings, data models, caching strategy, and test structure.
+
+---
+
 ## Configuration (`application.yaml`)
 
 ```yaml
