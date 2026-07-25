@@ -22,12 +22,35 @@ pub async fn handle(
             name,
             email,
             password,
-        } => handle_register(name, email, password, api_url, config_path).await,
+        } => {
+            let password = resolve_password(password).await?;
+            handle_register(name, email, password, api_url, config_path).await
+        }
         crate::AuthAction::Login {
             email,
             password,
-        } => handle_login(email, password, api_url, config_path).await,
+        } => {
+            let password = resolve_password(password).await?;
+            handle_login(email, password, api_url, config_path).await
+        }
         crate::AuthAction::Logout => handle_logout(config_path).await,
+    }
+}
+
+/// Prompt for password on stdin if not provided via CLI flag.
+async fn resolve_password(password: Option<String>) -> anyhow::Result<String> {
+    match password {
+        Some(p) => Ok(p),
+        None => {
+            let password = tokio::task::spawn_blocking(|| {
+                rpassword::prompt_password("Password: ")
+            })
+            .await??;
+            if password.is_empty() {
+                anyhow::bail!("Password cannot be empty.");
+            }
+            Ok(password)
+        }
     }
 }
 
@@ -312,7 +335,7 @@ mod tests {
         let action = crate::AuthAction::Register {
             name: "Alice".into(),
             email: "alice@example.com".into(),
-            password: "secret123".into(),
+            password: Some("secret123".into()),
         };
 
         let result = handle(action, &server.url(""), Some(&cfg_path)).await;
@@ -337,7 +360,7 @@ mod tests {
         let action = crate::AuthAction::Register {
             name: "   ".into(),
             email: "alice@example.com".into(),
-            password: "secret123".into(),
+            password: Some("secret123".into()),
         };
 
         let result = handle(action, &server.url(""), Some(&cfg_path)).await;
@@ -357,7 +380,7 @@ mod tests {
         let action = crate::AuthAction::Register {
             name: "Alice".into(),
             email: "not-an-email".into(),
-            password: "secret123".into(),
+            password: Some("secret123".into()),
         };
 
         let result = handle(action, &server.url(""), Some(&cfg_path)).await;
@@ -375,7 +398,7 @@ mod tests {
         let action = crate::AuthAction::Register {
             name: "Alice".into(),
             email: "alice@example.com".into(),
-            password: "12345".into(),
+            password: Some("12345".into()),
         };
 
         let result = handle(action, &server.url(""), Some(&cfg_path)).await;
@@ -405,7 +428,7 @@ mod tests {
         let action = crate::AuthAction::Register {
             name: "Alice".into(),
             email: "alice@example.com".into(),
-            password: "secret123".into(),
+            password: Some("secret123".into()),
         };
 
         let result = handle(action, &server.url(""), Some(&cfg_path)).await;
@@ -446,7 +469,7 @@ mod tests {
 
         let action = crate::AuthAction::Login {
             email: "bob@example.com".into(),
-            password: "password123".into(),
+            password: Some("password123".into()),
         };
 
         let result = handle(action, &server.url(""), Some(&cfg_path)).await;
@@ -469,7 +492,7 @@ mod tests {
 
         let action = crate::AuthAction::Login {
             email: "bad".into(),
-            password: "password123".into(),
+            password: Some("password123".into()),
         };
 
         let result = handle(action, &server.url(""), Some(&cfg_path)).await;
@@ -498,7 +521,7 @@ mod tests {
 
         let action = crate::AuthAction::Login {
             email: "bob@example.com".into(),
-            password: "wrong-password".into(),
+            password: Some("wrong-password".into()),
         };
 
         let result = handle(action, &server.url(""), Some(&cfg_path)).await;
@@ -577,7 +600,7 @@ mod tests {
 
         let action = crate::AuthAction::Login {
             email: "bob@example.com".into(),
-            password: "password123".into(),
+            password: Some("password123".into()),
         };
 
         let result = handle(action, &server.url(""), Some(&cfg_path)).await;

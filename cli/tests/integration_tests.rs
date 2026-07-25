@@ -54,7 +54,7 @@ mod cli_parsing {
     #[test]
     fn parse_auth_login() {
         let cli = Cli::try_parse_from([
-            "jh-cli", "auth", "login", "user@test.com", "secret123",
+            "jh-cli", "auth", "login", "user@test.com", "--password", "secret123",
         ])
         .expect("parse should succeed");
         assert!(cli.command.is_some());
@@ -63,7 +63,7 @@ mod cli_parsing {
     #[test]
     fn parse_auth_register() {
         let cli = Cli::try_parse_from([
-            "jh-cli", "auth", "register", "Alice", "alice@test.com", "secret123",
+            "jh-cli", "auth", "register", "Alice", "alice@test.com", "--password", "secret123",
         ])
         .expect("parse should succeed");
         assert!(cli.command.is_some());
