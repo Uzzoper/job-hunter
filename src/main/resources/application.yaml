@@ -29,7 +29,7 @@ ai:
   openrouter:
     base-url: https://openrouter.ai/api/v1
     api-key: ${OPENROUTER_API_KEY}
-    model: minimax/minimax-m2.5:free
+    model: poolside/laguna-s-2.1:free
     timeout-seconds: 30
 
 scraper:
@@ -45,12 +45,12 @@ scraper:
     max-age-days: 90
   gupy:
     base-url: https://employability-portal.gupy.io
-    keywords: desenvolvedor,developer,engenheiro de software,software engineer,fullstack,full stack,backend,front-end,frontend,ti,tecnologia
+    keywords: desenvolvedor,programador,estágio,junior,ti,tecnologia,dev,software,analista
     limit: 100
     timeout-seconds: 10
   infojobs:
     base-url: https://www.infojobs.com.br
-    keywords: desenvolvedor junior,desenvolvedor júnior,analista desenvolvedor junior,programador junior,java junior,backend junior,desenvolvedor jr,programador jr,dev jr,java jr,backend jr,frontend jr,fullstack jr,c# jr,python jr,.net jr
+    keywords: desenvolvedor,programador,estágio,junior,ti,tecnologia,dev,software,analista
     max-pages: 3
     timeout-seconds: 10
   linkedin:
@@ -59,7 +59,7 @@ scraper:
     service-url: http://linkedin-scraper:3000
     connect-timeout-seconds: 5
     base-url: https://www.linkedin.com
-    keywords: "desenvolvedor junior,software engineer junior,backend junior,java junior,frontend junior,fullstack junior,estagiario dev,junior developer"
+    keywords: "desenvolvedor,programador,estágio,junior,ti,tecnologia,dev,software,analista"
     locations: "Brazil,São Paulo,Rio de Janeiro,Curitiba,Remote"
     geo-ids: "106057199,102927786,105972731,105906364"
     seniority: "entry_level"

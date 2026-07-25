@@ -9,10 +9,12 @@ import org.springframework.http.MediaType;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.ResourceAccessException;
+import java.util.Optional;
 
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import com.juanperuzzo.job_hunter.infrastructure.scraper.retry.ExponentialBackoffRetry;
 
 public class OpenRouterClient implements AiPort {
 
@@ -20,7 +22,7 @@ public class OpenRouterClient implements AiPort {
     private final String model;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    public OpenRouterClient(String baseUrl, String apiKey, String model, int timeoutSeconds) {
+    public OpenRouterClient(String baseUrl, String apiKey, String model, int timeoutSeconds, ExponentialBackoffRetry retryPolicy) {
         this.model = model;
         SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
         factory.setConnectTimeout(Duration.ofSeconds(timeoutSeconds));
@@ -31,6 +33,10 @@ public class OpenRouterClient implements AiPort {
                 .defaultHeader("Authorization", "Bearer " + apiKey)
                 .requestFactory(factory)
                 .build();
+    }
+
+    public OpenRouterClient(String baseUrl, String apiKey, String model, int timeoutSeconds) {
+        this(baseUrl, apiKey, model, timeoutSeconds, null);
     }
 
     @Override
@@ -44,7 +50,15 @@ public class OpenRouterClient implements AiPort {
                     .body(requestBody)
                     .retrieve()
                     .onStatus(status -> status.is4xxClientError() || status.is5xxServerError(),
-                            (req, resp) -> { throw new AiException("HTTP error: " + resp.getStatusCode()); })
+                            (req, resp) -> {
+                                String body = "";
+                                try {
+                                    body = new String(resp.getBody().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+                                } catch (Exception e) {
+                                }
+                                throw new AiException("HTTP error: " + resp.getStatusCode() +
+                                        (body != null && !body.isBlank() ? " " + body : ""));
+                            })
                     .body(String.class);
 
             return extractText(responseBody);

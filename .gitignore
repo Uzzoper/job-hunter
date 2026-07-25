@@ -47,3 +47,6 @@ org/
 
 # Scratch/debug files
 scratch_debug.java
+# Rust CLI compiled artifacts
+cli/*.rlib
+spring-boot.log
