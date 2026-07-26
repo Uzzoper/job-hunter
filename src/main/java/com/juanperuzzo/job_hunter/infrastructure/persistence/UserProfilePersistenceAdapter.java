@@ -39,7 +39,10 @@ public class UserProfilePersistenceAdapter implements UserProfileRepository {
                 .toList();
         projectJpaRepository.saveAll(projectEntities);
 
-        return toDomain(saved);
+        var savedProjects = projectJpaRepository.findByUserId(profile.userId()).stream()
+                .map(pe -> new Project(pe.getName(), pe.getDescription(), pe.getTechStack()))
+                .toList();
+        return toDomain(saved, savedProjects);
     }
 
     @Override

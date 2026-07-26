@@ -32,8 +32,8 @@ public class UserProfileService implements UserProfileUseCase {
         userRepository.findById(userId)
                 .orElseThrow(() -> new UserNotFoundException("User not found with id: " + userId));
 
-        if (resumeText.length() < 50) {
-            throw new IllegalArgumentException("Resume text must be at least 50 characters");
+        if (resumeText == null || resumeText.length() < 50) {
+            throw new IllegalArgumentException("Resume text must not be null and must be at least 50 characters");
         }
 
         var existingProfile = userProfileRepository.findByUserId(userId);
