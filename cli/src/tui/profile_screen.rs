@@ -1,6 +1,6 @@
 use crate::api::ApiClient;
 use crate::config::ConfigManager;
-use crate::domain::{CompanyTone, ProfileRequest, ProfileResponse};
+use crate::domain::{CompanyTone, ProfileRequest, ProfileResponse, ProjectRequest, ProjectResponse};
 use crate::tui::theme::{Theme, render_empty_state, render_error_popup, render_loading};
 use crate::tui::Toast;
 use ratatui::{
@@ -42,6 +42,7 @@ pub enum ProfileField {
     Resume,
     Skills,
     Tone,
+    Projects,
 }
 
 impl ProfileField {
@@ -50,11 +51,12 @@ impl ProfileField {
             ProfileField::Resume => "Resume",
             ProfileField::Skills => "Skills",
             ProfileField::Tone => "Tone",
+            ProfileField::Projects => "Projects",
         }
     }
 
     pub fn all() -> Vec<Self> {
-        vec![ProfileField::Resume, ProfileField::Skills, ProfileField::Tone]
+        vec![ProfileField::Resume, ProfileField::Skills, ProfileField::Tone, ProfileField::Projects]
     }
 
     pub fn next(&self) -> Self {
@@ -68,6 +70,45 @@ impl ProfileField {
         let idx = fields.iter().position(|f| f == self).unwrap_or(0);
         fields[(idx + fields.len() - 1) % fields.len()]
     }
+}
+
+/// Fields inside the project edit popup
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProjectPopupField {
+    Name,
+    Description,
+    TechStack,
+}
+
+impl ProjectPopupField {
+    pub fn all() -> Vec<Self> {
+        vec![ProjectPopupField::Name, ProjectPopupField::Description, ProjectPopupField::TechStack]
+    }
+
+    pub fn next(&self) -> Self {
+        let fields = Self::all();
+        let idx = fields.iter().position(|f| f == self).unwrap_or(0);
+        fields[(idx + 1) % fields.len()]
+    }
+
+    pub fn prev(&self) -> Self {
+        let fields = Self::all();
+        let idx = fields.iter().position(|f| f == self).unwrap_or(0);
+        fields[(idx + fields.len() - 1) % fields.len()]
+    }
+}
+
+/// State for the project edit popup
+#[derive(Debug, Clone)]
+pub struct ProjectPopupState {
+    pub index: Option<usize>,
+    pub name: String,
+    pub description: String,
+    pub tech_stack: String,
+    pub name_cursor: usize,
+    pub description_cursor: usize,
+    pub tech_stack_cursor: usize,
+    pub focused_field: ProjectPopupField,
 }
 
 /// Loading state for async operations
@@ -103,6 +144,8 @@ pub struct ProfileScreen {
     pub resume_text: String,
     pub skills_text: String,
     pub tone_selection: usize,
+    pub projects: Vec<ProjectResponse>,
+    pub project_popup: Option<ProjectPopupState>,
     pub focused_field: ProfileField,
     pub loading: LoadingState,
     pub saving: bool,
@@ -126,6 +169,8 @@ impl ProfileScreen {
             resume_text: String::new(),
             skills_text: String::new(),
             tone_selection: 0,
+            projects: Vec::new(),
+            project_popup: None,
             focused_field: ProfileField::Resume,
             loading: LoadingState::Idle,
             saving: false,
@@ -148,6 +193,7 @@ impl ProfileScreen {
             CompanyTone::Casual => 1,
             CompanyTone::Startup => 2,
         };
+        self.projects = profile.projects.clone();
         self.profile = Some(profile);
         self.clear_validation_errors();
         self.resume_cursor = 0;
@@ -212,6 +258,7 @@ impl ProfileScreen {
                 self.skills_cursor += 1;
             }
             ProfileField::Tone => {} // Tone is selected via arrow keys
+            ProfileField::Projects => {}
         }
         self.clear_validation_errors();
     }
@@ -296,6 +343,7 @@ impl ProfileScreen {
                 }
             }
             ProfileField::Tone => {}
+            ProfileField::Projects => {}
         }
         self.clear_validation_errors();
     }
@@ -311,7 +359,7 @@ impl ProfileScreen {
                 self.resume_text.insert(byte_pos, '\n');
                 self.resume_cursor += 1;
             }
-            ProfileField::Skills | ProfileField::Tone => {} // handled by caller
+            ProfileField::Skills | ProfileField::Tone | ProfileField::Projects => {} // handled by caller
         }
         self.clear_validation_errors();
     }
@@ -334,6 +382,7 @@ impl ProfileScreen {
                 self.skills_cursor += text.chars().count();
             }
             ProfileField::Tone => {} // Tone is selected via arrow keys
+            ProfileField::Projects => {}
         }
         self.clear_validation_errors();
     }
@@ -390,6 +439,7 @@ impl ProfileScreen {
                 self.skills_cursor = self.skills_cursor.saturating_sub(1);
             }
             ProfileField::Tone => {}
+            ProfileField::Projects => {}
         }
     }
 
@@ -408,6 +458,7 @@ impl ProfileScreen {
                 self.skills_cursor = self.skills_cursor.saturating_add(1).min(max);
             }
             ProfileField::Tone => {}
+            ProfileField::Projects => {}
         }
     }
 
@@ -496,6 +547,11 @@ impl ProfileScreen {
             resume_text: self.resume_text.trim().to_string(),
             skills: self.parse_skills(),
             tone: self.selected_tone(),
+            projects: self.projects.iter().map(|p| ProjectRequest {
+                name: p.name.clone(),
+                description: p.description.clone(),
+                tech_stack: p.tech_stack.clone(),
+            }).collect(),
         };
 
         let client = self.api_client.clone();
@@ -532,12 +588,164 @@ impl ProfileScreen {
                 CompanyTone::Casual => 1,
                 CompanyTone::Startup => 2,
             };
+            self.projects = profile.projects.clone();
         }
+        self.project_popup = None;
         self.resume_scroll = 0;
         self.resume_cursor = 0;
         self.skills_cursor = 0;
         self.mode = ProfileMode::View;
         self.clear_validation_errors();
+    }
+
+    /// Add a new project — opens popup with empty fields
+    pub fn add_project(&mut self) {
+        self.project_popup = Some(ProjectPopupState {
+            index: None,
+            name: String::new(),
+            description: String::new(),
+            tech_stack: String::new(),
+            name_cursor: 0,
+            description_cursor: 0,
+            tech_stack_cursor: 0,
+            focused_field: ProjectPopupField::Name,
+        });
+    }
+
+    /// Edit project at index — opens popup with existing data
+    pub fn edit_project(&mut self, index: usize) {
+        if let Some(project) = self.projects.get(index) {
+            self.project_popup = Some(ProjectPopupState {
+                index: Some(index),
+                name: project.name.clone(),
+                description: project.description.clone(),
+                tech_stack: project.tech_stack.join(", "),
+                name_cursor: project.name.chars().count(),
+                description_cursor: project.description.chars().count(),
+                tech_stack_cursor: project.tech_stack.join(", ").chars().count(),
+                focused_field: ProjectPopupField::Name,
+            });
+        }
+    }
+
+    /// Delete project at index
+    pub fn delete_project(&mut self, index: usize) {
+        if index < self.projects.len() {
+            self.projects.remove(index);
+        }
+    }
+
+    /// Confirm the project popup — saves to projects list
+    pub fn confirm_project_popup(&mut self) {
+        let popup = match &self.project_popup {
+            Some(p) => p.clone(),
+            None => return,
+        };
+        let tech_stack: Vec<String> = popup.tech_stack
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect();
+        let project = ProjectResponse {
+            name: popup.name.clone(),
+            description: popup.description.clone(),
+            tech_stack,
+        };
+        match popup.index {
+            Some(i) if i < self.projects.len() => self.projects[i] = project,
+            _ => self.projects.push(project),
+        }
+        self.project_popup = None;
+        self.clear_validation_errors();
+    }
+
+    /// Cancel the project popup — discards changes
+    pub fn cancel_project_popup(&mut self) {
+        self.project_popup = None;
+    }
+
+    pub fn popup_handle_char(&mut self, c: char) {
+        let popup = match self.project_popup.as_mut() {
+            Some(p) => p,
+            None => return,
+        };
+        let (text, cursor) = match popup.focused_field {
+            ProjectPopupField::Name => (&mut popup.name, &mut popup.name_cursor),
+            ProjectPopupField::Description => (&mut popup.description, &mut popup.description_cursor),
+            ProjectPopupField::TechStack => (&mut popup.tech_stack, &mut popup.tech_stack_cursor),
+        };
+        let byte_pos = {
+            let text_ref: &str = text;
+            text_ref.char_indices()
+                .nth(*cursor)
+                .map(|(i, _)| i)
+                .unwrap_or(text_ref.len())
+        };
+        text.insert(byte_pos, c);
+        *cursor += 1;
+    }
+
+    pub fn popup_handle_backspace(&mut self) {
+        let popup = match self.project_popup.as_mut() {
+            Some(p) => p,
+            None => return,
+        };
+        let (text, cursor) = match popup.focused_field {
+            ProjectPopupField::Name => (&mut popup.name, &mut popup.name_cursor),
+            ProjectPopupField::Description => (&mut popup.description, &mut popup.description_cursor),
+            ProjectPopupField::TechStack => (&mut popup.tech_stack, &mut popup.tech_stack_cursor),
+        };
+        if *cursor == 0 {
+            return;
+        }
+        let byte_pos = {
+            let text_ref: &str = text;
+            text_ref.char_indices()
+                .nth(*cursor - 1)
+                .map(|(i, _)| i)
+                .unwrap_or(text_ref.len())
+        };
+        text.remove(byte_pos);
+        *cursor -= 1;
+    }
+
+    pub fn popup_handle_left(&mut self) {
+        let popup = match self.project_popup.as_mut() {
+            Some(p) => p,
+            None => return,
+        };
+        let cursor = match popup.focused_field {
+            ProjectPopupField::Name => &mut popup.name_cursor,
+            ProjectPopupField::Description => &mut popup.description_cursor,
+            ProjectPopupField::TechStack => &mut popup.tech_stack_cursor,
+        };
+        *cursor = cursor.saturating_sub(1);
+    }
+
+    pub fn popup_handle_right(&mut self) {
+        let popup = match self.project_popup.as_mut() {
+            Some(p) => p,
+            None => return,
+        };
+        let (text, cursor): (&mut String, &mut usize) = match popup.focused_field {
+            ProjectPopupField::Name => (&mut popup.name, &mut popup.name_cursor),
+            ProjectPopupField::Description => (&mut popup.description, &mut popup.description_cursor),
+            ProjectPopupField::TechStack => (&mut popup.tech_stack, &mut popup.tech_stack_cursor),
+        };
+        let max = text.chars().count();
+        *cursor = cursor.saturating_add(1).min(max);
+    }
+
+    pub fn popup_focus_next(&mut self) {
+        if let Some(popup) = self.project_popup.as_mut() {
+            popup.focused_field = popup.focused_field.next();
+        }
+    }
+
+    pub fn popup_focus_prev(&mut self) {
+        if let Some(popup) = self.project_popup.as_mut() {
+            popup.focused_field = popup.focused_field.prev();
+        }
     }
 
     /// Get resume character count
@@ -620,20 +828,17 @@ impl ProfileScreen {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Min(8),   // Resume
-                Constraint::Length(5), // Skills
-                Constraint::Length(5), // Tone
+                Constraint::Min(6),   // Resume
+                Constraint::Length(4), // Skills
+                Constraint::Length(4), // Tone
+                Constraint::Min(3),   // Projects
             ])
             .split(area);
 
-        // Resume section
         self.draw_resume_view(frame, chunks[0], theme, profile);
-
-        // Skills section
         self.draw_skills_view(frame, chunks[1], theme, profile);
-
-        // Tone section
         self.draw_tone_view(frame, chunks[2], theme, profile);
+        self.draw_projects_view(frame, chunks[3], theme);
     }
 
 fn draw_resume_view(&self, frame: &mut Frame, area: Rect, theme: &Theme, profile: &ProfileResponse) {
@@ -696,13 +901,50 @@ fn draw_resume_view(&self, frame: &mut Frame, area: Rect, theme: &Theme, profile
         frame.render_widget(content, area);
     }
 
+    fn draw_projects_view(&self, frame: &mut Frame, area: Rect, theme: &Theme) {
+        let items: Vec<ListItem> = if self.projects.is_empty() {
+            vec![ListItem::new(Line::from(vec![
+                Span::styled("  (no projects)", theme.style_dim()),
+            ]))]
+        } else {
+            self.projects.iter().map(|p| {
+                let tech = p.tech_stack.join(", ");
+                ListItem::new(Line::from(vec![
+                    Span::styled("  ", theme.style_dim()),
+                    Span::styled(&p.name, theme.style_normal()),
+                    Span::styled(" — ", theme.style_dim()),
+                    Span::styled(&p.description, theme.style_good()),
+                    Span::styled(" [", theme.style_dim()),
+                    Span::styled(tech, theme.style_warn()),
+                    Span::styled("]", theme.style_dim()),
+                ]))
+            }).collect()
+        };
+
+        let list = List::new(items).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(theme.style_border(false))
+                .title(Span::styled(" Projects ", theme.style_title())),
+        );
+
+        frame.render_widget(list, area);
+    }
+
     fn draw_edit_mode(&mut self, frame: &mut Frame, area: Rect, theme: &Theme) {
+        // If project popup is active, draw the popup over the main content
+        if self.project_popup.is_some() {
+            self.draw_project_popup(frame, area, theme);
+            return;
+        }
+
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Min(8),    // Resume editor
-                Constraint::Length(5), // Skills editor
-                Constraint::Length(7), // Tone selector
+                Constraint::Min(6),    // Resume editor
+                Constraint::Length(4), // Skills editor
+                Constraint::Length(5), // Tone selector
+                Constraint::Min(3),    // Projects editor
                 Constraint::Length(3), // Validation errors
             ])
             .split(area);
@@ -716,8 +958,11 @@ fn draw_resume_view(&self, frame: &mut Frame, area: Rect, theme: &Theme, profile
         // Tone selector
         self.draw_tone_edit(frame, chunks[2], theme);
 
+        // Projects editor
+        self.draw_projects_edit(frame, chunks[3], theme);
+
         // Validation errors
-        self.draw_validation_errors(frame, chunks[3], theme);
+        self.draw_validation_errors(frame, chunks[4], theme);
     }
 
     fn draw_resume_edit(&self, frame: &mut Frame, area: Rect, theme: &Theme) {
@@ -855,6 +1100,152 @@ fn draw_resume_view(&self, frame: &mut Frame, area: Rect, theme: &Theme, profile
         frame.render_widget(list, area);
     }
 
+    fn draw_projects_edit(&mut self, frame: &mut Frame, area: Rect, theme: &Theme) {
+        let is_focused = self.focused_field == ProfileField::Projects;
+        let border_style = if is_focused { theme.style_border(true) } else { theme.style_border(false) };
+        let title_style = if is_focused { theme.style_title() } else { theme.style_dim() };
+
+        let mut items: Vec<ListItem> = if self.projects.is_empty() {
+            vec![ListItem::new(Line::from(vec![
+                Span::styled("  (no projects — press 'n' to add)", theme.style_dim()),
+            ]))]
+        } else {
+            self.projects.iter().map(|p| {
+                let tech = p.tech_stack.join(", ");
+                ListItem::new(Line::from(vec![
+                    Span::styled(&p.name, theme.style_normal()),
+                    Span::styled(" — ", theme.style_dim()),
+                    Span::styled(tech, theme.style_warn()),
+                ]))
+            }).collect()
+        };
+
+        items.push(ListItem::new(Line::from(vec![
+            Span::styled("  [n] Add  [d] Delete  [Enter] Edit", theme.style_dim()),
+        ])));
+
+        let list = List::new(items)
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(border_style)
+                    .title(Span::styled(" Projects (n=add, d=delete, Enter=edit) ", title_style)),
+            );
+
+        frame.render_widget(list, area);
+    }
+
+    fn draw_project_popup(&self, frame: &mut Frame, area: Rect, theme: &Theme) {
+        let popup = match &self.project_popup {
+            Some(p) => p,
+            None => return,
+        };
+
+        let popup_area = Rect {
+            x: area.x + area.width.saturating_sub(60) / 2,
+            y: area.y + area.height.saturating_sub(12) / 2,
+            width: 60.min(area.width),
+            height: 12.min(area.height),
+        };
+
+        frame.render_widget(Clear, popup_area);
+
+        let inner = popup_area.inner(Margin {
+            vertical: 1,
+            horizontal: 1,
+        });
+
+        let rows = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(3),
+                Constraint::Length(3),
+                Constraint::Length(3),
+                Constraint::Length(1),
+            ])
+            .split(inner);
+
+        let title = if popup.index.is_some() { " Edit Project " } else { " Add Project " };
+
+        // Name field
+        let name_focused = popup.focused_field == ProjectPopupField::Name;
+        let name_border = if name_focused { theme.style_border(true) } else { theme.style_border(false) };
+        let name_title = if name_focused { theme.style_title() } else { theme.style_dim() };
+        frame.render_widget(
+            Paragraph::new(Text::styled(&popup.name, theme.style_normal()))
+                .block(Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(name_border)
+                    .title(Span::styled(" Name ", name_title))),
+            rows[0],
+        );
+        if name_focused {
+            frame.set_cursor_position((
+                rows[0].x + 1 + popup.name_cursor.min((rows[0].width as usize).saturating_sub(2)) as u16,
+                rows[0].y + 1,
+            ));
+        }
+
+        // Description field
+        let desc_focused = popup.focused_field == ProjectPopupField::Description;
+        let desc_border = if desc_focused { theme.style_border(true) } else { theme.style_border(false) };
+        let desc_title = if desc_focused { theme.style_title() } else { theme.style_dim() };
+        frame.render_widget(
+            Paragraph::new(Text::styled(&popup.description, theme.style_normal()))
+                .block(Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(desc_border)
+                    .title(Span::styled(" Description ", desc_title))),
+            rows[1],
+        );
+        if desc_focused {
+            frame.set_cursor_position((
+                rows[1].x + 1 + popup.description_cursor.min((rows[1].width as usize).saturating_sub(2)) as u16,
+                rows[1].y + 1,
+            ));
+        }
+
+        // TechStack field
+        let tech_focused = popup.focused_field == ProjectPopupField::TechStack;
+        let tech_border = if tech_focused { theme.style_border(true) } else { theme.style_border(false) };
+        let tech_title = if tech_focused { theme.style_title() } else { theme.style_dim() };
+        frame.render_widget(
+            Paragraph::new(Text::styled(&popup.tech_stack, theme.style_normal()))
+                .block(Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(tech_border)
+                    .title(Span::styled(" Tech Stack (comma-separated) ", tech_title))),
+            rows[2],
+        );
+        if tech_focused {
+            frame.set_cursor_position((
+                rows[2].x + 1 + popup.tech_stack_cursor.min((rows[2].width as usize).saturating_sub(2)) as u16,
+                rows[2].y + 1,
+            ));
+        }
+
+        // Hint
+        let hint = Block::default()
+            .borders(Borders::ALL)
+            .border_style(theme.style_border(false));
+        frame.render_widget(
+            Paragraph::new(Text::styled(
+                " [Tab] Navigate  [Ctrl+S] Confirm  [Esc] Cancel ",
+                theme.style_dim(),
+            ))
+            .alignment(Alignment::Center),
+            hint.inner(rows[3]),
+        );
+        frame.render_widget(hint, rows[3]);
+
+        // Popup border
+        let outer = Block::default()
+            .borders(Borders::ALL)
+            .border_style(theme.style_border(true))
+            .title(Span::styled(title, theme.style_title()));
+        frame.render_widget(outer, popup_area);
+    }
+
     fn draw_validation_errors(&self, frame: &mut Frame, area: Rect, theme: &Theme) {
         if self.validation_errors.is_empty() {
             return;
@@ -877,7 +1268,9 @@ fn draw_resume_view(&self, frame: &mut Frame, area: Rect, theme: &Theme, profile
         let shortcuts = match self.mode {
             ProfileMode::View => " [e] Edit  [r] Reload  [q/b] Back  [Esc] Quit ",
             ProfileMode::Edit => {
-                if self.saving {
+                if self.project_popup.is_some() {
+                    " [Tab/↑↓] Navigate  [Ctrl+S] Confirm  [Esc] Cancel "
+                } else if self.saving {
                     " [Enter] Saving...  [Esc] Cancel "
                 } else {
                     " [Tab/↑↓] Navigate  [Enter] Save  [Esc] Cancel "
@@ -959,15 +1352,16 @@ pub async fn handle_event(
         }
 
         // Handle global keys first
-        // NOTE: 'q', 'b', 'e' shortcuts are guarded by mode check so they don't
-        // conflict with typing those characters in text fields during Edit mode.
         let is_editing = app.profile_screen.as_ref().is_some_and(|s| s.mode == ProfileMode::Edit);
+        let has_popup = app.profile_screen.as_ref()
+            .and_then(|s| s.project_popup.as_ref())
+            .is_some();
         match key.code {
-            KeyCode::Char('q') | KeyCode::Char('Q') if !is_editing => {
+            KeyCode::Char('q') | KeyCode::Char('Q') if !is_editing && !has_popup => {
                 app.state = crate::tui::app::AppState::JobList;
                 return Ok(());
             }
-            KeyCode::Char('b') | KeyCode::Char('B') if !is_editing => {
+            KeyCode::Char('b') | KeyCode::Char('B') if !has_popup => {
                 if let Some(screen) = &mut app.profile_screen {
                     if screen.mode == ProfileMode::Edit {
                         screen.cancel_edit();
@@ -978,11 +1372,16 @@ pub async fn handle_event(
                 return Ok(());
             }
             KeyCode::Esc => {
-                if is_editing {
-                    if let Some(screen) = &mut app.profile_screen {
+                if let Some(screen) = &mut app.profile_screen {
+                    if screen.project_popup.is_some() {
+                        screen.cancel_project_popup();
+                    } else if screen.mode == ProfileMode::Edit {
                         screen.cancel_edit();
+                    } else {
+                        app.should_quit = true;
+                        app.state = crate::tui::app::AppState::Quitting;
                     }
-                } else {
+                } else if !is_editing {
                     app.should_quit = true;
                     app.state = crate::tui::app::AppState::Quitting;
                 }
@@ -994,10 +1393,12 @@ pub async fn handle_event(
         if key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) {
             match key.code {
                 KeyCode::Char('s') | KeyCode::Char('S') => {
-                    if let Some(screen) = &mut app.profile_screen
-                        && screen.mode == ProfileMode::Edit && !screen.saving && !screen.loading.is_loading()
-                    {
-                        let _ = screen.save_profile().await;
+                    if let Some(screen) = &mut app.profile_screen {
+                        if screen.project_popup.is_some() {
+                            screen.confirm_project_popup();
+                        } else if screen.mode == ProfileMode::Edit && !screen.saving && !screen.loading.is_loading() {
+                            let _ = screen.save_profile().await;
+                        }
                     }
                     return Ok(());
                 }
@@ -1007,6 +1408,36 @@ pub async fn handle_event(
 
         // Delegate to profile screen
         if let Some(screen) = &mut app.profile_screen {
+            // If project popup is active, handle popup input
+            if screen.project_popup.is_some() {
+                match key.code {
+                    KeyCode::Tab => {
+                        screen.popup_focus_next();
+                    }
+                    KeyCode::BackTab => {
+                        screen.popup_focus_prev();
+                    }
+                    KeyCode::Enter => {
+                        screen.confirm_project_popup();
+                    }
+                    KeyCode::Backspace => {
+                        screen.popup_handle_backspace();
+                    }
+                    KeyCode::Left => {
+                        screen.popup_handle_left();
+                    }
+                    KeyCode::Right => {
+                        screen.popup_handle_right();
+                    }
+                    KeyCode::Char(c) => {
+                        screen.popup_handle_char(c);
+                    }
+                    _ => {}
+                }
+                return Ok(());
+            }
+
+            // Normal edit/view mode events
             match key.code {
                 KeyCode::Char('e') | KeyCode::Char('E')
                     if screen.mode == ProfileMode::View && !screen.loading.is_loading() && !screen.saving =>
@@ -1017,6 +1448,18 @@ pub async fn handle_event(
                     if screen.mode == ProfileMode::View && !screen.loading.is_loading() && !screen.saving =>
                 {
                     let _ = screen.load_profile().await;
+                }
+                KeyCode::Char('n') | KeyCode::Char('N')
+                    if screen.mode == ProfileMode::Edit && screen.focused_field == ProfileField::Projects
+                        && !screen.saving && !screen.loading.is_loading() =>
+                {
+                    screen.add_project();
+                }
+                KeyCode::Char('d') | KeyCode::Char('D')
+                    if screen.mode == ProfileMode::Edit && screen.focused_field == ProfileField::Projects
+                        && !screen.saving && !screen.loading.is_loading() && !screen.projects.is_empty() =>
+                {
+                    screen.delete_project(screen.projects.len() - 1);
                 }
                 KeyCode::Tab => {
                     if screen.mode == ProfileMode::Edit && !screen.saving && !screen.loading.is_loading() {
@@ -1032,7 +1475,10 @@ pub async fn handle_event(
                     if screen.mode == ProfileMode::Edit && !screen.saving && !screen.loading.is_loading() {
                         match screen.focused_field {
                             ProfileField::Resume => screen.handle_newline(),
-                            ProfileField::Skills | ProfileField::Tone => {
+                            ProfileField::Projects if !screen.projects.is_empty() => {
+                                screen.edit_project(screen.projects.len() - 1);
+                            }
+                            ProfileField::Skills | ProfileField::Tone | ProfileField::Projects => {
                                 let _ = screen.save_profile().await;
                             }
                         }
@@ -1110,6 +1556,13 @@ mod tests {
             resume_text: "Experienced software developer with 5 years of experience in Rust, Java, and PostgreSQL. Passionate about building CLI tools and backend systems.".to_string(),
             skills: vec!["Rust".to_string(), "Java".to_string(), "PostgreSQL".to_string(), "Docker".to_string()],
             tone: CompanyTone::Formal,
+            projects: vec![
+                ProjectResponse {
+                    name: "Job Hunter CLI".into(),
+                    description: "Rust TUI client".into(),
+                    tech_stack: vec!["Rust".into(), "Ratatui".into()],
+                },
+            ],
         }
     }
 
@@ -1122,6 +1575,8 @@ mod tests {
         assert!(screen.resume_text.is_empty());
         assert!(screen.skills_text.is_empty());
         assert_eq!(screen.tone_selection, 0);
+        assert!(screen.projects.is_empty());
+        assert!(screen.project_popup.is_none());
         assert_eq!(screen.focused_field, ProfileField::Resume);
         assert_eq!(screen.loading, LoadingState::Idle);
         assert!(!screen.saving);
@@ -1169,7 +1624,13 @@ mod tests {
         assert_eq!(screen.focused_field, ProfileField::Tone);
 
         screen.focus_next();
+        assert_eq!(screen.focused_field, ProfileField::Projects);
+
+        screen.focus_next();
         assert_eq!(screen.focused_field, ProfileField::Resume); // Wraps around
+
+        screen.focus_prev();
+        assert_eq!(screen.focused_field, ProfileField::Projects);
 
         screen.focus_prev();
         assert_eq!(screen.focused_field, ProfileField::Tone);
@@ -1399,18 +1860,21 @@ mod tests {
         assert_eq!(ProfileField::Resume.display_name(), "Resume");
         assert_eq!(ProfileField::Skills.display_name(), "Skills");
         assert_eq!(ProfileField::Tone.display_name(), "Tone");
+        assert_eq!(ProfileField::Projects.display_name(), "Projects");
     }
 
     #[test]
     fn profile_field_navigation() {
         let fields = ProfileField::all();
-        assert_eq!(fields.len(), 3);
+        assert_eq!(fields.len(), 4);
 
         assert_eq!(ProfileField::Resume.next(), ProfileField::Skills);
         assert_eq!(ProfileField::Skills.next(), ProfileField::Tone);
-        assert_eq!(ProfileField::Tone.next(), ProfileField::Resume);
+        assert_eq!(ProfileField::Tone.next(), ProfileField::Projects);
+        assert_eq!(ProfileField::Projects.next(), ProfileField::Resume);
 
-        assert_eq!(ProfileField::Resume.prev(), ProfileField::Tone);
+        assert_eq!(ProfileField::Resume.prev(), ProfileField::Projects);
+        assert_eq!(ProfileField::Projects.prev(), ProfileField::Tone);
         assert_eq!(ProfileField::Tone.prev(), ProfileField::Skills);
         assert_eq!(ProfileField::Skills.prev(), ProfileField::Resume);
     }
@@ -1873,5 +2337,116 @@ mod tests {
         screen.handle_paste("Go");
         assert_eq!(screen.skills_text, "RustGo, Java");
         assert_eq!(screen.skills_cursor, 6);
+    }
+
+    #[test]
+    fn project_add_and_delete() {
+        let mut screen = create_test_screen();
+        assert!(screen.projects.is_empty());
+
+        screen.add_project();
+        assert!(screen.project_popup.is_some());
+        assert_eq!(screen.project_popup.as_ref().unwrap().index, None);
+        assert_eq!(screen.project_popup.as_ref().unwrap().name, "");
+
+        // Fill popup fields
+        screen.popup_handle_char('M');
+        screen.popup_handle_char('y');
+        screen.popup_handle_char(' ');
+        screen.popup_handle_char('P');
+        screen.popup_handle_char('r');
+        screen.popup_handle_char('o');
+        screen.popup_handle_char('j');
+        assert_eq!(screen.project_popup.as_ref().unwrap().name, "My Proj");
+
+        screen.popup_focus_next();
+        assert_eq!(screen.project_popup.as_ref().unwrap().focused_field, ProjectPopupField::Description);
+        screen.popup_handle_char('d');
+        screen.popup_handle_char('e');
+        screen.popup_handle_char('s');
+        screen.popup_handle_char('c');
+        assert_eq!(screen.project_popup.as_ref().unwrap().description, "desc");
+
+        screen.popup_focus_next();
+        screen.popup_handle_char('R');
+        screen.popup_handle_char('u');
+        screen.popup_handle_char('s');
+        screen.popup_handle_char('t');
+        assert_eq!(screen.project_popup.as_ref().unwrap().tech_stack, "Rust");
+
+        // Confirm
+        screen.confirm_project_popup();
+        assert!(screen.project_popup.is_none());
+        assert_eq!(screen.projects.len(), 1);
+        assert_eq!(screen.projects[0].name, "My Proj");
+        assert_eq!(screen.projects[0].tech_stack, vec!["Rust"]);
+
+        // Delete
+        screen.delete_project(0);
+        assert!(screen.projects.is_empty());
+    }
+
+    #[test]
+    fn project_edit_existing() {
+        let mut screen = create_test_screen();
+        screen.projects = vec![ProjectResponse {
+            name: "Old Name".into(),
+            description: "Old desc".into(),
+            tech_stack: vec!["Java".into()],
+        }];
+
+        screen.edit_project(0);
+        assert!(screen.project_popup.is_some());
+        assert_eq!(screen.project_popup.as_ref().unwrap().index, Some(0));
+        assert_eq!(screen.project_popup.as_ref().unwrap().name, "Old Name");
+        assert_eq!(screen.project_popup.as_ref().unwrap().tech_stack, "Java");
+
+        // Modify name
+        let popup = screen.project_popup.as_mut().unwrap();
+        popup.name = "New Name".into();
+        popup.tech_stack = "Rust, Go".into();
+
+        screen.confirm_project_popup();
+        assert_eq!(screen.projects.len(), 1);
+        assert_eq!(screen.projects[0].name, "New Name");
+        assert_eq!(screen.projects[0].tech_stack, vec!["Rust", "Go"]);
+    }
+
+    #[test]
+    fn project_popup_cancel_discards_changes() {
+        let mut screen = create_test_screen();
+        screen.projects = vec![ProjectResponse {
+            name: "Keep Me".into(),
+            description: "desc".into(),
+            tech_stack: vec!["Rust".into()],
+        }];
+
+        screen.edit_project(0);
+        let popup = screen.project_popup.as_mut().unwrap();
+        popup.name = "Changed".into();
+
+        screen.cancel_project_popup();
+        assert!(screen.project_popup.is_none());
+        assert_eq!(screen.projects[0].name, "Keep Me");
+    }
+
+    #[test]
+    fn project_popup_field_navigation() {
+        let mut screen = create_test_screen();
+        screen.add_project();
+
+        assert_eq!(screen.project_popup.as_ref().unwrap().focused_field, ProjectPopupField::Name);
+
+        screen.popup_focus_next();
+        assert_eq!(screen.project_popup.as_ref().unwrap().focused_field, ProjectPopupField::Description);
+
+        screen.popup_focus_next();
+        assert_eq!(screen.project_popup.as_ref().unwrap().focused_field, ProjectPopupField::TechStack);
+
+        screen.popup_focus_next();
+        assert_eq!(screen.project_popup.as_ref().unwrap().focused_field, ProjectPopupField::Name); // wraps
+
+        screen.popup_focus_prev();
+        assert_eq!(screen.project_popup.as_ref().unwrap().focused_field, ProjectPopupField::TechStack);
     }
 }
