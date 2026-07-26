@@ -153,6 +153,7 @@ impl ApiClient {
     pub async fn analyze_job(&self, job_id: i64) -> Result<JobAnalysis> {
         let resp = self
             .request(Method::POST, &format!("/api/jobs/{job_id}/analyze"))
+            .timeout(Duration::from_secs(180))
             .send()
             .await?;
         self.handle_response(resp).await
@@ -173,6 +174,7 @@ impl ApiClient {
     pub async fn generate_email(&self, job_id: i64) -> Result<EmailDraftResponse> {
         let resp = self
             .request(Method::POST, &format!("/api/jobs/{job_id}/email"))
+            .timeout(Duration::from_secs(180))
             .send()
             .await?;
         self.handle_response(resp).await
