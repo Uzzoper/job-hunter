@@ -138,6 +138,20 @@ impl JobDetailScreen {
         self.toast = Some(Toast::new(message));
     }
 
+    /// Set loading state for the given pending action
+    pub fn start_loading(&mut self, action: PendingAction) {
+        match action {
+            PendingAction::Analyze => {
+                self.loading_analysis = LoadingState::Loading;
+                self.analysis_error = None;
+            }
+            PendingAction::GenerateEmail => {
+                self.loading_email = LoadingState::Loading;
+                self.email_error = None;
+            }
+        }
+    }
+
     /// Clear expired toast
     fn update_toast(&mut self) {
         if let Some(toast) = &self.toast
@@ -147,17 +161,11 @@ impl JobDetailScreen {
     }
 
     /// Trigger job analysis via API
+    /// NOTE: loading_analysis flag must be set by the caller before calling this
     pub async fn analyze_job(&mut self) -> anyhow::Result<()> {
-        if self.loading_analysis.is_loading() {
-            return Ok(());
-        }
-
         let job = self.job.as_ref().ok_or_else(|| anyhow::anyhow!("No job selected"))?;
         let job_id = job.id;
         let client = self.api_client.clone();
-
-        self.loading_analysis = LoadingState::Loading;
-        self.analysis_error = None;
 
         let result = client.lock().await.analyze_job(job_id).await;
 
@@ -182,17 +190,11 @@ impl JobDetailScreen {
     }
 
     /// Generate email draft via API
+    /// NOTE: loading_email flag must be set by the caller before calling this
     pub async fn generate_email(&mut self) -> anyhow::Result<()> {
-        if self.loading_email.is_loading() {
-            return Ok(());
-        }
-
         let job = self.job.as_ref().ok_or_else(|| anyhow::anyhow!("No job selected"))?;
         let job_id = job.id;
         let client = self.api_client.clone();
-
-        self.loading_email = LoadingState::Loading;
-        self.email_error = None;
 
         let result = client.lock().await.generate_email(job_id).await;
 

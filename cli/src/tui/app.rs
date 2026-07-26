@@ -206,21 +206,29 @@ impl App {
         while !self.should_quit() {
             terminal.draw(|frame| self.render(frame))?;
 
-            // Execute pending long-running actions after drawing so loading
-            // spinner is visible before the blocking HTTP call
-            if self.state == AppState::JobDetail
-                && let Some(screen) = &mut self.job_detail_screen
-                && let Some(action) = screen.pending_action.take()
-            {
-                match action {
-                    job_detail_screen::PendingAction::Analyze => {
-                        let _ = screen.analyze_job().await;
+            // Execute pending long-running actions
+            if self.state == AppState::JobDetail {
+                let pending = self.job_detail_screen.as_mut()
+                    .and_then(|s| s.pending_action.take());
+                if let Some(action) = pending {
+                    if let Some(s) = self.job_detail_screen.as_mut() {
+                        s.start_loading(action);
                     }
-                    job_detail_screen::PendingAction::GenerateEmail => {
-                        let _ = screen.generate_email().await;
+                    terminal.draw(|frame| self.render(frame))?;
+                    match action {
+                        job_detail_screen::PendingAction::Analyze => {
+                            if let Some(s) = self.job_detail_screen.as_mut() {
+                                let _ = s.analyze_job().await;
+                            }
+                        }
+                        job_detail_screen::PendingAction::GenerateEmail => {
+                            if let Some(s) = self.job_detail_screen.as_mut() {
+                                let _ = s.generate_email().await;
+                            }
+                        }
                     }
+                    continue;
                 }
-                continue;
             }
 
             // Handle events with timeout to allow for resize handling
