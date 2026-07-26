@@ -202,9 +202,26 @@ impl App {
 
     pub async fn run(&mut self, terminal: &mut Terminal<ratatui::prelude::CrosstermBackend<io::Stdout>>) -> anyhow::Result<()> {
         use crossterm::event::{Event, KeyCode, KeyModifiers};
-        
+
         while !self.should_quit() {
             terminal.draw(|frame| self.render(frame))?;
+
+            // Execute pending long-running actions after drawing so loading
+            // spinner is visible before the blocking HTTP call
+            if self.state == AppState::JobDetail
+                && let Some(screen) = &mut self.job_detail_screen
+                && let Some(action) = screen.pending_action.take()
+            {
+                match action {
+                    job_detail_screen::PendingAction::Analyze => {
+                        let _ = screen.analyze_job().await;
+                    }
+                    job_detail_screen::PendingAction::GenerateEmail => {
+                        let _ = screen.generate_email().await;
+                    }
+                }
+                continue;
+            }
 
             // Handle events with timeout to allow for resize handling
             if crossterm::event::poll(std::time::Duration::from_millis(100))? {
