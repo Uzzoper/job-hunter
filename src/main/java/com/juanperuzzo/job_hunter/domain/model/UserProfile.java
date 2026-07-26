@@ -8,12 +8,14 @@ public record UserProfile(
         Long userId,
         String resumeText,
         List<String> skills,
-        CompanyTone tone
+        CompanyTone tone,
+        List<Project> projects
 ) {
     public UserProfile {
         requireNonNull(userId, "userId must not be null");
         requireNonNull(resumeText, "resumeText must not be null");
         requireNonNull(skills, "skills must not be null");
         requireNonNull(tone, "tone must not be null");
+        requireNonNull(projects, "projects must not be null");
     }
 }
