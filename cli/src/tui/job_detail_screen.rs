@@ -15,6 +15,12 @@ use std::sync::Arc;
 
 use tokio::sync::Mutex;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PendingAction {
+    Analyze,
+    GenerateEmail,
+}
+
 /// Loading state for async operations
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LoadingState {
@@ -57,6 +63,7 @@ pub struct JobDetailScreen {
     analysis_error: Option<String>,
     email_error: Option<String>,
     pending_job_id: Option<i64>,
+    pub pending_action: Option<PendingAction>,
 }
 
 impl JobDetailScreen {
@@ -81,6 +88,7 @@ impl JobDetailScreen {
             analysis_error: None,
             email_error: None,
             pending_job_id: None,
+            pending_action: None,
         }
     }
 
@@ -94,6 +102,7 @@ impl JobDetailScreen {
         self.loading_email = LoadingState::Idle;
         self.analysis_error = None;
         self.email_error = None;
+        self.pending_action = None;
 
         self.pending_job_id = Some(job_id);
     }
@@ -589,12 +598,12 @@ pub async fn handle_event(
                     }
                     KeyCode::Char('a') | KeyCode::Char('A') => {
                         if !screen.loading_analysis.is_loading() {
-                            let _ = screen.analyze_job().await;
+                            screen.pending_action = Some(PendingAction::Analyze);
                         }
                     }
                     KeyCode::Char('e') | KeyCode::Char('E') => {
                         if !screen.loading_email.is_loading() {
-                            let _ = screen.generate_email().await;
+                            screen.pending_action = Some(PendingAction::GenerateEmail);
                         }
                     }
                     KeyCode::Esc => {
@@ -620,12 +629,12 @@ pub async fn handle_event(
                 }
                 KeyCode::Char('a') | KeyCode::Char('A') => {
                     if !screen.loading_analysis.is_loading() {
-                        let _ = screen.analyze_job().await;
+                        screen.pending_action = Some(PendingAction::Analyze);
                     }
                 }
                 KeyCode::Char('e') | KeyCode::Char('E') => {
                     if !screen.loading_email.is_loading() {
-                        let _ = screen.generate_email().await;
+                        screen.pending_action = Some(PendingAction::GenerateEmail);
                     }
                 }
                 KeyCode::Char('c') | KeyCode::Char('C') => {
