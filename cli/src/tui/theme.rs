@@ -281,8 +281,12 @@ pub fn spinner_frame() -> &'static str {
     SPINNER_FRAMES[idx % SPINNER_FRAMES.len()]
 }
 
-/// Render a loading spinner with message.
+/// Render a loading spinner with message in a centered popup.
 pub fn render_loading(frame: &mut Frame, area: Rect, theme: &Theme, message: &str) {
+    let popup_area = centered_rect(50, 8, area);
+
+    frame.render_widget(Clear, popup_area);
+
     let text = format!(" {} {} ", spinner_frame(), message);
     let para = Paragraph::new(Text::styled(text, theme.style_warn()))
         .alignment(ratatui::layout::Alignment::Center)
@@ -291,7 +295,7 @@ pub fn render_loading(frame: &mut Frame, area: Rect, theme: &Theme, message: &st
                 .borders(Borders::ALL)
                 .border_style(theme.style_warn()),
         );
-    frame.render_widget(para, area);
+    frame.render_widget(para, popup_area);
 }
 
 /// Render an error popup modal.

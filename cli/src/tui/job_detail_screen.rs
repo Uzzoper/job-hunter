@@ -523,16 +523,6 @@ pub fn draw(&mut self, frame: &mut Frame, area: Rect) {
         let theme = Theme::detect();
         self.update_toast();
 
-        if self.loading_analysis.is_loading() || self.loading_email.is_loading() {
-            let msg = if self.loading_analysis.is_loading() {
-                "Analyzing job with AI..."
-            } else {
-                "Generating email draft..."
-            };
-            render_loading(frame, area, &theme, msg);
-            return;
-        }
-
         if let Some(err) = &self.analysis_error {
             render_error_popup(frame, area, &theme, err, "[Enter] Dismiss  [a] Retry");
             return;
@@ -576,6 +566,13 @@ pub fn draw(&mut self, frame: &mut Frame, area: Rect) {
         self.draw_action_bar(frame, chunks[2], &theme);
 
         self.draw_toast(frame, area, &theme);
+
+        // Overlay loading popup on top of normal content
+        if self.loading_analysis.is_loading() {
+            render_loading(frame, area, &theme, "Analyzing job with AI...");
+        } else if self.loading_email.is_loading() {
+            render_loading(frame, area, &theme, "Generating email draft...");
+        }
     }
 }
 
