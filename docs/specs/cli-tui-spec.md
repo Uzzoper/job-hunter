@@ -213,11 +213,16 @@ jh-cli clear-cache
 | `↑` / `↓` | Scroll description |
 
 ### Profile Screen
-- Editable fields: **Resume** (multiline), **Skills** (comma-separated), **Tone** (cycle: Formal → Casual → Startup)
+- Editable fields: **Resume** (multiline), **Skills** (comma-separated), **Tone** (cycle: Formal → Casual → Startup), **Projects** (list)
 - `Enter` in Resume field = insert newline
 - `Ctrl+S` = Save (`PUT /api/profile`)
 - `Esc` / `b` = Back without saving
 - Bracketed paste supported for resume/skills
+- **Projects section**: displayed as a scrollable list below tone. Each project shows `name` + first line of `description` + tech stack
+- `n` = Add new project (opens project edit popup with Name, Description, Tech Stack fields)
+- `d` = Delete selected project (with confirmation)
+- `Enter` on a project = Edit project fields
+- **Project edit popup**: 3 fields (Name, Description, Tech Stack as comma-separated), `Tab` to navigate fields, `Ctrl+S` to confirm, `Esc` to cancel
 
 ### Auth Screen
 - Tab between Email / Password
@@ -236,7 +241,7 @@ jh-cli clear-cache
 | `JobResponse` | `GET /api/jobs` | `id`, `title`, `company`, `url`, `description`, `posted_at`, `source` |
 | `JobDetailResponse` | `GET /api/jobs/{id}` | `JobResponse` + `match_score`, `analysis_json` |
 | `AuthResponse` | `POST /auth/*` | `token`, `user_id`, `name`, `email` |
-| `ProfileResponse` | `GET /api/profile` | `id?`, `user_id`, `resume_text`, `skills[]`, `tone` |
+| `ProfileResponse` | `GET /api/profile` | `id?`, `user_id`, `resume_text`, `skills[]`, `tone`, `projects[]` (each: `name`, `description`, `tech_stack[]`) |
 | `EmailDraftResponse` | `GET/POST /api/jobs/{id}/email` | `id`, `job_id`, `subject`, `body`, `status`, `generated_at` |
 | `FetchResponse` | `POST /api/jobs/fetch` | `message` |
 | `ErrorResponse` | Error responses | `timestamp`, `status`, `error`, `message` |
