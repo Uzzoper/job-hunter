@@ -669,7 +669,8 @@ mod tests {
                     "userId": 1,
                     "resumeText": "Experienced Rust developer...",
                     "skills": ["Rust", "PostgreSQL", "Docker"],
-                    "tone": "STARTUP"
+                    "tone": "STARTUP",
+                    "projects": []
                 }));
         });
 
@@ -697,7 +698,8 @@ mod tests {
                     "userId": 1,
                     "resumeText": "Updated resume...",
                     "skills": ["Rust", "Go", "Kubernetes"],
-                    "tone": "FORMAL"
+                    "tone": "FORMAL",
+                    "projects": []
                 }));
         });
 
@@ -705,6 +707,7 @@ mod tests {
             resume_text: "Updated resume...".into(),
             skills: vec!["Rust".into(), "Go".into(), "Kubernetes".into()],
             tone: CompanyTone::Formal,
+            projects: vec![],
         };
 
         let result = client.update_profile(&req).await;
@@ -736,6 +739,7 @@ mod tests {
             resume_text: "Resume".into(),
             skills: vec![],
             tone: CompanyTone::Casual,
+            projects: vec![],
         };
 
         let result = client.update_profile(&req).await;

@@ -1,6 +1,23 @@
 use chrono::{NaiveDate, NaiveDateTime};
 use serde::{Deserialize, Serialize};
 
+/// Project request/response nested in profile.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectRequest {
+    pub name: String,
+    pub description: String,
+    pub tech_stack: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectResponse {
+    pub name: String,
+    pub description: String,
+    pub tech_stack: Vec<String>,
+}
+
 /// Request to register a new user.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -74,6 +91,7 @@ pub struct ProfileRequest {
     pub resume_text: String,
     pub skills: Vec<String>,
     pub tone: CompanyTone,
+    pub projects: Vec<ProjectRequest>,
 }
 
 /// Profile response from the backend.
@@ -85,6 +103,7 @@ pub struct ProfileResponse {
     pub resume_text: String,
     pub skills: Vec<String>,
     pub tone: CompanyTone,
+    pub projects: Vec<ProjectResponse>,
 }
 
 /// Response from fetch endpoints.
@@ -428,17 +447,51 @@ mod tests {
     }
 
     #[test]
+    fn project_request_serde_roundtrip() {
+        let req = ProjectRequest {
+            name: "Job Hunter CLI".into(),
+            description: "A Rust TUI client".into(),
+            tech_stack: vec!["Rust".into(), "Ratatui".into()],
+        };
+        let json = serde_json::to_string(&req).expect("serialize");
+        let deserialized: ProjectRequest = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(req.name, deserialized.name);
+        assert_eq!(req.description, deserialized.description);
+        assert_eq!(req.tech_stack, deserialized.tech_stack);
+    }
+
+    #[test]
+    fn project_response_serde_roundtrip() {
+        let resp = ProjectResponse {
+            name: "Job Hunter API".into(),
+            description: "Spring Boot backend".into(),
+            tech_stack: vec!["Java".into(), "Spring".into()],
+        };
+        let json = serde_json::to_string(&resp).expect("serialize");
+        let deserialized: ProjectResponse = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(resp.name, deserialized.name);
+        assert_eq!(resp.description, deserialized.description);
+    }
+
+    #[test]
     fn profile_request_serde_roundtrip() {
         let req = ProfileRequest {
             resume_text: "Experienced developer...".into(),
             skills: vec!["Rust".into(), "Java".into()],
             tone: CompanyTone::Startup,
+            projects: vec![ProjectRequest {
+                name: "CLI".into(),
+                description: "A Rust TUI client".into(),
+                tech_stack: vec!["Rust".into()],
+            }],
         };
         let json = serde_json::to_string(&req).expect("serialize");
         let deserialized: ProfileRequest = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(req.resume_text, deserialized.resume_text);
         assert_eq!(req.skills, deserialized.skills);
         assert_eq!(req.tone, deserialized.tone);
+        assert_eq!(req.projects.len(), deserialized.projects.len());
+        assert_eq!(req.projects[0].name, deserialized.projects[0].name);
     }
 
     #[test]
@@ -449,11 +502,18 @@ mod tests {
             resume_text: "Experienced developer...".into(),
             skills: vec!["Rust".into(), "Java".into()],
             tone: CompanyTone::Casual,
+            projects: vec![ProjectResponse {
+                name: "Job Hunter".into(),
+                description: "Backend".into(),
+                tech_stack: vec!["Java".into(), "Spring".into()],
+            }],
         };
         let json = serde_json::to_string(&resp).expect("serialize");
         let deserialized: ProfileResponse = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(resp.id, deserialized.id);
         assert_eq!(resp.tone, deserialized.tone);
+        assert_eq!(resp.projects.len(), deserialized.projects.len());
+        assert_eq!(resp.projects[0].tech_stack, deserialized.projects[0].tech_stack);
     }
 
     #[test]
