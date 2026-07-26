@@ -5,6 +5,7 @@ import com.juanperuzzo.job_hunter.application.port.out.UserProfileRepository;
 import com.juanperuzzo.job_hunter.application.port.out.UserRepository;
 import com.juanperuzzo.job_hunter.domain.exception.UserNotFoundException;
 import com.juanperuzzo.job_hunter.domain.model.CompanyTone;
+import com.juanperuzzo.job_hunter.domain.model.Project;
 import com.juanperuzzo.job_hunter.domain.model.UserProfile;
 
 import java.util.List;
@@ -24,10 +25,10 @@ public class UserProfileService implements UserProfileUseCase {
                 .orElseThrow(() -> new UserNotFoundException("User not found with id: " + userId));
 
         return userProfileRepository.findByUserId(userId)
-                .orElse(new UserProfile(null, userId, "", List.of(), CompanyTone.STARTUP));
+                .orElse(new UserProfile(null, userId, "", List.of(), CompanyTone.STARTUP, List.of()));
     }
 
-    public UserProfile saveProfile(Long userId, String resumeText, List<String> skills, CompanyTone tone) {
+    public UserProfile saveProfile(Long userId, String resumeText, List<String> skills, CompanyTone tone, List<Project> projects) {
         userRepository.findById(userId)
                 .orElseThrow(() -> new UserNotFoundException("User not found with id: " + userId));
 
@@ -38,7 +39,7 @@ public class UserProfileService implements UserProfileUseCase {
         var existingProfile = userProfileRepository.findByUserId(userId);
         Long profileId = existingProfile.map(UserProfile::id).orElse(null);
 
-        var profile = new UserProfile(profileId, userId, resumeText, skills, tone);
+        var profile = new UserProfile(profileId, userId, resumeText, skills, tone, projects);
         return userProfileRepository.save(profile);
     }
 }

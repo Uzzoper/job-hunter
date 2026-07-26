@@ -148,7 +148,8 @@ class AuthIntegrationTest {
         var profileRequest = new ProfileRequest(
                 resumeText,
                 List.of("Java", "Spring Boot", "PostgreSQL"),
-                CompanyTone.FORMAL);
+                CompanyTone.FORMAL,
+                List.of());
         var response = restClient.put()
                 .uri(url("/api/profile"))
                 .header("Authorization", "Bearer " + authToken)

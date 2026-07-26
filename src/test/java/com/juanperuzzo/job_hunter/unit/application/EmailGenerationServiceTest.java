@@ -82,7 +82,8 @@ class EmailGenerationServiceTest {
             UserProfile validProfile = new UserProfile(null, 1L,
                 "Experienced Java developer with Spring Boot expertise.",
                 List.of("Java", "Spring Boot", "PostgreSQL"),
-                CompanyTone.FORMAL);
+                CompanyTone.FORMAL,
+                List.of());
             when(userProfileRepository.findByUserId(any())).thenReturn(Optional.of(validProfile));
 
             Long jobId = 1L;
@@ -132,7 +133,8 @@ class EmailGenerationServiceTest {
             UserProfile validProfile = new UserProfile(null, 1L,
                 "Experienced Java developer with Spring Boot expertise.",
                 List.of("Java", "Spring Boot", "PostgreSQL"),
-                CompanyTone.FORMAL);
+                CompanyTone.FORMAL,
+                List.of());
             when(userProfileRepository.findByUserId(any())).thenReturn(Optional.of(validProfile));
 
             Long jobId = 2L;
@@ -180,7 +182,8 @@ class EmailGenerationServiceTest {
             UserProfile validProfile = new UserProfile(null, 1L,
                 "Experienced Java developer with Spring Boot expertise.",
                 List.of("Java", "Spring Boot", "PostgreSQL"),
-                CompanyTone.FORMAL);
+                CompanyTone.FORMAL,
+                List.of());
             when(userProfileRepository.findByUserId(any())).thenReturn(Optional.of(validProfile));
 
             Long jobId = 3L;
@@ -225,7 +228,8 @@ class EmailGenerationServiceTest {
             UserProfile validProfile = new UserProfile(null, 1L,
                 "Experienced Java developer with Spring Boot expertise.",
                 List.of("Java", "Spring Boot", "PostgreSQL"),
-                CompanyTone.FORMAL);
+                CompanyTone.FORMAL,
+                List.of());
             when(userProfileRepository.findByUserId(any())).thenReturn(Optional.of(validProfile));
 
             Long jobId = 4L;
@@ -258,7 +262,8 @@ class EmailGenerationServiceTest {
             UserProfile validProfile = new UserProfile(null, 1L,
                 "Experienced Java developer with Spring Boot expertise.",
                 List.of("Java", "Spring Boot", "PostgreSQL"),
-                CompanyTone.FORMAL);
+                CompanyTone.FORMAL,
+                List.of());
             when(userProfileRepository.findByUserId(any())).thenReturn(Optional.of(validProfile));
 
             Long jobId = 5L;

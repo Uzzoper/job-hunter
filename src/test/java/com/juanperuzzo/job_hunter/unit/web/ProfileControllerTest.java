@@ -62,7 +62,7 @@ class ProfileControllerTest {
         var authentication = new UsernamePasswordAuthenticationToken(new User(1L, "test@test.com", "Test", "hash"), null, List.of());
         SecurityContextHolder.getContext().setAuthentication(authentication);
 
-        var profile = new UserProfile(1L, 1L, "Experienced dev...", List.of("Java", "Spring Boot"), CompanyTone.FORMAL);
+        var profile = new UserProfile(1L, 1L, "Experienced dev...", List.of("Java", "Spring Boot"), CompanyTone.FORMAL, List.of());
         when(userProfileService.getProfile(1L)).thenReturn(profile);
 
         mockMvc.perform(get("/api/profile"))
@@ -92,10 +92,10 @@ class ProfileControllerTest {
         var authentication = new UsernamePasswordAuthenticationToken(new User(1L, "test@test.com", "Test", "hash"), null, List.of());
         SecurityContextHolder.getContext().setAuthentication(authentication);
 
-        var request = new ProfileRequest("New resume text that is certainly long enough to pass the minimum length constraint of fifty characters for test", List.of("Java", "Python"), CompanyTone.STARTUP);
-        var profile = new UserProfile(1L, 1L, "New resume text that is certainly long enough to pass the minimum length constraint of fifty characters for test", List.of("Java", "Python"), CompanyTone.STARTUP);
+        var request = new ProfileRequest("New resume text that is certainly long enough to pass the minimum length constraint of fifty characters for test", List.of("Java", "Python"), CompanyTone.STARTUP, List.of());
+        var profile = new UserProfile(1L, 1L, "New resume text that is certainly long enough to pass the minimum length constraint of fifty characters for test", List.of("Java", "Python"), CompanyTone.STARTUP, List.of());
 
-        when(userProfileService.saveProfile(1L, "New resume text that is certainly long enough to pass the minimum length constraint of fifty characters for test", List.of("Java", "Python"), CompanyTone.STARTUP))
+        when(userProfileService.saveProfile(1L, "New resume text that is certainly long enough to pass the minimum length constraint of fifty characters for test", List.of("Java", "Python"), CompanyTone.STARTUP, List.of()))
                 .thenReturn(profile);
 
         mockMvc.perform(put("/api/profile")
@@ -114,7 +114,7 @@ class ProfileControllerTest {
         var authentication = new UsernamePasswordAuthenticationToken(new User(1L, "test@test.com", "Test", "hash"), null, List.of());
         SecurityContextHolder.getContext().setAuthentication(authentication);
 
-        var request = new ProfileRequest(null, List.of("Java"), CompanyTone.STARTUP);
+        var request = new ProfileRequest(null, List.of("Java"), CompanyTone.STARTUP, List.of());
 
         mockMvc.perform(put("/api/profile")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -128,7 +128,7 @@ class ProfileControllerTest {
         var authentication = new UsernamePasswordAuthenticationToken(new User(1L, "test@test.com", "Test", "hash"), null, List.of());
         SecurityContextHolder.getContext().setAuthentication(authentication);
 
-        var request = new ProfileRequest("short", List.of("Java"), CompanyTone.STARTUP);
+        var request = new ProfileRequest("short", List.of("Java"), CompanyTone.STARTUP, List.of());
 
         mockMvc.perform(put("/api/profile")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -142,7 +142,7 @@ class ProfileControllerTest {
         var authentication = new UsernamePasswordAuthenticationToken(new User(1L, "test@test.com", "Test", "hash"), null, List.of());
         SecurityContextHolder.getContext().setAuthentication(authentication);
 
-        var request = new ProfileRequest("A very long resume text that is certainly more than fifty characters long to pass validation", List.of(), CompanyTone.STARTUP);
+        var request = new ProfileRequest("A very long resume text that is certainly more than fifty characters long to pass validation", List.of(), CompanyTone.STARTUP, List.of());
 
         mockMvc.perform(put("/api/profile")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -156,7 +156,7 @@ class ProfileControllerTest {
         var authentication = new UsernamePasswordAuthenticationToken(new User(1L, "test@test.com", "Test", "hash"), null, List.of());
         SecurityContextHolder.getContext().setAuthentication(authentication);
 
-        var request = new ProfileRequest("A very long resume text that is certainly more than fifty characters long to pass validation", List.of("Java"), null);
+        var request = new ProfileRequest("A very long resume text that is certainly more than fifty characters long to pass validation", List.of("Java"), null, List.of());
 
         mockMvc.perform(put("/api/profile")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -170,9 +170,9 @@ class ProfileControllerTest {
         var authentication = new UsernamePasswordAuthenticationToken(new User(1L, "test@test.com", "Test", "hash"), null, List.of());
         SecurityContextHolder.getContext().setAuthentication(authentication);
 
-        var request = new ProfileRequest("New resume text that is certainly long enough to pass the minimum length constraint of fifty characters for test", List.of("Java"), CompanyTone.FORMAL);
+        var request = new ProfileRequest("New resume text that is certainly long enough to pass the minimum length constraint of fifty characters for test", List.of("Java"), CompanyTone.FORMAL, List.of());
 
-        when(userProfileService.saveProfile(eq(1L), any(), any(), any()))
+        when(userProfileService.saveProfile(eq(1L), any(), any(), any(), any()))
                 .thenThrow(new IllegalArgumentException("Invalid input"));
 
         mockMvc.perform(put("/api/profile")
@@ -187,7 +187,7 @@ class ProfileControllerTest {
         var authentication = new UsernamePasswordAuthenticationToken(new User(42L, "test@test.com", "Test", "hash"), null, List.of());
         SecurityContextHolder.getContext().setAuthentication(authentication);
 
-        var profile = new UserProfile(2L, 42L, "Dev resume", List.of("Go"), CompanyTone.CASUAL);
+        var profile = new UserProfile(2L, 42L, "Dev resume", List.of("Go"), CompanyTone.CASUAL, List.of());
         when(userProfileService.getProfile(42L)).thenReturn(profile);
 
         mockMvc.perform(get("/api/profile"))
