@@ -21,6 +21,9 @@ import java.util.List;
 
 public class AiAnalysisService implements AnalyzeJobUseCase {
 
+    private static final int MAX_RESUME_CHARS = 1500;
+    private static final int MAX_DESCRIPTION_CHARS = 1000;
+
     private final AiPort aiPort;
     private final JobAnalysisRepository jobAnalysisRepository;
     private final UserProfileRepository userProfileRepository;
@@ -70,49 +73,35 @@ public class AiAnalysisService implements AnalyzeJobUseCase {
     }
 
     private String buildPrompt(Job job, UserProfile profile) {
+        String resumeExcerpt = truncate(profile.resumeText(), MAX_RESUME_CHARS);
+        String descExcerpt = truncate(job.description(), MAX_DESCRIPTION_CHARS);
+
         return """
-            You are a career assistant specialized in technology.
-            Analyze the following job listing against this candidate profile:
+            You are a career assistant. Analyze this job against the candidate.
 
-            Candidate profile:
-            - Skills: %s
-            - Tone preference: %s
-            - Resume: %s
+            Candidate skills: %s
+            Resume excerpt: %s
 
-            Return ONLY a valid JSON object, with no markdown and no additional text.
+            Job: %s at %s
+            Description: %s
 
-            Response format:
-            {
-              "matchScore": <integer from 0 to 100>,
-              "matchedSkills": ["skill the candidate has", "..."],
-              "missingSkills": ["skill the candidate lacks", "..."],
-              "companyTone": "formal" | "casual" | "startup",
-              "summary": "<one-line job summary, max 80 characters>"
-            }
+            OUTPUT ONLY valid JSON. Start with { and end with }. No text before or after.
 
-            matchScore criteria:
-            - 80-100: candidate meets all main requirements
-            - 60-79:  meets most requirements, minor gaps
-            - 40-59:  meets about half the requirements
-            - 20-39:  few requirements met, but potential exists
-            - 0-19:   completely different stack
+            {"matchScore": 75, "matchedSkills": ["Java"], "missingSkills": ["Go"], "companyTone": "formal", "summary": "Resume em ate 80 caracteres"}
 
-            companyTone criteria:
-            - formal:  bank, consultancy, traditional company, serious language
-            - startup: young company, casual language, words like "rockstar", "ninja"
-            - casual:  middle ground, modern but professional company
-
-            Job listing:
-            Title: %s.
-            Company: %s.
-            Description: %s.
+            Score: 80-100=todos requisitos, 50-79=maioria, <50=poucos matches
+            Tone: formal=tradicional, casual=moderno, startup=jovem/dinamico
             """.formatted(
                 String.join(", ", profile.skills()),
-                profile.tone().name().toLowerCase(),
-                profile.resumeText(),
+                resumeExcerpt,
                 job.title(),
                 job.company(),
-                job.description());
+                descExcerpt);
+    }
+
+    private String truncate(String text, int maxChars) {
+        if (text == null) return "";
+        return text.length() <= maxChars ? text : text.substring(0, maxChars) + "...";
     }
 
     private JobAnalysis parseAnalysis(String json) {
@@ -122,13 +111,25 @@ public class AiAnalysisService implements AnalyzeJobUseCase {
             }
             String cleaned = json.strip();
             cleaned = cleaned.replaceAll("```[a-zA-Z]*\\s*|```\\s*", "").strip();
+
             int jsonStart = cleaned.indexOf('{');
-            int jsonEnd = cleaned.lastIndexOf('}');
-            if (jsonStart == -1 || jsonEnd == -1 || jsonEnd < jsonStart) {
-                throw new AiException("No valid JSON object found in AI response");
+            if (jsonStart == -1) {
+                throw new AiException("No JSON object found in AI response");
             }
-            cleaned = cleaned.substring(jsonStart, jsonEnd + 1).strip();
-            JsonNode node = objectMapper.readTree(cleaned);
+            String potentialJson = cleaned.substring(jsonStart).strip();
+
+            int jsonEnd = potentialJson.lastIndexOf('}');
+            if (jsonEnd == -1) {
+                if (potentialJson.length() > 10) {
+                    potentialJson = potentialJson + "}";
+                    jsonEnd = potentialJson.length() - 1;
+                } else {
+                    throw new AiException("No valid JSON object found in AI response");
+                }
+            }
+            potentialJson = potentialJson.substring(0, jsonEnd + 1);
+
+            JsonNode node = objectMapper.readTree(potentialJson);
 
             int matchScore = node.get("matchScore").asInt(0);
             matchScore = Math.max(0, Math.min(100, matchScore));
