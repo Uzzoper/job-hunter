@@ -54,7 +54,10 @@ public class EmailGenerationService implements GenerateEmailUseCase, GetEmailDra
         try {
             String prompt = buildPrompt(job, analysis, profile);
             String response = aiPort.complete(prompt);
-            EmailDraft draft = parseEmailDraft(job.id(), userId, response);
+            var existingId = emailDraftRepository.findByJobIdAndUserId(job.id(), userId)
+                    .map(EmailDraft::id)
+                    .orElse(null);
+            EmailDraft draft = parseEmailDraft(existingId, job.id(), userId, response);
             return emailDraftRepository.save(draft);
         } catch (AiException e) {
             throw e;
@@ -119,7 +122,7 @@ public class EmailGenerationService implements GenerateEmailUseCase, GetEmailDra
                 matchedSkills, missingSkills, analysis.summary());
     }
 
-    private EmailDraft parseEmailDraft(Long jobId, Long userId, String aiResponse) {
+    private EmailDraft parseEmailDraft(Long id, Long jobId, Long userId, String aiResponse) {
         String subject;
         String body;
 
@@ -136,6 +139,6 @@ public class EmailGenerationService implements GenerateEmailUseCase, GetEmailDra
             subject = "Subject: " + subject;
         }
 
-        return new EmailDraft(null, jobId, userId, subject, body, EmailStatus.PENDING, LocalDateTime.now());
+        return new EmailDraft(id, jobId, userId, subject, body, EmailStatus.PENDING, LocalDateTime.now());
     }
 }
