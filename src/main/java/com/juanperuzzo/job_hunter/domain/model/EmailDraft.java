@@ -9,5 +9,10 @@ public record EmailDraft(
         String subject,
         String body,
         EmailStatus status,
-        LocalDateTime generatedAt
-) {}
+        LocalDateTime generatedAt,
+        LocalDateTime sentAt
+) {
+    public EmailDraft(Long id, Long jobId, Long userId, String subject, String body, EmailStatus status, LocalDateTime generatedAt) {
+        this(id, jobId, userId, subject, body, status, generatedAt, null);
+    }
+}

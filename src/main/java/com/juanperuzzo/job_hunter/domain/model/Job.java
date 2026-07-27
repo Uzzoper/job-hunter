@@ -11,7 +11,8 @@ public record Job(
         String url,
         String description,
         LocalDate postedAt,
-        String source
+        String source,
+        String contactEmail
 ) {
     private static final int EXPIRATION_DAYS = 30;
 
@@ -19,6 +20,10 @@ public record Job(
         requireNonNull(url, "url must not be null");
         requireNonNull(postedAt, "postedAt must not be null");
         requireNonNull(source, "source must not be null");
+    }
+
+    public Job(Long id, String title, String company, String url, String description, LocalDate postedAt, String source) {
+        this(id, title, company, url, description, postedAt, source, null);
     }
 
     @Override
