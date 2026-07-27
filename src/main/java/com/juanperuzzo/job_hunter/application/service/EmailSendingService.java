@@ -1,0 +1,59 @@
+package com.juanperuzzo.job_hunter.application.service;
+
+import com.juanperuzzo.job_hunter.application.port.in.SendEmailUseCase;
+import com.juanperuzzo.job_hunter.application.port.out.EmailDraftRepository;
+import com.juanperuzzo.job_hunter.application.port.out.EmailSenderPort;
+import com.juanperuzzo.job_hunter.application.port.out.JobRepository;
+import com.juanperuzzo.job_hunter.domain.exception.EmailAlreadySentException;
+import com.juanperuzzo.job_hunter.domain.exception.EmailDeliveryException;
+import com.juanperuzzo.job_hunter.domain.exception.MissingRecipientException;
+import com.juanperuzzo.job_hunter.domain.model.EmailDraft;
+import com.juanperuzzo.job_hunter.domain.model.EmailStatus;
+import com.juanperuzzo.job_hunter.domain.model.Job;
+
+import java.time.LocalDateTime;
+
+public class EmailSendingService implements SendEmailUseCase {
+
+    private final EmailDraftRepository emailDraftRepository;
+    private final JobRepository jobRepository;
+    private final EmailSenderPort emailSenderPort;
+
+    public EmailSendingService(EmailDraftRepository emailDraftRepository, JobRepository jobRepository, EmailSenderPort emailSenderPort) {
+        this.emailDraftRepository = emailDraftRepository;
+        this.jobRepository = jobRepository;
+        this.emailSenderPort = emailSenderPort;
+    }
+
+    @Override
+    public EmailDraft send(Long userId, Long jobId) {
+        var draft = emailDraftRepository.findByJobIdAndUserId(jobId, userId)
+                .orElseThrow(() -> new IllegalArgumentException("Email draft not found for job " + jobId + " and user " + userId));
+
+        if (draft.status() != EmailStatus.PENDING) {
+            throw new EmailAlreadySentException("Email " + draft.id() + " has already been sent");
+        }
+
+        var job = jobRepository.findById(jobId)
+                .orElseThrow(() -> new IllegalArgumentException("Job not found: " + jobId));
+
+        var contactEmail = job.contactEmail();
+        if (contactEmail == null) {
+            throw new MissingRecipientException("Job " + jobId + " has no contact email");
+        }
+
+        try {
+            emailSenderPort.send(contactEmail, draft.subject(), draft.body());
+        } catch (RuntimeException e) {
+            throw new EmailDeliveryException("Failed to send email for job " + jobId, e);
+        }
+
+        var sentDraft = new EmailDraft(
+                draft.id(), draft.jobId(), draft.userId(),
+                draft.subject(), draft.body(),
+                EmailStatus.SENT, draft.generatedAt(), LocalDateTime.now()
+        );
+
+        return emailDraftRepository.save(sentDraft);
+    }
+}
