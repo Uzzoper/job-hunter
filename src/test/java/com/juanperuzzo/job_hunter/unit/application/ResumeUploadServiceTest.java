@@ -63,7 +63,7 @@ class ResumeUploadServiceTest {
     @BeforeEach
     void setUp() throws Exception {
         tempDir = Files.createTempDirectory("resume-upload-test-");
-        service = new ResumeUploadService(aiPort, userProfileService, userProfileRepository, tempDir.toString());
+        service = new ResumeUploadService(aiPort, userProfileService, userProfileRepository, tempDir.toString(), 8000);
     }
 
     @AfterEach

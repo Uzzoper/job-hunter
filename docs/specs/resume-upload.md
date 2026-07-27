@@ -47,6 +47,7 @@
 - **File type:** Only `application/pdf` is accepted (checked by content type and file extension).
 - **File size:** Maximum 2MB (enforced by Spring `spring.servlet.multipart.max-file-size`).
 - **`resumeText`:** The raw text extracted by PDFBox becomes the new `resumeText` (AI does not rewrite it).
+- **AI prompt truncation:** Resumes longer than `ai.resume-extraction.max-chars` (default 8000) are truncated before being sent to the AI. A warning is logged. The full text is still stored as `resumeText` in the profile.
 - **`skills` + `projects`:** Extracted by AI from the raw PDF text. The AI prompt must ask for these two fields only.
 - **`tone`:** Never extracted from the resume. Keeps the user's current `tone`, defaults to `FORMAL` if no profile exists yet.
 - **PDF storage:** Saved to `${app.upload-dir}/{userId}/resume.pdf`. Overwrites any previous file for that user.
@@ -133,6 +134,7 @@ ai:
     openrouter-model: inclusionai/ling-3.0-flash:free
     ollama-model: qwen2.5:3b
     timeout-seconds: 30
+    max-chars: 8000       # max chars sent to AI; longer text is truncated with logged warning
 ```
 
 ---

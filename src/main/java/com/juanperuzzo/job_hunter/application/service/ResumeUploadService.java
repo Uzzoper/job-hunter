@@ -13,7 +13,6 @@ import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.text.PDFTextStripper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
@@ -31,17 +30,40 @@ public class ResumeUploadService {
     private final UserProfileRepository userProfileRepository;
     private final ObjectMapper objectMapper;
     private final Path uploadDir;
+    private final int maxAiChars;
 
+    /**
+     * @param aiPort               port for AI completions
+     * @param userProfileService   service for profile persistence (includes validation)
+     * @param userProfileRepository repository for reading existing profile tone
+     * @param uploadDir            filesystem path for uploaded PDF storage
+     * @param maxAiChars           maximum character count of resume text sent to the AI prompt
+     */
     public ResumeUploadService(AiPort aiPort, UserProfileService userProfileService,
                                UserProfileRepository userProfileRepository,
-                               @Value("${app.upload-dir}") String uploadDir) {
+                               String uploadDir,
+                               int maxAiChars) {
         this.aiPort = aiPort;
         this.userProfileService = userProfileService;
         this.userProfileRepository = userProfileRepository;
         this.objectMapper = new ObjectMapper();
         this.uploadDir = Path.of(uploadDir);
+        this.maxAiChars = maxAiChars;
     }
 
+    /**
+     * Uploads a PDF resume, extracts its text via PDFBox, sends the text to an AI
+     * for skills/projects extraction, saves the PDF to disk, and persists the profile.
+     *
+     * @param userId the authenticated user's ID
+     * @param file   the uploaded PDF file (max 2MB, must be {@code application/pdf})
+     * @return the saved {@link UserProfile} with extracted skills, projects, and raw text
+     * @throws IllegalArgumentException if the file is null/empty/non-PDF, or the PDF
+     *                                  contains no extractable text
+     * @throws AiException             if the AI call fails or returns unparseable JSON
+     * @throws com.juanperuzzo.job_hunter.domain.exception.UserNotFoundException
+     *                                  if the user does not exist
+     */
     public UserProfile uploadResume(Long userId, MultipartFile file) {
         validateFile(file);
 
@@ -150,6 +172,11 @@ public class ResumeUploadService {
     }
 
     private String buildPrompt(String rawText) {
+        var textForAi = rawText;
+        if (rawText.length() > maxAiChars) {
+            log.warn("Resume text is {} chars, truncating to {} for AI prompt", rawText.length(), maxAiChars);
+            textForAi = rawText.substring(0, maxAiChars) + "...";
+        }
         return """
 You are a career assistant that extracts structured data from resumes.
 
@@ -177,7 +204,7 @@ Rules:
 
 Resume text:
 %s
-""".formatted(rawText.length() > 3000 ? rawText.substring(0, 3000) + "..." : rawText);
+""".formatted(textForAi);
     }
 
     private void savePdfToDisk(Long userId, MultipartFile file) {

@@ -255,7 +255,8 @@ public class AppConfig {
     @Bean
     public ResumeUploadService resumeUploadService(AiPort aiPort, UserProfileService userProfileService,
                                                    UserProfileRepository userProfileRepository,
-                                                   @Value("${app.upload-dir}") String uploadDir) {
-        return new ResumeUploadService(aiPort, userProfileService, userProfileRepository, uploadDir);
+                                                   @Value("${app.upload-dir}") String uploadDir,
+                                                   @Value("${ai.resume-extraction.max-chars:8000}") int maxAiChars) {
+        return new ResumeUploadService(aiPort, userProfileService, userProfileRepository, uploadDir, maxAiChars);
     }
 }
