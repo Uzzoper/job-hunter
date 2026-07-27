@@ -640,10 +640,6 @@ impl ProfileScreen {
 
         match &result {
             Ok(profile) => {
-                eprintln!("[DEBUG] Upload OK — id={:?}, skills={}, projects={}",
-                    profile.id,
-                    profile.skills.len(),
-                    profile.projects.len());
                 self.set_profile(profile.clone());
                 self.show_toast(format!(
                     "Resume uploaded! Skills: {} | Projects: {}",
