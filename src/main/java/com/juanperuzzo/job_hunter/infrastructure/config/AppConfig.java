@@ -2,16 +2,19 @@ package com.juanperuzzo.job_hunter.infrastructure.config;
 
 import com.juanperuzzo.job_hunter.application.port.out.AiPort;
 import com.juanperuzzo.job_hunter.application.port.out.EmailDraftRepository;
+import com.juanperuzzo.job_hunter.application.port.out.EmailSenderPort;
 import com.juanperuzzo.job_hunter.application.port.out.JobRepository;
 import com.juanperuzzo.job_hunter.application.port.out.NormalizerPort;
 import com.juanperuzzo.job_hunter.application.port.out.ScraperPort;
 import com.juanperuzzo.job_hunter.application.port.out.SourceFetchPort;
 import com.juanperuzzo.job_hunter.application.service.AiAnalysisService;
 import com.juanperuzzo.job_hunter.application.service.EmailGenerationService;
+import com.juanperuzzo.job_hunter.application.service.EmailSendingService;
 import com.juanperuzzo.job_hunter.application.service.FetchJobsService;
 import com.juanperuzzo.job_hunter.application.service.FetchSourceJobsService;
 import com.juanperuzzo.job_hunter.infrastructure.ai.OllamaClient;
 import com.juanperuzzo.job_hunter.infrastructure.ai.OpenRouterClient;
+import com.juanperuzzo.job_hunter.infrastructure.email.ResendEmailSender;
 import com.juanperuzzo.job_hunter.application.port.out.PasswordHasher;
 import com.juanperuzzo.job_hunter.application.port.out.TokenProvider;
 import com.juanperuzzo.job_hunter.application.port.out.UserRepository;
@@ -258,5 +261,22 @@ public class AppConfig {
                                                    @Value("${app.upload-dir}") String uploadDir,
                                                    @Value("${ai.resume-extraction.max-chars:8000}") int maxAiChars) {
         return new ResumeUploadService(aiPort, userProfileService, userProfileRepository, uploadDir, maxAiChars);
+    }
+
+    @Bean
+    public ResendEmailSender resendEmailSender(
+            @Value("${resend.base-url}") String baseUrl,
+            @Value("${resend.api-key}") String apiKey,
+            @Value("${resend.from-address}") String fromAddress,
+            @Value("${resend.timeout-seconds}") int timeoutSeconds) {
+        return new ResendEmailSender(baseUrl, apiKey, fromAddress, timeoutSeconds);
+    }
+
+    @Bean
+    public EmailSendingService emailSendingService(
+            EmailDraftRepository emailDraftRepository,
+            JobRepository jobRepository,
+            EmailSenderPort emailSenderPort) {
+        return new EmailSendingService(emailDraftRepository, jobRepository, emailSenderPort);
     }
 }

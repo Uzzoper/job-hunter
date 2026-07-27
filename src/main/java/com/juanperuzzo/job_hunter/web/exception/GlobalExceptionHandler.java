@@ -8,6 +8,9 @@ import com.juanperuzzo.job_hunter.domain.exception.EmailAlreadyExistsException;
 import com.juanperuzzo.job_hunter.domain.exception.UserNotFoundException;
 import com.juanperuzzo.job_hunter.domain.exception.ProfileNotConfiguredException;
 import com.juanperuzzo.job_hunter.domain.exception.AnalysisNotFoundException;
+import com.juanperuzzo.job_hunter.domain.exception.EmailAlreadySentException;
+import com.juanperuzzo.job_hunter.domain.exception.EmailDeliveryException;
+import com.juanperuzzo.job_hunter.domain.exception.MissingRecipientException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -92,6 +95,21 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(MaxUploadSizeExceededException.class)
     public ResponseEntity<Map<String, Object>> handleMaxUploadSize(MaxUploadSizeExceededException ex) {
         return buildResponse(HttpStatus.BAD_REQUEST, "File size exceeds the maximum allowed limit of 2MB");
+    }
+
+    @ExceptionHandler(EmailAlreadySentException.class)
+    public ResponseEntity<Map<String, Object>> handleEmailAlreadySent(EmailAlreadySentException ex) {
+        return buildResponse(HttpStatus.CONFLICT, ex.getMessage());
+    }
+
+    @ExceptionHandler(MissingRecipientException.class)
+    public ResponseEntity<Map<String, Object>> handleMissingRecipient(MissingRecipientException ex) {
+        return buildResponse(HttpStatus.BAD_REQUEST, ex.getMessage());
+    }
+
+    @ExceptionHandler(EmailDeliveryException.class)
+    public ResponseEntity<Map<String, Object>> handleEmailDeliveryError(EmailDeliveryException ex) {
+        return buildResponse(HttpStatus.BAD_GATEWAY, ex.getMessage());
     }
 
     @ExceptionHandler(DataIntegrityViolationException.class)
