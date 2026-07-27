@@ -1,10 +1,13 @@
 package com.juanperuzzo.job_hunter.unit.web;
 
 import com.juanperuzzo.job_hunter.application.port.in.AnalyzeJobUseCase;
+import com.juanperuzzo.job_hunter.application.port.in.ApproveDraftUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.FetchJobsUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.FetchSourceJobsUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.GenerateEmailUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.GetEmailDraftUseCase;
+import com.juanperuzzo.job_hunter.application.port.in.GetJobUseCase;
+import com.juanperuzzo.job_hunter.application.port.in.ListJobsUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.SendEmailUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.GetJobUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.ListJobsUseCase;
@@ -73,6 +76,9 @@ class JobControllerTest {
 
     @MockitoBean
     private SendEmailUseCase sendEmailUseCase;
+
+    @MockitoBean
+    private ApproveDraftUseCase approveDraftUseCase;
 
     @MockitoBean
     private ListJobsUseCase listJobsUseCase;
@@ -340,6 +346,26 @@ class JobControllerTest {
                 .andExpect(jsonPath("$.sentAt").value("2026-05-30T10:01:00"));
 
         verify(sendEmailUseCase).send(1L, JOB_ID);
+    }
+
+    @Test
+    @DisplayName("approveEmail should return 200 with APPROVED status")
+    void approveEmail_whenPending_shouldReturn200() throws Exception {
+        authenticateAs(1L);
+
+        var draft = new EmailDraft(
+                5L, JOB_ID, 1L,
+                "Subject", "Body",
+                EmailStatus.APPROVED,
+                LocalDateTime.parse("2026-05-30T10:00:00"));
+
+        when(approveDraftUseCase.approve(1L, JOB_ID)).thenReturn(draft);
+
+        mockMvc.perform(post("/api/jobs/{id}/email/approve", JOB_ID))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("APPROVED"));
+
+        verify(approveDraftUseCase).approve(1L, JOB_ID);
     }
 
     @Test

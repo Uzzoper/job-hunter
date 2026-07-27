@@ -1,5 +1,8 @@
 package com.juanperuzzo.job_hunter.infrastructure.config;
 
+import com.juanperuzzo.job_hunter.application.port.in.AutoSendEligibilityPort;
+import com.juanperuzzo.job_hunter.application.port.in.GenerateEmailUseCase;
+import com.juanperuzzo.job_hunter.application.port.in.SendEmailUseCase;
 import com.juanperuzzo.job_hunter.application.port.out.AiPort;
 import com.juanperuzzo.job_hunter.application.port.out.EmailDraftRepository;
 import com.juanperuzzo.job_hunter.application.port.out.EmailSenderPort;
@@ -15,13 +18,17 @@ import com.juanperuzzo.job_hunter.application.service.FetchSourceJobsService;
 import com.juanperuzzo.job_hunter.infrastructure.ai.OllamaClient;
 import com.juanperuzzo.job_hunter.infrastructure.ai.OpenRouterClient;
 import com.juanperuzzo.job_hunter.infrastructure.email.ResendEmailSender;
+import com.juanperuzzo.job_hunter.infrastructure.scheduler.AutoSendScheduler;
 import com.juanperuzzo.job_hunter.application.port.out.PasswordHasher;
 import com.juanperuzzo.job_hunter.application.port.out.TokenProvider;
 import com.juanperuzzo.job_hunter.application.port.out.UserRepository;
 import com.juanperuzzo.job_hunter.application.port.out.JobAnalysisRepository;
 import com.juanperuzzo.job_hunter.application.port.out.UserProfileRepository;
+import com.juanperuzzo.job_hunter.application.service.ApproveDraftService;
 import com.juanperuzzo.job_hunter.application.service.AuthService;
+import com.juanperuzzo.job_hunter.application.service.AutoSendEligibilityService;
 import com.juanperuzzo.job_hunter.application.service.ResumeUploadService;
+import com.juanperuzzo.job_hunter.application.service.TemplateEmailService;
 import com.juanperuzzo.job_hunter.application.service.UserProfileService;
 import com.juanperuzzo.job_hunter.infrastructure.security.JwtTokenService;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.retry.ExponentialBackoffRetry;
@@ -32,6 +39,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.context.annotation.Primary;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.beans.factory.annotation.Qualifier;
 
 import java.time.Clock;
@@ -55,6 +63,7 @@ import com.juanperuzzo.job_hunter.infrastructure.scraper.strategy.ExtractionStra
 
 @Configuration
 @EnableConfigurationProperties(LinkedInScraperProperties.class)
+@EnableScheduling
 public class AppConfig {
 
     @Bean
@@ -278,5 +287,36 @@ public class AppConfig {
             UserRepository userRepository,
             EmailSenderPort emailSenderPort) {
         return new EmailSendingService(emailDraftRepository, jobRepository, userRepository, emailSenderPort);
+    }
+
+    @Bean
+    public AutoSendEligibilityService autoSendEligibilityService(
+            EmailDraftRepository emailDraftRepository,
+            JobRepository jobRepository,
+            JobAnalysisRepository jobAnalysisRepository,
+            @Value("${auto-send.require-review}") boolean requireReview,
+            @Value("${auto-send.daily-cap}") int dailyCap) {
+        return new AutoSendEligibilityService(emailDraftRepository, jobRepository, jobAnalysisRepository, requireReview, dailyCap);
+    }
+
+    @Bean
+    public TemplateEmailService templateEmailService(EmailDraftRepository emailDraftRepository) {
+        return new TemplateEmailService(emailDraftRepository);
+    }
+
+    @Bean
+    public AutoSendScheduler autoSendScheduler(
+            AutoSendEligibilityPort eligibilityPort,
+            TemplateEmailService templateEmailService,
+            GenerateEmailUseCase generateEmailUseCase,
+            SendEmailUseCase sendEmailUseCase,
+            @Value("${auto-send.enabled}") boolean enabled,
+            @Value("${auto-send.jitter-seconds}") int jitterSeconds) {
+        return new AutoSendScheduler(eligibilityPort, templateEmailService, generateEmailUseCase, sendEmailUseCase, enabled, jitterSeconds);
+    }
+
+    @Bean
+    public ApproveDraftService approveDraftService(EmailDraftRepository emailDraftRepository) {
+        return new ApproveDraftService(emailDraftRepository);
     }
 }
