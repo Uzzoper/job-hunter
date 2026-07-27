@@ -27,13 +27,16 @@ public class ResumeUploadService {
     private static final Logger log = LoggerFactory.getLogger(ResumeUploadService.class);
 
     private final AiPort aiPort;
+    private final UserProfileService userProfileService;
     private final UserProfileRepository userProfileRepository;
     private final ObjectMapper objectMapper;
     private final Path uploadDir;
 
-    public ResumeUploadService(AiPort aiPort, UserProfileRepository userProfileRepository,
+    public ResumeUploadService(AiPort aiPort, UserProfileService userProfileService,
+                               UserProfileRepository userProfileRepository,
                                @Value("${app.upload-dir}") String uploadDir) {
         this.aiPort = aiPort;
+        this.userProfileService = userProfileService;
         this.userProfileRepository = userProfileRepository;
         this.objectMapper = new ObjectMapper();
         this.uploadDir = Path.of(uploadDir);
@@ -52,16 +55,15 @@ public class ResumeUploadService {
 
         savePdfToDisk(userId, file);
 
-        var existingProfile = userProfileRepository.findByUserId(userId);
-        CompanyTone tone = existingProfile.map(UserProfile::tone).orElse(CompanyTone.FORMAL);
-        Long profileId = existingProfile.map(UserProfile::id).orElse(null);
+        CompanyTone tone = userProfileRepository.findByUserId(userId)
+                .map(UserProfile::tone)
+                .orElse(CompanyTone.FORMAL);
 
         List<Project> projects = extraction.projects().stream()
                 .map(p -> new Project(p.name(), p.description(), String.join(", ", p.techStack())))
                 .toList();
 
-        var profile = new UserProfile(profileId, userId, rawText, extraction.skills(), tone, projects);
-        return userProfileRepository.save(profile);
+        return userProfileService.saveProfile(userId, rawText, extraction.skills(), tone, projects);
     }
 
     private void validateFile(MultipartFile file) {
