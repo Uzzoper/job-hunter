@@ -197,6 +197,36 @@ impl ApiClient {
             .await?;
         self.handle_response(resp).await
     }
+
+    // =========================================================================
+    // Resume upload endpoint
+    // =========================================================================
+
+    pub async fn upload_resume(&self, file_path: &str) -> Result<ProfileResponse> {
+        let bytes = tokio::fs::read(file_path).await
+            .map_err(|e| CliError::Io(e))?;
+
+        let filename = std::path::Path::new(file_path)
+            .file_name()
+            .map(|f| f.to_string_lossy().to_string())
+            .unwrap_or_else(|| "resume.pdf".to_string());
+
+        let part = reqwest::multipart::Part::bytes(bytes)
+            .file_name(filename)
+            .mime_str("application/pdf")
+            .map_err(|e| CliError::Internal(e.to_string()))?;
+
+        let form = reqwest::multipart::Form::new()
+            .part("file", part);
+
+        let url = format!("{}/api/profile/upload-resume", self.base_url);
+        let mut req = self.client.post(url);
+        if let Some(ref token) = self.token {
+            req = req.bearer_auth(token);
+        }
+        let resp = req.multipart(form).send().await?;
+        self.handle_response(resp).await
+    }
 }
 
 impl ApiError {

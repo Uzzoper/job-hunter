@@ -21,6 +21,7 @@ pub async fn handle(
             tone,
             projects,
         } => handle_edit(resume, skills, tone, projects, &client).await,
+        crate::ProfileAction::UploadResume { path } => handle_upload_resume(path, &client).await,
     }
 }
 
@@ -176,6 +177,28 @@ fn tone_badge(tone: &CompanyTone) -> &'static str {
         CompanyTone::Casual => "[CASUAL]",
         CompanyTone::Startup => "[STARTUP]",
     }
+}
+
+async fn handle_upload_resume(path: String, client: &ApiClient) -> anyhow::Result<()> {
+    println!("Uploading {} ...", path);
+    match client.upload_resume(&path).await {
+        Ok(profile) => {
+            println!("Resume uploaded and profile extracted successfully.\n");
+            print_profile(&profile);
+        }
+        Err(CliError::Api(ApiError::BadRequest(msg))) => {
+            eprintln!("Error: {}", msg);
+        }
+        Err(CliError::Api(ApiError::BadGateway(msg))) => {
+            eprintln!("Error: AI extraction failed: {}", msg);
+        }
+        Err(CliError::Api(ApiError::Unauthorized(_))) => {
+            eprintln!("Error: Not authenticated.");
+            eprintln!("Hint: Run 'jh auth login' to authenticate.");
+        }
+        Err(e) => return Err(e.into()),
+    }
+    Ok(())
 }
 
 // =========================================================================
