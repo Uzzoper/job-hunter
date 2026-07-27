@@ -21,16 +21,28 @@ spring:
     enabled: true
     locations: classpath:db/migration
 
+  servlet:
+    multipart:
+      max-file-size: 2MB
+      max-request-size: 2MB
+
 jwt:
   secret: ${JWT_SECRET}
   expiration-hours: 24
 
 ai:
+  provider: openrouter   # "openrouter" (default) | "ollama"
+  ollama:
+    base-url: http://localhost:11434/v1
+    model: llama3.2
+    timeout-seconds: 60
   openrouter:
     base-url: https://openrouter.ai/api/v1
     api-key: ${OPENROUTER_API_KEY}
     model: poolside/laguna-s-2.1:free
     timeout-seconds: 30
+  resume-extraction:
+    max-chars: 8000    # max characters sent to AI; text exceeding this is truncated with a warning
 
 scraper:
   retry:
@@ -74,5 +86,6 @@ app:
     allowed-origins: "http://localhost:3000,http://localhost:4200"
     allowed-methods: "GET,POST,PUT,DELETE,OPTIONS"
     allowed-headers: "*"
+  upload-dir: ./uploads/resumes
 
 

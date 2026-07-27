@@ -1,6 +1,7 @@
 package com.juanperuzzo.job_hunter.web.dto;
 
 import com.juanperuzzo.job_hunter.domain.model.CompanyTone;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
@@ -16,5 +17,11 @@ public record ProfileRequest(
     List<@NotBlank String> skills,
 
     @NotNull(message = "tone is required")
-    CompanyTone tone
-) {}
+    CompanyTone tone,
+
+    List<@Valid ProjectRequest> projects
+) {
+    public ProfileRequest {
+        if (projects == null) projects = List.of();
+    }
+}

@@ -84,6 +84,7 @@ The project includes a **Rust** binary (`jh-cli`) with two interaction modes for
 | `jh-cli email generate <job-id>` | Generate a new email draft |
 | `jh-cli profile show [--json]` | View current profile |
 | `jh-cli profile edit [--resume] [--skills] [--tone]` | Update profile fields |
+| `jh-cli profile upload <path>` | Upload PDF resume — AI extracts skills & projects |
 | `jh-cli export <output> [--keyword]` | Export jobs to a CSV file |
 | `jh-cli clear-cache` | Clear local SQLite cache |
 
@@ -361,6 +362,7 @@ Start the TUI (default mode, no subcommand needed):
 | `POST` | `/api/jobs/{id}/email` | Generate new email for the job | Yes |
 | `GET` | `/api/profile` | Get authenticated user's profile | Yes |
 | `PUT` | `/api/profile` | Save/update user profile | Yes |
+| `POST` | `/api/profile/upload-resume` | Upload PDF resume → AI extracts skills & projects | Yes |
 
 ---
 

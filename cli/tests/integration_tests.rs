@@ -477,7 +477,8 @@ mod full_user_flow {
                     "userId": 42,
                     "resumeText": "Experienced Rust developer with 5 years...",
                     "skills": ["Rust", "PostgreSQL", "Docker"],
-                    "tone": "STARTUP"
+                    "tone": "STARTUP",
+                    "projects": []
                 }));
         });
 
@@ -495,7 +496,8 @@ mod full_user_flow {
                 .json_body(json!({
                     "resumeText": "Senior Rust developer with 8 years...",
                     "skills": ["Rust", "Go", "Kubernetes"],
-                    "tone": "FORMAL"
+                    "tone": "FORMAL",
+                    "projects": []
                 }));
             then.status(200)
                 .header("content-type", "application/json")
@@ -504,7 +506,8 @@ mod full_user_flow {
                     "userId": 42,
                     "resumeText": "Senior Rust developer with 8 years...",
                     "skills": ["Rust", "Go", "Kubernetes"],
-                    "tone": "FORMAL"
+                    "tone": "FORMAL",
+                    "projects": []
                 }));
         });
 
@@ -512,6 +515,7 @@ mod full_user_flow {
             resume_text: "Senior Rust developer with 8 years...".into(),
             skills: vec!["Rust".into(), "Go".into(), "Kubernetes".into()],
             tone: CompanyTone::Formal,
+            projects: vec![],
         };
         let updated = client.update_profile(&update_req).await.expect("update profile should succeed");
         profile_update_mock.assert();
@@ -785,6 +789,7 @@ mod error_scenarios {
             resume_text: "Resume".into(),
             skills: vec![],
             tone: CompanyTone::Casual,
+            projects: vec![],
         };
         let result = client.update_profile(&req).await;
         assert!(matches!(result, Err(CliError::Api(ApiError::BadRequest(_)))));

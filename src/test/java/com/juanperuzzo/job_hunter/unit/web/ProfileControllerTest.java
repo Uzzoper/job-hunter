@@ -1,9 +1,14 @@
 package com.juanperuzzo.job_hunter.unit.web;
 
+import com.juanperuzzo.job_hunter.application.port.in.CurrentUserProvider;
 import com.juanperuzzo.job_hunter.application.port.in.UserProfileUseCase;
+import com.juanperuzzo.job_hunter.application.service.ResumeUploadService;
 import com.juanperuzzo.job_hunter.application.port.out.TokenProvider;
+import com.juanperuzzo.job_hunter.domain.exception.AiException;
 import com.juanperuzzo.job_hunter.domain.exception.ProfileNotConfiguredException;
+import com.juanperuzzo.job_hunter.domain.exception.UserNotFoundException;
 import com.juanperuzzo.job_hunter.domain.model.CompanyTone;
+import com.juanperuzzo.job_hunter.domain.model.Project;
 import com.juanperuzzo.job_hunter.domain.model.User;
 import com.juanperuzzo.job_hunter.domain.model.UserProfile;
 import com.juanperuzzo.job_hunter.infrastructure.security.CurrentUserService;
@@ -20,6 +25,7 @@ import org.springframework.boot.security.autoconfigure.SecurityAutoConfiguration
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -31,6 +37,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
@@ -51,6 +58,9 @@ class ProfileControllerTest {
     @MockitoBean
     private TokenProvider tokenProvider;
 
+    @MockitoBean
+    private ResumeUploadService resumeUploadService;
+
     @AfterEach
     void tearDown() {
         SecurityContextHolder.clearContext();
@@ -62,7 +72,7 @@ class ProfileControllerTest {
         var authentication = new UsernamePasswordAuthenticationToken(new User(1L, "test@test.com", "Test", "hash"), null, List.of());
         SecurityContextHolder.getContext().setAuthentication(authentication);
 
-        var profile = new UserProfile(1L, 1L, "Experienced dev...", List.of("Java", "Spring Boot"), CompanyTone.FORMAL);
+        var profile = new UserProfile(1L, 1L, "Experienced dev...", List.of("Java", "Spring Boot"), CompanyTone.FORMAL, List.of());
         when(userProfileService.getProfile(1L)).thenReturn(profile);
 
         mockMvc.perform(get("/api/profile"))
@@ -92,10 +102,10 @@ class ProfileControllerTest {
         var authentication = new UsernamePasswordAuthenticationToken(new User(1L, "test@test.com", "Test", "hash"), null, List.of());
         SecurityContextHolder.getContext().setAuthentication(authentication);
 
-        var request = new ProfileRequest("New resume text that is certainly long enough to pass the minimum length constraint of fifty characters for test", List.of("Java", "Python"), CompanyTone.STARTUP);
-        var profile = new UserProfile(1L, 1L, "New resume text that is certainly long enough to pass the minimum length constraint of fifty characters for test", List.of("Java", "Python"), CompanyTone.STARTUP);
+        var request = new ProfileRequest("New resume text that is certainly long enough to pass the minimum length constraint of fifty characters for test", List.of("Java", "Python"), CompanyTone.STARTUP, List.of());
+        var profile = new UserProfile(1L, 1L, "New resume text that is certainly long enough to pass the minimum length constraint of fifty characters for test", List.of("Java", "Python"), CompanyTone.STARTUP, List.of());
 
-        when(userProfileService.saveProfile(1L, "New resume text that is certainly long enough to pass the minimum length constraint of fifty characters for test", List.of("Java", "Python"), CompanyTone.STARTUP))
+        when(userProfileService.saveProfile(1L, "New resume text that is certainly long enough to pass the minimum length constraint of fifty characters for test", List.of("Java", "Python"), CompanyTone.STARTUP, List.of()))
                 .thenReturn(profile);
 
         mockMvc.perform(put("/api/profile")
@@ -114,7 +124,7 @@ class ProfileControllerTest {
         var authentication = new UsernamePasswordAuthenticationToken(new User(1L, "test@test.com", "Test", "hash"), null, List.of());
         SecurityContextHolder.getContext().setAuthentication(authentication);
 
-        var request = new ProfileRequest(null, List.of("Java"), CompanyTone.STARTUP);
+        var request = new ProfileRequest(null, List.of("Java"), CompanyTone.STARTUP, List.of());
 
         mockMvc.perform(put("/api/profile")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -128,7 +138,7 @@ class ProfileControllerTest {
         var authentication = new UsernamePasswordAuthenticationToken(new User(1L, "test@test.com", "Test", "hash"), null, List.of());
         SecurityContextHolder.getContext().setAuthentication(authentication);
 
-        var request = new ProfileRequest("short", List.of("Java"), CompanyTone.STARTUP);
+        var request = new ProfileRequest("short", List.of("Java"), CompanyTone.STARTUP, List.of());
 
         mockMvc.perform(put("/api/profile")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -142,7 +152,7 @@ class ProfileControllerTest {
         var authentication = new UsernamePasswordAuthenticationToken(new User(1L, "test@test.com", "Test", "hash"), null, List.of());
         SecurityContextHolder.getContext().setAuthentication(authentication);
 
-        var request = new ProfileRequest("A very long resume text that is certainly more than fifty characters long to pass validation", List.of(), CompanyTone.STARTUP);
+        var request = new ProfileRequest("A very long resume text that is certainly more than fifty characters long to pass validation", List.of(), CompanyTone.STARTUP, List.of());
 
         mockMvc.perform(put("/api/profile")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -156,7 +166,7 @@ class ProfileControllerTest {
         var authentication = new UsernamePasswordAuthenticationToken(new User(1L, "test@test.com", "Test", "hash"), null, List.of());
         SecurityContextHolder.getContext().setAuthentication(authentication);
 
-        var request = new ProfileRequest("A very long resume text that is certainly more than fifty characters long to pass validation", List.of("Java"), null);
+        var request = new ProfileRequest("A very long resume text that is certainly more than fifty characters long to pass validation", List.of("Java"), null, List.of());
 
         mockMvc.perform(put("/api/profile")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -170,9 +180,9 @@ class ProfileControllerTest {
         var authentication = new UsernamePasswordAuthenticationToken(new User(1L, "test@test.com", "Test", "hash"), null, List.of());
         SecurityContextHolder.getContext().setAuthentication(authentication);
 
-        var request = new ProfileRequest("New resume text that is certainly long enough to pass the minimum length constraint of fifty characters for test", List.of("Java"), CompanyTone.FORMAL);
+        var request = new ProfileRequest("New resume text that is certainly long enough to pass the minimum length constraint of fifty characters for test", List.of("Java"), CompanyTone.FORMAL, List.of());
 
-        when(userProfileService.saveProfile(eq(1L), any(), any(), any()))
+        when(userProfileService.saveProfile(eq(1L), any(), any(), any(), any()))
                 .thenThrow(new IllegalArgumentException("Invalid input"));
 
         mockMvc.perform(put("/api/profile")
@@ -187,7 +197,7 @@ class ProfileControllerTest {
         var authentication = new UsernamePasswordAuthenticationToken(new User(42L, "test@test.com", "Test", "hash"), null, List.of());
         SecurityContextHolder.getContext().setAuthentication(authentication);
 
-        var profile = new UserProfile(2L, 42L, "Dev resume", List.of("Go"), CompanyTone.CASUAL);
+        var profile = new UserProfile(2L, 42L, "Dev resume", List.of("Go"), CompanyTone.CASUAL, List.of());
         when(userProfileService.getProfile(42L)).thenReturn(profile);
 
         mockMvc.perform(get("/api/profile"))
@@ -196,5 +206,80 @@ class ProfileControllerTest {
                 .andExpect(jsonPath("$.resumeText").value("Dev resume"))
                 .andExpect(jsonPath("$.skills[0]").value("Go"))
                 .andExpect(jsonPath("$.tone").value("CASUAL"));
+    }
+
+    @Test
+    @DisplayName("uploadResume should return 200 and profile when file is valid")
+    void uploadResume_whenValidPdf_shouldReturn200() throws Exception {
+        var authentication = new UsernamePasswordAuthenticationToken(
+                new User(1L, "test@test.com", "Test", "hash"), null, List.of());
+        SecurityContextHolder.getContext().setAuthentication(authentication);
+
+        var profile = new UserProfile(1L, 1L, "Experienced Java developer with Spring Boot",
+                List.of("Java", "Spring Boot"), CompanyTone.FORMAL,
+                List.of(new Project("ProjectX", "A project", "Java, Maven")));
+        var pdfBytes = "fake pdf content".getBytes();
+        var multipartFile = new MockMultipartFile("file", "resume.pdf", "application/pdf", pdfBytes);
+
+        when(resumeUploadService.uploadResume(eq(1L), any())).thenReturn(profile);
+
+        mockMvc.perform(multipart("/api/profile/upload-resume")
+                        .file(multipartFile))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.userId").value(1))
+                .andExpect(jsonPath("$.skills[0]").value("Java"))
+                .andExpect(jsonPath("$.skills[1]").value("Spring Boot"))
+                .andExpect(jsonPath("$.tone").value("FORMAL"));
+    }
+
+    @Test
+    @DisplayName("uploadResume should return 404 when user is not found")
+    void uploadResume_whenUserNotFound_shouldReturn404() throws Exception {
+        var authentication = new UsernamePasswordAuthenticationToken(
+                new User(99L, "ghost@test.com", "Ghost", "hash"), null, List.of());
+        SecurityContextHolder.getContext().setAuthentication(authentication);
+
+        var multipartFile = new MockMultipartFile("file", "resume.pdf", "application/pdf", "content".getBytes());
+
+        when(resumeUploadService.uploadResume(eq(99L), any()))
+                .thenThrow(new UserNotFoundException("User not found with id: 99"));
+
+        mockMvc.perform(multipart("/api/profile/upload-resume")
+                        .file(multipartFile))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    @DisplayName("uploadResume should return 502 when AI extraction fails")
+    void uploadResume_whenAiFails_shouldReturn502() throws Exception {
+        var authentication = new UsernamePasswordAuthenticationToken(
+                new User(1L, "test@test.com", "Test", "hash"), null, List.of());
+        SecurityContextHolder.getContext().setAuthentication(authentication);
+
+        var multipartFile = new MockMultipartFile("file", "resume.pdf", "application/pdf", "content".getBytes());
+
+        when(resumeUploadService.uploadResume(eq(1L), any()))
+                .thenThrow(new AiException("AI extraction failed"));
+
+        mockMvc.perform(multipart("/api/profile/upload-resume")
+                        .file(multipartFile))
+                .andExpect(status().isBadGateway());
+    }
+
+    @Test
+    @DisplayName("uploadResume should return 400 when service throws IllegalArgumentException")
+    void uploadResume_whenInvalidInput_shouldReturn400() throws Exception {
+        var authentication = new UsernamePasswordAuthenticationToken(
+                new User(1L, "test@test.com", "Test", "hash"), null, List.of());
+        SecurityContextHolder.getContext().setAuthentication(authentication);
+
+        var multipartFile = new MockMultipartFile("file", "resume.pdf", "application/pdf", "content".getBytes());
+
+        when(resumeUploadService.uploadResume(eq(1L), any()))
+                .thenThrow(new IllegalArgumentException("Invalid input"));
+
+        mockMvc.perform(multipart("/api/profile/upload-resume")
+                        .file(multipartFile))
+                .andExpect(status().isBadRequest());
     }
 }

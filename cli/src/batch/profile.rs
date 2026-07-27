@@ -1,5 +1,5 @@
 use crate::api::ApiClient;
-use crate::domain::{CompanyTone, ProfileRequest, ProfileResponse};
+use crate::domain::{CompanyTone, ProfileRequest, ProfileResponse, ProjectRequest};
 use crate::error::{ApiError, CliError};
 use crate::util;
 
@@ -19,7 +19,9 @@ pub async fn handle(
             resume,
             skills,
             tone,
-        } => handle_edit(resume, skills, tone, &client).await,
+            projects,
+        } => handle_edit(resume, skills, tone, projects, &client).await,
+        crate::ProfileAction::UploadResume { path } => handle_upload_resume(path, &client).await,
     }
 }
 
@@ -51,6 +53,7 @@ async fn handle_edit(
     resume: Option<String>,
     skills: Option<String>,
     tone: Option<String>,
+    projects: Option<String>,
     client: &ApiClient,
 ) -> anyhow::Result<()> {
     let current = match client.get_profile().await {
@@ -85,10 +88,28 @@ async fn handle_edit(
         None
     };
 
+    let parsed_projects = if let Some(ref p) = projects {
+        match serde_json::from_str::<Vec<ProjectRequest>>(p) {
+            Ok(list) => Some(list),
+            Err(e) => {
+                eprintln!("Error: Invalid projects JSON: {e}");
+                eprintln!("Hint: Provide projects as a JSON array, e.g. --projects '[{{\"name\":\"...\",\"description\":\"...\",\"techStack\":[\"Rust\"]}}]'");
+                return Ok(());
+            }
+        }
+    } else {
+        None
+    };
+
     let req = ProfileRequest {
         resume_text: resume.unwrap_or(current.resume_text),
         skills: skills.unwrap_or(current.skills),
         tone: parsed_tone.unwrap_or(current.tone),
+        projects: parsed_projects.unwrap_or(current.projects.into_iter().map(|p| ProjectRequest {
+            name: p.name,
+            description: p.description,
+            tech_stack: p.tech_stack,
+        }).collect()),
     };
 
     match client.update_profile(&req).await {
@@ -100,6 +121,10 @@ async fn handle_edit(
                 println!("    {}. {}", i + 1, skill);
             }
             println!("  Tone: {}", tone_badge(&saved.tone));
+            println!("  Projects ({}):", saved.projects.len());
+            for (i, p) in saved.projects.iter().enumerate() {
+                println!("    {}. {} ({})", i + 1, p.name, p.tech_stack.join(", "));
+            }
         }
         Err(CliError::Api(ApiError::BadRequest(msg))) => {
             eprintln!("Error: {msg}");
@@ -134,6 +159,16 @@ fn print_profile(profile: &ProfileResponse) {
 
     println!();
     println!("Tone: {}", tone_badge(&profile.tone));
+
+    println!();
+    println!("Projects ({}):", profile.projects.len());
+    if profile.projects.is_empty() {
+        println!("  (none)");
+    } else {
+        for (i, p) in profile.projects.iter().enumerate() {
+            println!("  {}. {} — {} [{}]", i + 1, p.name, p.description, p.tech_stack.join(", "));
+        }
+    }
 }
 
 fn tone_badge(tone: &CompanyTone) -> &'static str {
@@ -142,6 +177,28 @@ fn tone_badge(tone: &CompanyTone) -> &'static str {
         CompanyTone::Casual => "[CASUAL]",
         CompanyTone::Startup => "[STARTUP]",
     }
+}
+
+async fn handle_upload_resume(path: String, client: &ApiClient) -> anyhow::Result<()> {
+    println!("Uploading {} ...", path);
+    match client.upload_resume(&path).await {
+        Ok(profile) => {
+            println!("Resume uploaded and profile extracted successfully.\n");
+            print_profile(&profile);
+        }
+        Err(CliError::Api(ApiError::BadRequest(msg))) => {
+            eprintln!("Error: {}", msg);
+        }
+        Err(CliError::Api(ApiError::BadGateway(msg))) => {
+            eprintln!("Error: AI extraction failed: {}", msg);
+        }
+        Err(CliError::Api(ApiError::Unauthorized(_))) => {
+            eprintln!("Error: Not authenticated.");
+            eprintln!("Hint: Run 'jh auth login' to authenticate.");
+        }
+        Err(e) => return Err(e.into()),
+    }
+    Ok(())
 }
 
 // =========================================================================
@@ -162,7 +219,8 @@ mod tests {
             "userId": 1,
             "resumeText": "Experienced Rust developer with 5 years in systems programming.",
             "skills": ["Rust", "PostgreSQL", "Docker"],
-            "tone": "STARTUP"
+            "tone": "STARTUP",
+            "projects": []
         })
     }
 
@@ -172,7 +230,8 @@ mod tests {
             "userId": 1,
             "resumeText": "Senior Go developer with 8 years of backend experience.",
             "skills": ["Go", "Kubernetes", "Redis"],
-            "tone": "FORMAL"
+            "tone": "FORMAL",
+            "projects": []
         })
     }
 
@@ -269,7 +328,8 @@ mod tests {
                 .json_body(json!({
                     "resumeText": "Senior Go developer with 8 years of backend experience.",
                     "skills": ["Go", "Kubernetes", "Redis"],
-                    "tone": "FORMAL"
+                    "tone": "FORMAL",
+                    "projects": []
                 }));
             then.status(200)
                 .header("content-type", "application/json")
@@ -280,6 +340,7 @@ mod tests {
             resume: Some("Senior Go developer with 8 years of backend experience.".into()),
             skills: Some("Go, Kubernetes, Redis".into()),
             tone: Some("formal".into()),
+            projects: None,
         };
         let result = handle(action, &server.url(""), &token).await;
 
@@ -308,7 +369,8 @@ mod tests {
                 .json_body(json!({
                     "resumeText": "Experienced Rust developer with 5 years in systems programming.",
                     "skills": ["Rust", "PostgreSQL", "Docker"],
-                    "tone": "CASUAL"
+                    "tone": "CASUAL",
+                    "projects": []
                 }));
             then.status(200)
                 .header("content-type", "application/json")
@@ -317,7 +379,8 @@ mod tests {
                     "userId": 1,
                     "resumeText": "Experienced Rust developer with 5 years in systems programming.",
                     "skills": ["Rust", "PostgreSQL", "Docker"],
-                    "tone": "CASUAL"
+                    "tone": "CASUAL",
+                    "projects": []
                 }));
         });
 
@@ -325,6 +388,7 @@ mod tests {
             resume: None,
             skills: None,
             tone: Some("casual".into()),
+            projects: None,
         };
         let result = handle(action, &server.url(""), &token).await;
 
@@ -350,6 +414,7 @@ mod tests {
             resume: None,
             skills: None,
             tone: Some("invalid-tone".into()),
+            projects: None,
         };
         let result = handle(action, &server.url(""), &token).await;
 
@@ -388,6 +453,7 @@ mod tests {
             resume: Some("New resume".into()),
             skills: Some("".into()),
             tone: None,
+            projects: None,
         };
         let result = handle(action, &server.url(""), &token).await;
 
@@ -414,6 +480,7 @@ mod tests {
             resume: Some("New resume".into()),
             skills: None,
             tone: None,
+            projects: None,
         };
         let result = handle(action, &server.url(""), &token).await;
 

@@ -8,5 +8,6 @@ public record ProfileResponse(
     Long userId,
     String resumeText,
     List<String> skills,
-    CompanyTone tone
+    CompanyTone tone,
+    List<ProjectResponse> projects
 ) {}

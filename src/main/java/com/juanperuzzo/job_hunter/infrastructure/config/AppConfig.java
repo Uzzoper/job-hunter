@@ -10,6 +10,7 @@ import com.juanperuzzo.job_hunter.application.service.AiAnalysisService;
 import com.juanperuzzo.job_hunter.application.service.EmailGenerationService;
 import com.juanperuzzo.job_hunter.application.service.FetchJobsService;
 import com.juanperuzzo.job_hunter.application.service.FetchSourceJobsService;
+import com.juanperuzzo.job_hunter.infrastructure.ai.OllamaClient;
 import com.juanperuzzo.job_hunter.infrastructure.ai.OpenRouterClient;
 import com.juanperuzzo.job_hunter.application.port.out.PasswordHasher;
 import com.juanperuzzo.job_hunter.application.port.out.TokenProvider;
@@ -17,6 +18,7 @@ import com.juanperuzzo.job_hunter.application.port.out.UserRepository;
 import com.juanperuzzo.job_hunter.application.port.out.JobAnalysisRepository;
 import com.juanperuzzo.job_hunter.application.port.out.UserProfileRepository;
 import com.juanperuzzo.job_hunter.application.service.AuthService;
+import com.juanperuzzo.job_hunter.application.service.ResumeUploadService;
 import com.juanperuzzo.job_hunter.application.service.UserProfileService;
 import com.juanperuzzo.job_hunter.infrastructure.security.JwtTokenService;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.retry.ExponentialBackoffRetry;
@@ -178,6 +180,7 @@ public class AppConfig {
     }
 
     @Bean
+    @ConditionalOnProperty(name = "ai.provider", havingValue = "openrouter", matchIfMissing = true)
     public OpenRouterClient openRouterClient(
             @Value("${ai.openrouter.base-url}") String baseUrl,
             @Value("${ai.openrouter.api-key}") String apiKey,
@@ -185,6 +188,15 @@ public class AppConfig {
             @Value("${ai.openrouter.timeout-seconds}") int timeoutSeconds,
             ExponentialBackoffRetry exponentialBackoffRetry) {
         return new OpenRouterClient(baseUrl, apiKey, model, timeoutSeconds, exponentialBackoffRetry);
+    }
+
+    @Bean
+    @ConditionalOnProperty(name = "ai.provider", havingValue = "ollama")
+    public OllamaClient ollamaClient(
+            @Value("${ai.ollama.base-url}") String baseUrl,
+            @Value("${ai.ollama.model}") String model,
+            @Value("${ai.ollama.timeout-seconds}") int timeoutSeconds) {
+        return new OllamaClient(baseUrl, model, timeoutSeconds);
     }
 
     @Bean
@@ -238,5 +250,13 @@ public class AppConfig {
     @Bean
     public UserProfileService userProfileService(UserRepository userRepository, UserProfileRepository userProfileRepository) {
         return new UserProfileService(userRepository, userProfileRepository);
+    }
+
+    @Bean
+    public ResumeUploadService resumeUploadService(AiPort aiPort, UserProfileService userProfileService,
+                                                   UserProfileRepository userProfileRepository,
+                                                   @Value("${app.upload-dir}") String uploadDir,
+                                                   @Value("${ai.resume-extraction.max-chars:8000}") int maxAiChars) {
+        return new ResumeUploadService(aiPort, userProfileService, userProfileRepository, uploadDir, maxAiChars);
     }
 }

@@ -166,5 +166,13 @@ pub enum ProfileAction {
         /// Tone: formal, casual, or startup
         #[arg(long)]
         tone: Option<String>,
+        /// Projects as JSON array string (replaces all projects)
+        #[arg(long)]
+        projects: Option<String>,
+    },
+    /// Upload a PDF resume and extract profile with AI
+    UploadResume {
+        /// Path to the PDF resume file
+        path: String,
     },
 }

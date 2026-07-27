@@ -153,6 +153,7 @@ impl ApiClient {
     pub async fn analyze_job(&self, job_id: i64) -> Result<JobAnalysis> {
         let resp = self
             .request(Method::POST, &format!("/api/jobs/{job_id}/analyze"))
+            .timeout(Duration::from_secs(180))
             .send()
             .await?;
         self.handle_response(resp).await
@@ -173,6 +174,7 @@ impl ApiClient {
     pub async fn generate_email(&self, job_id: i64) -> Result<EmailDraftResponse> {
         let resp = self
             .request(Method::POST, &format!("/api/jobs/{job_id}/email"))
+            .timeout(Duration::from_secs(180))
             .send()
             .await?;
         self.handle_response(resp).await
@@ -191,6 +193,39 @@ impl ApiClient {
         let resp = self
             .request(Method::PUT, "/api/profile")
             .json(req)
+            .send()
+            .await?;
+        self.handle_response(resp).await
+    }
+
+    // =========================================================================
+    // Resume upload endpoint
+    // =========================================================================
+
+    pub async fn upload_resume(&self, file_path: &str) -> Result<ProfileResponse> {
+        let bytes = tokio::fs::read(file_path).await
+            .map_err(|e| CliError::Io(e))?;
+
+        let filename = std::path::Path::new(file_path)
+            .file_name()
+            .map(|f| f.to_string_lossy().to_string())
+            .unwrap_or_else(|| "resume.pdf".to_string());
+
+        let part = reqwest::multipart::Part::bytes(bytes)
+            .file_name(filename)
+            .mime_str("application/pdf")
+            .map_err(|e| CliError::Internal(e.to_string()))?;
+
+        let form = reqwest::multipart::Form::new()
+            .part("file", part);
+
+        let url = format!("{}/api/profile/upload-resume", self.base_url);
+        let mut req = self.client.post(url);
+        if let Some(ref token) = self.token {
+            req = req.bearer_auth(token);
+        }
+        let resp = req.multipart(form)
+            .timeout(Duration::from_secs(180))
             .send()
             .await?;
         self.handle_response(resp).await
@@ -667,7 +702,8 @@ mod tests {
                     "userId": 1,
                     "resumeText": "Experienced Rust developer...",
                     "skills": ["Rust", "PostgreSQL", "Docker"],
-                    "tone": "STARTUP"
+                    "tone": "STARTUP",
+                    "projects": []
                 }));
         });
 
@@ -695,7 +731,8 @@ mod tests {
                     "userId": 1,
                     "resumeText": "Updated resume...",
                     "skills": ["Rust", "Go", "Kubernetes"],
-                    "tone": "FORMAL"
+                    "tone": "FORMAL",
+                    "projects": []
                 }));
         });
 
@@ -703,6 +740,7 @@ mod tests {
             resume_text: "Updated resume...".into(),
             skills: vec!["Rust".into(), "Go".into(), "Kubernetes".into()],
             tone: CompanyTone::Formal,
+            projects: vec![],
         };
 
         let result = client.update_profile(&req).await;
@@ -734,6 +772,7 @@ mod tests {
             resume_text: "Resume".into(),
             skills: vec![],
             tone: CompanyTone::Casual,
+            projects: vec![],
         };
 
         let result = client.update_profile(&req).await;
