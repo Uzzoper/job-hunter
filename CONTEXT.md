@@ -13,8 +13,16 @@ A registered person with authentication credentials (email + password).
 _Avoid_: Candidate, applicant, account
 
 **UserProfile**:
-A user's career profile containing resume text, target skills, communication tone, and personal projects.
+A user's career profile containing resume text, target skills, desired communication tone for generated emails, and personal projects.
 _Avoid_: CV, resume (for the whole profile — resume is part of it)
+
+**CompanyTone**:
+The desired communication tone used when generating application emails — FORMAL, CASUAL, or STARTUP. This is a user preference, not inferred from the resume.
+_Avoid_: Writing style, voice
+
+**ResumeUpload**:
+The act of sending a PDF file to the backend, which extracts text via Apache PDFBox, delegates skill/project extraction to AI, and saves/overwrites the user's profile.
+_Avoid_: CV import, file attachment
 
 **Project**:
 A personal, academic, or professional work item that a user has built or contributed to, with a name, description, and tech stack.
