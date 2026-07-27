@@ -96,6 +96,8 @@ public class ResumeUploadService {
             throw new AiException("AI extraction failed: " + e.getMessage(), e);
         }
 
+        log.info("AI extraction response:\n{}", response);
+
         try {
             String cleaned = response.strip();
             cleaned = cleaned.replaceAll("```[a-zA-Z]*\\s*|```\\s*", "").strip();
