@@ -80,7 +80,7 @@ impl JobDetailScreen {
             loading_analysis: LoadingState::Idle,
             loading_email: LoadingState::Idle,
             show_email_expanded: false,
-            show_email_full: false,
+            show_email_full: true,
             api_client,
             cache,
             clipboard,
@@ -736,7 +736,7 @@ mod tests {
         assert_eq!(screen.loading_analysis, LoadingState::Idle);
         assert_eq!(screen.loading_email, LoadingState::Idle);
         assert!(!screen.show_email_expanded);
-        assert!(!screen.show_email_full);
+        assert!(screen.show_email_full);
         assert!(screen.analysis_error.is_none());
         assert!(screen.email_error.is_none());
     }
@@ -836,13 +836,13 @@ mod tests {
     #[test]
     fn toggle_email_full() {
         let mut screen = create_test_screen();
-        assert!(!screen.show_email_full);
-
-        screen.toggle_email_full();
         assert!(screen.show_email_full);
 
         screen.toggle_email_full();
         assert!(!screen.show_email_full);
+
+        screen.toggle_email_full();
+        assert!(screen.show_email_full);
     }
 
     #[test]
