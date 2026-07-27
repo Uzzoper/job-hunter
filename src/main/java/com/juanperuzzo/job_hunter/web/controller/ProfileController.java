@@ -2,6 +2,7 @@ package com.juanperuzzo.job_hunter.web.controller;
 
 import com.juanperuzzo.job_hunter.application.port.in.CurrentUserProvider;
 import com.juanperuzzo.job_hunter.application.port.in.UserProfileUseCase;
+import com.juanperuzzo.job_hunter.application.service.ResumeUploadService;
 import com.juanperuzzo.job_hunter.domain.model.Project;
 import com.juanperuzzo.job_hunter.web.dto.ProfileRequest;
 import com.juanperuzzo.job_hunter.web.dto.ProfileResponse;
@@ -9,6 +10,7 @@ import com.juanperuzzo.job_hunter.web.dto.ProjectResponse;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 
@@ -18,10 +20,13 @@ public class ProfileController {
 
     private final UserProfileUseCase userProfileService;
     private final CurrentUserProvider currentUserService;
+    private final ResumeUploadService resumeUploadService;
 
-    public ProfileController(UserProfileUseCase userProfileService, CurrentUserProvider currentUserService) {
+    public ProfileController(UserProfileUseCase userProfileService, CurrentUserProvider currentUserService,
+                             ResumeUploadService resumeUploadService) {
         this.userProfileService = userProfileService;
         this.currentUserService = currentUserService;
+        this.resumeUploadService = resumeUploadService;
     }
 
     @GetMapping
@@ -40,6 +45,14 @@ public class ProfileController {
                 .toList();
         var profile = userProfileService.saveProfile(
                 userId, request.resumeText(), request.skills(), request.tone(), projects);
+        var response = toResponse(profile);
+        return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/upload-resume")
+    public ResponseEntity<ProfileResponse> uploadResume(@RequestParam("file") MultipartFile file) {
+        Long userId = currentUserService.getCurrentUserId();
+        var profile = resumeUploadService.uploadResume(userId, file);
         var response = toResponse(profile);
         return ResponseEntity.ok(response);
     }

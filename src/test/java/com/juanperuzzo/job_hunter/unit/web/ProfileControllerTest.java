@@ -1,6 +1,8 @@
 package com.juanperuzzo.job_hunter.unit.web;
 
+import com.juanperuzzo.job_hunter.application.port.in.CurrentUserProvider;
 import com.juanperuzzo.job_hunter.application.port.in.UserProfileUseCase;
+import com.juanperuzzo.job_hunter.application.service.ResumeUploadService;
 import com.juanperuzzo.job_hunter.application.port.out.TokenProvider;
 import com.juanperuzzo.job_hunter.domain.exception.ProfileNotConfiguredException;
 import com.juanperuzzo.job_hunter.domain.model.CompanyTone;
@@ -50,6 +52,9 @@ class ProfileControllerTest {
 
     @MockitoBean
     private TokenProvider tokenProvider;
+
+    @MockitoBean
+    private ResumeUploadService resumeUploadService;
 
     @AfterEach
     void tearDown() {
