@@ -638,9 +638,13 @@ impl ProfileScreen {
         self.uploading = false;
         self.pending_upload = None;
 
-        match result {
+        match &result {
             Ok(profile) => {
-                self.set_profile(profile);
+                eprintln!("[DEBUG] Upload OK — id={:?}, skills={}, projects={}",
+                    profile.id,
+                    profile.skills.len(),
+                    profile.projects.len());
+                self.set_profile(profile.clone());
                 self.show_toast(format!(
                     "Resume uploaded! Skills: {} | Projects: {}",
                     self.skills_count(),
@@ -648,6 +652,7 @@ impl ProfileScreen {
                 ));
             }
             Err(e) => {
+                eprintln!("[DEBUG] Upload ERR: {:?}", e);
                 self.show_error_toast(format!("Upload failed: {}", e));
             }
         }
