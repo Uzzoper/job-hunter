@@ -267,16 +267,16 @@ public class AppConfig {
     public ResendEmailSender resendEmailSender(
             @Value("${resend.base-url}") String baseUrl,
             @Value("${resend.api-key}") String apiKey,
-            @Value("${resend.from-address}") String fromAddress,
             @Value("${resend.timeout-seconds}") int timeoutSeconds) {
-        return new ResendEmailSender(baseUrl, apiKey, fromAddress, timeoutSeconds);
+        return new ResendEmailSender(baseUrl, apiKey, timeoutSeconds);
     }
 
     @Bean
     public EmailSendingService emailSendingService(
             EmailDraftRepository emailDraftRepository,
             JobRepository jobRepository,
+            UserRepository userRepository,
             EmailSenderPort emailSenderPort) {
-        return new EmailSendingService(emailDraftRepository, jobRepository, emailSenderPort);
+        return new EmailSendingService(emailDraftRepository, jobRepository, userRepository, emailSenderPort);
     }
 }

@@ -14,11 +14,9 @@ import java.util.Map;
 public class ResendEmailSender implements EmailSenderPort {
 
     private final RestClient restClient;
-    private final String fromAddress;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    public ResendEmailSender(String baseUrl, String apiKey, String fromAddress, int timeoutSeconds) {
-        this.fromAddress = fromAddress;
+    public ResendEmailSender(String baseUrl, String apiKey, int timeoutSeconds) {
         var factory = new SimpleClientHttpRequestFactory();
         factory.setConnectTimeout(Duration.ofSeconds(timeoutSeconds));
         factory.setReadTimeout(Duration.ofSeconds(timeoutSeconds));
@@ -31,10 +29,10 @@ public class ResendEmailSender implements EmailSenderPort {
     }
 
     @Override
-    public void send(String to, String subject, String body) {
+    public void send(String from, String to, String subject, String body) {
         try {
             var requestBody = objectMapper.writeValueAsString(Map.of(
-                    "from", fromAddress,
+                    "from", from,
                     "to", List.of(to),
                     "subject", subject,
                     "text", body
