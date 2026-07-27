@@ -224,7 +224,10 @@ impl ApiClient {
         if let Some(ref token) = self.token {
             req = req.bearer_auth(token);
         }
-        let resp = req.multipart(form).send().await?;
+        let resp = req.multipart(form)
+            .timeout(Duration::from_secs(180))
+            .send()
+            .await?;
         self.handle_response(resp).await
     }
 }
