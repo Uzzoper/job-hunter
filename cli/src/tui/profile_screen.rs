@@ -648,7 +648,6 @@ impl ProfileScreen {
                 ));
             }
             Err(e) => {
-                eprintln!("[DEBUG] Upload ERR: {:?}", e);
                 self.show_error_toast(format!("Upload failed: {}", e));
             }
         }
