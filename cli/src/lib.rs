@@ -170,4 +170,9 @@ pub enum ProfileAction {
         #[arg(long)]
         projects: Option<String>,
     },
+    /// Upload a PDF resume and extract profile with AI
+    UploadResume {
+        /// Path to the PDF resume file
+        path: String,
+    },
 }
