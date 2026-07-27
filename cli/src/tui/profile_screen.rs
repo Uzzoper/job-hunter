@@ -111,6 +111,13 @@ pub struct ProjectPopupState {
     pub focused_field: ProjectPopupField,
 }
 
+/// State for the upload path input popup
+#[derive(Debug, Clone)]
+pub struct UploadPathState {
+    pub path: String,
+    pub cursor: usize,
+}
+
 /// Loading state for async operations
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LoadingState {
@@ -146,9 +153,11 @@ pub struct ProfileScreen {
     pub tone_selection: usize,
     pub projects: Vec<ProjectResponse>,
     pub project_popup: Option<ProjectPopupState>,
+    pub upload_path_popup: Option<UploadPathState>,
     pub focused_field: ProfileField,
     pub loading: LoadingState,
     pub saving: bool,
+    pub uploading: bool,
     pub validation_errors: Vec<String>,
     pub resume_scroll: u16,
     pub resume_cursor: usize,
@@ -171,9 +180,11 @@ impl ProfileScreen {
             tone_selection: 0,
             projects: Vec::new(),
             project_popup: None,
+            upload_path_popup: None,
             focused_field: ProfileField::Resume,
             loading: LoadingState::Idle,
             saving: false,
+            uploading: false,
             validation_errors: Vec::new(),
             resume_scroll: 0,
             resume_cursor: 0,
@@ -579,6 +590,60 @@ impl ProfileScreen {
         Ok(())
     }
 
+    /// Show file path input popup
+    pub fn show_upload_popup(&mut self) {
+        self.upload_path_popup = Some(UploadPathState {
+            path: String::new(),
+            cursor: 0,
+        });
+    }
+
+    /// Confirm upload path — starts the async upload
+    pub async fn confirm_upload(&mut self) -> anyhow::Result<()> {
+        let path = match self.upload_path_popup.take() {
+            Some(p) => p.path.trim().to_string(),
+            None => return Ok(()),
+        };
+
+        if path.is_empty() {
+            self.show_toast("Upload cancelled".to_string());
+            return Ok(());
+        }
+
+        if !path.to_lowercase().ends_with(".pdf") {
+            self.show_toast("File must be a PDF".to_string());
+            return Ok(());
+        }
+
+        if !std::path::Path::new(&path).exists() {
+            self.show_toast(format!("File not found: {}", path));
+            return Ok(());
+        }
+
+        self.uploading = true;
+
+        let client = self.api_client.clone();
+        let result = client.lock().await.upload_resume(&path).await;
+
+        self.uploading = false;
+
+        match result {
+            Ok(profile) => {
+                self.set_profile(profile);
+                self.show_toast(format!(
+                    "Resume uploaded! Skills: {} | Projects: {}",
+                    self.skills_count(),
+                    self.projects.len()
+                ));
+            }
+            Err(e) => {
+                self.show_toast(format!("Upload failed: {}", e));
+            }
+        }
+
+        Ok(())
+    }
+
     pub fn cancel_edit(&mut self) {
         if let Some(profile) = &self.profile {
             self.resume_text = Self::sanitize_text(&profile.resume_text);
@@ -591,6 +656,7 @@ impl ProfileScreen {
             self.projects = profile.projects.clone();
         }
         self.project_popup = None;
+        self.upload_path_popup = None;
         self.resume_scroll = 0;
         self.resume_cursor = 0;
         self.skills_cursor = 0;
@@ -808,6 +874,11 @@ impl ProfileScreen {
 
         if let Some(error) = self.loading.error_message() {
             render_error_popup(frame, area, theme, error, "[Enter] Dismiss  [r] Retry");
+            return;
+        }
+
+        if self.upload_path_popup.is_some() {
+            self.draw_upload_path_popup(frame, area, theme);
             return;
         }
 
@@ -1246,6 +1317,48 @@ fn draw_resume_view(&self, frame: &mut Frame, area: Rect, theme: &Theme, profile
         frame.render_widget(outer, popup_area);
     }
 
+    fn draw_upload_path_popup(&self, frame: &mut Frame, area: Rect, theme: &Theme) {
+        let popup = match &self.upload_path_popup {
+            Some(p) => p,
+            None => return,
+        };
+
+        let popup_area = Rect {
+            x: area.x + area.width.saturating_sub(60) / 2,
+            y: area.y + area.height.saturating_sub(5) / 2,
+            width: 60.min(area.width),
+            height: 5.min(area.height),
+        };
+
+        frame.render_widget(Clear, popup_area);
+
+        let inner = popup_area.inner(Margin {
+            vertical: 1,
+            horizontal: 1,
+        });
+
+        // Path input field
+        frame.render_widget(
+            Paragraph::new(Text::styled(&popup.path, theme.style_normal()))
+                .block(Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(theme.style_border(true))
+                    .title(Span::styled(" Resume PDF path ", theme.style_title()))),
+            inner,
+        );
+
+        // Cursor
+        let cursor_x = inner.x + 1 + popup.cursor.min((inner.width as usize).saturating_sub(2)) as u16;
+        frame.set_cursor_position((cursor_x, inner.y + 1));
+
+        // Popup border
+        let outer = Block::default()
+            .borders(Borders::ALL)
+            .border_style(theme.style_border(true))
+            .title(Span::styled(" Upload Resume ", theme.style_title()));
+        frame.render_widget(outer, popup_area);
+    }
+
     fn draw_validation_errors(&self, frame: &mut Frame, area: Rect, theme: &Theme) {
         if self.validation_errors.is_empty() {
             return;
@@ -1266,7 +1379,13 @@ fn draw_resume_view(&self, frame: &mut Frame, area: Rect, theme: &Theme, profile
 
     fn draw_footer(&self, frame: &mut Frame, area: Rect, theme: &Theme) {
         let shortcuts = match self.mode {
-            ProfileMode::View => " [e] Edit  [r] Reload  [q/b] Back  [Esc] Quit ",
+            ProfileMode::View => {
+                if self.upload_path_popup.is_some() {
+                    " [Enter] Confirm  [Esc] Cancel "
+                } else {
+                    " [e] Edit  [u] Upload PDF  [r] Reload  [q/b] Back  [Esc] Quit "
+                }
+            }
             ProfileMode::Edit => {
                 if self.project_popup.is_some() {
                     " [Tab/↑↓] Navigate  [Ctrl+S] Confirm  [Esc] Cancel "
@@ -1338,13 +1457,24 @@ pub async fn handle_event(
 ) -> anyhow::Result<()> {
     use crossterm::event::{KeyCode, KeyEventKind};
 
-    // Handle bracketed paste events
-    if let crossterm::event::Event::Paste(text) = event {
-        if let Some(screen) = &mut app.profile_screen {
-            screen.handle_paste(&text);
+        // Handle bracketed paste events
+        if let crossterm::event::Event::Paste(text) = event {
+            if let Some(screen) = &mut app.profile_screen {
+                if screen.upload_path_popup.is_some() {
+                    if let Some(popup) = &mut screen.upload_path_popup {
+                        let byte_pos = popup.path.char_indices()
+                            .nth(popup.cursor)
+                            .map(|(i, _)| i)
+                            .unwrap_or(popup.path.len());
+                        popup.path.insert_str(byte_pos, &text);
+                        popup.cursor += text.chars().count();
+                    }
+                } else {
+                    screen.handle_paste(&text);
+                }
+            }
+            return Ok(());
         }
-        return Ok(());
-    }
 
     if let crossterm::event::Event::Key(key) = event {
         if key.kind != KeyEventKind::Press {
@@ -1356,12 +1486,15 @@ pub async fn handle_event(
         let has_popup = app.profile_screen.as_ref()
             .and_then(|s| s.project_popup.as_ref())
             .is_some();
+        let has_upload_popup = app.profile_screen.as_ref()
+            .and_then(|s| s.upload_path_popup.as_ref())
+            .is_some();
         match key.code {
-            KeyCode::Char('q') | KeyCode::Char('Q') if !is_editing && !has_popup => {
+            KeyCode::Char('q') | KeyCode::Char('Q') if !is_editing && !has_popup && !has_upload_popup => {
                 app.state = crate::tui::app::AppState::JobList;
                 return Ok(());
             }
-            KeyCode::Char('b') | KeyCode::Char('B') if !has_popup => {
+            KeyCode::Char('b') | KeyCode::Char('B') if !has_popup && !has_upload_popup => {
                 if let Some(screen) = &mut app.profile_screen {
                     if screen.mode == ProfileMode::Edit {
                         screen.cancel_edit();
@@ -1373,7 +1506,9 @@ pub async fn handle_event(
             }
             KeyCode::Esc => {
                 if let Some(screen) = &mut app.profile_screen {
-                    if screen.project_popup.is_some() {
+                    if screen.upload_path_popup.is_some() {
+                        screen.upload_path_popup = None;
+                    } else if screen.project_popup.is_some() {
                         screen.cancel_project_popup();
                     } else if screen.mode == ProfileMode::Edit {
                         screen.cancel_edit();
@@ -1408,6 +1543,63 @@ pub async fn handle_event(
 
         // Delegate to profile screen
         if let Some(screen) = &mut app.profile_screen {
+            // If upload path popup is active, handle its input
+            if screen.upload_path_popup.is_some() {
+                match key.code {
+                    KeyCode::Enter => {
+                        let _ = screen.confirm_upload().await;
+                    }
+                    KeyCode::Esc => {
+                        screen.upload_path_popup = None;
+                    }
+                    KeyCode::Backspace => {
+                        if let Some(popup) = &mut screen.upload_path_popup {
+                            if popup.cursor > 0 {
+                                let byte_pos = popup.path.char_indices()
+                                    .nth(popup.cursor - 1)
+                                    .map(|(i, _)| i)
+                                    .unwrap_or(0);
+                                popup.path.remove(byte_pos);
+                                popup.cursor -= 1;
+                            }
+                        }
+                    }
+                    KeyCode::Left => {
+                        if let Some(popup) = &mut screen.upload_path_popup {
+                            popup.cursor = popup.cursor.saturating_sub(1);
+                        }
+                    }
+                    KeyCode::Right => {
+                        if let Some(popup) = &mut screen.upload_path_popup {
+                            let max = popup.path.chars().count();
+                            popup.cursor = popup.cursor.saturating_add(1).min(max);
+                        }
+                    }
+                    KeyCode::Home => {
+                        if let Some(popup) = &mut screen.upload_path_popup {
+                            popup.cursor = 0;
+                        }
+                    }
+                    KeyCode::End => {
+                        if let Some(popup) = &mut screen.upload_path_popup {
+                            popup.cursor = popup.path.chars().count();
+                        }
+                    }
+                    KeyCode::Char(c) => {
+                        if let Some(popup) = &mut screen.upload_path_popup {
+                            let byte_pos = popup.path.char_indices()
+                                .nth(popup.cursor)
+                                .map(|(i, _)| i)
+                                .unwrap_or(popup.path.len());
+                            popup.path.insert(byte_pos, c);
+                            popup.cursor += 1;
+                        }
+                    }
+                    _ => {}
+                }
+                return Ok(());
+            }
+
             // If project popup is active, handle popup input
             if screen.project_popup.is_some() {
                 match key.code {
@@ -1448,6 +1640,11 @@ pub async fn handle_event(
                     if screen.mode == ProfileMode::View && !screen.loading.is_loading() && !screen.saving =>
                 {
                     let _ = screen.load_profile().await;
+                }
+                KeyCode::Char('u') | KeyCode::Char('U')
+                    if screen.mode == ProfileMode::View && !screen.loading.is_loading() && !screen.saving && !screen.uploading =>
+                {
+                    screen.show_upload_popup();
                 }
                 KeyCode::Char('n') | KeyCode::Char('N')
                     if screen.mode == ProfileMode::Edit && screen.focused_field == ProfileField::Projects
