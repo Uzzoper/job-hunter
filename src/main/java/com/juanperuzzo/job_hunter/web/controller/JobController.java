@@ -7,6 +7,7 @@ import com.juanperuzzo.job_hunter.application.port.in.GenerateEmailUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.GetEmailDraftUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.GetJobUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.ListJobsUseCase;
+import com.juanperuzzo.job_hunter.application.port.in.SendEmailUseCase;
 import com.juanperuzzo.job_hunter.domain.model.EmailDraft;
 import com.juanperuzzo.job_hunter.domain.model.Job;
 import com.juanperuzzo.job_hunter.domain.model.JobAnalysis;
@@ -30,6 +31,7 @@ public class JobController {
     private final ListJobsUseCase listJobsUseCase;
     private final GetJobUseCase getJobUseCase;
     private final GetEmailDraftUseCase getEmailDraftUseCase;
+    private final SendEmailUseCase sendEmailUseCase;
     private final CurrentUserProvider currentUserService;
 
     public JobController(
@@ -40,6 +42,7 @@ public class JobController {
             ListJobsUseCase listJobsUseCase,
             GetJobUseCase getJobUseCase,
             GetEmailDraftUseCase getEmailDraftUseCase,
+            SendEmailUseCase sendEmailUseCase,
             CurrentUserProvider currentUserService) {
         this.fetchJobsUseCase = fetchJobsUseCase;
         this.fetchSourceJobsUseCase = fetchSourceJobsUseCase;
@@ -48,6 +51,7 @@ public class JobController {
         this.listJobsUseCase = listJobsUseCase;
         this.getJobUseCase = getJobUseCase;
         this.getEmailDraftUseCase = getEmailDraftUseCase;
+        this.sendEmailUseCase = sendEmailUseCase;
         this.currentUserService = currentUserService;
     }
 
@@ -115,6 +119,22 @@ public class JobController {
     public ResponseEntity<?> fetchLinkedInJobs() {
         fetchSourceJobsUseCase.fetchAndSave("linkedin");
         return ResponseEntity.ok(java.util.Map.of("message", "LinkedIn fetch completed successfully"));
+    }
+
+    @PostMapping("/{id}/send")
+    public ResponseEntity<EmailDraftResponse> sendEmail(@PathVariable Long id) {
+        Long userId = currentUserService.getCurrentUserId();
+        EmailDraft emailDraft = sendEmailUseCase.send(userId, id);
+        EmailDraftResponse response = new EmailDraftResponse(
+                emailDraft.id(),
+                emailDraft.jobId(),
+                emailDraft.subject(),
+                emailDraft.body(),
+                emailDraft.status(),
+                emailDraft.generatedAt(),
+                emailDraft.sentAt()
+        );
+        return ResponseEntity.ok(response);
     }
 
     @GetMapping("/{id}/email")
