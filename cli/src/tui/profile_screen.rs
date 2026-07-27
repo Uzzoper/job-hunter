@@ -158,6 +158,7 @@ pub struct ProfileScreen {
     pub loading: LoadingState,
     pub saving: bool,
     pub uploading: bool,
+    pub pending_upload: Option<String>,
     pub validation_errors: Vec<String>,
     pub resume_scroll: u16,
     pub resume_cursor: usize,
@@ -185,6 +186,7 @@ impl ProfileScreen {
             loading: LoadingState::Idle,
             saving: false,
             uploading: false,
+            pending_upload: None,
             validation_errors: Vec::new(),
             resume_scroll: 0,
             resume_cursor: 0,
@@ -598,34 +600,39 @@ impl ProfileScreen {
         });
     }
 
-    /// Confirm upload path — starts the async upload
-    pub async fn confirm_upload(&mut self) -> anyhow::Result<()> {
+    /// Start upload — validates path and sets pending flag (synchronous)
+    pub fn start_upload(&mut self) {
         let path = match self.upload_path_popup.take() {
             Some(p) => p.path.trim().to_string(),
-            None => return Ok(()),
+            None => return,
         };
 
         if path.is_empty() {
             self.show_toast("Upload cancelled".to_string());
-            return Ok(());
+            return;
         }
 
         if !path.to_lowercase().ends_with(".pdf") {
             self.show_toast("File must be a PDF".to_string());
-            return Ok(());
+            return;
         }
 
         if !std::path::Path::new(&path).exists() {
             self.show_toast(format!("File not found: {}", path));
-            return Ok(());
+            return;
         }
 
         self.uploading = true;
+        self.pending_upload = Some(path);
+    }
 
+    /// Finish upload — does the API call (async)
+    pub async fn finish_upload(&mut self, path: &str) {
         let client = self.api_client.clone();
-        let result = client.lock().await.upload_resume(&path).await;
+        let result = client.lock().await.upload_resume(path).await;
 
         self.uploading = false;
+        self.pending_upload = None;
 
         match result {
             Ok(profile) => {
@@ -640,8 +647,6 @@ impl ProfileScreen {
                 self.show_toast(format!("Upload failed: {}", e));
             }
         }
-
-        Ok(())
     }
 
     pub fn cancel_edit(&mut self) {
@@ -657,6 +662,7 @@ impl ProfileScreen {
         }
         self.project_popup = None;
         self.upload_path_popup = None;
+        self.pending_upload = None;
         self.resume_scroll = 0;
         self.resume_cursor = 0;
         self.skills_cursor = 0;
@@ -869,6 +875,11 @@ impl ProfileScreen {
     fn draw_content(&mut self, frame: &mut Frame, area: Rect, theme: &Theme) {
         if self.loading.is_loading() {
             render_loading(frame, area, theme, "Loading profile...");
+            return;
+        }
+
+        if self.uploading {
+            render_loading(frame, area, theme, "Uploading resume...");
             return;
         }
 
@@ -1489,12 +1500,15 @@ pub async fn handle_event(
         let has_upload_popup = app.profile_screen.as_ref()
             .and_then(|s| s.upload_path_popup.as_ref())
             .is_some();
+        let is_uploading = app.profile_screen.as_ref()
+            .map(|s| s.uploading)
+            .unwrap_or(false);
         match key.code {
-            KeyCode::Char('q') | KeyCode::Char('Q') if !is_editing && !has_popup && !has_upload_popup => {
+            KeyCode::Char('q') | KeyCode::Char('Q') if !is_editing && !has_popup && !has_upload_popup && !is_uploading => {
                 app.state = crate::tui::app::AppState::JobList;
                 return Ok(());
             }
-            KeyCode::Char('b') | KeyCode::Char('B') if !has_popup && !has_upload_popup => {
+            KeyCode::Char('b') | KeyCode::Char('B') if !has_popup && !has_upload_popup && !is_uploading => {
                 if let Some(screen) = &mut app.profile_screen {
                     if screen.mode == ProfileMode::Edit {
                         screen.cancel_edit();
@@ -1512,7 +1526,7 @@ pub async fn handle_event(
                         screen.cancel_project_popup();
                     } else if screen.mode == ProfileMode::Edit {
                         screen.cancel_edit();
-                    } else {
+                    } else if !screen.uploading {
                         app.should_quit = true;
                         app.state = crate::tui::app::AppState::Quitting;
                     }
@@ -1547,7 +1561,7 @@ pub async fn handle_event(
             if screen.upload_path_popup.is_some() {
                 match key.code {
                     KeyCode::Enter => {
-                        let _ = screen.confirm_upload().await;
+                        screen.start_upload();
                     }
                     KeyCode::Esc => {
                         screen.upload_path_popup = None;

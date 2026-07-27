@@ -231,6 +231,17 @@ impl App {
                 }
             }
 
+            // Execute pending profile upload
+            if let Some(path) = self.profile_screen.as_mut()
+                .and_then(|s| s.pending_upload.take())
+            {
+                terminal.draw(|frame| self.render(frame))?;
+                if let Some(s) = self.profile_screen.as_mut() {
+                    s.finish_upload(&path).await;
+                }
+                continue;
+            }
+
             // Handle events with timeout to allow for resize handling
             if crossterm::event::poll(std::time::Duration::from_millis(100))? {
                 let event = crossterm::event::read()?;
