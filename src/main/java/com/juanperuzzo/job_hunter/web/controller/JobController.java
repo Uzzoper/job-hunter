@@ -1,6 +1,7 @@
 package com.juanperuzzo.job_hunter.web.controller;
 
 import com.juanperuzzo.job_hunter.application.port.in.AnalyzeJobUseCase;
+import com.juanperuzzo.job_hunter.application.port.in.ApproveDraftUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.FetchJobsUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.FetchSourceJobsUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.GenerateEmailUseCase;
@@ -31,6 +32,7 @@ public class JobController {
     private final ListJobsUseCase listJobsUseCase;
     private final GetJobUseCase getJobUseCase;
     private final GetEmailDraftUseCase getEmailDraftUseCase;
+    private final ApproveDraftUseCase approveDraftUseCase;
     private final SendEmailUseCase sendEmailUseCase;
     private final CurrentUserProvider currentUserService;
 
@@ -42,6 +44,7 @@ public class JobController {
             ListJobsUseCase listJobsUseCase,
             GetJobUseCase getJobUseCase,
             GetEmailDraftUseCase getEmailDraftUseCase,
+            ApproveDraftUseCase approveDraftUseCase,
             SendEmailUseCase sendEmailUseCase,
             CurrentUserProvider currentUserService) {
         this.fetchJobsUseCase = fetchJobsUseCase;
@@ -51,6 +54,7 @@ public class JobController {
         this.listJobsUseCase = listJobsUseCase;
         this.getJobUseCase = getJobUseCase;
         this.getEmailDraftUseCase = getEmailDraftUseCase;
+        this.approveDraftUseCase = approveDraftUseCase;
         this.sendEmailUseCase = sendEmailUseCase;
         this.currentUserService = currentUserService;
     }
@@ -119,6 +123,16 @@ public class JobController {
     public ResponseEntity<?> fetchLinkedInJobs() {
         fetchSourceJobsUseCase.fetchAndSave("linkedin");
         return ResponseEntity.ok(java.util.Map.of("message", "LinkedIn fetch completed successfully"));
+    }
+
+    @PostMapping("/{id}/email/approve")
+    public ResponseEntity<EmailDraftResponse> approveEmail(@PathVariable Long id) {
+        Long userId = currentUserService.getCurrentUserId();
+        var draft = approveDraftUseCase.approve(userId, id);
+        var response = new EmailDraftResponse(
+                draft.id(), draft.jobId(), draft.subject(), draft.body(),
+                draft.status(), draft.generatedAt(), draft.sentAt());
+        return ResponseEntity.ok(response);
     }
 
     @PostMapping("/{id}/send")
