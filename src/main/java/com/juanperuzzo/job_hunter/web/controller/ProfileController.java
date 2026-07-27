@@ -12,6 +12,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.util.Collections;
 import java.util.List;
 
 @RestController
@@ -41,7 +42,7 @@ public class ProfileController {
     public ResponseEntity<ProfileResponse> saveProfile(@Valid @RequestBody ProfileRequest request) {
         Long userId = currentUserService.getCurrentUserId();
         List<Project> projects = request.projects().stream()
-                .map(p -> new Project(p.name(), p.description(), p.techStack()))
+                .map(p -> new Project(p.name(), p.description(), String.join(", ", p.techStack())))
                 .toList();
         var profile = userProfileService.saveProfile(
                 userId, request.resumeText(), request.skills(), request.tone(), projects);
@@ -59,7 +60,12 @@ public class ProfileController {
 
     private ProfileResponse toResponse(com.juanperuzzo.job_hunter.domain.model.UserProfile profile) {
         var projectResponses = profile.projects().stream()
-                .map(p -> new ProjectResponse(p.name(), p.description(), p.techStack()))
+                .map(p -> {
+                    var techStack = p.techStack().isBlank()
+                            ? Collections.<String>emptyList()
+                            : List.of(p.techStack().split("\\s*,\\s*"));
+                    return new ProjectResponse(p.name(), p.description(), techStack);
+                })
                 .toList();
         return new ProfileResponse(
                 profile.id(), profile.userId(), profile.resumeText(),
