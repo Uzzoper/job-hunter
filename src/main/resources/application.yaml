@@ -84,7 +84,6 @@ scraper:
 resend:
   base-url: https://api.resend.com
   api-key: ${RESEND_API_KEY}
-  from-address: ${RESEND_FROM:noreply@jobhunter.app}
   timeout-seconds: 15
 
 app:

@@ -4,6 +4,7 @@ import com.juanperuzzo.job_hunter.application.port.in.SendEmailUseCase;
 import com.juanperuzzo.job_hunter.application.port.out.EmailDraftRepository;
 import com.juanperuzzo.job_hunter.application.port.out.EmailSenderPort;
 import com.juanperuzzo.job_hunter.application.port.out.JobRepository;
+import com.juanperuzzo.job_hunter.application.port.out.UserRepository;
 import com.juanperuzzo.job_hunter.domain.exception.EmailAlreadySentException;
 import com.juanperuzzo.job_hunter.domain.exception.EmailDeliveryException;
 import com.juanperuzzo.job_hunter.domain.exception.MissingRecipientException;
@@ -17,11 +18,13 @@ public class EmailSendingService implements SendEmailUseCase {
 
     private final EmailDraftRepository emailDraftRepository;
     private final JobRepository jobRepository;
+    private final UserRepository userRepository;
     private final EmailSenderPort emailSenderPort;
 
-    public EmailSendingService(EmailDraftRepository emailDraftRepository, JobRepository jobRepository, EmailSenderPort emailSenderPort) {
+    public EmailSendingService(EmailDraftRepository emailDraftRepository, JobRepository jobRepository, UserRepository userRepository, EmailSenderPort emailSenderPort) {
         this.emailDraftRepository = emailDraftRepository;
         this.jobRepository = jobRepository;
+        this.userRepository = userRepository;
         this.emailSenderPort = emailSenderPort;
     }
 
@@ -42,8 +45,11 @@ public class EmailSendingService implements SendEmailUseCase {
             throw new MissingRecipientException("Job " + jobId + " has no contact email");
         }
 
+        var user = userRepository.findById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("User not found: " + userId));
+
         try {
-            emailSenderPort.send(contactEmail, draft.subject(), draft.body());
+            emailSenderPort.send(user.email(), contactEmail, draft.subject(), draft.body());
         } catch (RuntimeException e) {
             throw new EmailDeliveryException("Failed to send email for job " + jobId, e);
         }

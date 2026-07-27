@@ -3,6 +3,7 @@ package com.juanperuzzo.job_hunter.unit.application;
 import com.juanperuzzo.job_hunter.application.port.out.EmailDraftRepository;
 import com.juanperuzzo.job_hunter.application.port.out.EmailSenderPort;
 import com.juanperuzzo.job_hunter.application.port.out.JobRepository;
+import com.juanperuzzo.job_hunter.application.port.out.UserRepository;
 import com.juanperuzzo.job_hunter.application.service.EmailSendingService;
 import com.juanperuzzo.job_hunter.domain.exception.EmailAlreadySentException;
 import com.juanperuzzo.job_hunter.domain.exception.EmailDeliveryException;
@@ -10,6 +11,7 @@ import com.juanperuzzo.job_hunter.domain.exception.MissingRecipientException;
 import com.juanperuzzo.job_hunter.domain.model.EmailDraft;
 import com.juanperuzzo.job_hunter.domain.model.EmailStatus;
 import com.juanperuzzo.job_hunter.domain.model.Job;
+import com.juanperuzzo.job_hunter.domain.model.User;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -34,6 +36,7 @@ class EmailSendingServiceTest {
     private static final Long USER_ID = 1L;
     private static final Long JOB_ID = 2L;
     private static final Long DRAFT_ID = 10L;
+    private static final String USER_EMAIL = "candidate@gmail.com";
     private static final String CONTACT_EMAIL = "hr@company.com";
 
     @Mock
@@ -41,6 +44,9 @@ class EmailSendingServiceTest {
 
     @Mock
     private JobRepository jobRepository;
+
+    @Mock
+    private UserRepository userRepository;
 
     @Mock
     private EmailSenderPort emailSenderPort;
@@ -56,9 +62,11 @@ class EmailSendingServiceTest {
     void send_success_shouldReturnDraftWithSentStatus() {
         var draft = new EmailDraft(DRAFT_ID, JOB_ID, USER_ID, "Subject", "Body", EmailStatus.PENDING, LocalDateTime.now());
         var job = new Job(JOB_ID, "Dev", "Company", "https://job", "Desc", LocalDate.now(), "source", CONTACT_EMAIL);
+        var user = new User(USER_ID, USER_EMAIL, "Candidate", "hash");
 
         when(emailDraftRepository.findByJobIdAndUserId(JOB_ID, USER_ID)).thenReturn(Optional.of(draft));
         when(jobRepository.findById(JOB_ID)).thenReturn(Optional.of(job));
+        when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user));
         when(emailDraftRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         var result = emailSendingService.send(USER_ID, JOB_ID);
@@ -68,7 +76,7 @@ class EmailSendingServiceTest {
                 () -> assertNotNull(result.sentAt()),
                 () -> assertEquals(DRAFT_ID, result.id())
         );
-        verify(emailSenderPort).send(eq(CONTACT_EMAIL), eq("Subject"), eq("Body"));
+        verify(emailSenderPort).send(eq(USER_EMAIL), eq(CONTACT_EMAIL), eq("Subject"), eq("Body"));
     }
 
     @Test
@@ -79,7 +87,7 @@ class EmailSendingServiceTest {
         when(emailDraftRepository.findByJobIdAndUserId(JOB_ID, USER_ID)).thenReturn(Optional.of(draft));
 
         assertThrows(EmailAlreadySentException.class, () -> emailSendingService.send(USER_ID, JOB_ID));
-        verify(emailSenderPort, never()).send(any(), any(), any());
+        verify(emailSenderPort, never()).send(any(), any(), any(), any());
         verify(emailDraftRepository, never()).save(any());
     }
 
@@ -93,7 +101,7 @@ class EmailSendingServiceTest {
         when(jobRepository.findById(JOB_ID)).thenReturn(Optional.of(job));
 
         assertThrows(MissingRecipientException.class, () -> emailSendingService.send(USER_ID, JOB_ID));
-        verify(emailSenderPort, never()).send(any(), any(), any());
+        verify(emailSenderPort, never()).send(any(), any(), any(), any());
         verify(emailDraftRepository, never()).save(any());
     }
 
@@ -102,10 +110,12 @@ class EmailSendingServiceTest {
     void send_whenDeliveryFails_shouldThrowEmailDeliveryException() {
         var draft = new EmailDraft(DRAFT_ID, JOB_ID, USER_ID, "Subject", "Body", EmailStatus.PENDING, LocalDateTime.now());
         var job = new Job(JOB_ID, "Dev", "Company", "https://job", "Desc", LocalDate.now(), "source", CONTACT_EMAIL);
+        var user = new User(USER_ID, USER_EMAIL, "Candidate", "hash");
 
         when(emailDraftRepository.findByJobIdAndUserId(JOB_ID, USER_ID)).thenReturn(Optional.of(draft));
         when(jobRepository.findById(JOB_ID)).thenReturn(Optional.of(job));
-        doThrow(new RuntimeException("SMTP error")).when(emailSenderPort).send(any(), any(), any());
+        when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user));
+        doThrow(new RuntimeException("SMTP error")).when(emailSenderPort).send(any(), any(), any(), any());
 
         assertThrows(EmailDeliveryException.class, () -> emailSendingService.send(USER_ID, JOB_ID));
         verify(emailDraftRepository, never()).save(any());
