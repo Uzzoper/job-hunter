@@ -41,6 +41,8 @@ ai:
     api-key: ${OPENROUTER_API_KEY}
     model: poolside/laguna-s-2.1:free
     timeout-seconds: 30
+  resume-extraction:
+    max-chars: 8000    # max characters sent to AI; text exceeding this is truncated with a warning
 
 scraper:
   retry:
