@@ -227,6 +227,10 @@ impl ProfileScreen {
         self.toast = Some(Toast::new(message));
     }
 
+    fn show_error_toast(&mut self, message: String) {
+        self.toast = Some(Toast::error(message));
+    }
+
     fn update_toast(&mut self) {
         if let Some(toast) = &self.toast
             && toast.is_expired() {
@@ -644,7 +648,7 @@ impl ProfileScreen {
                 ));
             }
             Err(e) => {
-                self.show_toast(format!("Upload failed: {}", e));
+                self.show_error_toast(format!("Upload failed: {}", e));
             }
         }
     }
@@ -1430,14 +1434,16 @@ fn draw_resume_view(&self, frame: &mut Frame, area: Rect, theme: &Theme, profile
 
             frame.render_widget(Clear, toast_area);
 
+            let style = if toast.is_error { theme.style_bad() } else { theme.style_good() };
+
             let toast_widget = Paragraph::new(Text::styled(
                 format!(" {} ", toast.message),
-                theme.style_good(),
+                style,
             ))
             .block(
                 Block::default()
                     .borders(Borders::ALL)
-                    .border_style(theme.style_good()),
+                    .border_style(style),
             )
             .alignment(Alignment::Center);
 
