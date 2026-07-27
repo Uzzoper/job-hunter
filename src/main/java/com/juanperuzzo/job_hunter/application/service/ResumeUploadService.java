@@ -19,6 +19,7 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 
 public class ResumeUploadService {
@@ -107,7 +108,39 @@ public class ResumeUploadService {
                 throw new AiException("AI response contains no valid JSON");
             }
             String json = cleaned.substring(start, end + 1);
-            return objectMapper.readValue(json, ResumeExtractionResponse.class);
+            // Parse as JsonNode tree to handle duplicate fields (qwen2.5:3b merges adjacent objects)
+            var root = objectMapper.readTree(json);
+
+            var skills = new ArrayList<String>();
+            var skillsNode = root.get("skills");
+            if (skillsNode != null && skillsNode.isArray()) {
+                for (var skill : skillsNode) {
+                    skills.add(skill.asText());
+                }
+            }
+
+            var projects = new ArrayList<ResumeExtractionResponse.ExtractedProject>();
+            var projectsNode = root.get("projects");
+            if (projectsNode != null && projectsNode.isArray()) {
+                for (var projectNode : projectsNode) {
+                    var name = projectNode.has("name") ? projectNode.get("name").asText("") : "";
+                    var description = projectNode.has("description") ? projectNode.get("description").asText("") : "";
+                    var techStack = new ArrayList<String>();
+                    var tsNode = projectNode.get("techStack");
+                    if (tsNode != null) {
+                        if (tsNode.isArray()) {
+                            for (var t : tsNode) {
+                                techStack.add(t.asText());
+                            }
+                        } else if (tsNode.isTextual()) {
+                            techStack.addAll(List.of(tsNode.asText().split("\\s*,\\s*")));
+                        }
+                    }
+                    projects.add(new ResumeExtractionResponse.ExtractedProject(name, description, techStack));
+                }
+            }
+
+            return new ResumeExtractionResponse(skills, projects);
         } catch (AiException e) {
             throw e;
         } catch (Exception e) {
