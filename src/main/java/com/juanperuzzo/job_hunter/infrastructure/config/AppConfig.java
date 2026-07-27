@@ -18,6 +18,7 @@ import com.juanperuzzo.job_hunter.application.port.out.UserRepository;
 import com.juanperuzzo.job_hunter.application.port.out.JobAnalysisRepository;
 import com.juanperuzzo.job_hunter.application.port.out.UserProfileRepository;
 import com.juanperuzzo.job_hunter.application.service.AuthService;
+import com.juanperuzzo.job_hunter.application.service.ResumeUploadService;
 import com.juanperuzzo.job_hunter.application.service.UserProfileService;
 import com.juanperuzzo.job_hunter.infrastructure.security.JwtTokenService;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.retry.ExponentialBackoffRetry;
@@ -249,5 +250,11 @@ public class AppConfig {
     @Bean
     public UserProfileService userProfileService(UserRepository userRepository, UserProfileRepository userProfileRepository) {
         return new UserProfileService(userRepository, userProfileRepository);
+    }
+
+    @Bean
+    public ResumeUploadService resumeUploadService(AiPort aiPort, UserProfileRepository userProfileRepository,
+                                                   @Value("${app.upload-dir}") String uploadDir) {
+        return new ResumeUploadService(aiPort, userProfileRepository, uploadDir);
     }
 }
