@@ -253,8 +253,9 @@ public class AppConfig {
     }
 
     @Bean
-    public ResumeUploadService resumeUploadService(AiPort aiPort, UserProfileRepository userProfileRepository,
+    public ResumeUploadService resumeUploadService(AiPort aiPort, UserProfileService userProfileService,
+                                                   UserProfileRepository userProfileRepository,
                                                    @Value("${app.upload-dir}") String uploadDir) {
-        return new ResumeUploadService(aiPort, userProfileRepository, uploadDir);
+        return new ResumeUploadService(aiPort, userProfileService, userProfileRepository, uploadDir);
     }
 }

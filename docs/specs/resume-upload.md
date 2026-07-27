@@ -144,7 +144,7 @@ ai:
 | File larger than 2MB | `MaxUploadSizeExceededException` | 400 Bad Request |
 | Not a PDF file | `IllegalArgumentException` | 400 Bad Request |
 | Empty / corrupted PDF | `IllegalArgumentException` | 400 Bad Request |
-| AI returns invalid JSON | `IllegalStateException` | 502 Bad Gateway |
+| AI returns invalid JSON | `AiException` | 502 Bad Gateway |
 | Authenticated user id not found in DB | `UserNotFoundException` | 404 Not Found |
 | File write failure (disk full, permissions) | `IOException` | 500 Internal Server Error |
 
