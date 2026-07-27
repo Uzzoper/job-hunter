@@ -14,12 +14,16 @@ import com.juanperuzzo.job_hunter.domain.model.EmailDraft;
 import com.juanperuzzo.job_hunter.domain.model.EmailStatus;
 import com.juanperuzzo.job_hunter.domain.model.Job;
 import com.juanperuzzo.job_hunter.domain.model.JobAnalysis;
+import com.juanperuzzo.job_hunter.domain.model.Project;
 import com.juanperuzzo.job_hunter.domain.model.UserProfile;
 
 import java.time.LocalDateTime;
 import java.util.Objects;
+import java.util.stream.Collectors;
 
 public class EmailGenerationService implements GenerateEmailUseCase, GetEmailDraftUseCase {
+
+    private static final int MAX_RESUME_CHARS = 1000;
 
     private final AiPort aiPort;
     private final EmailDraftRepository emailDraftRepository;
@@ -54,7 +58,10 @@ public class EmailGenerationService implements GenerateEmailUseCase, GetEmailDra
         try {
             String prompt = buildPrompt(job, analysis, profile);
             String response = aiPort.complete(prompt);
-            EmailDraft draft = parseEmailDraft(job.id(), userId, response);
+            var existingId = emailDraftRepository.findByJobIdAndUserId(job.id(), userId)
+                    .map(EmailDraft::id)
+                    .orElse(null);
+            EmailDraft draft = parseEmailDraft(existingId, job.id(), userId, response);
             return emailDraftRepository.save(draft);
         } catch (AiException e) {
             throw e;
@@ -70,56 +77,53 @@ public class EmailGenerationService implements GenerateEmailUseCase, GetEmailDra
     }
 
     private String buildPrompt(Job job, JobAnalysis analysis, UserProfile profile) {
-        String candidateProfile = """
-            Candidate profile:
-            - Resume: %s
-            - Skills: %s
-            - Preferred tone: %s
-            """.formatted(profile.resumeText(), String.join(", ", profile.skills()), profile.tone().name().toLowerCase());
+        String resumeExcerpt = profile.resumeText().length() <= MAX_RESUME_CHARS
+                ? profile.resumeText()
+                : profile.resumeText().substring(0, MAX_RESUME_CHARS) + "...";
 
         String tone = analysis.companyTone().name().toLowerCase();
-
         String matchedSkills = String.join(", ", analysis.matchedSkills());
         String missingSkills = String.join(", ", analysis.missingSkills());
+
+        String projectsText = profile.projects().isEmpty()
+                ? "No projects available."
+                : profile.projects().stream()
+                        .map(p -> "- " + p.name() + ": " + p.description() + " (" + p.techStack() + ")")
+                        .collect(Collectors.joining("\n"));
 
         return """
             You are an expert at writing job application emails for tech positions.
 
-            Write an application email following the rules below:
-
-            MANDATORY RULES:
-            1. The first line must be the subject, with the exact prefix "Subject: "
-            2. After one blank line, write the email body
-            3. Maximum 3 paragraphs in the body
-            4. Mention exactly 1 candidate project (choose the most relevant for the job)
-            5. Be specific to the company and the role — generic text is not allowed
-            6. Tone: %s
-            7. Language: Brazilian Portuguese
+            Write an email following the rules below:
+            1. First line must be "Subject: " followed by the subject
+            2. After a blank line, write the email body (max 3 paragraphs)
+            3. Mention exactly 1 candidate project (choose the most relevant)
+            4. Be specific to the company and role
+            5. Tone: %s
+            6. Language: Brazilian Portuguese
 
             Tone guide:
-            - formal: respectful language, formal verbs, "Prezados"
-            - casual: natural language, straight to the point, no excess
-            - startup: energy and enthusiasm, mention culture and impact
+            - formal: respectful, "Prezados"
+            - casual: natural, direct
+            - startup: energetic, mention culture and impact
 
-            Available projects to mention (choose the most relevant for the job):
-            - Jishuu: study organization platform (Next.js, React, TypeScript, Tailwind)
-            - Flappy Naruu: full stack game (React, TypeScript, Canvas API, Java, Spring, Postgres)
-            - ASCII Converter: client-side image processing tool (Next.js, React, TypeScript, Canvas API)
-            - Thermometer of Ponta Grossa: real-time weather site (JavaScript, Weather API)
+            Candidate profile:
+            - Resume: %s
+            - Skills: %s
 
+            Available projects:
             %s
 
-            Job listing:
-            Title: %s
-            Company: %s
-            Skills the candidate has for this role: %s
-            Skills the candidate lacks (may mention willingness to learn): %s
-            Job summary: %s
-            """.formatted(tone, candidateProfile, job.title(), job.company(),
+            Job: %s at %s
+            Matched skills: %s
+            Missing skills (show willingness to learn): %s
+            Summary: %s
+            """.formatted(tone, resumeExcerpt, String.join(", ", profile.skills()),
+                projectsText, job.title(), job.company(),
                 matchedSkills, missingSkills, analysis.summary());
     }
 
-    private EmailDraft parseEmailDraft(Long jobId, Long userId, String aiResponse) {
+    private EmailDraft parseEmailDraft(Long id, Long jobId, Long userId, String aiResponse) {
         String subject;
         String body;
 
@@ -136,6 +140,6 @@ public class EmailGenerationService implements GenerateEmailUseCase, GetEmailDra
             subject = "Subject: " + subject;
         }
 
-        return new EmailDraft(null, jobId, userId, subject, body, EmailStatus.PENDING, LocalDateTime.now());
+        return new EmailDraft(id, jobId, userId, subject, body, EmailStatus.PENDING, LocalDateTime.now());
     }
 }

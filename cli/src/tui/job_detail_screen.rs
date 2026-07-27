@@ -15,6 +15,12 @@ use std::sync::Arc;
 
 use tokio::sync::Mutex;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PendingAction {
+    Analyze,
+    GenerateEmail,
+}
+
 /// Loading state for async operations
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LoadingState {
@@ -57,6 +63,7 @@ pub struct JobDetailScreen {
     analysis_error: Option<String>,
     email_error: Option<String>,
     pending_job_id: Option<i64>,
+    pub pending_action: Option<PendingAction>,
 }
 
 impl JobDetailScreen {
@@ -73,7 +80,7 @@ impl JobDetailScreen {
             loading_analysis: LoadingState::Idle,
             loading_email: LoadingState::Idle,
             show_email_expanded: false,
-            show_email_full: false,
+            show_email_full: true,
             api_client,
             cache,
             clipboard,
@@ -81,6 +88,7 @@ impl JobDetailScreen {
             analysis_error: None,
             email_error: None,
             pending_job_id: None,
+            pending_action: None,
         }
     }
 
@@ -94,6 +102,7 @@ impl JobDetailScreen {
         self.loading_email = LoadingState::Idle;
         self.analysis_error = None;
         self.email_error = None;
+        self.pending_action = None;
 
         self.pending_job_id = Some(job_id);
     }
@@ -129,6 +138,20 @@ impl JobDetailScreen {
         self.toast = Some(Toast::new(message));
     }
 
+    /// Set loading state for the given pending action
+    pub fn start_loading(&mut self, action: PendingAction) {
+        match action {
+            PendingAction::Analyze => {
+                self.loading_analysis = LoadingState::Loading;
+                self.analysis_error = None;
+            }
+            PendingAction::GenerateEmail => {
+                self.loading_email = LoadingState::Loading;
+                self.email_error = None;
+            }
+        }
+    }
+
     /// Clear expired toast
     fn update_toast(&mut self) {
         if let Some(toast) = &self.toast
@@ -138,17 +161,11 @@ impl JobDetailScreen {
     }
 
     /// Trigger job analysis via API
+    /// NOTE: loading_analysis flag must be set by the caller before calling this
     pub async fn analyze_job(&mut self) -> anyhow::Result<()> {
-        if self.loading_analysis.is_loading() {
-            return Ok(());
-        }
-
         let job = self.job.as_ref().ok_or_else(|| anyhow::anyhow!("No job selected"))?;
         let job_id = job.id;
         let client = self.api_client.clone();
-
-        self.loading_analysis = LoadingState::Loading;
-        self.analysis_error = None;
 
         let result = client.lock().await.analyze_job(job_id).await;
 
@@ -173,17 +190,11 @@ impl JobDetailScreen {
     }
 
     /// Generate email draft via API
+    /// NOTE: loading_email flag must be set by the caller before calling this
     pub async fn generate_email(&mut self) -> anyhow::Result<()> {
-        if self.loading_email.is_loading() {
-            return Ok(());
-        }
-
         let job = self.job.as_ref().ok_or_else(|| anyhow::anyhow!("No job selected"))?;
         let job_id = job.id;
         let client = self.api_client.clone();
-
-        self.loading_email = LoadingState::Loading;
-        self.email_error = None;
 
         let result = client.lock().await.generate_email(job_id).await;
 
@@ -512,16 +523,6 @@ pub fn draw(&mut self, frame: &mut Frame, area: Rect) {
         let theme = Theme::detect();
         self.update_toast();
 
-        if self.loading_analysis.is_loading() || self.loading_email.is_loading() {
-            let msg = if self.loading_analysis.is_loading() {
-                "Analyzing job with AI..."
-            } else {
-                "Generating email draft..."
-            };
-            render_loading(frame, area, &theme, msg);
-            return;
-        }
-
         if let Some(err) = &self.analysis_error {
             render_error_popup(frame, area, &theme, err, "[Enter] Dismiss  [a] Retry");
             return;
@@ -565,6 +566,13 @@ pub fn draw(&mut self, frame: &mut Frame, area: Rect) {
         self.draw_action_bar(frame, chunks[2], &theme);
 
         self.draw_toast(frame, area, &theme);
+
+        // Overlay loading popup on top of normal content
+        if self.loading_analysis.is_loading() {
+            render_loading(frame, area, &theme, "Analyzing job with AI...");
+        } else if self.loading_email.is_loading() {
+            render_loading(frame, area, &theme, "Generating email draft...");
+        }
     }
 }
 
@@ -589,12 +597,12 @@ pub async fn handle_event(
                     }
                     KeyCode::Char('a') | KeyCode::Char('A') => {
                         if !screen.loading_analysis.is_loading() {
-                            let _ = screen.analyze_job().await;
+                            screen.pending_action = Some(PendingAction::Analyze);
                         }
                     }
                     KeyCode::Char('e') | KeyCode::Char('E') => {
                         if !screen.loading_email.is_loading() {
-                            let _ = screen.generate_email().await;
+                            screen.pending_action = Some(PendingAction::GenerateEmail);
                         }
                     }
                     KeyCode::Esc => {
@@ -620,12 +628,12 @@ pub async fn handle_event(
                 }
                 KeyCode::Char('a') | KeyCode::Char('A') => {
                     if !screen.loading_analysis.is_loading() {
-                        let _ = screen.analyze_job().await;
+                        screen.pending_action = Some(PendingAction::Analyze);
                     }
                 }
                 KeyCode::Char('e') | KeyCode::Char('E') => {
                     if !screen.loading_email.is_loading() {
-                        let _ = screen.generate_email().await;
+                        screen.pending_action = Some(PendingAction::GenerateEmail);
                     }
                 }
                 KeyCode::Char('c') | KeyCode::Char('C') => {
@@ -728,7 +736,7 @@ mod tests {
         assert_eq!(screen.loading_analysis, LoadingState::Idle);
         assert_eq!(screen.loading_email, LoadingState::Idle);
         assert!(!screen.show_email_expanded);
-        assert!(!screen.show_email_full);
+        assert!(screen.show_email_full);
         assert!(screen.analysis_error.is_none());
         assert!(screen.email_error.is_none());
     }
@@ -828,13 +836,13 @@ mod tests {
     #[test]
     fn toggle_email_full() {
         let mut screen = create_test_screen();
-        assert!(!screen.show_email_full);
-
-        screen.toggle_email_full();
         assert!(screen.show_email_full);
 
         screen.toggle_email_full();
         assert!(!screen.show_email_full);
+
+        screen.toggle_email_full();
+        assert!(screen.show_email_full);
     }
 
     #[test]

@@ -57,14 +57,14 @@ class UserProfileServiceTest {
     @DisplayName("saveProfile should create profile when none exists")
     void saveProfile_whenProfileDoesNotExist_shouldCreateProfile() {
         var resume = validResume();
-        var saved = new UserProfile(10L, 1L, resume, List.of("Java", "Spring"), CompanyTone.FORMAL);
+        var saved = new UserProfile(10L, 1L, resume, List.of("Java", "Spring"), CompanyTone.FORMAL, List.of());
 
         when(userRepository.findById(1L)).thenReturn(Optional.of(user()));
         when(userProfileRepository.findByUserId(1L)).thenReturn(Optional.empty());
-        when(userProfileRepository.save(new UserProfile(null, 1L, resume, List.of("Java", "Spring"), CompanyTone.FORMAL)))
+        when(userProfileRepository.save(new UserProfile(null, 1L, resume, List.of("Java", "Spring"), CompanyTone.FORMAL, List.of())))
                 .thenReturn(saved);
 
-        var profile = userProfileService.saveProfile(1L, resume, List.of("Java", "Spring"), CompanyTone.FORMAL);
+        var profile = userProfileService.saveProfile(1L, resume, List.of("Java", "Spring"), CompanyTone.FORMAL, List.of());
 
         assertEquals(saved, profile);
     }
@@ -74,15 +74,15 @@ class UserProfileServiceTest {
     void saveProfile_whenProfileExists_shouldUpdateProfile() {
         var resume = validResume();
         var existing = new UserProfile(10L, 1L, "Old resume with enough content to be valid for this test.",
-                List.of("Java"), CompanyTone.CASUAL);
-        var saved = new UserProfile(10L, 1L, resume, List.of("Java", "PostgreSQL"), CompanyTone.STARTUP);
+                List.of("Java"), CompanyTone.CASUAL, List.of());
+        var saved = new UserProfile(10L, 1L, resume, List.of("Java", "PostgreSQL"), CompanyTone.STARTUP, List.of());
 
         when(userRepository.findById(1L)).thenReturn(Optional.of(user()));
         when(userProfileRepository.findByUserId(1L)).thenReturn(Optional.of(existing));
-        when(userProfileRepository.save(new UserProfile(10L, 1L, resume, List.of("Java", "PostgreSQL"), CompanyTone.STARTUP)))
+        when(userProfileRepository.save(new UserProfile(10L, 1L, resume, List.of("Java", "PostgreSQL"), CompanyTone.STARTUP, List.of())))
                 .thenReturn(saved);
 
-        var profile = userProfileService.saveProfile(1L, resume, List.of("Java", "PostgreSQL"), CompanyTone.STARTUP);
+        var profile = userProfileService.saveProfile(1L, resume, List.of("Java", "PostgreSQL"), CompanyTone.STARTUP, List.of());
 
         assertEquals(saved, profile);
     }
@@ -93,7 +93,7 @@ class UserProfileServiceTest {
         when(userRepository.findById(1L)).thenReturn(Optional.of(user()));
 
         assertThrows(IllegalArgumentException.class,
-                () -> userProfileService.saveProfile(1L, "short", List.of("Java"), CompanyTone.FORMAL));
+                () -> userProfileService.saveProfile(1L, "short", List.of("Java"), CompanyTone.FORMAL, List.of()));
     }
 
     @Test

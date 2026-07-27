@@ -202,9 +202,45 @@ impl App {
 
     pub async fn run(&mut self, terminal: &mut Terminal<ratatui::prelude::CrosstermBackend<io::Stdout>>) -> anyhow::Result<()> {
         use crossterm::event::{Event, KeyCode, KeyModifiers};
-        
+
         while !self.should_quit() {
             terminal.draw(|frame| self.render(frame))?;
+
+            // Execute pending long-running actions
+            if self.state == AppState::JobDetail {
+                let pending = self.job_detail_screen.as_mut()
+                    .and_then(|s| s.pending_action.take());
+                if let Some(action) = pending {
+                    if let Some(s) = self.job_detail_screen.as_mut() {
+                        s.start_loading(action);
+                    }
+                    terminal.draw(|frame| self.render(frame))?;
+                    match action {
+                        job_detail_screen::PendingAction::Analyze => {
+                            if let Some(s) = self.job_detail_screen.as_mut() {
+                                let _ = s.analyze_job().await;
+                            }
+                        }
+                        job_detail_screen::PendingAction::GenerateEmail => {
+                            if let Some(s) = self.job_detail_screen.as_mut() {
+                                let _ = s.generate_email().await;
+                            }
+                        }
+                    }
+                    continue;
+                }
+            }
+
+            // Execute pending profile upload
+            if let Some(path) = self.profile_screen.as_mut()
+                .and_then(|s| s.pending_upload.take())
+            {
+                terminal.draw(|frame| self.render(frame))?;
+                if let Some(s) = self.profile_screen.as_mut() {
+                    s.finish_upload(&path).await;
+                }
+                continue;
+            }
 
             // Handle events with timeout to allow for resize handling
             if crossterm::event::poll(std::time::Duration::from_millis(100))? {

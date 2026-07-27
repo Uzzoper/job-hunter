@@ -457,15 +457,15 @@ async fn job_detail_f_toggles_email_full() {
     );
     app.job_detail_screen = Some(screen);
 
-    assert!(!app.job_detail_screen.as_ref().unwrap().show_email_full);
-
-    let event = crossterm::event::Event::Key(KeyEvent::new(KeyCode::Char('f'), KeyModifiers::NONE));
-    app.handle_event(event).await.unwrap();
     assert!(app.job_detail_screen.as_ref().unwrap().show_email_full);
 
     let event = crossterm::event::Event::Key(KeyEvent::new(KeyCode::Char('f'), KeyModifiers::NONE));
     app.handle_event(event).await.unwrap();
     assert!(!app.job_detail_screen.as_ref().unwrap().show_email_full);
+
+    let event = crossterm::event::Event::Key(KeyEvent::new(KeyCode::Char('f'), KeyModifiers::NONE));
+    app.handle_event(event).await.unwrap();
+    assert!(app.job_detail_screen.as_ref().unwrap().show_email_full);
 }
 
 // ===== Render Tests =====
