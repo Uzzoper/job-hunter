@@ -7,6 +7,7 @@ import com.juanperuzzo.job_hunter.application.port.out.JobRepository;
 import com.juanperuzzo.job_hunter.application.port.out.UserRepository;
 import com.juanperuzzo.job_hunter.domain.exception.EmailAlreadySentException;
 import com.juanperuzzo.job_hunter.domain.exception.EmailDeliveryException;
+import com.juanperuzzo.job_hunter.domain.exception.JobNotFoundException;
 import com.juanperuzzo.job_hunter.domain.exception.MissingRecipientException;
 import com.juanperuzzo.job_hunter.domain.model.EmailDraft;
 import com.juanperuzzo.job_hunter.domain.model.EmailStatus;
@@ -31,7 +32,7 @@ public class EmailSendingService implements SendEmailUseCase {
     @Override
     public EmailDraft send(Long userId, Long jobId) {
         var draft = emailDraftRepository.findByJobIdAndUserId(jobId, userId)
-                .orElseThrow(() -> new IllegalArgumentException("Email draft not found for job " + jobId + " and user " + userId));
+                .orElseThrow(() -> new JobNotFoundException("Email draft not found for job " + jobId + " and user " + userId));
 
         if (draft.status() != EmailStatus.PENDING) {
             throw new EmailAlreadySentException("Email " + draft.id() + " has already been sent");

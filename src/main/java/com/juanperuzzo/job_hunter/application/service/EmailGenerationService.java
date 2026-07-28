@@ -30,15 +30,21 @@ public class EmailGenerationService implements GenerateEmailUseCase, GetEmailDra
     private final UserProfileRepository userProfileRepository;
     private final JobRepository jobRepository;
     private final JobAnalysisRepository jobAnalysisRepository;
+    private final TemplateEmailService templateEmailService;
+    private final int minMatchScore;
 
     public EmailGenerationService(AiPort aiPort, EmailDraftRepository emailDraftRepository,
                                   UserProfileRepository userProfileRepository,
-                                  JobRepository jobRepository, JobAnalysisRepository jobAnalysisRepository) {
+                                  JobRepository jobRepository, JobAnalysisRepository jobAnalysisRepository,
+                                  TemplateEmailService templateEmailService,
+                                  int minMatchScore) {
         this.aiPort = aiPort;
         this.emailDraftRepository = emailDraftRepository;
         this.userProfileRepository = userProfileRepository;
         this.jobRepository = jobRepository;
         this.jobAnalysisRepository = jobAnalysisRepository;
+        this.templateEmailService = templateEmailService;
+        this.minMatchScore = minMatchScore;
     }
 
     @Override
@@ -55,6 +61,10 @@ public class EmailGenerationService implements GenerateEmailUseCase, GetEmailDra
         UserProfile profile = userProfileRepository.findByUserId(userId)
                 .orElseThrow(() -> new AiException("User profile not found for userId: " + userId));
 
+        if (analysis.matchScore() >= minMatchScore) {
+            return generateFromTemplate(job, userId);
+        }
+
         try {
             String prompt = buildPrompt(job, analysis, profile);
             String response = aiPort.complete(prompt);
@@ -68,6 +78,16 @@ public class EmailGenerationService implements GenerateEmailUseCase, GetEmailDra
         } catch (Exception e) {
             throw new AiException("Failed to generate email: " + e.getMessage(), e);
         }
+    }
+
+    private EmailDraft generateFromTemplate(Job job, Long userId) {
+        var template = templateEmailService.generate(job);
+        var existingId = emailDraftRepository.findByJobIdAndUserId(job.id(), userId)
+                .map(EmailDraft::id)
+                .orElse(null);
+        var draft = new EmailDraft(existingId, job.id(), userId, template.subject(), template.body(),
+                EmailStatus.PENDING, LocalDateTime.now());
+        return emailDraftRepository.save(draft);
     }
 
     @Override

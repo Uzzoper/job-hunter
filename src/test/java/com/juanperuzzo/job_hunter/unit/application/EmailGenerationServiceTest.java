@@ -6,6 +6,7 @@ import com.juanperuzzo.job_hunter.application.port.out.JobAnalysisRepository;
 import com.juanperuzzo.job_hunter.application.port.out.JobRepository;
 import com.juanperuzzo.job_hunter.application.port.out.UserProfileRepository;
 import com.juanperuzzo.job_hunter.application.service.EmailGenerationService;
+import com.juanperuzzo.job_hunter.application.service.TemplateEmailService;
 import com.juanperuzzo.job_hunter.domain.exception.AiException;
 import com.juanperuzzo.job_hunter.domain.model.CompanyTone;
 import com.juanperuzzo.job_hunter.domain.model.EmailDraft;
@@ -28,6 +29,8 @@ import java.util.List;
 
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -50,12 +53,15 @@ class EmailGenerationServiceTest {
     @Mock
     private JobAnalysisRepository jobAnalysisRepository;
 
+    @Mock
+    private TemplateEmailService templateEmailService;
+
     private EmailGenerationService emailGenerationService;
 
     @BeforeEach
     void setUp() {
         emailGenerationService = new EmailGenerationService(aiPort, emailDraftRepository, userProfileRepository,
-                jobRepository, jobAnalysisRepository);
+                jobRepository, jobAnalysisRepository, templateEmailService, 60);
     }
 
     @Nested
@@ -89,7 +95,7 @@ class EmailGenerationServiceTest {
             Long jobId = 1L;
             Job job = new Job(jobId, "Java Developer", "CompanyX",
                     "https://example.com/job/1", "Description", LocalDate.now(), "test");
-            JobAnalysis analysis = new JobAnalysis(null, null, null, 85,
+            JobAnalysis analysis = new JobAnalysis(null, null, null, 40,
                     List.of("Java", "Spring Boot"),
                     List.of("Kubernetes"),
                     CompanyTone.FORMAL,
@@ -189,7 +195,7 @@ class EmailGenerationServiceTest {
             Long jobId = 3L;
             Job job = new Job(jobId, "Developer", "BankZ",
                     "https://example.com/job/3", "Description", LocalDate.now(), "test");
-            JobAnalysis analysis = new JobAnalysis(null, null, null, 80,
+            JobAnalysis analysis = new JobAnalysis(null, null, null, 50,
                     List.of("Java"),
                     List.of(),
                     CompanyTone.FORMAL,
@@ -235,7 +241,7 @@ class EmailGenerationServiceTest {
             Long jobId = 4L;
             Job job = new Job(jobId, "Developer", "StartupCool",
                     "https://example.com/job/4", "Description", LocalDate.now(), "test");
-            JobAnalysis analysis = new JobAnalysis(null, null, null, 70,
+            JobAnalysis analysis = new JobAnalysis(null, null, null, 50,
                     List.of("React"),
                     List.of("AWS"),
                     CompanyTone.STARTUP,
@@ -269,7 +275,7 @@ class EmailGenerationServiceTest {
             Long jobId = 5L;
             Job job = new Job(jobId, "Developer", "CompanyX",
                     "https://example.com/job/5", "Description", LocalDate.now(), "test");
-            JobAnalysis analysis = new JobAnalysis(null, null, null, 80,
+            JobAnalysis analysis = new JobAnalysis(null, null, null, 50,
                     List.of("Java"),
                     List.of(),
                     CompanyTone.FORMAL,
@@ -279,6 +285,46 @@ class EmailGenerationServiceTest {
             when(jobAnalysisRepository.findByJobIdAndUserId(jobId, 1L)).thenReturn(Optional.of(analysis));
 
             assertThrows(AiException.class, () -> emailGenerationService.generate(1L, jobId));
+        }
+    }
+
+    @Nested
+    @DisplayName("Scenario 6: template branch for high matchScore")
+    class TemplateBranchTests {
+
+        @Test
+        @DisplayName("generate should use template and skip AI when matchScore >= 60")
+        void generate_whenMatchScoreHigh_shouldUseTemplateAndSkipAi() {
+            Long jobId = 6L;
+            Job job = new Job(jobId, "Desenvolvedor Java", "EmpresaX",
+                    "https://example.com/job/6", "Description", LocalDate.now(), "test");
+            JobAnalysis analysis = new JobAnalysis(null, null, null, 75,
+                    List.of("Java", "Spring Boot"),
+                    List.of("AWS"),
+                    CompanyTone.FORMAL,
+                    "Java developer position");
+            UserProfile profile = new UserProfile(null, 1L,
+                    "Resume text", List.of("Java"), CompanyTone.FORMAL, List.of());
+
+            when(jobRepository.findById(jobId)).thenReturn(Optional.of(job));
+            when(jobAnalysisRepository.findByJobIdAndUserId(jobId, 1L)).thenReturn(Optional.of(analysis));
+            when(userProfileRepository.findByUserId(any())).thenReturn(Optional.of(profile));
+            when(emailDraftRepository.findByJobIdAndUserId(jobId, 1L)).thenReturn(Optional.empty());
+            when(emailDraftRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+            var templateResult = new TemplateEmailService.TemplateResult(
+                    "Candidatura — Desenvolvedor Java na EmpresaX",
+                    "Gostaria de me candidatar à vaga de Desenvolvedor Java na EmpresaX.");
+            when(templateEmailService.generate(job)).thenReturn(templateResult);
+
+            EmailDraft draft = emailGenerationService.generate(1L, jobId);
+
+            assertNotNull(draft);
+            assertTrue(draft.subject().contains("Desenvolvedor Java"));
+            assertTrue(draft.subject().contains("EmpresaX"));
+            assertTrue(draft.body().contains("EmpresaX"));
+            assertEquals(EmailStatus.PENDING, draft.status());
+            verify(aiPort, never()).complete(any());
         }
     }
 

@@ -9,16 +9,17 @@
 
 ## Expected behavior
 
-### Scenario 1: successful generation
-- **GIVEN** a valid `Job`, `JobAnalysis`, and saved user profile
-- **WHEN** `generate(userId, job, analysis)` is called
-- **THEN** returns an `EmailDraft` with `subject` and `body` populated
+### Scenario 1: successful generation (AI path, matchScore < threshold)
+- **GIVEN** a valid `Job`, `JobAnalysis` with `matchScore < threshold`, and saved user profile
+- **WHEN** `generate(userId, jobId)` is called
+- **THEN** builds prompt from job/analysis/profile, calls `AiPort.complete()`
+- **AND** returns an `EmailDraft` with `subject` and `body` populated from the AI response
 - **AND** `subject` starts with "Subject: " (standard prefix)
-- **AND** `body` has at most 3 paragraphs
+- **AND** `body` has 3-5 paragraphs
 
 ### Scenario 2: analysis with low matchScore
 - **GIVEN** a `JobAnalysis` with `matchScore < 30`
-- **WHEN** `generate(userId, job, analysis)` is called
+- **WHEN** `generate(userId, jobId)` is called
 - **THEN** generation proceeds normally — not blocked by low score
 - **AND** the email mentions willingness to learn the missing skills
 
@@ -34,8 +35,15 @@
 
 ### Scenario 5: AI unavailable
 - **GIVEN** the AI client throws an exception
-- **WHEN** `generate(userId, job, analysis)` is called
+- **WHEN** `generate(userId, jobId)` is called
 - **THEN** throws `AiException`
+
+### Scenario 6: template branch for high matchScore — NEW
+- **GIVEN** `analysis.matchScore() >= threshold` (default: 60, configurable via `email.standard-template.min-match-score`)
+- **WHEN** `generate(userId, jobId)` is called
+- **THEN** `AiPort.complete()` is **never** called
+- **AND** the returned `EmailDraft` has `subject` and `body` built from `TemplateEmailService` with both `job.title()` and `job.company()` substituted
+- **AND** the draft is persisted with `status = PENDING` through the same upsert path
 
 ---
 
@@ -43,20 +51,22 @@
 
 - The prompt includes the user's resume and skills from `user_profiles` (not the user's display name)
 - The email must mention at least 1 candidate project (listed in the prompt template)
-- Maximum 3 paragraphs in the `body`
+- Maximum 3-5 paragraphs in the `body`
 - The `subject` is extracted from the first line of the AI response (prefix `"Subject: "`)
 - The `body` is the remainder of the response after removing the subject line
 - `EmailDraft` is saved with `userId`, `jobId`, and `status = PENDING`
 - Per-user uniqueness: one draft per `(job_id, user_id)` enforced at database level (V3 migration)
+- When `matchScore >= minMatchScore`, a fixed template replaces the AI call entirely (saves AI credits, deterministic output)
+- The threshold is configured via `email.standard-template.min-match-score` (default: 60)
 
 ---
 
-## Interface contract (port)
+## Interface contract (ports)
 
 ```java
 // Input port
 public interface GenerateEmailUseCase {
-    EmailDraft generate(Long userId, Job job, JobAnalysis analysis);
+    EmailDraft generate(Long userId, Long jobId);
 }
 
 // Result (persisted)
@@ -67,10 +77,11 @@ public record EmailDraft(
     String subject,
     String body,
     EmailStatus status,
-    LocalDateTime generatedAt
+    LocalDateTime generatedAt,
+    LocalDateTime sentAt
 ) {}
 
-public enum EmailStatus { PENDING, SENT }
+public enum EmailStatus { PENDING, APPROVED, SENT }
 ```
 
 ---
@@ -79,11 +90,12 @@ public enum EmailStatus { PENDING, SENT }
 
 | Situation | Exception thrown | Expected behavior |
 |---|---|---|
-| Null `userId`, `job`, or `analysis` | `NullPointerException` | Fails immediately |
+| Null `userId` or `jobId` | `NullPointerException` | Fails immediately |
+| Job not found in DB | `JobNotFoundException` | Returns 404 |
+| Analysis not found | `AnalysisNotFoundException` | Returns 400 |
 | Profile missing in DB | `AiException` | `"User profile not found for userId: ..."` |
-| AI unavailable | `AiException` | Propagates without saving draft |
-
-**Note:** `AnalysisNotFoundException` is thrown by `JobController` when `POST /api/jobs/{id}/email` is called without a prior analysis, not by this service.
+| AI unavailable (template branch) | never thrown — template branch doesn't call AI | Returns template draft |
+| AI unavailable (AI branch) | `AiException` | Propagates without saving draft |
 
 ---
 

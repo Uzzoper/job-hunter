@@ -1,7 +1,6 @@
 package com.juanperuzzo.job_hunter.infrastructure.config;
 
 import com.juanperuzzo.job_hunter.application.port.in.AutoSendEligibilityPort;
-import com.juanperuzzo.job_hunter.application.port.in.GenerateEmailUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.SendEmailUseCase;
 import com.juanperuzzo.job_hunter.application.port.out.AiPort;
 import com.juanperuzzo.job_hunter.application.port.out.EmailDraftRepository;
@@ -230,8 +229,11 @@ public class AppConfig {
     @Bean
     public EmailGenerationService emailGenerationService(AiPort aiPort, EmailDraftRepository emailDraftRepository,
                                                          UserProfileRepository userProfileRepository,
-                                                         JobRepository jobRepository, JobAnalysisRepository jobAnalysisRepository) {
-        return new EmailGenerationService(aiPort, emailDraftRepository, userProfileRepository, jobRepository, jobAnalysisRepository);
+                                                         JobRepository jobRepository, JobAnalysisRepository jobAnalysisRepository,
+                                                         TemplateEmailService templateEmailService,
+                                                         @Value("${email.standard-template.min-match-score:60}") int minMatchScore) {
+        return new EmailGenerationService(aiPort, emailDraftRepository, userProfileRepository, jobRepository,
+                jobAnalysisRepository, templateEmailService, minMatchScore);
     }
 
     @Bean
@@ -300,19 +302,17 @@ public class AppConfig {
     }
 
     @Bean
-    public TemplateEmailService templateEmailService(EmailDraftRepository emailDraftRepository) {
-        return new TemplateEmailService(emailDraftRepository);
+    public TemplateEmailService templateEmailService() {
+        return new TemplateEmailService();
     }
 
     @Bean
     public AutoSendScheduler autoSendScheduler(
             AutoSendEligibilityPort eligibilityPort,
-            TemplateEmailService templateEmailService,
-            GenerateEmailUseCase generateEmailUseCase,
             SendEmailUseCase sendEmailUseCase,
             @Value("${auto-send.enabled}") boolean enabled,
             @Value("${auto-send.jitter-seconds}") int jitterSeconds) {
-        return new AutoSendScheduler(eligibilityPort, templateEmailService, generateEmailUseCase, sendEmailUseCase, enabled, jitterSeconds);
+        return new AutoSendScheduler(eligibilityPort, sendEmailUseCase, enabled, jitterSeconds);
     }
 
     @Bean

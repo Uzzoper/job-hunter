@@ -1,19 +1,14 @@
 package com.juanperuzzo.job_hunter.application.service;
 
-import com.juanperuzzo.job_hunter.application.port.out.EmailDraftRepository;
-import com.juanperuzzo.job_hunter.domain.model.EmailDraft;
-import com.juanperuzzo.job_hunter.domain.model.EmailStatus;
-import com.juanperuzzo.job_hunter.domain.model.EligibleDraft;
-
-import java.time.LocalDateTime;
+import com.juanperuzzo.job_hunter.domain.model.Job;
 
 public class TemplateEmailService {
 
-    private static final String TEMPLATE_SUBJECT = "Candidatura — %s";
+    private static final String TEMPLATE_SUBJECT = "Candidatura — %s na %s";
     private static final String TEMPLATE_BODY = """
             Olá. Tudo bem?
 
-            Gostaria de me candidatar à vaga de %s.
+            Gostaria de me candidatar à vaga de %s na %s.
 
             Atualmente curso Engenharia de Software e venho me especializando em desenvolvimento back-end com Java. Tenho experiência prática com Java, Spring Boot, APIs REST, Git, bancos de dados relacionais e desenvolvimento de aplicações web.
 
@@ -35,29 +30,15 @@ public class TemplateEmailService {
             GitHub: https://github.com/Uzzoper
             """;
 
-    private final EmailDraftRepository emailDraftRepository;
-
-    public TemplateEmailService(EmailDraftRepository emailDraftRepository) {
-        this.emailDraftRepository = emailDraftRepository;
+    public TemplateEmailService() {
     }
 
-    public EmailDraft generate(EligibleDraft eligible) {
-        var jobTitle = eligible.jobTitle();
+    public TemplateResult generate(Job job) {
+        var subject = TEMPLATE_SUBJECT.formatted(job.title(), job.company());
+        var body = TEMPLATE_BODY.formatted(job.title(), job.company());
+        return new TemplateResult(subject, body);
+    }
 
-        var subject = TEMPLATE_SUBJECT.formatted(jobTitle);
-        var body = TEMPLATE_BODY.formatted(jobTitle);
-
-        var templateDraft = new EmailDraft(
-                eligible.draft().id(),
-                eligible.draft().jobId(),
-                eligible.draft().userId(),
-                subject,
-                body,
-                EmailStatus.PENDING,
-                LocalDateTime.now(),
-                null
-        );
-
-        return emailDraftRepository.save(templateDraft);
+    public record TemplateResult(String subject, String body) {
     }
 }
