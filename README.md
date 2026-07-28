@@ -57,6 +57,7 @@ flowchart TB
 2. Each listing is saved to PostgreSQL — duplicates are skipped by URL.
 3. On demand, the AI analyzes the listing against your profile and returns a match score (0–100), matched/missing skills, and company tone.
 4. The AI then generates a personalized application email in Brazilian Portuguese, tailored to the company tone and mentioning a relevant portfolio project.
+5. Optionally, the auto-send scheduler sends emails in priority order (highest matchScore first) — high-scoring jobs use a template email (no AI), low-scoring ones get an AI-personalized draft. Requires manual approval by default and respects a daily cap of 50/user.
 
 ---
 
@@ -87,6 +88,9 @@ The project includes a **Rust** binary (`jh-cli`) with two interaction modes for
 | `jh-cli profile upload <path>` | Upload PDF resume — AI extracts skills & projects |
 | `jh-cli export <output> [--keyword]` | Export jobs to a CSV file |
 | `jh-cli clear-cache` | Clear local SQLite cache |
+
+| `jh-cli email send <job-id>` | Send email for a job |
+| `jh-cli email approve <job-id>` | Approve a pending draft for auto-send |
 
 > Full spec at [`docs/specs/cli-tui-spec.md`](docs/specs/cli-tui-spec.md)
 
@@ -316,6 +320,9 @@ ai:
 
 jwt:
   secret: a-key-with-at-least-32-characters-for-hmac
+
+resend:
+  api-key: YOUR_RESEND_API_KEY
 ```
 
 > This file is in `.gitignore` and will never be committed.
@@ -360,6 +367,8 @@ Start the TUI (default mode, no subcommand needed):
 | `POST` | `/api/jobs/{id}/analyze` | Analyze job with AI | Yes |
 | `GET` | `/api/jobs/{id}/email` | Get generated email draft | Yes |
 | `POST` | `/api/jobs/{id}/email` | Generate new email for the job | Yes |
+| `POST` | `/api/jobs/{id}/email/approve` | Approve a PENDING draft for auto-send | Yes |
+| `POST` | `/api/jobs/{id}/send` | Send email via Resend using user's email as from | Yes |
 | `GET` | `/api/profile` | Get authenticated user's profile | Yes |
 | `PUT` | `/api/profile` | Save/update user profile | Yes |
 | `POST` | `/api/profile/upload-resume` | Upload PDF resume → AI extracts skills & projects | Yes |
@@ -411,6 +420,8 @@ docs/
     ├── linkedin-scraper-client.md
     ├── linkedin-scraper-service.md
     ├── provider-scraping-migration.md
+    ├── send-email.md
+    ├── auto-send-scheduler.md
     ├── prompts.md            ← all AI prompts versioned and documented
     ├── user-authentication.md
     ├── user-profile.md
