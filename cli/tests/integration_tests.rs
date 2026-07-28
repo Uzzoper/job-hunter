@@ -164,6 +164,20 @@ mod cli_parsing {
     }
 
     #[test]
+    fn parse_email_approve() {
+        let cli = Cli::try_parse_from(["jh-cli", "email", "approve", "3"])
+            .expect("parse should succeed");
+        assert!(cli.command.is_some());
+    }
+
+    #[test]
+    fn parse_email_send() {
+        let cli = Cli::try_parse_from(["jh-cli", "email", "send", "3"])
+            .expect("parse should succeed");
+        assert!(cli.command.is_some());
+    }
+
+    #[test]
     fn parse_profile_show() {
         let cli =
             Cli::try_parse_from(["jh-cli", "profile", "show"]).expect("parse should succeed");

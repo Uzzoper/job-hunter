@@ -19,6 +19,8 @@ use tokio::sync::Mutex;
 pub enum PendingAction {
     Analyze,
     GenerateEmail,
+    ApproveEmail,
+    SendEmail,
 }
 
 /// Loading state for async operations
@@ -62,6 +64,10 @@ pub struct JobDetailScreen {
     toast: Option<Toast>,
     analysis_error: Option<String>,
     email_error: Option<String>,
+    loading_send: LoadingState,
+    loading_approve: LoadingState,
+    send_error: Option<String>,
+    approve_error: Option<String>,
     pending_job_id: Option<i64>,
     pub pending_action: Option<PendingAction>,
 }
@@ -87,12 +93,16 @@ impl JobDetailScreen {
             toast: None,
             analysis_error: None,
             email_error: None,
+            loading_send: LoadingState::Idle,
+            loading_approve: LoadingState::Idle,
+            send_error: None,
+            approve_error: None,
             pending_job_id: None,
             pending_action: None,
         }
     }
 
-    /// Set the job and reset analysis/email state
+    /// Set the job and reset all state
     pub fn set_job(&mut self, job: JobResponse) {
         let job_id = job.id;
         self.job = Some(job);
@@ -102,6 +112,10 @@ impl JobDetailScreen {
         self.loading_email = LoadingState::Idle;
         self.analysis_error = None;
         self.email_error = None;
+        self.loading_send = LoadingState::Idle;
+        self.loading_approve = LoadingState::Idle;
+        self.send_error = None;
+        self.approve_error = None;
         self.pending_action = None;
 
         self.pending_job_id = Some(job_id);
@@ -127,6 +141,7 @@ impl JobDetailScreen {
                             .and_then(|s| serde_json::from_str(&s).ok())
                             .unwrap_or(EmailStatus::Pending),
                         generated_at: cached_job.cached_at,
+                        sent_at: None,
                     });
                 }
             }
@@ -148,6 +163,14 @@ impl JobDetailScreen {
             PendingAction::GenerateEmail => {
                 self.loading_email = LoadingState::Loading;
                 self.email_error = None;
+            }
+            PendingAction::ApproveEmail => {
+                self.loading_approve = LoadingState::Loading;
+                self.approve_error = None;
+            }
+            PendingAction::SendEmail => {
+                self.loading_send = LoadingState::Loading;
+                self.send_error = None;
             }
         }
     }
@@ -212,6 +235,56 @@ impl JobDetailScreen {
                 self.email_error = Some(err_msg.clone());
                 self.loading_email = LoadingState::Error(err_msg.clone());
                 self.show_toast(format!("Email generation failed: {}", err_msg));
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Approve email draft via API
+    pub async fn approve_email(&mut self) -> anyhow::Result<()> {
+        let job = self.job.as_ref().ok_or_else(|| anyhow::anyhow!("No job selected"))?;
+        let job_id = job.id;
+        let client = self.api_client.clone();
+
+        let result = client.lock().await.approve_draft(job_id).await;
+
+        match result {
+            Ok(draft) => {
+                self.email = Some(draft);
+                self.loading_approve = LoadingState::Success;
+                self.show_toast("Email draft approved!".to_string());
+            }
+            Err(e) => {
+                let err_msg = e.to_string();
+                self.approve_error = Some(err_msg.clone());
+                self.loading_approve = LoadingState::Error(err_msg.clone());
+                self.show_toast(format!("Approval failed: {}", err_msg));
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Send email via API
+    pub async fn send_email(&mut self) -> anyhow::Result<()> {
+        let job = self.job.as_ref().ok_or_else(|| anyhow::anyhow!("No job selected"))?;
+        let job_id = job.id;
+        let client = self.api_client.clone();
+
+        let result = client.lock().await.send_email(job_id).await;
+
+        match result {
+            Ok(draft) => {
+                self.email = Some(draft);
+                self.loading_send = LoadingState::Success;
+                self.show_toast("Email sent!".to_string());
+            }
+            Err(e) => {
+                let err_msg = e.to_string();
+                self.send_error = Some(err_msg.clone());
+                self.loading_send = LoadingState::Error(err_msg.clone());
+                self.show_toast(format!("Send failed: {}", err_msg));
             }
         }
 
@@ -426,6 +499,17 @@ fn draw_score_gauge(&self, frame: &mut Frame, area: Rect, theme: &Theme) {
         }
 
         if let Some(email) = &self.email {
+            let status_badge = match email.status {
+                EmailStatus::Pending => Span::styled(" PENDING ", theme.style_warn()),
+                EmailStatus::Approved => Span::styled(" APPROVED ", theme.style_highlight()),
+                EmailStatus::Sent => Span::styled(" SENT ", theme.style_good()),
+            };
+
+            let header = Line::from(vec![
+                Span::styled("Status: ", theme.style_dim()),
+                status_badge,
+            ]);
+
             let content = if self.show_email_full {
                 format!("Subject: {}\n\n{}", email.subject, email.body)
             } else {
@@ -437,7 +521,11 @@ fn draw_score_gauge(&self, frame: &mut Frame, area: Rect, theme: &Theme) {
                 format!("Subject: {}\n\n{}", email.subject, preview)
             };
 
-            let email_widget = Paragraph::new(Text::styled(content, theme.style_normal()))
+            let email_widget = Paragraph::new(Text::from(vec![
+                header,
+                Line::from(""),
+                Line::from(Span::styled(content, theme.style_normal())),
+            ]))
                 .wrap(Wrap { trim: false })
                 .alignment(Alignment::Left);
             frame.render_widget(email_widget, inner);
@@ -479,6 +567,27 @@ fn draw_score_gauge(&self, frame: &mut Frame, area: Rect, theme: &Theme) {
             hotkeys.push(Span::styled(" [c] Copy ", theme.style_highlight()));
         } else {
             hotkeys.push(Span::styled(" [c] Copy ", theme.style_dim()));
+        }
+        hotkeys.push(Span::styled(" | ", theme.style_dim()));
+
+        let is_pending = self.email.as_ref().map(|e| e.status == EmailStatus::Pending).unwrap_or(false);
+        let is_approved = self.email.as_ref().map(|e| e.status == EmailStatus::Approved).unwrap_or(false);
+
+        if is_pending && !self.loading_approve.is_loading() {
+            hotkeys.push(Span::styled(" [p] Approve ", theme.style_highlight()));
+        } else if self.loading_approve.is_loading() {
+            hotkeys.push(Span::styled(" [p] Approving... ", theme.style_warn()));
+        } else {
+            hotkeys.push(Span::styled(" [p] Approve ", theme.style_dim()));
+        }
+        hotkeys.push(Span::styled(" | ", theme.style_dim()));
+
+        if is_approved && !self.loading_send.is_loading() {
+            hotkeys.push(Span::styled(" [s] Send ", theme.style_highlight()));
+        } else if self.loading_send.is_loading() {
+            hotkeys.push(Span::styled(" [s] Sending... ", theme.style_warn()));
+        } else {
+            hotkeys.push(Span::styled(" [s] Send ", theme.style_dim()));
         }
         hotkeys.push(Span::styled(" | ", theme.style_dim()));
         hotkeys.push(Span::styled(" [Esc] Quit ", theme.style_dim()));
@@ -531,6 +640,14 @@ pub fn draw(&mut self, frame: &mut Frame, area: Rect) {
             render_error_popup(frame, area, &theme, err, "[Enter] Dismiss  [e] Retry");
             return;
         }
+        if let Some(err) = &self.approve_error {
+            render_error_popup(frame, area, &theme, err, "[Enter] Dismiss  [p] Retry");
+            return;
+        }
+        if let Some(err) = &self.send_error {
+            render_error_popup(frame, area, &theme, err, "[Enter] Dismiss  [s] Retry");
+            return;
+        }
 
         let Some(_job) = &self.job else {
             render_empty_state(frame, area, &theme, "No job selected.\nPress Q to go back.");
@@ -572,6 +689,10 @@ pub fn draw(&mut self, frame: &mut Frame, area: Rect) {
             render_loading(frame, area, &theme, "Analyzing job with AI...");
         } else if self.loading_email.is_loading() {
             render_loading(frame, area, &theme, "Generating email draft...");
+        } else if self.loading_approve.is_loading() {
+            render_loading(frame, area, &theme, "Approving email draft...");
+        } else if self.loading_send.is_loading() {
+            render_loading(frame, area, &theme, "Sending email...");
         }
     }
 }
@@ -587,13 +708,21 @@ pub async fn handle_event(
     if let crossterm::event::Event::Key(key) = event
         && key.kind == KeyEventKind::Press {
             // If error popup is showing, only handle dismiss/retry/nav keys
-            if screen.analysis_error.is_some() || screen.email_error.is_some() {
+            if screen.analysis_error.is_some()
+                || screen.email_error.is_some()
+                || screen.approve_error.is_some()
+                || screen.send_error.is_some()
+            {
                 match key.code {
                     KeyCode::Enter => {
                         screen.analysis_error = None;
                         screen.email_error = None;
+                        screen.approve_error = None;
+                        screen.send_error = None;
                         screen.loading_analysis = LoadingState::Idle;
                         screen.loading_email = LoadingState::Idle;
+                        screen.loading_approve = LoadingState::Idle;
+                        screen.loading_send = LoadingState::Idle;
                     }
                     KeyCode::Char('a') | KeyCode::Char('A') => {
                         if !screen.loading_analysis.is_loading() {
@@ -603,6 +732,16 @@ pub async fn handle_event(
                     KeyCode::Char('e') | KeyCode::Char('E') => {
                         if !screen.loading_email.is_loading() {
                             screen.pending_action = Some(PendingAction::GenerateEmail);
+                        }
+                    }
+                    KeyCode::Char('p') | KeyCode::Char('P') => {
+                        if !screen.loading_approve.is_loading() {
+                            screen.pending_action = Some(PendingAction::ApproveEmail);
+                        }
+                    }
+                    KeyCode::Char('s') | KeyCode::Char('S') => {
+                        if !screen.loading_send.is_loading() {
+                            screen.pending_action = Some(PendingAction::SendEmail);
                         }
                     }
                     KeyCode::Esc => {
@@ -639,6 +778,16 @@ pub async fn handle_event(
                 KeyCode::Char('c') | KeyCode::Char('C') => {
                     if screen.email.is_some() {
                         let _ = screen.copy_email_to_clipboard();
+                    }
+                }
+                KeyCode::Char('p') | KeyCode::Char('P') => {
+                    if !screen.loading_approve.is_loading() {
+                        screen.pending_action = Some(PendingAction::ApproveEmail);
+                    }
+                }
+                KeyCode::Char('s') | KeyCode::Char('S') => {
+                    if !screen.loading_send.is_loading() {
+                        screen.pending_action = Some(PendingAction::SendEmail);
                     }
                 }
                 KeyCode::Char(' ') | KeyCode::Enter => {
@@ -721,6 +870,7 @@ mod tests {
             body: "Prezados,\n\nMe candidato à vaga de Senior Rust Developer na Acme Corp. Tenho experiência...".into(),
             status: EmailStatus::Pending,
             generated_at: chrono::NaiveDateTime::parse_from_str("2026-07-14T10:00:00", "%Y-%m-%dT%H:%M:%S").unwrap(),
+            sent_at: None,
         }
     }
 
@@ -865,6 +1015,7 @@ mod tests {
     #[test]
     fn email_status_display() {
         assert_eq!(format!("{}", EmailStatus::Pending), "PENDING");
+        assert_eq!(format!("{}", EmailStatus::Approved), "APPROVED");
         assert_eq!(format!("{}", EmailStatus::Sent), "SENT");
     }
 
@@ -1011,6 +1162,7 @@ mod tests {
             body: long_body,
             status: EmailStatus::Pending,
             generated_at: chrono::NaiveDateTime::parse_from_str("2026-07-14T10:00:00", "%Y-%m-%dT%H:%M:%S").unwrap(),
+            sent_at: None,
         });
         let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 24)).unwrap();
 

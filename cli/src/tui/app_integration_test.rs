@@ -378,6 +378,7 @@ async fn job_detail_space_toggles_email_expanded() {
         body: "Test body".into(),
         status: crate::domain::EmailStatus::Pending,
         generated_at: chrono::NaiveDateTime::parse_from_str("2026-07-14T10:00:00", "%Y-%m-%dT%H:%M:%S").unwrap(),
+        sent_at: None,
     };
     app.job_detail_screen.as_mut().unwrap().email = Some(email);
 
@@ -423,6 +424,7 @@ async fn job_detail_c_copies_email() {
         body: "Test body".into(),
         status: crate::domain::EmailStatus::Pending,
         generated_at: chrono::NaiveDateTime::parse_from_str("2026-07-14T10:00:00", "%Y-%m-%dT%H:%M:%S").unwrap(),
+        sent_at: None,
     };
     app.job_detail_screen.as_mut().unwrap().email = Some(email);
 

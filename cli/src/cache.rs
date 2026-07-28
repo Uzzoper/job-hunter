@@ -449,6 +449,7 @@ mod tests {
             status: EmailStatus::Pending,
             generated_at: NaiveDateTime::parse_from_str("2026-07-14T10:00:00", "%Y-%m-%dT%H:%M:%S")
                 .unwrap(),
+            sent_at: None,
         }
     }
 

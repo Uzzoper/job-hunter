@@ -131,8 +131,12 @@ jh-cli analyze <job-id> [--json]
 ```
 jh-cli email show <job-id> [--json] [--copy]
 jh-cli email generate <job-id>
+jh-cli email approve <job-id>
+jh-cli email send <job-id>
 ```
 - `--copy` copies body to clipboard (arboard)
+- `approve` changes draft status from `PENDING` → `APPROVED` (required before send)
+- `send` sends the email via Resend API; returns with status `SENT` and `sent_at` timestamp
 
 ### `profile` — User Profile
 ```
@@ -209,6 +213,9 @@ jh-cli clear-cache
 | `b` / `B` / `Esc` | Back to JobList |
 | `a` / `A` | Trigger AI analysis (`POST /analyze`) |
 | `e` / `E` | Generate email draft (`POST /email`) |
+| `p` / `P` | Approve email draft (`POST /email/approve`) |
+| `s` / `S` | Send email (`POST /send`) |
+| `c` / `C` | Copy email to clipboard |
 | `o` / `O` | Open job URL in browser |
 | `↑` / `↓` | Scroll description |
 
@@ -242,7 +249,7 @@ jh-cli clear-cache
 | `JobDetailResponse` | `GET /api/jobs/{id}` | `JobResponse` + `match_score`, `analysis_json` |
 | `AuthResponse` | `POST /auth/*` | `token`, `user_id`, `name`, `email` |
 | `ProfileResponse` | `GET /api/profile` | `id?`, `user_id`, `resume_text`, `skills[]`, `tone`, `projects[]` (each: `name`, `description`, `tech_stack[]`) |
-| `EmailDraftResponse` | `GET/POST /api/jobs/{id}/email` | `id`, `job_id`, `subject`, `body`, `status`, `generated_at` |
+| `EmailDraftResponse` | `GET/POST /api/jobs/{id}/email` | `id`, `job_id`, `subject`, `body`, `status`, `generated_at`, `sent_at?` |
 | `FetchResponse` | `POST /api/jobs/fetch` | `message` |
 | `ErrorResponse` | Error responses | `timestamp`, `status`, `error`, `message` |
 
@@ -250,7 +257,7 @@ jh-cli clear-cache
 
 ```rust
 enum CompanyTone { Formal, Casual, Startup }  // "FORMAL" | "CASUAL" | "STARTUP"
-enum EmailStatus { Pending, Sent }           // "PENDING" | "SENT"
+enum EmailStatus { Pending, Approved, Sent } // "PENDING" | "APPROVED" | "SENT"
 enum ApplyType { EmailAvailable, ExternalApply, Unknown }
 enum SeniorityLevel { Junior, Pleno, Senior, Unknown }
 ```
