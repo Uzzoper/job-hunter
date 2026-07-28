@@ -4,5 +4,6 @@ public record EligibleDraft(
         EmailDraft draft,
         int matchScore,
         String company,
-        String contactEmail
+        String contactEmail,
+        String jobTitle
 ) {}

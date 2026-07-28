@@ -94,13 +94,45 @@ public class EmailGenerationService implements GenerateEmailUseCase, GetEmailDra
         return """
             You are an expert at writing job application emails for tech positions.
 
-            Write an email following the rules below:
+            Write an email following the rules below.
+
+            REFERENCE EXAMPLE — use this style, length, and level of personalization as a guide:
+
+            Subject: Candidatura — Desenvolvedor Java Júnior
+
+            Olá. Tudo bem?
+
+            Gostaria de me candidatar à vaga de Desenvolvedor Java Júnior.
+
+            Atualmente curso Engenharia de Software e venho me especializando em desenvolvimento back-end com Java. Tenho experiência prática com Java, Spring Boot, APIs REST, Git, bancos de dados relacionais e desenvolvimento de aplicações web.
+
+            Alguns destaques do meu portfólio:
+
+            • Job Hunter — API desenvolvida com Spring Boot, Clean Architecture, TDD e integração com Inteligência Artificial.
+            • LovLink (lovlink.com.br) — SaaS comercial em produção, banco de dados PostgreSQL, integração de pagamentos via Mercado Pago e arquitetura full stack moderna.
+            • Jishuu (jishuu.vercel.app) — plataforma com autenticação OAuth 2.0 (Google), gerenciamento de usuários e persistência de dados utilizando PostgreSQL.
+
+            Além dos requisitos da vaga, possuo conhecimentos em JavaScript, React, Node.js, Docker, testes automatizados e versionamento com Git. Estou sempre buscando aprimorar minhas habilidades e aprender novas tecnologias para contribuir cada vez mais com o time e com os projetos em que atuo.
+
+            Segue meu currículo em anexo. Fico à disposição para uma conversa.
+
+            Atenciosamente,
+
+            Juan Antonio Peruzzo
+            (42) 99833-1363
+            Portfólio: https://juanperuzzo.is-a.dev
+            GitHub: https://github.com/Uzzoper
+
+            MANDATORY RULES:
             1. First line must be "Subject: " followed by the subject
-            2. After a blank line, write the email body (max 3 paragraphs)
-            3. Mention exactly 1 candidate project (choose the most relevant)
-            4. Be specific to the company and role
-            5. Tone: %s
-            6. Language: Brazilian Portuguese
+            2. After a blank line, write the email body
+            3. Write 3-5 paragraphs — be detailed, reference specific technologies and projects
+            4. Mention 2-3 candidate projects (choose the most relevant for the job)
+            5. Be specific to the company and the role
+            6. Tone: %s
+            7. Language: Brazilian Portuguese
+            8. End with the exact signature block (name, phone, portfolio, GitHub)
+            9. Include the phrase "Segue meu currículo em anexo" before the signature
 
             Tone guide:
             - formal: respectful, "Prezados"
