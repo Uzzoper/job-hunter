@@ -4,6 +4,7 @@ import com.juanperuzzo.job_hunter.application.port.out.EmailDraftRepository;
 import com.juanperuzzo.job_hunter.application.service.ApproveDraftService;
 import com.juanperuzzo.job_hunter.domain.exception.DraftAlreadyApprovedException;
 import com.juanperuzzo.job_hunter.domain.exception.EmailAlreadySentException;
+import com.juanperuzzo.job_hunter.domain.exception.JobNotFoundException;
 import com.juanperuzzo.job_hunter.domain.model.EmailDraft;
 import com.juanperuzzo.job_hunter.domain.model.EmailStatus;
 import org.junit.jupiter.api.DisplayName;
@@ -73,7 +74,7 @@ class ApproveDraftServiceTest {
     void approve_whenNoDraft_shouldThrow() {
         when(emailDraftRepository.findByJobIdAndUserId(JOB_ID, USER_ID)).thenReturn(Optional.empty());
 
-        assertThrows(IllegalArgumentException.class, () -> approveDraftService.approve(USER_ID, JOB_ID));
+        assertThrows(JobNotFoundException.class, () -> approveDraftService.approve(USER_ID, JOB_ID));
         verify(emailDraftRepository, never()).save(any());
     }
 }
