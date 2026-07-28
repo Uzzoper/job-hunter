@@ -226,6 +226,16 @@ impl App {
                                 let _ = s.generate_email().await;
                             }
                         }
+                        job_detail_screen::PendingAction::ApproveEmail => {
+                            if let Some(s) = self.job_detail_screen.as_mut() {
+                                let _ = s.approve_email().await;
+                            }
+                        }
+                        job_detail_screen::PendingAction::SendEmail => {
+                            if let Some(s) = self.job_detail_screen.as_mut() {
+                                let _ = s.send_email().await;
+                            }
+                        }
                     }
                     continue;
                 }

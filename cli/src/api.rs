@@ -180,6 +180,23 @@ impl ApiClient {
         self.handle_response(resp).await
     }
 
+    pub async fn approve_draft(&self, job_id: i64) -> Result<EmailDraftResponse> {
+        let resp = self
+            .request(Method::POST, &format!("/api/jobs/{job_id}/email/approve"))
+            .send()
+            .await?;
+        self.handle_response(resp).await
+    }
+
+    pub async fn send_email(&self, job_id: i64) -> Result<EmailDraftResponse> {
+        let resp = self
+            .request(Method::POST, &format!("/api/jobs/{job_id}/send"))
+            .timeout(Duration::from_secs(60))
+            .send()
+            .await?;
+        self.handle_response(resp).await
+    }
+
     // =========================================================================
     // Profile endpoints
     // =========================================================================

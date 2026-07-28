@@ -82,6 +82,7 @@ pub struct EmailDraftResponse {
     pub body: String,
     pub status: EmailStatus,
     pub generated_at: NaiveDateTime,
+    pub sent_at: Option<NaiveDateTime>,
 }
 
 /// Profile request for updating user profile.
@@ -147,6 +148,7 @@ impl std::fmt::Display for CompanyTone {
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum EmailStatus {
     Pending,
+    Approved,
     Sent,
 }
 
@@ -154,6 +156,7 @@ impl std::fmt::Display for EmailStatus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Pending => write!(f, "PENDING"),
+            Self::Approved => write!(f, "APPROVED"),
             Self::Sent => write!(f, "SENT"),
         }
     }
@@ -438,12 +441,14 @@ mod tests {
             body: "Dear team...".into(),
             status: EmailStatus::Pending,
             generated_at: NaiveDateTime::parse_from_str("2026-07-14T10:00:00", "%Y-%m-%dT%H:%M:%S").unwrap(),
+            sent_at: None,
         };
         let json = serde_json::to_string(&draft).expect("serialize");
         let deserialized: EmailDraftResponse = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(draft.id, deserialized.id);
         assert_eq!(draft.subject, deserialized.subject);
         assert_eq!(draft.status, deserialized.status);
+        assert_eq!(draft.sent_at, deserialized.sent_at);
     }
 
     #[test]
@@ -550,6 +555,7 @@ mod tests {
     #[test]
     fn email_status_serialization() {
         assert_eq!(serde_json::to_string(&EmailStatus::Pending).unwrap(), "\"PENDING\"");
+        assert_eq!(serde_json::to_string(&EmailStatus::Approved).unwrap(), "\"APPROVED\"");
         assert_eq!(serde_json::to_string(&EmailStatus::Sent).unwrap(), "\"SENT\"");
     }
 
