@@ -104,10 +104,10 @@ class EmailGenerationServiceTest {
             assertTrue(draft.subject().startsWith("Subject: "));
             assertNotNull(draft.body());
             assertEquals(EmailStatus.PENDING, draft.status());
-            // Body should have at most 3 paragraphs (simple check: count non-empty lines separated by blank lines)
+            // Body should have 3-5 paragraphs (separated by blank lines)
             String body = draft.body();
             String[] paragraphs = body.split("\\n\\s*\\n");
-            assertTrue(paragraphs.length <= 3, "Body should have at most 3 paragraphs");
+            assertTrue(paragraphs.length >= 3 && paragraphs.length <= 5, "Body should have 3-5 paragraphs");
         }
     }
 

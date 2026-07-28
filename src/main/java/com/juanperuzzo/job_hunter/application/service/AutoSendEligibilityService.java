@@ -56,7 +56,7 @@ public class AutoSendEligibilityService implements AutoSendEligibilityPort {
                 var analysisOpt = jobAnalysisRepository.findByJobIdAndUserId(candidate.jobId(), candidate.userId());
                 if (analysisOpt.isEmpty()) continue;
 
-                allEligible.add(new EligibleDraft(candidate, analysisOpt.get().matchScore(), job.company(), job.contactEmail()));
+                allEligible.add(new EligibleDraft(candidate, analysisOpt.get().matchScore(), job.company(), job.contactEmail(), job.title()));
             }
         }
 
