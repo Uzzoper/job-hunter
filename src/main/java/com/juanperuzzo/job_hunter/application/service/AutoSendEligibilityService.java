@@ -10,7 +10,7 @@ import com.juanperuzzo.job_hunter.domain.model.EmailStatus;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.time.LocalDate;
+import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -103,6 +103,6 @@ public class AutoSendEligibilityService implements AutoSendEligibilityPort {
     }
 
     private LocalDateTime todayStart() {
-        return LocalDate.now().atStartOfDay();
+        return LocalDateTime.now(Clock.systemUTC()).withHour(0).withMinute(0).withSecond(0).withNano(0);
     }
 }
