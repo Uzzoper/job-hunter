@@ -36,14 +36,20 @@ flowchart TB
 
     subgraph AI["AI Analysis"]
         I1["POST /api/jobs/{id}/analyze"] --> I2[AiAnalysisService]
-        I2 --> I3[OpenRouter API<br/>MiniMax M2.5]
-        I3 --> I4[JobAnalysis<br/>score + skills + tone]
+        I2 --> I3{Provider}
+        I3 -->|openrouter| I4["OpenRouter API<br/>MiniMax M2.5"]
+        I3 -->|ollama| I5["Ollama (local)<br/>llama3.2"]
+        I4 --> I6[JobAnalysis<br/>score + skills + tone]
+        I5 --> I6
     end
 
     subgraph Email["Email Generation"]
         E1["POST /api/jobs/{id}/email"] --> E2[EmailGenerationService]
-        E2 --> E3[OpenRouter API]
-        E3 --> E4[EmailDraft<br/>ready to send]
+        E2 --> E3{Provider}
+        E3 -->|openrouter| E4["OpenRouter API"]
+        E3 -->|ollama| E5["Ollama (local)"]
+        E4 --> E6[EmailDraft<br/>ready to send]
+        E5 --> E6
     end
 
     Auth -->|Authorization: Bearer| Scraper
@@ -167,7 +173,7 @@ sequenceDiagram
 | Security | Spring Security + JWT (jjwt) |
 | Scraping | RestClient + Jsoup |
 | Browser Automation | Playwright (Node.js + TypeScript, separate container) |
-| AI | OpenRouter API (MiniMax M2.5) |
+| AI | OpenRouter API (MiniMax M2.5) ou Ollama local (llama3.2) |
 | Tests | JUnit 5 + Mockito + WireMock / Rust async tests |
 | Build | Maven / Cargo |
 
@@ -286,7 +292,7 @@ Each source is wrapped by a **Provider** that selects the right **Strategy** (RE
 
 - Java 21
 - Docker + Docker Compose
-- An [OpenRouter](https://openrouter.ai) API key (free tier works)
+- An [OpenRouter](https://openrouter.ai) API key (free tier works) or [Ollama](https://ollama.com) running locally
 - Rust 2024 edition (for the CLI binary — `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`)
 
 ### Setup
@@ -315,8 +321,14 @@ spring:
     password: jobhunter123
 
 ai:
+  # provider: openrouter   # default
   openrouter:
     api-key: YOUR_OPENROUTER_API_KEY
+  # provider: ollama       # local alternative
+  # ollama:
+  #   base-url: http://localhost:11434
+  #   model: llama3.2
+  #   timeout-seconds: 60
 
 jwt:
   secret: a-key-with-at-least-32-characters-for-hmac
@@ -360,7 +372,7 @@ Start the TUI (default mode, no subcommand needed):
 |--------|----------|-------------|:---:|
 | `POST` | `/api/auth/register` | Register a new user | No |
 | `POST` | `/api/auth/login` | Login and receive JWT token | No |
-| `GET` | `/api/jobs` | List all jobs | Yes |
+| `GET` | `/api/jobs?keyword=&minScore=&hasEmail=true` | List jobs (filter by keyword, min score, has contact email) | Yes |
 | `GET` | `/api/jobs/{id}` | Get job detail | Yes |
 | `POST` | `/api/jobs/fetch` | Trigger all scrapers (Gupy + InfoJobs + LinkedIn) | Yes |
 | `POST` | `/api/jobs/fetch/linkedin` | Trigger only LinkedIn scraper | Yes |
@@ -419,10 +431,14 @@ docs/
     ├── infojobs-scraper.md
     ├── linkedin-scraper-client.md
     ├── linkedin-scraper-service.md
+    ├── list-jobs-filter.md
     ├── provider-scraping-migration.md
+    ├── resume-upload.md
     ├── send-email.md
     ├── auto-send-scheduler.md
+    ├── template-email.md
     ├── prompts.md            ← all AI prompts versioned and documented
+    ├── tui-has-email-filter.md
     ├── user-authentication.md
     ├── user-profile.md
     ├── user-scoped-analysis.md
