@@ -36,6 +36,20 @@ public class JobPersistenceAdapter implements JobRepository {
     }
 
     @Override
+    public List<Job> findAllByContactEmailIsNotNull() {
+        return jpaRepository.findByContactEmailIsNotNull().stream()
+                .map(this::toDomain)
+                .toList();
+    }
+
+    @Override
+    public List<Job> findAllByContactEmailIsNull() {
+        return jpaRepository.findByContactEmailIsNull().stream()
+                .map(this::toDomain)
+                .toList();
+    }
+
+    @Override
     public Optional<Job> findById(Long id) {
         return jpaRepository.findById(id).map(this::toDomain);
     }

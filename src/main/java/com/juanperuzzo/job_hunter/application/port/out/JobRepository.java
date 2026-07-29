@@ -13,5 +13,9 @@ public interface JobRepository {
 
     List<Job> findAll();
 
+    List<Job> findAllByContactEmailIsNotNull();
+
+    List<Job> findAllByContactEmailIsNull();
+
     Optional<Job> findById(Long id);
 }
