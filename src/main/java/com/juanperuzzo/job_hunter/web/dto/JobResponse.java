@@ -9,5 +9,6 @@ public record JobResponse(
     String url,
     String description,
     LocalDate postedAt,
-    String source
+    String source,
+    String contactEmail
 ) {}
