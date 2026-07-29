@@ -145,6 +145,10 @@ pub enum EmailAction {
     },
     /// Generate a new email draft for a job
     Generate { job_id: String },
+    /// Approve an email draft for sending
+    Approve { job_id: String },
+    /// Send an email (must be approved first or use auto-send)
+    Send { job_id: String },
 }
 
 #[derive(Subcommand)]

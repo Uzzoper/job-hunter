@@ -81,6 +81,18 @@ scraper:
     timeout-seconds: 30
     detail-fetch-delay-millis: 500
 
+auto-send:
+  enabled: false
+  require-review: true
+  interval-seconds: 120
+  jitter-seconds: 30
+  daily-cap: 50
+
+resend:
+  base-url: https://api.resend.com
+  api-key: ${RESEND_API_KEY}
+  timeout-seconds: 15
+
 app:
   cors:
     allowed-origins: "http://localhost:3000,http://localhost:4200"

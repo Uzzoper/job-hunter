@@ -1,12 +1,14 @@
 package com.juanperuzzo.job_hunter.unit.web;
 
 import com.juanperuzzo.job_hunter.application.port.in.AnalyzeJobUseCase;
+import com.juanperuzzo.job_hunter.application.port.in.ApproveDraftUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.FetchJobsUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.FetchSourceJobsUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.GenerateEmailUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.GetEmailDraftUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.GetJobUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.ListJobsUseCase;
+import com.juanperuzzo.job_hunter.application.port.in.SendEmailUseCase;
 import com.juanperuzzo.job_hunter.application.port.out.TokenProvider;
 import com.juanperuzzo.job_hunter.domain.model.CompanyTone;
 import com.juanperuzzo.job_hunter.domain.model.EmailDraft;
@@ -69,6 +71,12 @@ class JobControllerTest {
 
     @MockitoBean
     private GenerateEmailUseCase generateEmailUseCase;
+
+    @MockitoBean
+    private SendEmailUseCase sendEmailUseCase;
+
+    @MockitoBean
+    private ApproveDraftUseCase approveDraftUseCase;
 
     @MockitoBean
     private ListJobsUseCase listJobsUseCase;
@@ -313,6 +321,62 @@ class JobControllerTest {
                 .andExpect(jsonPath("$.summary").value("Backend role"));
 
         verify(analyzeJobUseCase).analyze(1L, 1L);
+    }
+
+    @Test
+    @DisplayName("sendEmail should return 200 with SENT draft when successful")
+    void sendEmail_whenSuccessful_shouldReturn200() throws Exception {
+        authenticateAs(1L);
+
+        var draft = new EmailDraft(
+                5L, JOB_ID, 1L,
+                "Subject: Application",
+                "Email body",
+                EmailStatus.SENT,
+                LocalDateTime.parse("2026-05-30T10:00:00"),
+                LocalDateTime.parse("2026-05-30T10:01:00"));
+
+        when(sendEmailUseCase.send(1L, JOB_ID)).thenReturn(draft);
+
+        mockMvc.perform(post("/api/jobs/{id}/send", JOB_ID))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("SENT"))
+                .andExpect(jsonPath("$.sentAt").value("2026-05-30T10:01:00"));
+
+        verify(sendEmailUseCase).send(1L, JOB_ID);
+    }
+
+    @Test
+    @DisplayName("approveEmail should return 200 with APPROVED status")
+    void approveEmail_whenPending_shouldReturn200() throws Exception {
+        authenticateAs(1L);
+
+        var draft = new EmailDraft(
+                5L, JOB_ID, 1L,
+                "Subject", "Body",
+                EmailStatus.APPROVED,
+                LocalDateTime.parse("2026-05-30T10:00:00"));
+
+        when(approveDraftUseCase.approve(1L, JOB_ID)).thenReturn(draft);
+
+        mockMvc.perform(post("/api/jobs/{id}/email/approve", JOB_ID))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("APPROVED"));
+
+        verify(approveDraftUseCase).approve(1L, JOB_ID);
+    }
+
+    @Test
+    @DisplayName("sendEmail should return 409 when draft already sent")
+    void sendEmail_whenAlreadySent_shouldReturn409() throws Exception {
+        authenticateAs(1L);
+
+        when(sendEmailUseCase.send(1L, JOB_ID))
+                .thenThrow(new com.juanperuzzo.job_hunter.domain.exception.EmailAlreadySentException("Email 5 has already been sent"));
+
+        mockMvc.perform(post("/api/jobs/{id}/send", JOB_ID))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message").value("Email 5 has already been sent"));
     }
 
     private void authenticateAs(Long userId) {

@@ -6,4 +6,6 @@ import java.util.List;
 
 public interface ListJobsUseCase {
     List<Job> findAll();
+
+    List<Job> findAll(Boolean hasEmail);
 }

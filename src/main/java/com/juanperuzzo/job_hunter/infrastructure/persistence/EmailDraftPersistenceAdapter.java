@@ -6,6 +6,7 @@ import com.juanperuzzo.job_hunter.domain.model.EmailStatus;
 import org.springframework.stereotype.Repository;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 
 @Repository
@@ -34,6 +35,29 @@ public class EmailDraftPersistenceAdapter implements EmailDraftRepository {
         return jpaRepository.findByJobIdAndUserId(jobId, userId).map(this::toDomain);
     }
 
+    @Override
+    public List<EmailDraft> findByUserIdAndStatusIn(Long userId, List<EmailStatus> statuses) {
+        var statusNames = statuses.stream().map(Enum::name).toList();
+        return jpaRepository.findByUserIdAndStatusIn(userId, statusNames)
+                .stream()
+                .map(this::toDomain)
+                .toList();
+    }
+
+    @Override
+    public long countByUserIdAndStatusAndSentAtAfter(Long userId, EmailStatus status, LocalDateTime after) {
+        return jpaRepository.countByUserIdAndStatusAndSentAtAfter(userId, status.name(), after);
+    }
+
+    @Override
+    public List<EmailDraft> findAllByStatusIn(List<EmailStatus> statuses) {
+        var statusNames = statuses.stream().map(Enum::name).toList();
+        return jpaRepository.findByStatusIn(statusNames)
+                .stream()
+                .map(this::toDomain)
+                .toList();
+    }
+
     private EmailDraftEntity toEntity(EmailDraft draft) {
         EmailDraftEntity entity = new EmailDraftEntity(
                 draft.id(),
@@ -43,7 +67,8 @@ public class EmailDraftPersistenceAdapter implements EmailDraftRepository {
                 draft.body(),
                 draft.status().name()
         );
-        entity.setGeneratedAt(LocalDateTime.now());
+        entity.setGeneratedAt(draft.generatedAt());
+        entity.setSentAt(draft.sentAt());
         return entity;
     }
 
@@ -55,7 +80,8 @@ public class EmailDraftPersistenceAdapter implements EmailDraftRepository {
                 entity.getSubject(),
                 entity.getBody(),
                 EmailStatus.valueOf(entity.getStatus()),
-                entity.getGeneratedAt()
+                entity.getGeneratedAt(),
+                entity.getSentAt()
         );
     }
 }

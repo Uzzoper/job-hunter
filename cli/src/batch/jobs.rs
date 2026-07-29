@@ -53,6 +53,7 @@ pub async fn handle_list(
                 description: cj.description,
                 posted_at: cj.posted_at,
                 source: cj.source,
+                contact_email: cj.contact_email.clone(),
             })
             .collect()
     } else if refresh {
@@ -818,6 +819,7 @@ let result = handle_list(
                 description: "Build CLI tools".into(),
                 posted_at: NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(),
                 source: "gupy".into(),
+                contact_email: None,
             },
         ];
         cache.update_cache_on_fetch(&jobs).expect("save jobs");
@@ -868,6 +870,7 @@ let result = handle_list(
                 description: "Build CLI tools in Rust".into(),
                 posted_at: NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(),
                 source: "gupy".into(),
+                contact_email: None,
             },
         ]).expect("save job to cache");
         drop(cache);

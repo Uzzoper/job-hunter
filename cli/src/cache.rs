@@ -276,6 +276,7 @@ impl CacheManager {
             description: row.get("description")?,
             posted_at,
             source: row.get("source")?,
+            contact_email: row.get("contact_email").ok(),
             match_score: row.get("match_score")?,
             analysis_json: row.get("analysis_json")?,
             email_subject: row.get("email_subject")?,
@@ -449,6 +450,7 @@ mod tests {
             status: EmailStatus::Pending,
             generated_at: NaiveDateTime::parse_from_str("2026-07-14T10:00:00", "%Y-%m-%dT%H:%M:%S")
                 .unwrap(),
+            sent_at: None,
         }
     }
 

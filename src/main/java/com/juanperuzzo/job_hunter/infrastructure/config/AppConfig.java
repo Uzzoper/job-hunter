@@ -1,24 +1,33 @@
 package com.juanperuzzo.job_hunter.infrastructure.config;
 
+import com.juanperuzzo.job_hunter.application.port.in.AutoSendEligibilityUseCase;
+import com.juanperuzzo.job_hunter.application.port.in.SendEmailUseCase;
 import com.juanperuzzo.job_hunter.application.port.out.AiPort;
 import com.juanperuzzo.job_hunter.application.port.out.EmailDraftRepository;
+import com.juanperuzzo.job_hunter.application.port.out.EmailSenderPort;
 import com.juanperuzzo.job_hunter.application.port.out.JobRepository;
 import com.juanperuzzo.job_hunter.application.port.out.NormalizerPort;
 import com.juanperuzzo.job_hunter.application.port.out.ScraperPort;
 import com.juanperuzzo.job_hunter.application.port.out.SourceFetchPort;
 import com.juanperuzzo.job_hunter.application.service.AiAnalysisService;
 import com.juanperuzzo.job_hunter.application.service.EmailGenerationService;
+import com.juanperuzzo.job_hunter.application.service.EmailSendingService;
 import com.juanperuzzo.job_hunter.application.service.FetchJobsService;
 import com.juanperuzzo.job_hunter.application.service.FetchSourceJobsService;
 import com.juanperuzzo.job_hunter.infrastructure.ai.OllamaClient;
 import com.juanperuzzo.job_hunter.infrastructure.ai.OpenRouterClient;
+import com.juanperuzzo.job_hunter.infrastructure.email.ResendEmailSender;
+import com.juanperuzzo.job_hunter.infrastructure.scheduler.AutoSendScheduler;
 import com.juanperuzzo.job_hunter.application.port.out.PasswordHasher;
 import com.juanperuzzo.job_hunter.application.port.out.TokenProvider;
 import com.juanperuzzo.job_hunter.application.port.out.UserRepository;
 import com.juanperuzzo.job_hunter.application.port.out.JobAnalysisRepository;
 import com.juanperuzzo.job_hunter.application.port.out.UserProfileRepository;
+import com.juanperuzzo.job_hunter.application.service.ApproveDraftService;
 import com.juanperuzzo.job_hunter.application.service.AuthService;
+import com.juanperuzzo.job_hunter.application.service.AutoSendEligibilityService;
 import com.juanperuzzo.job_hunter.application.service.ResumeUploadService;
+import com.juanperuzzo.job_hunter.application.service.TemplateEmailService;
 import com.juanperuzzo.job_hunter.application.service.UserProfileService;
 import com.juanperuzzo.job_hunter.infrastructure.security.JwtTokenService;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.retry.ExponentialBackoffRetry;
@@ -29,6 +38,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.context.annotation.Primary;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.beans.factory.annotation.Qualifier;
 
 import java.time.Clock;
@@ -52,6 +62,7 @@ import com.juanperuzzo.job_hunter.infrastructure.scraper.strategy.ExtractionStra
 
 @Configuration
 @EnableConfigurationProperties(LinkedInScraperProperties.class)
+@EnableScheduling
 public class AppConfig {
 
     @Bean
@@ -218,8 +229,11 @@ public class AppConfig {
     @Bean
     public EmailGenerationService emailGenerationService(AiPort aiPort, EmailDraftRepository emailDraftRepository,
                                                          UserProfileRepository userProfileRepository,
-                                                         JobRepository jobRepository, JobAnalysisRepository jobAnalysisRepository) {
-        return new EmailGenerationService(aiPort, emailDraftRepository, userProfileRepository, jobRepository, jobAnalysisRepository);
+                                                         JobRepository jobRepository, JobAnalysisRepository jobAnalysisRepository,
+                                                         TemplateEmailService templateEmailService,
+                                                         @Value("${email.standard-template.min-match-score:60}") int minMatchScore) {
+        return new EmailGenerationService(aiPort, emailDraftRepository, userProfileRepository, jobRepository,
+                jobAnalysisRepository, templateEmailService, minMatchScore);
     }
 
     @Bean
@@ -258,5 +272,51 @@ public class AppConfig {
                                                    @Value("${app.upload-dir}") String uploadDir,
                                                    @Value("${ai.resume-extraction.max-chars:8000}") int maxAiChars) {
         return new ResumeUploadService(aiPort, userProfileService, userProfileRepository, uploadDir, maxAiChars);
+    }
+
+    @Bean
+    public ResendEmailSender resendEmailSender(
+            @Value("${resend.base-url}") String baseUrl,
+            @Value("${resend.api-key}") String apiKey,
+            @Value("${resend.timeout-seconds}") int timeoutSeconds) {
+        return new ResendEmailSender(baseUrl, apiKey, timeoutSeconds);
+    }
+
+    @Bean
+    public EmailSendingService emailSendingService(
+            EmailDraftRepository emailDraftRepository,
+            JobRepository jobRepository,
+            UserRepository userRepository,
+            EmailSenderPort emailSenderPort) {
+        return new EmailSendingService(emailDraftRepository, jobRepository, userRepository, emailSenderPort);
+    }
+
+    @Bean
+    public AutoSendEligibilityService autoSendEligibilityService(
+            EmailDraftRepository emailDraftRepository,
+            JobRepository jobRepository,
+            JobAnalysisRepository jobAnalysisRepository,
+            @Value("${auto-send.require-review}") boolean requireReview,
+            @Value("${auto-send.daily-cap}") int dailyCap) {
+        return new AutoSendEligibilityService(emailDraftRepository, jobRepository, jobAnalysisRepository, requireReview, dailyCap);
+    }
+
+    @Bean
+    public TemplateEmailService templateEmailService() {
+        return new TemplateEmailService();
+    }
+
+    @Bean
+    public AutoSendScheduler autoSendScheduler(
+            AutoSendEligibilityUseCase eligibilityPort,
+            SendEmailUseCase sendEmailUseCase,
+            @Value("${auto-send.enabled}") boolean enabled,
+            @Value("${auto-send.jitter-seconds}") int jitterSeconds) {
+        return new AutoSendScheduler(eligibilityPort, sendEmailUseCase, enabled, jitterSeconds);
+    }
+
+    @Bean
+    public ApproveDraftService approveDraftService(EmailDraftRepository emailDraftRepository) {
+        return new ApproveDraftService(emailDraftRepository);
     }
 }
