@@ -102,15 +102,16 @@ impl App {
                     && !cached_jobs.is_empty() {
                         let jobs: Vec<JobResponse> = cached_jobs
                             .into_iter()
-                            .map(|cj| JobResponse {
-                                id: cj.id,
-                                title: cj.title,
-                                company: cj.company,
-                                url: cj.url,
-                                description: cj.description,
-                                posted_at: cj.posted_at,
-                                source: cj.source,
-                            })
+                                .map(|cj| JobResponse {
+                                    id: cj.id,
+                                    title: cj.title,
+                                    company: cj.company,
+                                    url: cj.url,
+                                    description: cj.description,
+                                    posted_at: cj.posted_at,
+                                    source: cj.source,
+                                    contact_email: cj.contact_email.clone(),
+                                })
                             .collect();
                         screen.from_cache = true;
                         screen.cache_stale = cache_lock.is_stale().unwrap_or(true);
@@ -152,6 +153,7 @@ impl App {
                                             description: cj.description,
                                             posted_at: cj.posted_at,
                                             source: cj.source,
+                                            contact_email: cj.contact_email.clone(),
                                         })
                                         .collect();
                                     screen.from_cache = true;

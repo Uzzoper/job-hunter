@@ -257,14 +257,14 @@ impl CacheManager {
 
     fn row_to_cached_job(row: &rusqlite::Row) -> rusqlite::Result<CachedJob> {
         let posted_at_str: String = row.get("posted_at")?;
-        let cached_at_str: String = row.get("cached_at")?;
+        let fetched_at_str: String = row.get("fetched_at")?;
 
         let posted_at = NaiveDate::parse_from_str(&posted_at_str, "%Y-%m-%d").map_err(|e| {
             rusqlite::Error::ToSqlConversionFailure(Box::new(e))
         })?;
 
-        let cached_at =
-            NaiveDateTime::parse_from_str(&cached_at_str, "%Y-%m-%d %H:%M:%S").map_err(|e| {
+        let fetched_at =
+            NaiveDate::parse_from_str(&fetched_at_str, "%Y-%m-%d").map_err(|e| {
                 rusqlite::Error::ToSqlConversionFailure(Box::new(e))
             })?;
 
@@ -276,12 +276,8 @@ impl CacheManager {
             description: row.get("description")?,
             posted_at,
             source: row.get("source")?,
-            match_score: row.get("match_score")?,
-            analysis_json: row.get("analysis_json")?,
-            email_subject: row.get("email_subject")?,
-            email_body: row.get("email_body")?,
-            email_status: row.get("email_status")?,
-            cached_at,
+            contact_email: row.get("contact_email")?,
+            fetched_at,
         })
     }
 
@@ -414,6 +410,7 @@ mod tests {
                 description: "Build CLI tools in Rust".into(),
                 posted_at: NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(),
                 source: "gupy".into(),
+                contact_email: None,
             },
             JobResponse {
                 id: 2,
@@ -423,6 +420,7 @@ mod tests {
                 description: "Enterprise Java development with Spring".into(),
                 posted_at: NaiveDate::from_ymd_opt(2026, 7, 13).unwrap(),
                 source: "linkedin".into(),
+                contact_email: None,
             },
         ]
     }
@@ -502,6 +500,7 @@ mod tests {
             description: "Same URL".into(),
             posted_at: NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(),
             source: "gupy".into(),
+            contact_email: None,
         });
         manager.save_jobs(&jobs).expect("save jobs with duplicate");
         let all = manager.get_all_jobs(None).expect("get all jobs");
@@ -565,6 +564,7 @@ mod tests {
             description: "Not analyzed yet".into(),
             posted_at: NaiveDate::from_ymd_opt(2026, 7, 15).unwrap(),
             source: "gupy".into(),
+            contact_email: None,
         }];
         manager.save_jobs(&jobs).expect("save job");
 

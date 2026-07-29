@@ -189,6 +189,7 @@ mod tests {
             description: format!("Description for job {}", id),
             posted_at: NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(),
             source: "gupy".into(),
+            contact_email: None,
         }
     }
 
@@ -218,6 +219,7 @@ mod tests {
             email_status: Some("PENDING".into()),
             cached_at: NaiveDateTime::parse_from_str("2026-07-14T10:00:00", "%Y-%m-%dT%H:%M:%S")
                 .unwrap(),
+            contact_email: None,
         }
     }
 
