@@ -424,6 +424,39 @@ class JobNormalizerTest {
         }
 
         @Test
+        @DisplayName("should ignore no-reply email with hyphen")
+        void shouldIgnoreNoReplyWithHyphen() {
+            var job = normalizer.normalize(new RawJob(
+                    "Desenvolvedor Java", "Company", "https://example.com/job",
+                    "Auto reply, no-reply@company.com",
+                    "2026-07-01", null, null, "test", null));
+            assertNotNull(job);
+            assertNull(job.contactEmail());
+        }
+
+        @Test
+        @DisplayName("should ignore placeholder test.com email")
+        void shouldIgnorePlaceholderTestCom() {
+            var job = normalizer.normalize(new RawJob(
+                    "Desenvolvedor Java", "Company", "https://example.com/job",
+                    "Contact us at job@test.com",
+                    "2026-07-01", null, null, "test", null));
+            assertNotNull(job);
+            assertNull(job.contactEmail());
+        }
+
+        @Test
+        @DisplayName("should ignore placeholder domain.com email")
+        void shouldIgnorePlaceholderDomainCom() {
+            var job = normalizer.normalize(new RawJob(
+                    "Desenvolvedor Java", "Company", "https://example.com/job",
+                    "Send to hr@domain.com",
+                    "2026-07-01", null, null, "test", null));
+            assertNotNull(job);
+            assertNull(job.contactEmail());
+        }
+
+        @Test
         @DisplayName("should return null when description is null")
         void shouldReturnNullWhenDescriptionIsNull() {
             var job = normalizer.normalize(new RawJob(

@@ -1,4 +1,4 @@
-# Spec: Filter jobs by contact email presence in TUI
+# Spec: Filter jobs by contact email presence in TUI (`t` keybinding)
 
 > **Layer:** `cli` (Rust TUI)
 > **Depends on:** backend `contactEmail` persistence fix (done) and `?hasEmail` API filter (done)
@@ -10,51 +10,50 @@
 
 ### Scenario 1: no email filter (default)
 - **GIVEN** the job list screen
-- **WHEN** no email filter is active
+- **WHEN** no email filter is active (`ApplyTypeFilter::All`)
 - **THEN** all jobs are displayed (as before)
 
-### Scenario 2: enable email filter
+### Scenario 2: enable email filter via ApplyTypeFilter cycle
 - **GIVEN** the job list screen
-- **WHEN** the user activates the email filter (hotkey, e.g. `e`)
-- **THEN** only jobs with a non-null `contactEmail` are shown
+- **WHEN** the user presses `t` repeatedly until `ApplyTypeFilter::EmailAvailable` is active
+- **THEN** only jobs with a non-null `contactEmail` are shown (filtered via `job.contact_email.is_some()`)
 
 ### Scenario 3: filter state displayed
-- **GIVEN** the email filter is active
+- **GIVEN** the email filter is active (`ApplyTypeFilter::EmailAvailable`)
 - **WHEN** viewing the job list stats line
-- **THEN** a visual indicator (e.g. `[EMAIL ONLY]`) appears alongside other active filters
+- **THEN** a `📧 EMAIL` indicator appears in the stats line alongside other active filters
 
 ---
 
 ## Design
 
 ### Data
-- `JobResponse` in `cli/src/domain.rs` gains a `contact_email: Option<String>` field
-- The existing `job_list_screen` gets a new `has_email_filter: bool` field
+- `JobResponse` in `cli/src/domain.rs` already has `contact_email: Option<String>` field
+- No new `has_email_filter` field — the existing `ApplyTypeFilter` enum gained `EmailAvailable`, cycled via `t`
 
 ### Filter behavior
-- Toggle on/off via a keybinding (suggestion: `e`)
-- Works as an additional AND clause in `apply_filters()`:
-  - If `has_email_filter == true`, filter `|job| job.contact_email.is_some()`
-- Active state is displayed in the stats line alongside `ApplyTypeFilter` / `SeniorityFilter`
-- Default state: `false` (no filtering)
+- `t` key cycles `ApplyTypeFilter`: `All → ExternalApply → EmailAvailable → Unknown → All …`
+- When `ApplyTypeFilter::EmailAvailable` is active, filter `|job| job.contact_email.is_some()` is applied in `apply_filters()`
+- Active state shows `📧 EMAIL` in the stats line alongside `SeniorityFilter`
+- Default state: `ApplyTypeFilter::All` (no filtering)
 
 ### UI integration
-- Stats line shows `[EMAIL ONLY]` when active (same style as other filter indicators)
-- Keybinding hint shown in the controls bar at the bottom
+- Stats line shows `📧 EMAIL` when the filter is active (same style as other filter indicators)
+- Keybinding hint `t` shown in the controls bar at the bottom
 
 ---
 
-## Files to change
+## Files changed
 
 | File | Change |
 |---|---|
-| `cli/src/domain.rs` | Add `contact_email: Option<String>` to `JobResponse` |
-| `cli/src/tui/job_list_screen.rs` | Add `has_email_filter: bool`, wire into `apply_filters()`, display in stats |
-| `cli/src/tui/app.rs` | Handle the new keybinding in the event loop |
+| `cli/src/domain.rs` | Add `ApplyType::EmailAvailable` variant |
+| `cli/src/tui/job_list_screen.rs` | Add `ApplyTypeFilter::EmailAvailable` to enum, wire into `apply_filters()` cycle, display in stats |
+| `cli/src/tui/app.rs` | No new keybinding — `t` cycles the existing `ApplyTypeFilter` |
 
 ---
 
 ## Out of scope
 
 - Sending `?hasEmail=true` to the API (client-side filter only — no backend round-trip needed)
-- Adding a dedicated filter UI widget (reuses existing toggle pattern)
+- Adding a dedicated filter UI widget (reuses existing cycle pattern)

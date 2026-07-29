@@ -67,7 +67,7 @@ public class EmailDraftPersistenceAdapter implements EmailDraftRepository {
                 draft.body(),
                 draft.status().name()
         );
-        entity.setGeneratedAt(LocalDateTime.now());
+        entity.setGeneratedAt(draft.generatedAt());
         entity.setSentAt(draft.sentAt());
         return entity;
     }

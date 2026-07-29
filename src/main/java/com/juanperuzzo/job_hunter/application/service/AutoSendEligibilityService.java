@@ -1,6 +1,6 @@
 package com.juanperuzzo.job_hunter.application.service;
 
-import com.juanperuzzo.job_hunter.application.port.in.AutoSendEligibilityPort;
+import com.juanperuzzo.job_hunter.application.port.in.AutoSendEligibilityUseCase;
 import com.juanperuzzo.job_hunter.application.port.out.EmailDraftRepository;
 import com.juanperuzzo.job_hunter.application.port.out.JobAnalysisRepository;
 import com.juanperuzzo.job_hunter.application.port.out.JobRepository;
@@ -17,7 +17,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 
-public class AutoSendEligibilityService implements AutoSendEligibilityPort {
+public class AutoSendEligibilityService implements AutoSendEligibilityUseCase {
 
     private static final Logger log = LoggerFactory.getLogger(AutoSendEligibilityService.class);
 

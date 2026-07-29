@@ -1,6 +1,6 @@
 package com.juanperuzzo.job_hunter.infrastructure.scheduler;
 
-import com.juanperuzzo.job_hunter.application.port.in.AutoSendEligibilityPort;
+import com.juanperuzzo.job_hunter.application.port.in.AutoSendEligibilityUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.SendEmailUseCase;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -12,13 +12,13 @@ public class AutoSendScheduler {
 
     private static final Logger log = LoggerFactory.getLogger(AutoSendScheduler.class);
 
-    private final AutoSendEligibilityPort eligibilityPort;
+    private final AutoSendEligibilityUseCase eligibilityPort;
     private final SendEmailUseCase sendEmailUseCase;
     private final boolean enabled;
     private final int jitterSeconds;
 
     public AutoSendScheduler(
-            AutoSendEligibilityPort eligibilityPort,
+            AutoSendEligibilityUseCase eligibilityPort,
             SendEmailUseCase sendEmailUseCase,
             boolean enabled,
             int jitterSeconds) {
