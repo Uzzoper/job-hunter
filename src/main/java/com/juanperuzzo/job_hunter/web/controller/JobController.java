@@ -70,7 +70,8 @@ public class JobController {
                         job.url(),
                         job.description(),
                         job.postedAt(),
-                        job.source()
+                        job.source(),
+                        job.contactEmail()
                 ))
                 .collect(Collectors.toList());
         return ResponseEntity.ok(response);
@@ -86,7 +87,8 @@ public class JobController {
                 job.url(),
                 job.description(),
                 job.postedAt(),
-                job.source()
+                job.source(),
+                job.contactEmail()
         );
         return ResponseEntity.ok(response);
     }
