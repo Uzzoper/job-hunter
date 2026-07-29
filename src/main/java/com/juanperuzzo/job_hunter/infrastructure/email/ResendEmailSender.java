@@ -48,8 +48,6 @@ public class ResendEmailSender implements EmailSenderPort {
                                 throw new RuntimeException("Resend API error: " + resp.getStatusCode());
                             })
                     .toBodilessEntity();
-        } catch (RuntimeException e) {
-            throw e;
         } catch (Exception e) {
             throw new RuntimeException("Failed to send email via Resend", e);
         }

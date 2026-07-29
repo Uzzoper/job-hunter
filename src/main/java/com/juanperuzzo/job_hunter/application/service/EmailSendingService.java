@@ -43,7 +43,7 @@ public class EmailSendingService implements SendEmailUseCase {
 
         var contactEmail = job.contactEmail();
         if (contactEmail == null) {
-            throw new MissingRecipientException("Job " + jobId + " has no contact email");
+            throw new MissingRecipientException("Job " + jobId + " (" + job.url() + ") has no contact email");
         }
 
         var user = userRepository.findById(userId)

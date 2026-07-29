@@ -1,6 +1,6 @@
 package com.juanperuzzo.job_hunter.unit.application;
 
-import com.juanperuzzo.job_hunter.application.port.in.AutoSendEligibilityPort;
+import com.juanperuzzo.job_hunter.application.port.in.AutoSendEligibilityUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.SendEmailUseCase;
 import com.juanperuzzo.job_hunter.domain.model.EligibleDraft;
 import com.juanperuzzo.job_hunter.domain.model.EmailDraft;
@@ -25,7 +25,7 @@ class AutoSendSchedulerTest {
     private static final Long JOB_ID = 10L;
 
     @Mock
-    private AutoSendEligibilityPort eligibilityPort;
+    private AutoSendEligibilityUseCase eligibilityPort;
 
     @Mock
     private SendEmailUseCase sendEmailUseCase;

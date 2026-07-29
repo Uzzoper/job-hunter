@@ -12,7 +12,7 @@
 ### Scenario 1: successful send
 - **GIVEN** an `EmailDraft` with `status == PENDING` and a resolvable recipient email
 - **WHEN** `send(userId, jobId)` is called
-- **THEN** `EmailSenderPort.send(to, subject, body)` is called once
+- **THEN** `EmailSenderPort.send(from, to, subject, body)` is called once
 - **AND** the draft is persisted with `status = SENT` and `sentAt = now()`
 - **AND** the returned `EmailDraft` reflects the updated status
 
@@ -25,8 +25,8 @@
 ### Scenario 3: no recipient email resolvable
 - **GIVEN** a `Job` with no `contactEmail` (e.g. a Gupy or LinkedIn listing — application happens through the platform's own form, not email)
 - **WHEN** `send(userId, jobId)` is called
-- **THEN** throws `MissingRecipientException`
-- **AND** the exception message points to the job's `url` for manual/form-based application
+- **THEN** throws `MissingRecipientException` with message like `"Job {id} ({url}) has no contact email"`
+- **AND** the exception message includes the job's `url` for manual/form-based application
 
 ### Scenario 4: delivery failure
 - **GIVEN** `EmailSenderPort.send` throws
@@ -62,7 +62,7 @@ public interface SendEmailUseCase {
 
 ```java
 public interface EmailSenderPort {
-    void send(String to, String subject, String body);
+    void send(String from, String to, String subject, String body);
 }
 ```
 

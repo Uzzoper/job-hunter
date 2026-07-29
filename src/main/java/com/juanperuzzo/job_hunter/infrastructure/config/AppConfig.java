@@ -1,6 +1,6 @@
 package com.juanperuzzo.job_hunter.infrastructure.config;
 
-import com.juanperuzzo.job_hunter.application.port.in.AutoSendEligibilityPort;
+import com.juanperuzzo.job_hunter.application.port.in.AutoSendEligibilityUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.SendEmailUseCase;
 import com.juanperuzzo.job_hunter.application.port.out.AiPort;
 import com.juanperuzzo.job_hunter.application.port.out.EmailDraftRepository;
@@ -308,7 +308,7 @@ public class AppConfig {
 
     @Bean
     public AutoSendScheduler autoSendScheduler(
-            AutoSendEligibilityPort eligibilityPort,
+            AutoSendEligibilityUseCase eligibilityPort,
             SendEmailUseCase sendEmailUseCase,
             @Value("${auto-send.enabled}") boolean enabled,
             @Value("${auto-send.jitter-seconds}") int jitterSeconds) {
