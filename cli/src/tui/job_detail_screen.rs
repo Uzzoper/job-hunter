@@ -841,6 +841,7 @@ mod tests {
             description: "Build high-performance systems in Rust".into(),
             posted_at: NaiveDate::from_ymd_opt(2026, 7, 13).unwrap(),
             source: "gupy".into(),
+            contact_email: None,
         };
         let api_client = Arc::new(Mutex::new(ApiClient::new("http://localhost:8080")));
         let cache = Arc::new(Mutex::new(CacheManager::new_in_memory(24).expect("cache")));
@@ -909,6 +910,7 @@ mod tests {
             description: "Java backend".into(),
             posted_at: NaiveDate::from_ymd_opt(2026, 7, 12).unwrap(),
             source: "linkedin".into(),
+            contact_email: None,
         };
 
         screen.set_job(new_job.clone());
@@ -1143,6 +1145,7 @@ mod tests {
             description: "Descrição com acentos: áéíóú ñ".into(),
             posted_at: NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(),
             source: "gupy".into(),
+            contact_email: None,
         });
         let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 24)).unwrap();
 
@@ -1215,6 +1218,7 @@ mod tests {
             description: description.into(),
             posted_at: NaiveDate::from_ymd_opt(2026, 7, 13).unwrap(),
             source: "gupy".into(),
+            contact_email: None,
         };
         let api_client = Arc::new(Mutex::new(ApiClient::new("http://localhost:8080")));
         let cache = Arc::new(Mutex::new(CacheManager::new_in_memory(24).expect("cache")));

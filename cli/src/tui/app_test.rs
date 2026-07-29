@@ -45,6 +45,7 @@ mod tests {
             description: "Test description".into(),
             posted_at: chrono::NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(),
             source: "gupy".into(),
+            contact_email: None,
         });
         app.state = AppState::JobDetail;
 
