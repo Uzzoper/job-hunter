@@ -33,6 +33,16 @@ public class FetchJobsService implements FetchJobsUseCase, ListJobsUseCase, GetJ
     }
 
     @Override
+    public List<Job> findAll(Boolean hasEmail) {
+        if (hasEmail == null) {
+            return jobRepository.findAll();
+        }
+        return hasEmail
+                ? jobRepository.findAllByContactEmailIsNotNull()
+                : jobRepository.findAllByContactEmailIsNull();
+    }
+
+    @Override
     public Job getById(Long id) {
         return jobRepository.findById(id)
                 .orElseThrow(() -> new JobNotFoundException("Job not found with id: " + id));

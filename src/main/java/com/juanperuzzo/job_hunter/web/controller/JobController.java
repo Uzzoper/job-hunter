@@ -60,8 +60,11 @@ public class JobController {
     }
 
     @GetMapping
-    public ResponseEntity<List<JobResponse>> getAllJobs() {
-        List<Job> jobs = listJobsUseCase.findAll();
+    public ResponseEntity<List<JobResponse>> getAllJobs(
+            @RequestParam(required = false) Boolean hasEmail) {
+        List<Job> jobs = hasEmail != null
+                ? listJobsUseCase.findAll(hasEmail)
+                : listJobsUseCase.findAll();
         List<JobResponse> response = jobs.stream()
                 .map(job -> new JobResponse(
                         job.id(),
