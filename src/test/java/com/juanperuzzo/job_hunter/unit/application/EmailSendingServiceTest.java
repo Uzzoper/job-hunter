@@ -80,7 +80,7 @@ class EmailSendingServiceTest {
     }
 
     @Test
-    @DisplayName("should throw EmailAlreadySentException when draft status is not PENDING")
+    @DisplayName("should throw EmailAlreadySentException when draft is already SENT")
     void send_whenAlreadySent_shouldThrowEmailAlreadySentException() {
         var draft = new EmailDraft(DRAFT_ID, JOB_ID, USER_ID, "Subject", "Body", EmailStatus.SENT, LocalDateTime.now(), LocalDateTime.now());
 

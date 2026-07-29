@@ -34,7 +34,7 @@ public class EmailSendingService implements SendEmailUseCase {
         var draft = emailDraftRepository.findByJobIdAndUserId(jobId, userId)
                 .orElseThrow(() -> new JobNotFoundException("Email draft not found for job " + jobId + " and user " + userId));
 
-        if (draft.status() != EmailStatus.PENDING) {
+        if (draft.status() == EmailStatus.SENT) {
             throw new EmailAlreadySentException("Email " + draft.id() + " has already been sent");
         }
 
