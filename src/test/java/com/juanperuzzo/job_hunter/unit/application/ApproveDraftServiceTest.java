@@ -70,7 +70,7 @@ class ApproveDraftServiceTest {
     }
 
     @Test
-    @DisplayName("should throw IllegalArgumentException when draft not found")
+    @DisplayName("should throw JobNotFoundException when draft not found")
     void approve_whenNoDraft_shouldThrow() {
         when(emailDraftRepository.findByJobIdAndUserId(JOB_ID, USER_ID)).thenReturn(Optional.empty());
 

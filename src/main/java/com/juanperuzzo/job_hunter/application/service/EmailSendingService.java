@@ -39,7 +39,7 @@ public class EmailSendingService implements SendEmailUseCase {
         }
 
         var job = jobRepository.findById(jobId)
-                .orElseThrow(() -> new IllegalArgumentException("Job not found: " + jobId));
+                .orElseThrow(() -> new JobNotFoundException("Job not found: " + jobId));
 
         var contactEmail = job.contactEmail();
         if (contactEmail == null) {
