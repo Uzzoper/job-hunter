@@ -136,17 +136,38 @@ infrastructure → domain
 
 ---
 
-## AI integration (OpenRouter)
+## AI integration
 
-### Configuration
+### Provider support
+Two AI providers are supported, configurable via `ai.provider`:
+
+| Provider | Config value | Default |
+|---|---|---|
+| OpenRouter | `openrouter` | ✅ (default) |
+| Ollama (local) | `ollama` | — |
+
+#### OpenRouter (default)
 ```yaml
 ai:
+  provider: openrouter
   openrouter:
     base-url: https://openrouter.ai/api/v1
     api-key: ${OPENROUTER_API_KEY}
     model: minimax/minimax-m2.5
     timeout-seconds: 30
 ```
+
+#### Ollama (local)
+```yaml
+ai:
+  provider: ollama
+  ollama:
+    base-url: http://localhost:11434
+    model: llama3.2
+    timeout-seconds: 60
+```
+
+Ollama is selected via `@ConditionalOnProperty(name = "ai.provider", havingValue = "ollama")` in `AppConfig`. Both providers implement the same `AiPort` interface.
 
 ### Prompts
 All prompts are documented and versioned in `docs/specs/prompts.md`.
@@ -226,14 +247,22 @@ Tests follow the same package structure under `src/test/java/.../`. Check the di
 - [x] `EmailDraft` record + migration `V2`
 
 ### Phase 3 — API — ✅ Complete
-- [x] `GET /api/jobs` — list jobs (filters: keyword, minScore)
+- [x] `GET /api/jobs` — list jobs (filters: keyword, minScore, hasEmail)
 - [x] `GET /api/jobs/{id}` — job detail
 - [x] `POST /api/jobs/{id}/analyze` — analyze with AI
 - [x] `GET /api/jobs/{id}/email` — return generated email
 - [x] `POST /api/jobs/{id}/email` — generate new email
 
 ### Phase 4 — Interface — ✅ Complete
-- [x] REST API fully ready for frontend consumption
+- [x] TUI (Rust Ratatui) fully functional
+- [x] TUI filters: search query, apply type (t), seniority (s), dev only (d), hasEmail (t → EmailAvailable)
+- [x] TUI shows contactEmail in job detail
+
+### Phase 5 — Fixes & Persistence — ✅ Complete
+- [x] `contactEmail` field persisted in `jobs` table + exposed in API
+- [x] `hasEmail` filter on `GET /api/jobs?hasEmail=true`
+- [x] Review-gate bug fix: prevent draft regeneration before send
+- [x] `TemplateEmailService` as stateless builder for high-score jobs
 
 ---
 
