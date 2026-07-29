@@ -1,9 +1,53 @@
+use chrono::{NaiveDate, NaiveDateTime};
 use serde::{Deserialize, Serialize};
-use chrono::NaiveDate;
-use std::cmp::Ordering;
 
-/// Represents a job listing returned by the API.
+/// Project request/response nested in profile.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectRequest {
+    pub name: String,
+    pub description: String,
+    pub tech_stack: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectResponse {
+    pub name: String,
+    pub description: String,
+    pub tech_stack: Vec<String>,
+}
+
+/// Request to register a new user.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AuthRequest {
+    pub name: String,
+    pub email: String,
+    pub password: String,
+}
+
+/// Request to login.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LoginRequest {
+    pub email: String,
+    pub password: String,
+}
+
+/// Response from authentication endpoints.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AuthResponse {
+    pub token: String,
+    pub user_id: i64,
+    pub name: String,
+    pub email: String,
+}
+
+/// Job response from the backend (no matchScore - that's in JobAnalysis).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct JobResponse {
     pub id: i64,
     pub title: String,
@@ -12,57 +56,116 @@ pub struct JobResponse {
     pub description: String,
     pub posted_at: NaiveDate,
     pub source: String,
+    #[serde(default)]
     pub contact_email: Option<String>,
 }
 
-/// The source from a JobResponse was fetched.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum JobSource {
-    Gupy,
-    Infojobs,
-    LinkedIn,
-    LinkedInJsoup,
-    Unknown,
+/// AI analysis of a job (returned directly by analyze endpoint).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct JobAnalysis {
+    pub id: i64,
+    pub job_id: i64,
+    pub user_id: i64,
+    pub match_score: i32,
+    pub matched_skills: Vec<String>,
+    pub missing_skills: Vec<String>,
+    pub company_tone: CompanyTone,
+    pub summary: String,
 }
 
-impl std::fmt::Display for JobSource {
+/// Email draft response.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EmailDraftResponse {
+    pub id: i64,
+    pub job_id: i64,
+    pub subject: String,
+    pub body: String,
+    pub status: EmailStatus,
+    pub generated_at: NaiveDateTime,
+    pub sent_at: Option<NaiveDateTime>,
+}
+
+/// Profile request for updating user profile.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProfileRequest {
+    pub resume_text: String,
+    pub skills: Vec<String>,
+    pub tone: CompanyTone,
+    pub projects: Vec<ProjectRequest>,
+}
+
+/// Profile response from the backend.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProfileResponse {
+    pub id: Option<i64>,
+    pub user_id: i64,
+    pub resume_text: String,
+    pub skills: Vec<String>,
+    pub tone: CompanyTone,
+    pub projects: Vec<ProjectResponse>,
+}
+
+/// Response from fetch endpoints.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FetchResponse {
+    pub message: String,
+}
+
+/// Error response from the backend.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ErrorResponse {
+    pub timestamp: String,
+    pub status: u16,
+    pub error: String,
+    pub message: String,
+}
+
+/// Company tone enum matching backend.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum CompanyTone {
+    Formal,
+    Casual,
+    Startup,
+}
+
+impl std::fmt::Display for CompanyTone {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            JobSource::Gupy => write!(f, "gupy"),
-            JobSource::Infojobs => write!(f, "infojobs"),
-            JobSource::LinkedIn => write!(f, "linkedin"),
-            JobSource::LinkedInJsoup => write!(f, "linkedin_jsoup"),
-            JobSource::Unknown => write!(f, "unknown"),
+            Self::Formal => write!(f, "FORMAL"),
+            Self::Casual => write!(f, "CASUAL"),
+            Self::Startup => write!(f, "STARTUP"),
         }
     }
 }
 
-impl From<&str> for JobSource {
-    fn from(s: &str) -> Self {
-        match s.to_lowercase().as_str() {
-            "gupy" => JobSource::Gupy,
-            "infojobs" => JobSource::Infojobs,
-            "linkedin" => JobSource::LinkedIn,
-            "linkedin_jsoup" => JobSource::LinkedInJsoup,
-            _ => JobSource::Unknown,
-        }
-    }
-}
-
-impl JobSource {
-    pub fn all() -> Vec<JobSource> {
-        vec![
-            JobSource::Gupy,
-            JobSource::Infojobs,
-            JobSource::LinkedIn,
-            JobSource::LinkedInJsoup,
-        ]
-    }
-}
-
-/// Apply type inferred from the job description.
+/// Email status enum matching backend.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum EmailStatus {
+    Pending,
+    Approved,
+    Sent,
+}
+
+impl std::fmt::Display for EmailStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Pending => write!(f, "PENDING"),
+            Self::Approved => write!(f, "APPROVED"),
+            Self::Sent => write!(f, "SENT"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum ApplyType {
     ExternalApply,
     EmailAvailable,
@@ -70,225 +173,169 @@ pub enum ApplyType {
 }
 
 impl ApplyType {
-    pub fn from_description(description: &str) -> Self {
-        let lower = description.to_lowercase();
-        if lower.contains("candidatura externa")
-            || lower.contains("external application")
-            || lower.contains("apply externally")
-            || lower.contains("apply at")
-            || lower.contains("candidate-se no site")
-        {
-            ApplyType::ExternalApply
-        } else if description.len() >= 20 {
-            ApplyType::EmailAvailable
-        } else {
-            ApplyType::Unknown
+    pub fn from_description(desc: impl AsRef<str>) -> Self {
+        let desc = desc.as_ref();
+        if desc.is_empty() {
+            return Self::ExternalApply;
+        }
+        if desc.trim().len() < 20 {
+            return Self::Unknown;
+        }
+        Self::EmailAvailable
+    }
+}
+
+impl std::fmt::Display for ApplyType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::ExternalApply => write!(f, "EXTERNAL_APPLY"),
+            Self::EmailAvailable => write!(f, "EMAIL_AVAILABLE"),
+            Self::Unknown => write!(f, "UNKNOWN"),
         }
     }
 }
 
-/// Seniority level inferred from the job title.
+/// Seniority level of a job position, derived from the title.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum SeniorityLevel {
     Junior,
     Pleno,
     Senior,
-    Lead,
     Unknown,
 }
 
 impl SeniorityLevel {
-    pub fn from_title(title: &str) -> Self {
-        let lower = title.to_lowercase();
-        if lower.contains("junior")
-            || lower.contains("jr")
-            || lower.contains("jr.")
-            || lower.contains("entry")
-            || lower.contains("estágio")
-            || lower.contains("estagio")
-            || lower.contains("trainee")
-            || lower.contains("júnior")
+    /// Classify a job title into a seniority level.
+    ///
+    /// Checks in order of specificity: Senior > Pleno > Junior > Unknown.
+    /// Matching is case-insensitive and uses substring matching on the title.
+    pub fn from_title(title: impl AsRef<str>) -> Self {
+        let title = title.as_ref().to_lowercase();
+
+        // Senior keywords (checked first - highest precedence)
+        if title.contains("senior")
+            || title.contains("sr")
+            || title.contains("lead")
+            || title.contains("principal")
+            || title.contains("staff")
+            || title.contains("sênior")
+            || title.contains("specialist")
+            || title.contains("tech lead")
         {
-            SeniorityLevel::Junior
-        } else if lower.contains("pleno") || lower.contains("mid-level") || lower.contains("mid ") {
-            SeniorityLevel::Pleno
-        } else if lower.contains("senior")
-            || lower.contains("sr")
-            || lower.contains("sr.")
-            || lower.contains("sênior")
-            || lower.contains("sénior")
-        {
-            SeniorityLevel::Senior
-        } else if lower.contains("lead")
-            || lower.contains("head")
-            || lower.contains("principal")
-            || lower.contains("staff")
-            || lower.contains("architect")
-            || lower.contains("manager")
-            || lower.contains("coordinator")
-        {
-            SeniorityLevel::Lead
-        } else {
-            SeniorityLevel::Unknown
+            return Self::Senior;
         }
+
+        // Pleno keywords
+        if title.contains("pleno")
+            || title.contains("mid")
+            || title.contains("mid-level")
+            || title.contains("middle")
+            || title.contains("pl.")
+        {
+            return Self::Pleno;
+        }
+
+        // Junior keywords
+        if title.contains("junior")
+            || title.contains("jr")
+            || title.contains("trainee")
+            || title.contains("estagiário")
+            || title.contains("estagiario")
+            || title.contains("júnior")
+            || title.contains("jr.")
+        {
+            return Self::Junior;
+        }
+
+        Self::Unknown
     }
 }
 
-/// Determines if a role is a software development role based on the title.
-pub fn is_dev_role(title: &str) -> bool {
-    let lower = title.to_lowercase();
-    lower.contains("developer")
-        || lower.contains("dev")
-        || lower.contains("engineer")
-        || lower.contains("software")
-        || lower.contains("programmer")
-        || lower.contains("frontend")
-        || lower.contains("front-end")
-        || lower.contains("backend")
-        || lower.contains("back-end")
-        || lower.contains("fullstack")
-        || lower.contains("full-stack")
-        || lower.contains("web")
-        || lower.contains("mobile")
-        || lower.contains("ios")
-        || lower.contains("android")
-        || lower.contains("data scientist")
-        || lower.contains("machine learning")
-        || lower.contains("ml engineer")
-        || lower.contains("ai")
-        || lower.contains("qa")
-        || lower.contains("quality assurance")
-        || lower.contains("test")
-        || lower.contains("devops")
-        || lower.contains("sre")
-        || lower.contains("infrastructure")
-        || lower.contains("cloud")
-        || lower.contains("security")
-        || lower.contains("site reliability")
-}
-
-/// Analysis result returned by the AI.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct JobAnalysis {
-    pub job_id: i64,
-    pub match_score: i32,
-    pub reasoning: String,
-    pub skills: Vec<String>,
-}
-
-/// Response from the AI email generation endpoint.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct EmailDraftResponse {
-    pub id: i64,
-    pub job_id: i64,
-    pub subject: String,
-    pub body: String,
-    pub sent: bool,
-    pub sent_at: Option<NaiveDate>,
-    pub created_at: Option<NaiveDate>,
-}
-
-impl EmailDraftResponse {
-    pub fn status(&self) -> EmailStatus {
-        if self.sent {
-            EmailStatus::Sent(self.sent_at.unwrap_or(self.created_at.unwrap_or(chrono::Local::now().date_naive())))
-        } else {
-            EmailStatus::Pending
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum EmailStatus {
-    Sent(NaiveDate),
-    Pending,
-}
-
-impl std::fmt::Display for EmailStatus {
+impl std::fmt::Display for SeniorityLevel {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            EmailStatus::Sent(date) => write!(f, "Sent on {}", date),
-            EmailStatus::Pending => write!(f, "Pending"),
+            Self::Junior => write!(f, "JUNIOR"),
+            Self::Pleno => write!(f, "PLENO"),
+            Self::Senior => write!(f, "SENIOR"),
+            Self::Unknown => write!(f, "UNKNOWN"),
         }
     }
 }
 
-/// Authentication response from the API.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AuthResponse {
-    pub token: String,
-    pub email: String,
-    pub name: String,
+/// Check if a job title suggests a development/engineering role.
+///
+/// Returns true if the title contains positive signals for dev roles
+/// AND does not contain negative signals that override them.
+/// Only checks the title (not description) for performance.
+pub fn is_dev_role(title: impl AsRef<str>) -> bool {
+    let title = title.as_ref().to_lowercase();
+
+    // Negative signals (override positive)
+    let negative_signals = [
+        "designer",
+        "product manager",
+        "suporte",
+        "administrativo",
+        "vendas",
+        "rh",
+        "marketing",
+        "assistente",
+        "coordenador",
+        "gerente",
+        "comercial",
+        "financeiro",
+        "jurídico",
+        "sac",
+        "atendimento",
+    ];
+
+    if negative_signals.iter().any(|s| title.contains(s)) {
+        return false;
+    }
+
+    // Positive signals
+    let positive_signals = [
+        "dev",
+        "developer",
+        "software",
+        "engineer",
+        "engenheiro",
+        "programador",
+        "desenvolvedor",
+        "backend",
+        "back-end",
+        "frontend",
+        "front-end",
+        "fullstack",
+        "full stack",
+        "full-stack",
+        "mobile",
+        "ios",
+        "android",
+        "data",
+        "qa",
+        "quality",
+        "analista de sistemas",
+        "sysadmin",
+        "devops",
+        "sre",
+        "infra",
+        "cloud",
+        "machine learning",
+        "ml",
+        "ai",
+        "inteligência artificial",
+        "ciência de dados",
+        "dados",
+    ];
+
+    positive_signals.iter().any(|s| title.contains(s))
 }
 
-/// Login request payload.
+/// Cached job with optional analysis and email data.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LoginRequest {
-    pub email: String,
-    pub password: String,
-}
-
-/// Registration request payload.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RegisterRequest {
-    pub name: String,
-    pub email: String,
-    pub password: String,
-}
-
-/// Profile response payload.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct ProfileResponse {
-    pub name: String,
-    pub email: String,
-    #[serde(default)]
-    pub bio: Option<String>,
-    #[serde(default)]
-    pub target_role: Option<String>,
-    #[serde(default)]
-    pub years_of_experience: Option<i32>,
-    #[serde(default)]
-    pub tech_stack: Option<String>,
-    #[serde(default)]
-    pub linkedin_url: Option<String>,
-    #[serde(default)]
-    pub portfolio_url: Option<String>,
-    #[serde(default)]
-    pub preferred_location: Option<String>,
-    #[serde(default)]
-    pub open_to_remote: Option<bool>,
-    #[serde(default)]
-    pub skills: Option<Vec<String>>,
-}
-
-/// Profile update request payload.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ProfileRequest {
-    pub name: String,
-    #[serde(default)]
-    pub bio: Option<String>,
-    #[serde(default)]
-    pub target_role: Option<String>,
-    #[serde(default)]
-    pub years_of_experience: Option<i32>,
-    #[serde(default)]
-    pub tech_stack: Option<String>,
-    #[serde(default)]
-    pub linkedin_url: Option<String>,
-    #[serde(default)]
-    pub portfolio_url: Option<String>,
-    #[serde(default)]
-    pub preferred_location: Option<String>,
-    #[serde(default)]
-    pub open_to_remote: Option<bool>,
-}
-
-/// Company tone is a reference to the tone used by the company in their job listings.
-/// This is used when generating emails to match the company's communication style.
-pub type CompanyTone = String;
-
-/// Cached job is a local representation that mirrors JobResponse plus metadata used by the cache.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CachedJob {
     pub id: i64,
     pub title: String,
@@ -297,94 +344,14 @@ pub struct CachedJob {
     pub description: String,
     pub posted_at: NaiveDate,
     pub source: String,
+    #[serde(default)]
     pub contact_email: Option<String>,
-    pub fetched_at: NaiveDate,
-}
-
-impl From<CachedJob> for JobResponse {
-    fn from(cj: CachedJob) -> Self {
-        JobResponse {
-            id: cj.id,
-            title: cj.title,
-            company: cj.company,
-            url: cj.url,
-            description: cj.description,
-            posted_at: cj.posted_at,
-            source: cj.source,
-            contact_email: cj.contact_email,
-        }
-    }
-}
-
-impl CachedJob {
-    /// Days since this job was fetched from the API.
-    pub fn days_since_fetch(&self) -> i64 {
-        (chrono::Local::now().date_naive() - self.fetched_at).num_days()
-    }
-}
-
-/// Company tone type to choose from.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum CompanyToneType {
-    Formal,
-    Casual,
-    Technical,
-    Friendly,
-    Professional,
-}
-
-impl CompanyToneType {
-    pub fn all() -> Vec<CompanyToneType> {
-        vec![
-            CompanyToneType::Formal,
-            CompanyToneType::Casual,
-            CompanyToneType::Technical,
-            CompanyToneType::Friendly,
-            CompanyToneType::Professional,
-        ]
-    }
-
-    pub fn description(&self) -> &'static str {
-        match self {
-            CompanyToneType::Formal => "Formal and professional",
-            CompanyToneType::Casual => "Casual and friendly",
-            CompanyToneType::Technical => "Technical and detailed",
-            CompanyToneType::Friendly => "Warm and approachable",
-            CompanyToneType::Professional => "Standard professional",
-        }
-    }
-}
-
-/// Commands that can be run in batch mode.
-#[derive(Debug, Clone)]
-pub enum BatchCommand {
-    Fetch,
-    Analyze {
-        keyword: Option<String>,
-        min_score: Option<i32>,
-        min_days_old: Option<i64>,
-        offline: bool,
-        limit: Option<usize>,
-    },
-    Email {
-        keyword: Option<String>,
-        min_score: Option<i32>,
-        min_days_old: Option<i64>,
-        offline: bool,
-        limit: Option<usize>,
-        confirm: bool,
-    },
-    Export {
-        keyword: Option<String>,
-        min_score: Option<i32>,
-        min_days_old: Option<i64>,
-        offline: bool,
-        limit: Option<usize>,
-        format: Option<String>,
-        output: Option<String>,
-    },
-    Stats,
-    List,
+    pub match_score: Option<i32>,
+    pub analysis_json: Option<String>,
+    pub email_subject: Option<String>,
+    pub email_body: Option<String>,
+    pub email_status: Option<String>,
+    pub cached_at: NaiveDateTime,
 }
 
 #[cfg(test)]
@@ -392,178 +359,406 @@ mod tests {
     use super::*;
 
     #[test]
-    fn apply_type_from_external_keywords() {
-        assert_eq!(ApplyType::from_description("Candidatura externa via portal"), ApplyType::ExternalApply);
-        assert_eq!(ApplyType::from_description("External application on company site"), ApplyType::ExternalApply);
-        assert_eq!(ApplyType::from_description("Candidate-se no site da empresa"), ApplyType::ExternalApply);
+    fn auth_request_serde_roundtrip() {
+        let req = AuthRequest {
+            name: "Alice".into(),
+            email: "alice@example.com".into(),
+            password: "secret123".into(),
+        };
+        let json = serde_json::to_string(&req).expect("serialize");
+        let deserialized: AuthRequest = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(req.name, deserialized.name);
+        assert_eq!(req.email, deserialized.email);
     }
 
     #[test]
-    fn apply_type_description_long_implies_email() {
-        assert_eq!(ApplyType::from_description("This description is at least twenty characters long!"), ApplyType::EmailAvailable);
+    fn login_request_serde_roundtrip() {
+        let req = LoginRequest {
+            email: "alice@example.com".into(),
+            password: "secret123".into(),
+        };
+        let json = serde_json::to_string(&req).expect("serialize");
+        let deserialized: LoginRequest = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(req.email, deserialized.email);
     }
 
     #[test]
-    fn apply_type_short_description_is_unknown() {
-        assert_eq!(ApplyType::from_description(""), ApplyType::Unknown);
-        assert_eq!(ApplyType::from_description("short"), ApplyType::Unknown);
+    fn auth_response_serde_roundtrip() {
+        let resp = AuthResponse {
+            token: "jwt...".into(),
+            user_id: 42,
+            name: "Alice".into(),
+            email: "alice@example.com".into(),
+        };
+        let json = serde_json::to_string(&resp).expect("serialize");
+        let deserialized: AuthResponse = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(resp.token, deserialized.token);
+        assert_eq!(resp.user_id, deserialized.user_id);
     }
 
     #[test]
-    fn seniority_junior_detection() {
-        assert_eq!(SeniorityLevel::from_title("Junior Software Developer"), SeniorityLevel::Junior);
-        assert_eq!(SeniorityLevel::from_title("Estágio em Desenvolvimento"), SeniorityLevel::Junior);
-        assert_eq!(SeniorityLevel::from_title("Trainee Developer"), SeniorityLevel::Junior);
+    fn job_response_serde_roundtrip() {
+        let job = JobResponse {
+            id: 1,
+            title: "Junior Rust Developer".into(),
+            company: "Tech Corp".into(),
+            url: "https://example.com/job/1".into(),
+            description: "Build CLI tools".into(),
+            posted_at: NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(),
+            source: "gupy".into(),
+            contact_email: None,
+        };
+        let json = serde_json::to_string(&job).expect("serialize");
+        let deserialized: JobResponse = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(job.id, deserialized.id);
+        assert_eq!(job.title, deserialized.title);
+        assert_eq!(job.url, deserialized.url);
+        // Ensure no match_score field
+        assert!(!json.contains("matchScore"));
+        assert!(!json.contains("match_score"));
+    }
+
+    #[test]
+    fn job_analysis_serde_roundtrip() {
+        let analysis = JobAnalysis {
+            id: 1,
+            job_id: 1,
+            user_id: 1,
+            match_score: 85,
+            matched_skills: vec!["Rust".into(), "CLI".into()],
+            missing_skills: vec!["Kubernetes".into()],
+            company_tone: CompanyTone::Formal,
+            summary: "Great match".into(),
+        };
+        let json = serde_json::to_string(&analysis).expect("serialize");
+        let deserialized: JobAnalysis = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(analysis.match_score, deserialized.match_score);
+        assert_eq!(analysis.matched_skills, deserialized.matched_skills);
+        assert_eq!(analysis.company_tone, deserialized.company_tone);
+    }
+
+    #[test]
+    fn email_draft_response_serde_roundtrip() {
+        let draft = EmailDraftResponse {
+            id: 1,
+            job_id: 1,
+            subject: "Application for Rust Dev".into(),
+            body: "Dear team...".into(),
+            status: EmailStatus::Pending,
+            generated_at: NaiveDateTime::parse_from_str("2026-07-14T10:00:00", "%Y-%m-%dT%H:%M:%S").unwrap(),
+            sent_at: None,
+        };
+        let json = serde_json::to_string(&draft).expect("serialize");
+        let deserialized: EmailDraftResponse = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(draft.id, deserialized.id);
+        assert_eq!(draft.subject, deserialized.subject);
+        assert_eq!(draft.status, deserialized.status);
+        assert_eq!(draft.sent_at, deserialized.sent_at);
+    }
+
+    #[test]
+    fn project_request_serde_roundtrip() {
+        let req = ProjectRequest {
+            name: "Job Hunter CLI".into(),
+            description: "A Rust TUI client".into(),
+            tech_stack: vec!["Rust".into(), "Ratatui".into()],
+        };
+        let json = serde_json::to_string(&req).expect("serialize");
+        let deserialized: ProjectRequest = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(req.name, deserialized.name);
+        assert_eq!(req.description, deserialized.description);
+        assert_eq!(req.tech_stack, deserialized.tech_stack);
+    }
+
+    #[test]
+    fn project_response_serde_roundtrip() {
+        let resp = ProjectResponse {
+            name: "Job Hunter API".into(),
+            description: "Spring Boot backend".into(),
+            tech_stack: vec!["Java".into(), "Spring".into()],
+        };
+        let json = serde_json::to_string(&resp).expect("serialize");
+        let deserialized: ProjectResponse = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(resp.name, deserialized.name);
+        assert_eq!(resp.description, deserialized.description);
+    }
+
+    #[test]
+    fn profile_request_serde_roundtrip() {
+        let req = ProfileRequest {
+            resume_text: "Experienced developer...".into(),
+            skills: vec!["Rust".into(), "Java".into()],
+            tone: CompanyTone::Startup,
+            projects: vec![ProjectRequest {
+                name: "CLI".into(),
+                description: "A Rust TUI client".into(),
+                tech_stack: vec!["Rust".into()],
+            }],
+        };
+        let json = serde_json::to_string(&req).expect("serialize");
+        let deserialized: ProfileRequest = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(req.resume_text, deserialized.resume_text);
+        assert_eq!(req.skills, deserialized.skills);
+        assert_eq!(req.tone, deserialized.tone);
+        assert_eq!(req.projects.len(), deserialized.projects.len());
+        assert_eq!(req.projects[0].name, deserialized.projects[0].name);
+    }
+
+    #[test]
+    fn profile_response_serde_roundtrip() {
+        let resp = ProfileResponse {
+            id: Some(1),
+            user_id: 1,
+            resume_text: "Experienced developer...".into(),
+            skills: vec!["Rust".into(), "Java".into()],
+            tone: CompanyTone::Casual,
+            projects: vec![ProjectResponse {
+                name: "Job Hunter".into(),
+                description: "Backend".into(),
+                tech_stack: vec!["Java".into(), "Spring".into()],
+            }],
+        };
+        let json = serde_json::to_string(&resp).expect("serialize");
+        let deserialized: ProfileResponse = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(resp.id, deserialized.id);
+        assert_eq!(resp.tone, deserialized.tone);
+        assert_eq!(resp.projects.len(), deserialized.projects.len());
+        assert_eq!(resp.projects[0].tech_stack, deserialized.projects[0].tech_stack);
+    }
+
+    #[test]
+    fn fetch_response_serde_roundtrip() {
+        let resp = FetchResponse {
+            message: "Fetch completed successfully".into(),
+        };
+        let json = serde_json::to_string(&resp).expect("serialize");
+        let deserialized: FetchResponse = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(resp.message, deserialized.message);
+    }
+
+    #[test]
+    fn error_response_serde_roundtrip() {
+        let err = ErrorResponse {
+            timestamp: "2026-07-14T12:00:00.123456789".into(),
+            status: 401,
+            error: "Unauthorized".into(),
+            message: "Invalid credentials".into(),
+        };
+        let json = serde_json::to_string(&err).expect("serialize");
+        let deserialized: ErrorResponse = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(err.status, deserialized.status);
+        assert_eq!(err.error, deserialized.error);
+    }
+
+    #[test]
+    fn company_tone_serialization() {
+        assert_eq!(serde_json::to_string(&CompanyTone::Formal).unwrap(), "\"FORMAL\"");
+        assert_eq!(serde_json::to_string(&CompanyTone::Casual).unwrap(), "\"CASUAL\"");
+        assert_eq!(serde_json::to_string(&CompanyTone::Startup).unwrap(), "\"STARTUP\"");
+    }
+
+    #[test]
+    fn email_status_serialization() {
+        assert_eq!(serde_json::to_string(&EmailStatus::Pending).unwrap(), "\"PENDING\"");
+        assert_eq!(serde_json::to_string(&EmailStatus::Approved).unwrap(), "\"APPROVED\"");
+        assert_eq!(serde_json::to_string(&EmailStatus::Sent).unwrap(), "\"SENT\"");
+    }
+
+    #[test]
+    fn cached_job_serde_roundtrip() {
+        let job = CachedJob {
+            id: 1,
+            title: "Rust Dev".into(),
+            company: "Acme".into(),
+            url: "https://example.com".into(),
+            description: "Desc".into(),
+            posted_at: NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(),
+            source: "gupy".into(),
+            contact_email: None,
+            match_score: Some(85),
+            analysis_json: Some("{}".into()),
+            email_subject: Some("Subject".into()),
+            email_body: Some("Body".into()),
+            email_status: Some("PENDING".into()),
+            cached_at: NaiveDateTime::parse_from_str("2026-07-14T10:00:00", "%Y-%m-%dT%H:%M:%S").unwrap(),
+        };
+        let json = serde_json::to_string(&job).expect("serialize");
+        let deserialized: CachedJob = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(job.id, deserialized.id);
+        assert_eq!(job.match_score, deserialized.match_score);
+    }
+
+    #[test]
+    fn apply_type_from_description_empty() {
+        assert_eq!(ApplyType::from_description(""), ApplyType::ExternalApply);
+    }
+
+    #[test]
+    fn apply_type_from_description_non_empty() {
+        assert_eq!(ApplyType::from_description("Job description here"), ApplyType::EmailAvailable);
+    }
+
+    #[test]
+    fn apply_type_from_description_whitespace() {
+        assert_eq!(ApplyType::from_description("   "), ApplyType::Unknown);
+        assert_eq!(ApplyType::from_description("\t\n"), ApplyType::Unknown);
+    }
+
+    #[test]
+    fn apply_type_from_description_short() {
+        assert_eq!(ApplyType::from_description("Short"), ApplyType::Unknown);
+        assert_eq!(ApplyType::from_description("A".repeat(19)), ApplyType::Unknown);
+    }
+
+    #[test]
+    fn apply_type_from_description_boundary() {
+        assert_eq!(ApplyType::from_description("A".repeat(20)), ApplyType::EmailAvailable);
+    }
+
+    // --- SeniorityLevel::from_title tests ---
+    #[test]
+    fn seniority_junior_detected() {
+        assert_eq!(SeniorityLevel::from_title("Junior Dev"), SeniorityLevel::Junior);
+    }
+
+    #[test]
+    fn seniority_junior_abbreviation() {
         assert_eq!(SeniorityLevel::from_title("Jr. Developer"), SeniorityLevel::Junior);
     }
 
     #[test]
-    fn seniority_pleno_detection() {
-        assert_eq!(SeniorityLevel::from_title("Pleno Developer"), SeniorityLevel::Pleno);
+    fn seniority_junior_portuguese() {
+        assert_eq!(SeniorityLevel::from_title("Desenvolvedor Júnior"), SeniorityLevel::Junior);
+    }
+
+    #[test]
+    fn seniority_trainee_detected() {
+        assert_eq!(SeniorityLevel::from_title("Trainee"), SeniorityLevel::Junior);
+    }
+
+    #[test]
+    fn seniority_estagiario_detected() {
+        assert_eq!(SeniorityLevel::from_title("Estagiário de TI"), SeniorityLevel::Junior);
+    }
+
+    #[test]
+    fn seniority_pleno_detected() {
+        assert_eq!(SeniorityLevel::from_title("Dev Pleno"), SeniorityLevel::Pleno);
+    }
+
+    #[test]
+    fn seniority_mid_detected() {
         assert_eq!(SeniorityLevel::from_title("Mid-level Engineer"), SeniorityLevel::Pleno);
     }
 
     #[test]
-    fn seniority_senior_detection() {
-        assert_eq!(SeniorityLevel::from_title("Senior Software Engineer"), SeniorityLevel::Senior);
-        assert_eq!(SeniorityLevel::from_title("Sr. Developer"), SeniorityLevel::Senior);
-        assert_eq!(SeniorityLevel::from_title("Sênior Developer"), SeniorityLevel::Senior);
+    fn seniority_senior_detected() {
+        assert_eq!(SeniorityLevel::from_title("Senior Developer"), SeniorityLevel::Senior);
     }
 
     #[test]
-    fn seniority_lead_detection() {
-        assert_eq!(SeniorityLevel::from_title("Lead Engineer"), SeniorityLevel::Lead);
-        assert_eq!(SeniorityLevel::from_title("Head of Engineering"), SeniorityLevel::Lead);
-        assert_eq!(SeniorityLevel::from_title("Principal Architect"), SeniorityLevel::Lead);
-        assert_eq!(SeniorityLevel::from_title("Staff Engineer"), SeniorityLevel::Lead);
-        assert_eq!(SeniorityLevel::from_title("Engineering Manager"), SeniorityLevel::Lead);
+    fn seniority_sr_abbreviation() {
+        assert_eq!(SeniorityLevel::from_title("Sr. Eng"), SeniorityLevel::Senior);
     }
 
     #[test]
-    fn seniority_unknown_detection() {
-        assert_eq!(SeniorityLevel::from_title("Software Developer"), SeniorityLevel::Unknown);
+    fn seniority_lead_detected() {
+        assert_eq!(SeniorityLevel::from_title("Tech Lead"), SeniorityLevel::Senior);
+    }
+
+    #[test]
+    fn seniority_specialist_detected() {
+        assert_eq!(SeniorityLevel::from_title("Specialist"), SeniorityLevel::Senior);
+    }
+
+    #[test]
+    fn seniority_unknown_for_generic() {
         assert_eq!(SeniorityLevel::from_title("Developer"), SeniorityLevel::Unknown);
     }
 
     #[test]
-    fn is_dev_role_positive() {
-        assert!(is_dev_role("Software Developer"));
-        assert!(is_dev_role("Backend Engineer"));
-        assert!(is_dev_role("Front-end Developer"));
-        assert!(is_dev_role("Full Stack Developer"));
-        assert!(is_dev_role("Data Scientist"));
-        assert!(is_dev_role("QA Engineer"));
-        assert!(is_dev_role("DevOps Engineer"));
-        assert!(is_dev_role("Machine Learning Engineer"));
+    fn seniority_unknown_for_empty() {
+        assert_eq!(SeniorityLevel::from_title(""), SeniorityLevel::Unknown);
     }
 
     #[test]
-    fn is_dev_role_negative() {
-        assert!(!is_dev_role("Marketing Specialist"));
-        assert!(!is_dev_role("Sales Representative"));
+    fn seniority_senior_takes_precedence() {
+        assert_eq!(SeniorityLevel::from_title("Senior Pleno"), SeniorityLevel::Senior);
+    }
+
+    // --- is_dev_role tests ---
+    #[test]
+    fn dev_role_developer_detected() {
+        assert!(is_dev_role("Developer"));
+    }
+
+    #[test]
+    fn dev_role_engineer_detected() {
+        assert!(is_dev_role("Software Engineer"));
+    }
+
+    #[test]
+    fn dev_role_desenvolvedor_detected() {
+        assert!(is_dev_role("Desenvolvedor"));
+    }
+
+    #[test]
+    fn dev_role_programador_detected() {
+        assert!(is_dev_role("Programador"));
+    }
+
+    #[test]
+    fn dev_role_backend_detected() {
+        assert!(is_dev_role("Backend Developer"));
+    }
+
+    #[test]
+    fn dev_role_frontend_detected() {
+        assert!(is_dev_role("Front-end"));
+    }
+
+    #[test]
+    fn dev_role_data_detected() {
+        assert!(is_dev_role("Data Engineer"));
+    }
+
+    #[test]
+    fn dev_role_devops_detected() {
+        assert!(is_dev_role("DevOps Engineer"));
+    }
+
+    #[test]
+    fn dev_role_non_dev_excluded() {
         assert!(!is_dev_role("Designer"));
+    }
+
+    #[test]
+    fn dev_role_product_manager_excluded() {
         assert!(!is_dev_role("Product Manager"));
     }
 
     #[test]
-    fn job_response_deserialize_contact_email() {
-        let json = r#"{
-            "id": 1,
-            "title": "Software Engineer",
-            "company": "TechCo",
-            "url": "https://example.com/job/1",
-            "description": "Full stack developer needed",
-            "posted_at": "2026-07-15",
-            "source": "linkedin",
-            "contact_email": "jobs@techco.com"
-        }"#;
-        let job: JobResponse = serde_json::from_str(json).unwrap();
-        assert_eq!(job.contact_email, Some("jobs@techco.com".to_string()));
+    fn dev_role_suporte_excluded() {
+        assert!(!is_dev_role("Suporte Técnico"));
     }
 
     #[test]
-    fn job_response_deserialize_missing_contact_email() {
-        let json = r#"{
-            "id": 2,
-            "title": "Backend Developer",
-            "company": "StartupX",
-            "url": "https://example.com/job/2",
-            "description": "Backend role",
-            "posted_at": "2026-07-10",
-            "source": "gupy"
-        }"#;
-        let job: JobResponse = serde_json::from_str(json).unwrap();
-        assert_eq!(job.contact_email, None);
+    fn dev_role_negative_overrides_positive() {
+        assert!(!is_dev_role("Dev Marketing"));
     }
 
     #[test]
-    fn email_draft_status_pending() {
-        let draft = EmailDraftResponse {
-            id: 1,
-            job_id: 1,
-            subject: "Application".into(),
-            body: "Body".into(),
-            sent: false,
-            sent_at: None,
-            created_at: Some(NaiveDate::from_ymd_opt(2026, 7, 15).unwrap()),
-        };
-        assert_eq!(draft.status(), EmailStatus::Pending);
+    fn dev_role_empty_title_returns_false() {
+        assert!(!is_dev_role(""));
     }
 
     #[test]
-    fn email_draft_status_sent() {
-        let draft = EmailDraftResponse {
-            id: 2,
-            job_id: 1,
-            subject: "Application".into(),
-            body: "Body".into(),
-            sent: true,
-            sent_at: Some(NaiveDate::from_ymd_opt(2026, 7, 20).unwrap()),
-            created_at: Some(NaiveDate::from_ymd_opt(2026, 7, 15).unwrap()),
-        };
-        assert_eq!(draft.status(), EmailStatus::Sent(NaiveDate::from_ymd_opt(2026, 7, 20).unwrap()));
+    fn dev_role_qa_detected() {
+        assert!(is_dev_role("QA Analyst"));
     }
 
     #[test]
-    fn job_source_from_str() {
-        assert_eq!(JobSource::from("gupy"), JobSource::Gupy);
-        assert_eq!(JobSource::from("infojobs"), JobSource::Infojobs);
-        assert_eq!(JobSource::from("linkedin"), JobSource::LinkedIn);
-        assert_eq!(JobSource::from("linkedin_jsoup"), JobSource::LinkedInJsoup);
-        assert_eq!(JobSource::from("unknown"), JobSource::Unknown);
-    }
-
-    #[test]
-    fn job_source_display() {
-        assert_eq!(JobSource::Gupy.to_string(), "gupy");
-        assert_eq!(JobSource::Infojobs.to_string(), "infojobs");
-        assert_eq!(JobSource::LinkedIn.to_string(), "linkedin");
-    }
-
-    #[test]
-    fn cached_job_from_job_response() {
-        let response = JobResponse {
-            id: 1,
-            title: "Dev".into(),
-            company: "Co".into(),
-            url: "url".into(),
-            description: "desc".into(),
-            posted_at: NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(),
-            source: "gupy".into(),
-            contact_email: Some("hr@co.com".into()),
-        };
-        let cached: CachedJob = CachedJob {
-            id: response.id,
-            title: response.title.clone(),
-            company: response.company.clone(),
-            url: response.url.clone(),
-            description: response.description.clone(),
-            posted_at: response.posted_at,
-            source: response.source.clone(),
-            contact_email: response.contact_email.clone(),
-            fetched_at: NaiveDate::from_ymd_opt(2026, 7, 28).unwrap(),
-        };
-        let back: JobResponse = cached.into();
-        assert_eq!(back.contact_email, Some("hr@co.com".into()));
+    fn dev_role_mobile_detected() {
+        assert!(is_dev_role("Android Developer"));
     }
 }
