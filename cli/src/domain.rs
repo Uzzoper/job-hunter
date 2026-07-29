@@ -56,6 +56,8 @@ pub struct JobResponse {
     pub description: String,
     pub posted_at: NaiveDate,
     pub source: String,
+    #[serde(default)]
+    pub contact_email: Option<String>,
 }
 
 /// AI analysis of a job (returned directly by analyze endpoint).
@@ -82,6 +84,7 @@ pub struct EmailDraftResponse {
     pub body: String,
     pub status: EmailStatus,
     pub generated_at: NaiveDateTime,
+    pub sent_at: Option<NaiveDateTime>,
 }
 
 /// Profile request for updating user profile.
@@ -147,6 +150,7 @@ impl std::fmt::Display for CompanyTone {
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum EmailStatus {
     Pending,
+    Approved,
     Sent,
 }
 
@@ -154,6 +158,7 @@ impl std::fmt::Display for EmailStatus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Pending => write!(f, "PENDING"),
+            Self::Approved => write!(f, "APPROVED"),
             Self::Sent => write!(f, "SENT"),
         }
     }
@@ -339,6 +344,8 @@ pub struct CachedJob {
     pub description: String,
     pub posted_at: NaiveDate,
     pub source: String,
+    #[serde(default)]
+    pub contact_email: Option<String>,
     pub match_score: Option<i32>,
     pub analysis_json: Option<String>,
     pub email_subject: Option<String>,
@@ -399,6 +406,7 @@ mod tests {
             description: "Build CLI tools".into(),
             posted_at: NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(),
             source: "gupy".into(),
+            contact_email: None,
         };
         let json = serde_json::to_string(&job).expect("serialize");
         let deserialized: JobResponse = serde_json::from_str(&json).expect("deserialize");
@@ -438,12 +446,14 @@ mod tests {
             body: "Dear team...".into(),
             status: EmailStatus::Pending,
             generated_at: NaiveDateTime::parse_from_str("2026-07-14T10:00:00", "%Y-%m-%dT%H:%M:%S").unwrap(),
+            sent_at: None,
         };
         let json = serde_json::to_string(&draft).expect("serialize");
         let deserialized: EmailDraftResponse = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(draft.id, deserialized.id);
         assert_eq!(draft.subject, deserialized.subject);
         assert_eq!(draft.status, deserialized.status);
+        assert_eq!(draft.sent_at, deserialized.sent_at);
     }
 
     #[test]
@@ -550,6 +560,7 @@ mod tests {
     #[test]
     fn email_status_serialization() {
         assert_eq!(serde_json::to_string(&EmailStatus::Pending).unwrap(), "\"PENDING\"");
+        assert_eq!(serde_json::to_string(&EmailStatus::Approved).unwrap(), "\"APPROVED\"");
         assert_eq!(serde_json::to_string(&EmailStatus::Sent).unwrap(), "\"SENT\"");
     }
 
@@ -563,6 +574,7 @@ mod tests {
             description: "Desc".into(),
             posted_at: NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(),
             source: "gupy".into(),
+            contact_email: None,
             match_score: Some(85),
             analysis_json: Some("{}".into()),
             email_subject: Some("Subject".into()),

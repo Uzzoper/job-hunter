@@ -72,6 +72,12 @@ pub async fn handle_email(
         crate::EmailAction::Generate { job_id } => {
             handle_email_generate(job_id, &client).await
         }
+        crate::EmailAction::Approve { job_id } => {
+            handle_email_approve(job_id, &client).await
+        }
+        crate::EmailAction::Send { job_id } => {
+            handle_email_send(job_id, &client).await
+        }
     }
 }
 
@@ -198,6 +204,69 @@ fn print_analysis(analysis: &JobAnalysis) {
     }
 }
 
+/// Approve an email draft for sending.
+async fn handle_email_approve(
+    job_id: String,
+    client: &ApiClient,
+) -> anyhow::Result<()> {
+    let id = match util::parse_job_id(&job_id) {
+        Ok(id) => id,
+        Err(e) => {
+            eprintln!("Error: {e}");
+            return Ok(());
+        }
+    };
+
+    match client.approve_draft(id).await {
+        Ok(draft) => {
+            println!("Email draft for job {id} approved (status: {}).", draft.status);
+        }
+        Err(CliError::Api(ApiError::NotFound(_))) => {
+            eprintln!("Error: Job {id} not found or no draft exists.");
+            eprintln!("Hint: Use 'jh email generate {id}' to create a draft first.");
+        }
+        Err(CliError::Api(ApiError::Conflict(_))) => {
+            eprintln!("Error: Draft already approved for job {id}.");
+        }
+        Err(e) => return Err(e.into()),
+    }
+
+    Ok(())
+}
+
+/// Send an email for a job.
+async fn handle_email_send(
+    job_id: String,
+    client: &ApiClient,
+) -> anyhow::Result<()> {
+    let id = match util::parse_job_id(&job_id) {
+        Ok(id) => id,
+        Err(e) => {
+            eprintln!("Error: {e}");
+            return Ok(());
+        }
+    };
+
+    match client.send_email(id).await {
+        Ok(draft) => {
+            println!("Email sent for job {id} (status: {}).", draft.status);
+            if let Some(sent_at) = draft.sent_at {
+                println!("Sent at: {sent_at}");
+            }
+        }
+        Err(CliError::Api(ApiError::NotFound(_))) => {
+            eprintln!("Error: Job {id} not found or no approved draft exists.");
+            eprintln!("Hint: Use 'jh email generate {id}' then 'jh email approve {id}' first.");
+        }
+        Err(CliError::Api(ApiError::Conflict(_))) => {
+            eprintln!("Error: Email already sent for job {id}.");
+        }
+        Err(e) => return Err(e.into()),
+    }
+
+    Ok(())
+}
+
 // =========================================================================
 // Tests
 // =========================================================================
@@ -229,7 +298,8 @@ mod tests {
             "subject": "Application for Rust Developer",
             "body": "Dear Hiring Team,\n\nI am writing to apply...",
             "status": "PENDING",
-            "generatedAt": "2026-07-14T10:30:00"
+            "generatedAt": "2026-07-14T10:30:00",
+            "sentAt": null
         })
     }
 
@@ -474,6 +544,186 @@ mod tests {
     // =====================================================================
     // print_analysis tests
     // =====================================================================
+
+    // =====================================================================
+    // handle_email_approve tests
+    // =====================================================================
+
+    #[tokio::test]
+    async fn email_approve_success_shows_status() {
+        let server = MockServer::start();
+        let token = Some("test-token".into());
+
+        let mock = server.mock(|when, then| {
+            when.method(Method::POST)
+                .path("/api/jobs/3/email/approve")
+                .header("authorization", "Bearer test-token");
+            then.status(200)
+                .header("content-type", "application/json")
+                .json_body(json!({
+                    "id": 10,
+                    "jobId": 3,
+                    "subject": "Application",
+                    "body": "Body",
+                    "status": "APPROVED",
+                    "generatedAt": "2026-07-14T10:30:00",
+                    "sentAt": null
+                }));
+        });
+
+        let action = crate::EmailAction::Approve {
+            job_id: "3".into(),
+        };
+
+        let result = handle_email(action, &server.url(""), &token).await;
+        assert!(result.is_ok(), "approve should succeed: {result:?}");
+        mock.assert();
+    }
+
+    #[tokio::test]
+    async fn email_approve_not_found_shows_hint() {
+        let server = MockServer::start();
+        let token = Some("test-token".into());
+
+        let mock = server.mock(|when, then| {
+            when.method(Method::POST).path("/api/jobs/999/email/approve");
+            then.status(404)
+                .header("content-type", "application/json")
+                .json_body(json!({ "message": "Not found" }));
+        });
+
+        let action = crate::EmailAction::Approve {
+            job_id: "999".into(),
+        };
+
+        let result = handle_email(action, &server.url(""), &token).await;
+        assert!(result.is_ok(), "404 should return Ok with hint: {result:?}");
+        mock.assert();
+    }
+
+    #[tokio::test]
+    async fn email_approve_conflict_shows_hint() {
+        let server = MockServer::start();
+        let token = Some("test-token".into());
+
+        let mock = server.mock(|when, then| {
+            when.method(Method::POST).path("/api/jobs/3/email/approve");
+            then.status(409)
+                .header("content-type", "application/json")
+                .json_body(json!({ "message": "Already approved" }));
+        });
+
+        let action = crate::EmailAction::Approve {
+            job_id: "3".into(),
+        };
+
+        let result = handle_email(action, &server.url(""), &token).await;
+        assert!(result.is_ok(), "409 should return Ok with hint: {result:?}");
+        mock.assert();
+    }
+
+    #[tokio::test]
+    async fn email_approve_invalid_id_prints_error() {
+        let server = MockServer::start();
+        let token = Some("test-token".into());
+
+        let action = crate::EmailAction::Approve {
+            job_id: "bad-id".into(),
+        };
+
+        let result = handle_email(action, &server.url(""), &token).await;
+        assert!(result.is_ok(), "invalid ID should return Ok with error message");
+    }
+
+    // =====================================================================
+    // handle_email_send tests
+    // =====================================================================
+
+    #[tokio::test]
+    async fn email_send_success_shows_status() {
+        let server = MockServer::start();
+        let token = Some("test-token".into());
+
+        let mock = server.mock(|when, then| {
+            when.method(Method::POST)
+                .path("/api/jobs/3/send")
+                .header("authorization", "Bearer test-token");
+            then.status(200)
+                .header("content-type", "application/json")
+                .json_body(json!({
+                    "id": 10,
+                    "jobId": 3,
+                    "subject": "Application",
+                    "body": "Body",
+                    "status": "SENT",
+                    "generatedAt": "2026-07-14T10:30:00",
+                    "sentAt": "2026-07-14T10:35:00"
+                }));
+        });
+
+        let action = crate::EmailAction::Send {
+            job_id: "3".into(),
+        };
+
+        let result = handle_email(action, &server.url(""), &token).await;
+        assert!(result.is_ok(), "send should succeed: {result:?}");
+        mock.assert();
+    }
+
+    #[tokio::test]
+    async fn email_send_not_found_shows_hint() {
+        let server = MockServer::start();
+        let token = Some("test-token".into());
+
+        let mock = server.mock(|when, then| {
+            when.method(Method::POST).path("/api/jobs/999/send");
+            then.status(404)
+                .header("content-type", "application/json")
+                .json_body(json!({ "message": "Not found" }));
+        });
+
+        let action = crate::EmailAction::Send {
+            job_id: "999".into(),
+        };
+
+        let result = handle_email(action, &server.url(""), &token).await;
+        assert!(result.is_ok(), "404 should return Ok with hint: {result:?}");
+        mock.assert();
+    }
+
+    #[tokio::test]
+    async fn email_send_conflict_shows_hint() {
+        let server = MockServer::start();
+        let token = Some("test-token".into());
+
+        let mock = server.mock(|when, then| {
+            when.method(Method::POST).path("/api/jobs/3/send");
+            then.status(409)
+                .header("content-type", "application/json")
+                .json_body(json!({ "message": "Already sent" }));
+        });
+
+        let action = crate::EmailAction::Send {
+            job_id: "3".into(),
+        };
+
+        let result = handle_email(action, &server.url(""), &token).await;
+        assert!(result.is_ok(), "409 should return Ok with hint: {result:?}");
+        mock.assert();
+    }
+
+    #[tokio::test]
+    async fn email_send_invalid_id_prints_error() {
+        let server = MockServer::start();
+        let token = Some("test-token".into());
+
+        let action = crate::EmailAction::Send {
+            job_id: "bad-id".into(),
+        };
+
+        let result = handle_email(action, &server.url(""), &token).await;
+        assert!(result.is_ok(), "invalid ID should return Ok with error message");
+    }
 
     #[test]
     fn print_analysis_high_score_uses_green() {

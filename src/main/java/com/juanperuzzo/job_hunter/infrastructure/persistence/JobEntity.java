@@ -31,13 +31,16 @@ public class JobEntity {
     @Column(name = "source", nullable = false, length = 50)
     private String source;
 
+    @Column(name = "contact_email", length = 255)
+    private String contactEmail;
+
     @Column(name = "created_at", nullable = false, updatable = false, insertable = false, columnDefinition = "TIMESTAMP DEFAULT NOW()")
     private LocalDateTime createdAt;
 
     public JobEntity() {
     }
 
-    public JobEntity(Long id, String title, String company, String url, String description, LocalDate postedAt, String source) {
+    public JobEntity(Long id, String title, String company, String url, String description, LocalDate postedAt, String source, String contactEmail) {
         this.id = id;
         this.title = title;
         this.company = company;
@@ -45,6 +48,7 @@ public class JobEntity {
         this.description = description;
         this.postedAt = postedAt;
         this.source = source;
+        this.contactEmail = contactEmail;
     }
 
     public Long getId() {
@@ -101,6 +105,14 @@ public class JobEntity {
 
     public void setSource(String source) {
         this.source = source;
+    }
+
+    public String getContactEmail() {
+        return contactEmail;
+    }
+
+    public void setContactEmail(String contactEmail) {
+        this.contactEmail = contactEmail;
     }
 
     public LocalDateTime getCreatedAt() {

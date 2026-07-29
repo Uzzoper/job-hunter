@@ -310,7 +310,7 @@ impl JobListScreen {
                 let matches_apply_type = match apply_type_filter {
                     ApplyTypeFilter::All => true,
                     ApplyTypeFilter::ExternalApply => crate::domain::ApplyType::from_description(&job.description) == crate::domain::ApplyType::ExternalApply,
-                    ApplyTypeFilter::EmailAvailable => crate::domain::ApplyType::from_description(&job.description) == crate::domain::ApplyType::EmailAvailable,
+                    ApplyTypeFilter::EmailAvailable => job.contact_email.is_some(),
                     ApplyTypeFilter::Unknown => crate::domain::ApplyType::from_description(&job.description) == crate::domain::ApplyType::Unknown,
                 };
 
@@ -420,6 +420,7 @@ impl JobListScreen {
                                 description: cj.description,
                                 posted_at: cj.posted_at,
                                 source: cj.source,
+                                contact_email: cj.contact_email.clone(),
                             })
                             .collect();
                         self.from_cache = true;
@@ -460,6 +461,7 @@ impl JobListScreen {
                         description: cj.description,
                         posted_at: cj.posted_at,
                         source: cj.source,
+                        contact_email: cj.contact_email.clone(),
                     })
                     .collect();
                 self.from_cache = true;
@@ -832,6 +834,7 @@ mod tests {
                 description: "Build CLI tools in Rust".into(),
                 posted_at: NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(),
                 source: "gupy".into(),
+                contact_email: None,
             },
             JobResponse {
                 id: 2,
@@ -841,6 +844,7 @@ mod tests {
                 description: "Enterprise Java development with Spring".into(),
                 posted_at: NaiveDate::from_ymd_opt(2026, 7, 13).unwrap(),
                 source: "linkedin".into(),
+                contact_email: None,
             },
             JobResponse {
                 id: 3,
@@ -850,6 +854,7 @@ mod tests {
                 description: "High-performance systems in Rust".into(),
                 posted_at: NaiveDate::from_ymd_opt(2026, 7, 12).unwrap(),
                 source: "infojobs".into(),
+                contact_email: None,
             },
         ]
     }
@@ -1216,6 +1221,7 @@ mod tests {
             description: "Description".into(),
             posted_at: NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(),
             source: "gupy".into(),
+            contact_email: None,
         }];
         screen.set_jobs(jobs);
         let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 24)).unwrap();
@@ -1236,6 +1242,7 @@ mod tests {
             description: "Descrição com acentos: áéíóú ñ".into(),
             posted_at: NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(),
             source: "gupy".into(),
+            contact_email: None,
         }];
         screen.set_jobs(jobs);
         let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 24)).unwrap();
@@ -1268,6 +1275,7 @@ mod tests {
             description: long_desc,
             posted_at: NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(),
             source: "gupy".into(),
+            contact_email: None,
         }];
         screen.set_jobs(jobs);
         let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 24)).unwrap();
@@ -1289,6 +1297,7 @@ mod tests {
             description: "Description".into(),
             posted_at: NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(),
             source: "gupy".into(),
+            contact_email: None,
         }];
         screen.set_jobs(jobs);
         
@@ -1310,6 +1319,7 @@ mod tests {
                 description: "".into(),
                 posted_at: NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(),
                 source: "gupy".into(),
+                contact_email: None,
             },
             JobResponse {
                 id: 2,
@@ -1319,6 +1329,7 @@ mod tests {
                 description: "This is a long description with more than twenty characters".into(),
                 posted_at: NaiveDate::from_ymd_opt(2026, 7, 13).unwrap(),
                 source: "linkedin".into(),
+                contact_email: None,
             },
             JobResponse {
                 id: 3,
@@ -1328,6 +1339,7 @@ mod tests {
                 description: "Short".into(),
                 posted_at: NaiveDate::from_ymd_opt(2026, 7, 12).unwrap(),
                 source: "infojobs".into(),
+                contact_email: None,
             },
         ]
     }
@@ -1514,9 +1526,9 @@ mod tests {
         screen.seniority_filter = SeniorityFilter::All;
 
         let jobs = vec![
-            JobResponse { id: 1, title: "Junior Dev".into(), company: "A".into(), url: "".into(), description: "".into(), posted_at: NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(), source: "gupy".into() },
-            JobResponse { id: 2, title: "Senior Engineer".into(), company: "B".into(), url: "".into(), description: "".into(), posted_at: NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(), source: "linkedin".into() },
-            JobResponse { id: 3, title: "Pleno Developer".into(), company: "C".into(), url: "".into(), description: "".into(), posted_at: NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(), source: "infojobs".into() },
+            JobResponse { id: 1, title: "Junior Dev".into(), company: "A".into(), url: "".into(), description: "".into(), posted_at: NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(), source: "gupy".into(), contact_email: None },
+            JobResponse { id: 2, title: "Senior Engineer".into(), company: "B".into(), url: "".into(), description: "".into(), posted_at: NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(), source: "linkedin".into(), contact_email: None },
+            JobResponse { id: 3, title: "Pleno Developer".into(), company: "C".into(), url: "".into(), description: "".into(), posted_at: NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(), source: "infojobs".into(), contact_email: None },
         ];
         screen.set_jobs(jobs);
         screen.apply_filters();
@@ -1530,8 +1542,8 @@ mod tests {
         screen.seniority_filter = SeniorityFilter::Junior;
 
         let jobs = vec![
-            JobResponse { id: 1, title: "Junior Dev".into(), company: "A".into(), url: "".into(), description: "".into(), posted_at: NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(), source: "gupy".into() },
-            JobResponse { id: 2, title: "Senior Engineer".into(), company: "B".into(), url: "".into(), description: "".into(), posted_at: NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(), source: "linkedin".into() },
+            JobResponse { id: 1, title: "Junior Dev".into(), company: "A".into(), url: "".into(), description: "".into(), posted_at: NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(), source: "gupy".into(), contact_email: None },
+            JobResponse { id: 2, title: "Senior Engineer".into(), company: "B".into(), url: "".into(), description: "".into(), posted_at: NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(), source: "linkedin".into(), contact_email: None },
         ];
         screen.set_jobs(jobs);
         screen.apply_filters();
@@ -1546,9 +1558,9 @@ mod tests {
         screen.seniority_filter = SeniorityFilter::JuniorPleno;
 
         let jobs = vec![
-            JobResponse { id: 1, title: "Junior Dev".into(), company: "A".into(), url: "".into(), description: "".into(), posted_at: NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(), source: "gupy".into() },
-            JobResponse { id: 2, title: "Pleno Developer".into(), company: "B".into(), url: "".into(), description: "".into(), posted_at: NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(), source: "linkedin".into() },
-            JobResponse { id: 3, title: "Senior Engineer".into(), company: "C".into(), url: "".into(), description: "".into(), posted_at: NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(), source: "infojobs".into() },
+            JobResponse { id: 1, title: "Junior Dev".into(), company: "A".into(), url: "".into(), description: "".into(), posted_at: NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(), source: "gupy".into(), contact_email: None },
+            JobResponse { id: 2, title: "Pleno Developer".into(), company: "B".into(), url: "".into(), description: "".into(), posted_at: NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(), source: "linkedin".into(), contact_email: None },
+            JobResponse { id: 3, title: "Senior Engineer".into(), company: "C".into(), url: "".into(), description: "".into(), posted_at: NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(), source: "infojobs".into(), contact_email: None },
         ];
         screen.set_jobs(jobs);
         screen.apply_filters();
@@ -1563,9 +1575,9 @@ mod tests {
         screen.seniority_filter = SeniorityFilter::SeniorLead;
 
         let jobs = vec![
-            JobResponse { id: 1, title: "Junior Dev".into(), company: "A".into(), url: "".into(), description: "".into(), posted_at: NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(), source: "gupy".into() },
-            JobResponse { id: 2, title: "Senior Engineer".into(), company: "B".into(), url: "".into(), description: "".into(), posted_at: NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(), source: "linkedin".into() },
-            JobResponse { id: 3, title: "Tech Lead".into(), company: "C".into(), url: "".into(), description: "".into(), posted_at: NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(), source: "infojobs".into() },
+            JobResponse { id: 1, title: "Junior Dev".into(), company: "A".into(), url: "".into(), description: "".into(), posted_at: NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(), source: "gupy".into(), contact_email: None },
+            JobResponse { id: 2, title: "Senior Engineer".into(), company: "B".into(), url: "".into(), description: "".into(), posted_at: NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(), source: "linkedin".into(), contact_email: None },
+            JobResponse { id: 3, title: "Tech Lead".into(), company: "C".into(), url: "".into(), description: "".into(), posted_at: NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(), source: "infojobs".into(), contact_email: None },
         ];
         screen.set_jobs(jobs);
         screen.apply_filters();
@@ -1580,8 +1592,8 @@ mod tests {
         screen.seniority_filter = SeniorityFilter::Unknown;
 
         let jobs = vec![
-            JobResponse { id: 1, title: "Developer".into(), company: "A".into(), url: "".into(), description: "".into(), posted_at: NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(), source: "gupy".into() },
-            JobResponse { id: 2, title: "Junior Dev".into(), company: "B".into(), url: "".into(), description: "".into(), posted_at: NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(), source: "linkedin".into() },
+            JobResponse { id: 1, title: "Developer".into(), company: "A".into(), url: "".into(), description: "".into(), posted_at: NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(), source: "gupy".into(), contact_email: None },
+            JobResponse { id: 2, title: "Junior Dev".into(), company: "B".into(), url: "".into(), description: "".into(), posted_at: NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(), source: "linkedin".into(), contact_email: None },
         ];
         screen.set_jobs(jobs);
         screen.apply_filters();
@@ -1609,9 +1621,9 @@ mod tests {
         screen.dev_only = true;
 
         let jobs = vec![
-            JobResponse { id: 1, title: "Software Developer".into(), company: "A".into(), url: "".into(), description: "".into(), posted_at: NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(), source: "gupy".into() },
-            JobResponse { id: 2, title: "Designer".into(), company: "B".into(), url: "".into(), description: "".into(), posted_at: NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(), source: "linkedin".into() },
-            JobResponse { id: 3, title: "Backend Engineer".into(), company: "C".into(), url: "".into(), description: "".into(), posted_at: NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(), source: "infojobs".into() },
+            JobResponse { id: 1, title: "Software Developer".into(), company: "A".into(), url: "".into(), description: "".into(), posted_at: NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(), source: "gupy".into(), contact_email: None },
+            JobResponse { id: 2, title: "Designer".into(), company: "B".into(), url: "".into(), description: "".into(), posted_at: NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(), source: "linkedin".into(), contact_email: None },
+            JobResponse { id: 3, title: "Backend Engineer".into(), company: "C".into(), url: "".into(), description: "".into(), posted_at: NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(), source: "infojobs".into(), contact_email: None },
         ];
         screen.set_jobs(jobs);
         screen.apply_filters();
@@ -1628,9 +1640,9 @@ mod tests {
         screen.dev_only = true;
 
         let jobs = vec![
-            JobResponse { id: 1, title: "Junior Developer".into(), company: "A".into(), url: "".into(), description: "".into(), posted_at: NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(), source: "gupy".into() },
-            JobResponse { id: 2, title: "Junior Designer".into(), company: "B".into(), url: "".into(), description: "".into(), posted_at: NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(), source: "linkedin".into() },
-            JobResponse { id: 3, title: "Senior Developer".into(), company: "C".into(), url: "".into(), description: "".into(), posted_at: NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(), source: "infojobs".into() },
+            JobResponse { id: 1, title: "Junior Developer".into(), company: "A".into(), url: "".into(), description: "".into(), posted_at: NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(), source: "gupy".into(), contact_email: None },
+            JobResponse { id: 2, title: "Junior Designer".into(), company: "B".into(), url: "".into(), description: "".into(), posted_at: NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(), source: "linkedin".into(), contact_email: None },
+            JobResponse { id: 3, title: "Senior Developer".into(), company: "C".into(), url: "".into(), description: "".into(), posted_at: NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(), source: "infojobs".into(), contact_email: None },
         ];
         screen.set_jobs(jobs);
         screen.apply_filters();
@@ -1647,9 +1659,9 @@ mod tests {
         screen.apply_type_filter = ApplyTypeFilter::EmailAvailable;
 
         let jobs = vec![
-            JobResponse { id: 1, title: "Junior Developer".into(), company: "A".into(), url: "".into(), description: "This is a long description with more than twenty characters".into(), posted_at: NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(), source: "gupy".into() },
-            JobResponse { id: 2, title: "Junior Developer".into(), company: "B".into(), url: "".into(), description: "Short".into(), posted_at: NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(), source: "linkedin".into() },
-            JobResponse { id: 3, title: "Senior Developer".into(), company: "C".into(), url: "".into(), description: "This is a long description with more than twenty characters".into(), posted_at: NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(), source: "infojobs".into() },
+            JobResponse { id: 1, title: "Junior Developer".into(), company: "A".into(), url: "".into(), description: "This is a long description with more than twenty characters".into(), posted_at: NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(), source: "gupy".into(), contact_email: None },
+            JobResponse { id: 2, title: "Junior Developer".into(), company: "B".into(), url: "".into(), description: "Short".into(), posted_at: NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(), source: "linkedin".into(), contact_email: None },
+            JobResponse { id: 3, title: "Senior Developer".into(), company: "C".into(), url: "".into(), description: "This is a long description with more than twenty characters".into(), posted_at: NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(), source: "infojobs".into(), contact_email: None },
         ];
         screen.set_jobs(jobs);
         screen.apply_filters();

@@ -252,6 +252,7 @@ async fn job_detail_a_triggers_analyze_job() {
         description: "Test description".into(),
         posted_at: chrono::NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(),
         source: "gupy".into(),
+        contact_email: None,
     };
     app.selected_job = Some(job.clone());
 
@@ -285,6 +286,7 @@ async fn job_detail_e_triggers_generate_email() {
         description: "Test description".into(),
         posted_at: chrono::NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(),
         source: "gupy".into(),
+        contact_email: None,
     };
     app.selected_job = Some(job.clone());
 
@@ -362,6 +364,7 @@ async fn job_detail_space_toggles_email_expanded() {
         description: "Test description".into(),
         posted_at: chrono::NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(),
         source: "gupy".into(),
+        contact_email: None,
     };
     app.selected_job = Some(job);
 
@@ -378,6 +381,7 @@ async fn job_detail_space_toggles_email_expanded() {
         body: "Test body".into(),
         status: crate::domain::EmailStatus::Pending,
         generated_at: chrono::NaiveDateTime::parse_from_str("2026-07-14T10:00:00", "%Y-%m-%dT%H:%M:%S").unwrap(),
+        sent_at: None,
     };
     app.job_detail_screen.as_mut().unwrap().email = Some(email);
 
@@ -407,6 +411,7 @@ async fn job_detail_c_copies_email() {
         description: "Test description".into(),
         posted_at: chrono::NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(),
         source: "gupy".into(),
+        contact_email: None,
     };
     app.selected_job = Some(job);
 
@@ -423,6 +428,7 @@ async fn job_detail_c_copies_email() {
         body: "Test body".into(),
         status: crate::domain::EmailStatus::Pending,
         generated_at: chrono::NaiveDateTime::parse_from_str("2026-07-14T10:00:00", "%Y-%m-%dT%H:%M:%S").unwrap(),
+        sent_at: None,
     };
     app.job_detail_screen.as_mut().unwrap().email = Some(email);
 
@@ -448,6 +454,7 @@ async fn job_detail_f_toggles_email_full() {
         description: "Test description".into(),
         posted_at: chrono::NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(),
         source: "gupy".into(),
+        contact_email: None,
     };
     app.selected_job = Some(job);
 
@@ -504,6 +511,7 @@ async fn job_detail_render_does_not_panic() {
         description: "Test description".into(),
         posted_at: chrono::NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(),
         source: "gupy".into(),
+        contact_email: None,
     };
     app.selected_job = Some(job);
 
@@ -538,6 +546,7 @@ async fn handle_enter_selects_highlighted_job_not_first() {
             description: "Description 1".into(),
             posted_at: chrono::NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(),
             source: "gupy".into(),
+            contact_email: None,
         },
         crate::domain::JobResponse {
             id: 2,
@@ -547,6 +556,7 @@ async fn handle_enter_selects_highlighted_job_not_first() {
             description: "Description 2".into(),
             posted_at: chrono::NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(),
             source: "gupy".into(),
+            contact_email: None,
         },
         crate::domain::JobResponse {
             id: 3,
@@ -556,6 +566,7 @@ async fn handle_enter_selects_highlighted_job_not_first() {
             description: "Description 3".into(),
             posted_at: chrono::NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(),
             source: "gupy".into(),
+            contact_email: None,
         },
     ];
 
@@ -630,6 +641,7 @@ async fn handle_enter_after_filtering_selects_filtered_job() {
             description: "Java role".into(),
             posted_at: chrono::NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(),
             source: "gupy".into(),
+            contact_email: None,
         },
         crate::domain::JobResponse {
             id: 2,
@@ -639,6 +651,7 @@ async fn handle_enter_after_filtering_selects_filtered_job() {
             description: "Rust role".into(),
             posted_at: chrono::NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(),
             source: "gupy".into(),
+            contact_email: None,
         },
         crate::domain::JobResponse {
             id: 3,
@@ -648,6 +661,7 @@ async fn handle_enter_after_filtering_selects_filtered_job() {
             description: "Another Java role".into(),
             posted_at: chrono::NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(),
             source: "gupy".into(),
+            contact_email: None,
         },
     ];
 
@@ -686,6 +700,7 @@ async fn handle_enter_sets_job_on_detail_screen() {
         description: "Test Description".into(),
         posted_at: chrono::NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(),
         source: "gupy".into(),
+        contact_email: None,
     }];
 
     if let Some(screen) = &mut app.job_list_screen {

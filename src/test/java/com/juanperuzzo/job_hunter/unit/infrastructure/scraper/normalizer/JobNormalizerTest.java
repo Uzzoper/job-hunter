@@ -19,6 +19,8 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class JobNormalizerTest {
 
+    private static final String VALID_EMAIL = "hiring@techcorp.com";
+
     private static final Clock FIXED_CLOCK = Clock.fixed(
             Instant.parse("2026-07-08T00:00:00Z"), ZoneId.of("UTC"));
 
@@ -320,6 +322,148 @@ class JobNormalizerTest {
                     "Desenvolvedor", "Company", "https://example.com/null-desc",
                     null, "2026-07-01", null, null, "test", null));
             assertNotNull(job);
+        }
+    }
+
+    @Nested
+    @DisplayName("normalize - contact email extraction")
+    class ContactEmailExtraction {
+
+        @BeforeEach
+        void setUp() {
+            normalizer = new JobNormalizer(dateParser, List.of("desenvolvedor"),
+                    List.of(), List.of(), 90, FIXED_CLOCK);
+        }
+
+        @Test
+        @DisplayName("should extract email from description")
+        void shouldExtractEmailFromDescription() {
+            var job = normalizer.normalize(new RawJob(
+                    "Desenvolvedor Java", "Company", "https://example.com/job",
+                    "Send your resume to " + VALID_EMAIL,
+                    "2026-07-01", null, null, "test", null));
+            assertNotNull(job);
+            assertEquals(VALID_EMAIL, job.contactEmail());
+        }
+
+        @Test
+        @DisplayName("should extract first email when description has multiple")
+        void shouldExtractFirstEmailWhenMultiple() {
+            var job = normalizer.normalize(new RawJob(
+                    "Desenvolvedor Java", "Company", "https://example.com/job",
+                    "Contact joao@empresa.com or rh@empresa.com",
+                    "2026-07-01", null, null, "test", null));
+            assertNotNull(job);
+            assertEquals("joao@empresa.com", job.contactEmail());
+        }
+
+        @Test
+        @DisplayName("should return null when description has no email")
+        void shouldReturnNullWhenNoEmail() {
+            var job = normalizer.normalize(new RawJob(
+                    "Desenvolvedor Java", "Company", "https://example.com/job",
+                    "Apply through our website",
+                    "2026-07-01", null, null, "test", null));
+            assertNotNull(job);
+            assertNull(job.contactEmail());
+        }
+
+        @Test
+        @DisplayName("should extract email from title when not in description")
+        void shouldExtractEmailFromTitle() {
+            var job = normalizer.normalize(new RawJob(
+                    "Desenvolvedor — contact@startup.io", "Company", "https://example.com/job",
+                    "Apply online",
+                    "2026-07-01", null, null, "test", null));
+            assertNotNull(job);
+            assertEquals("contact@startup.io", job.contactEmail());
+        }
+
+        @Test
+        @DisplayName("should ignore noreply email")
+        void shouldIgnoreNoreply() {
+            var job = normalizer.normalize(new RawJob(
+                    "Desenvolvedor Java", "Company", "https://example.com/job",
+                    "Do not reply — noreply@company.com",
+                    "2026-07-01", null, null, "test", null));
+            assertNotNull(job);
+            assertNull(job.contactEmail());
+        }
+
+        @Test
+        @DisplayName("should ignore donotreply email")
+        void shouldIgnoreDonotreply() {
+            var job = normalizer.normalize(new RawJob(
+                    "Desenvolvedor Java", "Company", "https://example.com/job",
+                    "Auto-generated, donotreply@company.com",
+                    "2026-07-01", null, null, "test", null));
+            assertNotNull(job);
+            assertNull(job.contactEmail());
+        }
+
+        @Test
+        @DisplayName("should ignore apply email")
+        void shouldIgnoreApplyEmail() {
+            var job = normalizer.normalize(new RawJob(
+                    "Desenvolvedor Java", "Company", "https://example.com/job",
+                    "Submit via apply@company.com",
+                    "2026-07-01", null, null, "test", null));
+            assertNotNull(job);
+            assertNull(job.contactEmail());
+        }
+
+        @Test
+        @DisplayName("should ignore placeholder example.com email")
+        void shouldIgnorePlaceholderExample() {
+            var job = normalizer.normalize(new RawJob(
+                    "Desenvolvedor Java", "Company", "https://example.com/job",
+                    "Email us at exemplo@exemplo.com",
+                    "2026-07-01", null, null, "test", null));
+            assertNotNull(job);
+            assertNull(job.contactEmail());
+        }
+
+        @Test
+        @DisplayName("should ignore no-reply email with hyphen")
+        void shouldIgnoreNoReplyWithHyphen() {
+            var job = normalizer.normalize(new RawJob(
+                    "Desenvolvedor Java", "Company", "https://example.com/job",
+                    "Auto reply, no-reply@company.com",
+                    "2026-07-01", null, null, "test", null));
+            assertNotNull(job);
+            assertNull(job.contactEmail());
+        }
+
+        @Test
+        @DisplayName("should ignore placeholder test.com email")
+        void shouldIgnorePlaceholderTestCom() {
+            var job = normalizer.normalize(new RawJob(
+                    "Desenvolvedor Java", "Company", "https://example.com/job",
+                    "Contact us at job@test.com",
+                    "2026-07-01", null, null, "test", null));
+            assertNotNull(job);
+            assertNull(job.contactEmail());
+        }
+
+        @Test
+        @DisplayName("should ignore placeholder domain.com email")
+        void shouldIgnorePlaceholderDomainCom() {
+            var job = normalizer.normalize(new RawJob(
+                    "Desenvolvedor Java", "Company", "https://example.com/job",
+                    "Send to hr@domain.com",
+                    "2026-07-01", null, null, "test", null));
+            assertNotNull(job);
+            assertNull(job.contactEmail());
+        }
+
+        @Test
+        @DisplayName("should return null when description is null")
+        void shouldReturnNullWhenDescriptionIsNull() {
+            var job = normalizer.normalize(new RawJob(
+                    "Desenvolvedor Java", "Company", "https://example.com/job",
+                    null, "2026-07-01", null, null, "test", null));
+            assertNotNull(job);
+            assertNull(job.contactEmail());
         }
     }
 

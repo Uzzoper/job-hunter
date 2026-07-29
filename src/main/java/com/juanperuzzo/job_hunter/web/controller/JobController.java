@@ -1,12 +1,14 @@
 package com.juanperuzzo.job_hunter.web.controller;
 
 import com.juanperuzzo.job_hunter.application.port.in.AnalyzeJobUseCase;
+import com.juanperuzzo.job_hunter.application.port.in.ApproveDraftUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.FetchJobsUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.FetchSourceJobsUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.GenerateEmailUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.GetEmailDraftUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.GetJobUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.ListJobsUseCase;
+import com.juanperuzzo.job_hunter.application.port.in.SendEmailUseCase;
 import com.juanperuzzo.job_hunter.domain.model.EmailDraft;
 import com.juanperuzzo.job_hunter.domain.model.Job;
 import com.juanperuzzo.job_hunter.domain.model.JobAnalysis;
@@ -30,6 +32,8 @@ public class JobController {
     private final ListJobsUseCase listJobsUseCase;
     private final GetJobUseCase getJobUseCase;
     private final GetEmailDraftUseCase getEmailDraftUseCase;
+    private final ApproveDraftUseCase approveDraftUseCase;
+    private final SendEmailUseCase sendEmailUseCase;
     private final CurrentUserProvider currentUserService;
 
     public JobController(
@@ -40,6 +44,8 @@ public class JobController {
             ListJobsUseCase listJobsUseCase,
             GetJobUseCase getJobUseCase,
             GetEmailDraftUseCase getEmailDraftUseCase,
+            ApproveDraftUseCase approveDraftUseCase,
+            SendEmailUseCase sendEmailUseCase,
             CurrentUserProvider currentUserService) {
         this.fetchJobsUseCase = fetchJobsUseCase;
         this.fetchSourceJobsUseCase = fetchSourceJobsUseCase;
@@ -48,12 +54,17 @@ public class JobController {
         this.listJobsUseCase = listJobsUseCase;
         this.getJobUseCase = getJobUseCase;
         this.getEmailDraftUseCase = getEmailDraftUseCase;
+        this.approveDraftUseCase = approveDraftUseCase;
+        this.sendEmailUseCase = sendEmailUseCase;
         this.currentUserService = currentUserService;
     }
 
     @GetMapping
-    public ResponseEntity<List<JobResponse>> getAllJobs() {
-        List<Job> jobs = listJobsUseCase.findAll();
+    public ResponseEntity<List<JobResponse>> getAllJobs(
+            @RequestParam(required = false) Boolean hasEmail) {
+        List<Job> jobs = hasEmail != null
+                ? listJobsUseCase.findAll(hasEmail)
+                : listJobsUseCase.findAll();
         List<JobResponse> response = jobs.stream()
                 .map(job -> new JobResponse(
                         job.id(),
@@ -62,7 +73,8 @@ public class JobController {
                         job.url(),
                         job.description(),
                         job.postedAt(),
-                        job.source()
+                        job.source(),
+                        job.contactEmail()
                 ))
                 .collect(Collectors.toList());
         return ResponseEntity.ok(response);
@@ -78,7 +90,8 @@ public class JobController {
                 job.url(),
                 job.description(),
                 job.postedAt(),
-                job.source()
+                job.source(),
+                job.contactEmail()
         );
         return ResponseEntity.ok(response);
     }
@@ -115,6 +128,32 @@ public class JobController {
     public ResponseEntity<?> fetchLinkedInJobs() {
         fetchSourceJobsUseCase.fetchAndSave("linkedin");
         return ResponseEntity.ok(java.util.Map.of("message", "LinkedIn fetch completed successfully"));
+    }
+
+    @PostMapping("/{id}/email/approve")
+    public ResponseEntity<EmailDraftResponse> approveEmail(@PathVariable Long id) {
+        Long userId = currentUserService.getCurrentUserId();
+        var draft = approveDraftUseCase.approve(userId, id);
+        var response = new EmailDraftResponse(
+                draft.id(), draft.jobId(), draft.subject(), draft.body(),
+                draft.status(), draft.generatedAt(), draft.sentAt());
+        return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/{id}/send")
+    public ResponseEntity<EmailDraftResponse> sendEmail(@PathVariable Long id) {
+        Long userId = currentUserService.getCurrentUserId();
+        EmailDraft emailDraft = sendEmailUseCase.send(userId, id);
+        EmailDraftResponse response = new EmailDraftResponse(
+                emailDraft.id(),
+                emailDraft.jobId(),
+                emailDraft.subject(),
+                emailDraft.body(),
+                emailDraft.status(),
+                emailDraft.generatedAt(),
+                emailDraft.sentAt()
+        );
+        return ResponseEntity.ok(response);
     }
 
     @GetMapping("/{id}/email")
