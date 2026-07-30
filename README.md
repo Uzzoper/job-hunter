@@ -37,7 +37,7 @@ flowchart TB
     subgraph AI["AI Analysis"]
         I1["POST /api/jobs/{id}/analyze"] --> I2[AiAnalysisService]
         I2 --> I3{Provider}
-        I3 -->|openrouter| I4["OpenRouter API<br/>MiniMax M2.5"]
+        I3 -->|openrouter| I4["OpenRouter API<br/>poolside/laguna-s-2.1:free"]
         I3 -->|ollama| I5["Ollama (local)<br/>llama3.2"]
         I4 --> I6[JobAnalysis<br/>score + skills + tone]
         I5 --> I6
@@ -173,7 +173,7 @@ sequenceDiagram
 | Security | Spring Security + JWT (jjwt) |
 | Scraping | RestClient + Jsoup |
 | Browser Automation | Playwright (Node.js + TypeScript, separate container) |
-| AI | OpenRouter API (MiniMax M2.5) ou Ollama local (llama3.2) |
+| AI | OpenRouter API (poolside/laguna-s-2.1:free) ou Ollama local (llama3.2) |
 | Tests | JUnit 5 + Mockito + WireMock / Rust async tests |
 | Build | Maven / Cargo |
 
@@ -186,26 +186,28 @@ This project follows Clean Architecture with strict layer separation:
 ```mermaid
 flowchart BT
     subgraph Domain["🟢 Domain"]
-        D1["model/ — Job, EmailDraft, JobAnalysis,<br/>CompanyTone, User, UserProfile"]
+        D1["model/ — Job, EmailDraft, JobAnalysis,<br/>CompanyTone, User, UserProfile,<br/>EligibleDraft, EmailStatus, Project"]
         D2["exception/ — ScraperException, AiException,<br/>JobNotFoundException, etc."]
     end
 
     subgraph Application["🔵 Application"]
-        A1["port/in/ — FetchJobsUseCase,<br/>AnalyzeJobUseCase, GenerateEmailUseCase,<br/>AuthUseCase"]
-        A2["port/out/ — JobRepository, ScraperPort,<br/>AiPort, NormalizerPort, SourceFetchPort"]
-        A3["service/ — FetchJobsService,<br/>AiAnalysisService, EmailGenerationService,<br/>AuthService, FetchSourceJobsService"]
+        A1["port/in/ — FetchJobsUseCase, AnalyzeJobUseCase,<br/>GenerateEmailUseCase, AuthUseCase,<br/>ApproveDraftUseCase, AutoSendEligibilityUseCase,<br/>CurrentUserProvider, FetchSourceJobsUseCase,<br/>GetEmailDraftUseCase, GetJobUseCase,<br/>ListJobsUseCase, SendEmailUseCase,<br/>UserProfileUseCase"]
+        A2["port/out/ — JobRepository, ScraperPort, AiPort,<br/>NormalizerPort, SourceFetchPort,<br/>EmailDraftRepository, EmailSenderPort,<br/>JobAnalysisRepository, PasswordHasher,<br/>TokenProvider, UserProfileRepository,<br/>UserRepository, RawJob"]
+        A3["service/ — FetchJobsService, AiAnalysisService,<br/>EmailGenerationService, AuthService,<br/>FetchSourceJobsService, ApproveDraftService,<br/>AutoSendEligibilityService, EmailSendingService,<br/>ResumeUploadService, TemplateEmailService,<br/>UserProfileService"]
     end
 
     subgraph Infrastructure["🟠 Infrastructure"]
-        I1["scraper/ — ProviderBasedScraper,<br/>GupyProvider, InfoJobsProvider,<br/>LinkedInScraperClient"]
-        I2["ai/ — OpenRouterClient"]
+        I1["scraper/ — ProviderBasedScraperAdapter,<br/>GupyProvider, InfoJobsProvider,<br/>LinkedInProvider, LinkedInScraperClient,<br/>ProviderRegistry, JobNormalizer,<br/>DateParser, JsonLdParser,<br/>RateLimiter, RetryStrategy,<br/>ExtractionStrategy, HtmlStrategy,<br/>RestApiStrategy"]
+        I2["ai/ — OpenRouterClient, OllamaClient"]
         I3["persistence/ — JPA adapters,<br/>repositories, entities"]
-        I4["security/ — JWT filter,<br/>JwtTokenService, SecurityConfig"]
-        I5["config/ — AppConfig"]
+        I4["security/ — JwtTokenFilter,<br/>JwtTokenService, SecurityConfig,<br/>CurrentUserService"]
+        I5["email/ — ResendEmailSender"]
+        I6["scheduler/ — AutoSendScheduler"]
+        I7["config/ — AppConfig,<br/>LinkedInScraperProperties"]
     end
 
     subgraph Web["🟣 Web"]
-        W1["controller/ — JobController,<br/>EmailController, AuthController,<br/>ProfileController"]
+        W1["controller/ — JobController,<br/>AuthController, ProfileController"]
         W2["dto/ — Request/Response records"]
         W3["exception/ — GlobalExceptionHandler"]
     end
@@ -321,14 +323,13 @@ spring:
     password: jobhunter123
 
 ai:
-  # provider: openrouter   # default
+  provider: openrouter   # or ollama for local inference
   openrouter:
     api-key: YOUR_OPENROUTER_API_KEY
-  # provider: ollama       # local alternative
-  # ollama:
-  #   base-url: http://localhost:11434
-  #   model: llama3.2
-  #   timeout-seconds: 60
+  ollama:
+    base-url: http://localhost:11434
+    model: llama3.2
+    timeout-seconds: 60
 
 jwt:
   secret: a-key-with-at-least-32-characters-for-hmac
@@ -372,7 +373,7 @@ Start the TUI (default mode, no subcommand needed):
 |--------|----------|-------------|:---:|
 | `POST` | `/api/auth/register` | Register a new user | No |
 | `POST` | `/api/auth/login` | Login and receive JWT token | No |
-| `GET` | `/api/jobs?keyword=&minScore=&hasEmail=true` | List jobs (filter by keyword, min score, has contact email) | Yes |
+| `GET` | `/api/jobs?hasEmail=true` | List jobs (filter by has contact email) | Yes |
 | `GET` | `/api/jobs/{id}` | Get job detail | Yes |
 | `POST` | `/api/jobs/fetch` | Trigger all scrapers (Gupy + InfoJobs + LinkedIn) | Yes |
 | `POST` | `/api/jobs/fetch/linkedin` | Trigger only LinkedIn scraper | Yes |
@@ -423,6 +424,9 @@ docs/
     ├── analyze-job.md
     ├── angular-frontend-spec.md
     ├── architecture.md       ← package structure, schema, architectural decisions
+    ├── auto-send-scheduler.md
+    ├── cli-tui-spec.md       ← CLI/TUI full spec
+    ├── contact-email-extraction.md
     ├── deduplicate-jobs.md
     ├── fetch-jobs.md
     ├── generate-email.md
@@ -432,17 +436,16 @@ docs/
     ├── linkedin-scraper-client.md
     ├── linkedin-scraper-service.md
     ├── list-jobs-filter.md
+    ├── prompts.md            ← all AI prompts versioned and documented
     ├── provider-scraping-migration.md
     ├── resume-upload.md
     ├── send-email.md
-    ├── auto-send-scheduler.md
     ├── template-email.md
-    ├── prompts.md            ← all AI prompts versioned and documented
     ├── tui-has-email-filter.md
+    ├── use-case-refactoring.md
     ├── user-authentication.md
     ├── user-profile.md
-    ├── user-scoped-analysis.md
-    └── use-case-refactoring.md
+    └── user-scoped-analysis.md
 ```
 
 ---
