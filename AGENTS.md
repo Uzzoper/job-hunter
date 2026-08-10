@@ -284,6 +284,7 @@ All commits must follow the **Conventional Commits** standard.
 | `test` | Adding or updating tests |
 | `refactor` | Code change that neither fixes a bug nor adds a feature |
 | `chore` | Build, config, dependencies, tooling |
+| `ci` | CI/CD workflows, GitHub Actions, pipeline configuration |
 | `style` | Formatting only (no logic change) |
 
 ### Scope (optional)
