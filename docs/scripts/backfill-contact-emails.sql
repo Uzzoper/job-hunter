@@ -2,7 +2,7 @@
 -- Extracts the first valid email from title/description
 -- Ignores noreply/donotreply/apply and placeholder domains
 --
--- Usage: psql -h localhost -U peruzzo -d job_hunter -f docs/scripts/backfill-contact-emails.sql
+-- Usage: psql -h localhost -U your_db_user -d job_hunter -f docs/scripts/backfill-contact-emails.sql
 
 WITH candidates AS (
     SELECT
