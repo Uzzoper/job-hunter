@@ -1573,15 +1573,13 @@ pub async fn handle_event(
                         screen.upload_path_popup = None;
                     }
                     KeyCode::Backspace => {
-                        if let Some(popup) = &mut screen.upload_path_popup {
-                            if popup.cursor > 0 {
-                                let byte_pos = popup.path.char_indices()
-                                    .nth(popup.cursor - 1)
-                                    .map(|(i, _)| i)
-                                    .unwrap_or(0);
-                                popup.path.remove(byte_pos);
-                                popup.cursor -= 1;
-                            }
+                        if let Some(popup) = &mut screen.upload_path_popup && popup.cursor > 0 {
+                            let byte_pos = popup.path.char_indices()
+                                .nth(popup.cursor - 1)
+                                .map(|(i, _)| i)
+                                .unwrap_or(0);
+                            popup.path.remove(byte_pos);
+                            popup.cursor -= 1;
                         }
                     }
                     KeyCode::Left => {
