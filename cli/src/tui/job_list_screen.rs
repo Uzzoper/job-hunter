@@ -1329,7 +1329,7 @@ mod tests {
                 description: "This is a long description with more than twenty characters".into(),
                 posted_at: NaiveDate::from_ymd_opt(2026, 7, 13).unwrap(),
                 source: "linkedin".into(),
-                contact_email: None,
+                contact_email: Some("recruiter@example.com".into()),
             },
             JobResponse {
                 id: 3,
@@ -1659,7 +1659,7 @@ mod tests {
         screen.apply_type_filter = ApplyTypeFilter::EmailAvailable;
 
         let jobs = vec![
-            JobResponse { id: 1, title: "Junior Developer".into(), company: "A".into(), url: "".into(), description: "This is a long description with more than twenty characters".into(), posted_at: NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(), source: "gupy".into(), contact_email: None },
+            JobResponse { id: 1, title: "Junior Developer".into(), company: "A".into(), url: "".into(), description: "This is a long description with more than twenty characters".into(), posted_at: NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(), source: "gupy".into(), contact_email: Some("recruiter@example.com".into()) },
             JobResponse { id: 2, title: "Junior Developer".into(), company: "B".into(), url: "".into(), description: "Short".into(), posted_at: NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(), source: "linkedin".into(), contact_email: None },
             JobResponse { id: 3, title: "Senior Developer".into(), company: "C".into(), url: "".into(), description: "This is a long description with more than twenty characters".into(), posted_at: NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(), source: "infojobs".into(), contact_email: None },
         ];

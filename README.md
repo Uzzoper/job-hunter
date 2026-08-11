@@ -1,5 +1,7 @@
 # Job Hunter
 
+[![CI](https://github.com/Uzzoper/job-hunter/actions/workflows/ci.yml/badge.svg)](https://github.com/Uzzoper/job-hunter/actions/workflows/ci.yml)
+[![Rust CLI Release](https://github.com/Uzzoper/job-hunter/actions/workflows/cli-release.yml/badge.svg)](https://github.com/Uzzoper/job-hunter/actions/workflows/cli-release.yml)
 ![Java](https://img.shields.io/badge/Java-21-orange?logo=openjdk)
 ![Spring Boot](https://img.shields.io/badge/Spring_Boot-4.0.6-brightgreen?logo=springboot)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-blue?logo=postgresql)
