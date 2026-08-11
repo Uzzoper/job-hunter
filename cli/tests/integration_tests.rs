@@ -913,6 +913,7 @@ mod offline_flow {
             description: "A cached job".into(),
             posted_at: NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(),
             source: "gupy".into(),
+            contact_email: None,
         }];
         cache.save_jobs(&jobs).expect("save jobs to cache");
 

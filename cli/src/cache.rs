@@ -415,6 +415,7 @@ mod tests {
                 description: "Build CLI tools in Rust".into(),
                 posted_at: NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(),
                 source: "gupy".into(),
+                contact_email: None,
             },
             JobResponse {
                 id: 2,
@@ -424,6 +425,7 @@ mod tests {
                 description: "Enterprise Java development with Spring".into(),
                 posted_at: NaiveDate::from_ymd_opt(2026, 7, 13).unwrap(),
                 source: "linkedin".into(),
+                contact_email: None,
             },
         ]
     }
@@ -503,6 +505,7 @@ mod tests {
             description: "Same URL".into(),
             posted_at: NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(),
             source: "gupy".into(),
+            contact_email: None,
         });
         manager.save_jobs(&jobs).expect("save jobs with duplicate");
         let all = manager.get_all_jobs(None).expect("get all jobs");
@@ -566,6 +569,7 @@ mod tests {
             description: "Not analyzed yet".into(),
             posted_at: NaiveDate::from_ymd_opt(2026, 7, 15).unwrap(),
             source: "gupy".into(),
+            contact_email: None,
         }];
         manager.save_jobs(&jobs).expect("save job");
 
