@@ -15,19 +15,19 @@ jobs:
     runs-on: ubuntu-latest
     env:
       DB_URL: jdbc:postgresql://localhost:5433/jobhunter
-      DB_USER: your_db_user
-      DB_PASSWORD: your_db_password
+      DB_USER: ${{ secrets.DB_USER }}
+      DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
     services:
       postgres:
         image: postgres:16-alpine
         env:
           POSTGRES_DB: jobhunter
-          POSTGRES_USER: your_db_user
-          POSTGRES_PASSWORD: your_db_password
+          POSTGRES_USER: ${{ secrets.DB_USER }}
+          POSTGRES_PASSWORD: ${{ secrets.DB_PASSWORD }}
         ports:
           - 5433:5432
         options: >-
-          --health-cmd "pg_isready -U your_db_user -d jobhunter"
+          --health-cmd "pg_isready -U ${{ secrets.DB_USER }} -d jobhunter"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
