@@ -52,6 +52,7 @@ class AuthIntegrationTest {
         registry.add("DB_PASSWORD", () -> "your_db_password");
         registry.add("jwt.secret", () -> "test-secret-key-min-32-chars-long-for-hmac!!123");
         registry.add("OPENROUTER_API_KEY", () -> "sk-test-dummy-key");
+        registry.add("RESEND_API_KEY", () -> "test-resend-key");
     }
 
     @BeforeAll
