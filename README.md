@@ -319,8 +319,8 @@ Create `src/main/resources/application-local.yaml`:
 ```yaml
 spring:
   datasource:
-    username: peruzzo
-    password: jobhunter123
+    username: your_db_user
+    password: your_db_password
 
 ai:
   provider: openrouter   # or ollama for local inference
