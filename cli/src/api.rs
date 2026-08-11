@@ -221,7 +221,7 @@ impl ApiClient {
 
     pub async fn upload_resume(&self, file_path: &str) -> Result<ProfileResponse> {
         let bytes = tokio::fs::read(file_path).await
-            .map_err(|e| CliError::Io(e))?;
+            .map_err(CliError::Io)?;
 
         let filename = std::path::Path::new(file_path)
             .file_name()

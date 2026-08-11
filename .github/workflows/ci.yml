@@ -1,0 +1,80 @@
+name: CI
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend (Maven)
+    runs-on: ubuntu-latest
+    env:
+      DB_URL: jdbc:postgresql://localhost:5433/jobhunter
+      # Throwaway credentials for the ephemeral CI Postgres — not real database credentials
+      DB_USER: juan
+      DB_PASSWORD: juan
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: jobhunter
+          POSTGRES_USER: juan
+          POSTGRES_PASSWORD: juan
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U juan -d jobhunter"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      - name: Run tests
+        run: ./mvnw test --batch-mode
+
+  cli:
+    name: CLI (Rust)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: cli
+
+      - name: Run tests
+        run: cargo test --manifest-path cli/Cargo.toml
+
+  scraper:
+    name: Scraper (Node.js)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: linkedin-scraper/package-lock.json
+
+      - name: Install dependencies
+        working-directory: linkedin-scraper
+        run: npm ci
+
+      - name: Run tests
+        working-directory: linkedin-scraper
+        run: npm test

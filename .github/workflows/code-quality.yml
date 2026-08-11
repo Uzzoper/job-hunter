@@ -1,0 +1,48 @@
+name: Code Quality
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+
+concurrency:
+  group: quality-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cli:
+    name: CLI (clippy)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: cli
+
+      - name: Lint with clippy
+        run: cargo clippy --manifest-path cli/Cargo.toml -- -D warnings
+
+  scraper:
+    name: Scraper (tsc)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: linkedin-scraper/package-lock.json
+
+      - name: Install dependencies
+        working-directory: linkedin-scraper
+        run: npm ci
+
+      - name: Type check
+        working-directory: linkedin-scraper
+        run: npx tsc --noEmit
