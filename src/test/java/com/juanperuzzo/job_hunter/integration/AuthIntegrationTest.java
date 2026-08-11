@@ -48,11 +48,21 @@ class AuthIntegrationTest {
 
     @DynamicPropertySource
     static void configureProperties(DynamicPropertyRegistry registry) {
-        registry.add("DB_USER", () -> System.getenv().getOrDefault("DB_USER", "your_db_user"));
-        registry.add("DB_PASSWORD", () -> System.getenv().getOrDefault("DB_PASSWORD", "your_db_password"));
+        registry.add("DB_USER", () -> requireEnv("DB_USER"));
+        registry.add("DB_PASSWORD", () -> requireEnv("DB_PASSWORD"));
         registry.add("jwt.secret", () -> "test-secret-key-min-32-chars-long-for-hmac!!123");
         registry.add("OPENROUTER_API_KEY", () -> "sk-test-dummy-key");
         registry.add("RESEND_API_KEY", () -> "test-resend-key");
+    }
+
+    private static String requireEnv(String name) {
+        String value = System.getenv(name);
+        if (value == null || value.isBlank()) {
+            throw new IllegalStateException(
+                "Missing required environment variable " + name
+                    + " — export it before running integration tests (e.g. `set -a && source .env && set +a`)");
+        }
+        return value;
     }
 
     @BeforeAll
