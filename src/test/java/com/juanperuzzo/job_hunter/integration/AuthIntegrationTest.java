@@ -65,16 +65,6 @@ class AuthIntegrationTest {
         return value;
     }
 
-    private static String requireEnv(String name) {
-        String value = System.getenv(name);
-        if (value == null || value.isBlank()) {
-            throw new IllegalStateException(
-                "Missing required environment variable " + name
-                    + " — export it before running integration tests (e.g. `set -a && source .env && set +a`)");
-        }
-        return value;
-    }
-
     @BeforeAll
     void setUp() {
         restClient = RestClient.create();
