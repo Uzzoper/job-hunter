@@ -18,8 +18,8 @@
 - **GIVEN** a clean checkout with no local Postgres instance
 - **WHEN** `./mvnw test --batch-mode` runs
 - **THEN** the `integration/AuthIntegrationTest` (`@SpringBootTest(RANDOM_PORT)`) connects to a Postgres 16 service container mapped to `localhost:5433`
-- **AND** the service is created with `POSTGRES_DB=jobhunter`, `POSTGRES_USER` and `POSTGRES_PASSWORD` matching the test's `DynamicPropertySource` values (`your_db_user` / `your_db_password`)
-- **AND** the job exports `DB_URL`, `DB_USER`, `DB_PASSWORD` so the context can boot (no defaults exist in `application.yaml`)
+- **AND** the service is created with `POSTGRES_DB=jobhunter`, `POSTGRES_USER=juan` and `POSTGRES_PASSWORD=juan` — throwaway credentials for the ephemeral container, unrelated to any real database
+- **AND** the job exports `DB_URL`, `DB_USER`, `DB_PASSWORD` so the context can boot (no defaults exist in `application.yaml`); the test reads `DB_USER`/`DB_PASSWORD` from the environment via `requireEnv` (no hardcoded credentials in the test)
 - **AND** the unit test suites (JUnit 5 + Mockito + WireMock) still run without a Spring context
 
 ### Scenario 3: code-quality runs only checks that actually exist
@@ -33,6 +33,7 @@
 - **WHEN** the `CLI Release` workflow triggers
 - **THEN** the release binary is built for `x86_64-unknown-linux-gnu`, `aarch64-apple-darwin` and `x86_64-pc-windows-msvc` from `cli/Cargo.toml` (package name `jh-cli`)
 - **AND** artifacts are uploaded to the GitHub Release named after the tag; if the release does not exist yet, it is created with generated notes
+- **AND** the upload step sets `GH_REPO: ${{ github.repository }}` — the `release` job has no checkout, so `gh` cannot resolve the repository from git remotes
 
 ### Scenario 5: README badges
 - **GIVEN** the repository at `Uzzoper/job-hunter`
@@ -58,7 +59,7 @@
 | Situation | Expected behavior |
 |---|---|
 | Postgres service not reachable at `localhost:5433` | Backend job fails on context boot — service is mandatory for `./mvnw test` |
-| `AuthIntegrationTest` credentials drift from service env | Backend job fails with auth error — service user/password must match `DynamicPropertySource` (`your_db_user` / `your_db_password`) |
+| `AuthIntegrationTest` credentials drift from service env | Backend job fails with auth error — service user/password must match the `DB_USER`/`DB_PASSWORD` env vars the job exports (the test reads them via `requireEnv`) |
 | Rust lint error | CLI job fails via `-- -D warnings` |
 | TypeScript compile error | Scraper job fails via `tsc --noEmit` |
 | Release already exists at tag | `gh release upload --clobber` overwrites assets; `gh release create` fallback only on missing release |
@@ -83,7 +84,7 @@ Read the spec at docs/specs/github-actions-ci.md.
 Fix the three workflows to match this spec:
 1. ci.yml — add the Postgres 16 service and DB_* job env vars; ensure trailing newline.
 2. code-quality.yml — remove the no-op backend job; ensure trailing newline.
-3. cli-release.yml — keep as-is (already compliant).
+3. cli-release.yml — add `GH_REPO: ${{ github.repository }}` to the upload step (the `release` job has no checkout); ensure trailing newline.
 Also add the `ci` type to the commit convention table in AGENTS.md.
 Do not modify pom.xml. Verify with a YAML parser afterward.
 ```
