@@ -15,6 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       DB_URL: jdbc:postgresql://localhost:5433/jobhunter
+      # Throwaway credentials for the ephemeral CI Postgres — not real database credentials
       DB_USER: juan
       DB_PASSWORD: juan
     services:
