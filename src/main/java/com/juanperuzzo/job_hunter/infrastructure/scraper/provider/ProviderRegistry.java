@@ -4,7 +4,6 @@ import com.juanperuzzo.job_hunter.application.port.out.RawJob;
 import com.juanperuzzo.job_hunter.application.port.out.SourceFetchPort;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.normalizer.JobNormalizer;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.ratelimit.RateLimiter;
-import com.juanperuzzo.job_hunter.infrastructure.scraper.ratelimit.TokenBucketRateLimiter;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.retry.ExponentialBackoffRetry;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.strategy.ExtractionStrategy;
 

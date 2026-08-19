@@ -4,7 +4,6 @@ import com.juanperuzzo.job_hunter.application.port.out.RawJob;
 import com.juanperuzzo.job_hunter.domain.exception.ScraperException;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.retry.ExponentialBackoffRetry;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.strategy.ExtractionStrategy;
-import com.juanperuzzo.job_hunter.infrastructure.scraper.strategy.HtmlStrategy;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 import org.slf4j.Logger;

@@ -57,7 +57,6 @@ import com.juanperuzzo.job_hunter.infrastructure.scraper.provider.LinkedInProvid
 import com.juanperuzzo.job_hunter.infrastructure.scraper.provider.ProviderRegistry;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.ratelimit.RateLimiter;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.ratelimit.TokenBucketRateLimiter;
-import com.juanperuzzo.job_hunter.infrastructure.scraper.retry.ExponentialBackoffRetry;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.strategy.ExtractionStrategy;
 
 @Configuration

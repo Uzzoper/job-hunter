@@ -6,7 +6,6 @@ import com.juanperuzzo.job_hunter.infrastructure.scraper.provider.ProviderRegist
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 
