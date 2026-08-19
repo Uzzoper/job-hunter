@@ -9,7 +9,6 @@ import org.springframework.http.MediaType;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.ResourceAccessException;
-import java.util.Optional;
 
 import java.time.Duration;
 import java.util.List;

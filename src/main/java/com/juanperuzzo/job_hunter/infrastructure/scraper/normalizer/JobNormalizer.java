@@ -12,7 +12,6 @@ import java.time.LocalDate;
 import java.util.Arrays;
 import java.util.List;
 import java.util.regex.Pattern;
-import java.util.stream.Collectors;
 
 /**
  * Centralized normalizer that transforms a {@link RawJob} into a domain {@link Job}.
@@ -28,8 +27,6 @@ public class JobNormalizer implements NormalizerPort {
             "home office", "remoto", "todo brasil", "teletrabalho", "remote");
 
     private static final Pattern CONSECUTIVE_WHITESPACE = Pattern.compile("\\s+");
-    private static final Pattern WORD_BOUNDARY_PATTERN =
-            Pattern.compile("(?<![\\p{L}\\p{N}_])", Pattern.UNICODE_CHARACTER_CLASS);
 
     private static final Pattern EMAIL_PATTERN = Pattern.compile(
             "[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}");

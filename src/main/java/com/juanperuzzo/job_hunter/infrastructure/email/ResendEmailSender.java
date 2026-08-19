@@ -1,7 +1,6 @@
 package com.juanperuzzo.job_hunter.infrastructure.email;
 
 import com.juanperuzzo.job_hunter.application.port.out.EmailSenderPort;
-import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;

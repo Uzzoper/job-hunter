@@ -65,10 +65,6 @@ public class UserProfilePersistenceAdapter implements UserProfileRepository {
         );
     }
 
-    private UserProfile toDomain(UserProfileEntity entity) {
-        return toDomain(entity, List.of());
-    }
-
     private UserProfile toDomain(UserProfileEntity entity, List<Project> projects) {
         List<String> skills = entity.getSkills() != null
                 ? Arrays.asList(entity.getSkills())
