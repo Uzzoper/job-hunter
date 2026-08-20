@@ -372,10 +372,22 @@ Resume text:
                 sb.append("</ul>");
             }
             if (p.link() != null && !p.link().isBlank()) {
-                sb.append("<p class=\"project-link\">").append(escapeHtml(p.link())).append("</p>");
+                sb.append("<p class=\"project-link\">").append(renderLink(p.link())).append("</p>");
             }
         }
         return sb.toString();
+    }
+
+    /**
+     * Renders a link as a clickable anchor when it is a safe http(s) URL;
+     * any other value is rendered as plain text (never as a clickable link).
+     */
+    private String renderLink(String url) {
+        String trimmed = url.trim();
+        if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+            return "<a href=\"" + escapeHtml(trimmed) + "\">" + escapeHtml(trimmed) + "</a>";
+        }
+        return escapeHtml(trimmed);
     }
 
     private String renderExperience(List<TailoredResume.TailoredExperience> experience) {
