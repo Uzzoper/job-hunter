@@ -7,6 +7,7 @@ import com.juanperuzzo.job_hunter.application.port.out.EmailDraftRepository;
 import com.juanperuzzo.job_hunter.application.port.out.EmailSenderPort;
 import com.juanperuzzo.job_hunter.application.port.out.JobRepository;
 import com.juanperuzzo.job_hunter.application.port.out.NormalizerPort;
+import com.juanperuzzo.job_hunter.application.port.out.PdfRendererPort;
 import com.juanperuzzo.job_hunter.application.port.out.ScraperPort;
 import com.juanperuzzo.job_hunter.application.port.out.SourceFetchPort;
 import com.juanperuzzo.job_hunter.application.service.AiAnalysisService;
@@ -14,9 +15,11 @@ import com.juanperuzzo.job_hunter.application.service.EmailGenerationService;
 import com.juanperuzzo.job_hunter.application.service.EmailSendingService;
 import com.juanperuzzo.job_hunter.application.service.FetchJobsService;
 import com.juanperuzzo.job_hunter.application.service.FetchSourceJobsService;
+import com.juanperuzzo.job_hunter.application.service.ResumeTailoringService;
 import com.juanperuzzo.job_hunter.infrastructure.ai.OllamaClient;
 import com.juanperuzzo.job_hunter.infrastructure.ai.OpenRouterClient;
 import com.juanperuzzo.job_hunter.infrastructure.email.ResendEmailSender;
+import com.juanperuzzo.job_hunter.infrastructure.pdf.ResumePdfRenderer;
 import com.juanperuzzo.job_hunter.infrastructure.scheduler.AutoSendScheduler;
 import com.juanperuzzo.job_hunter.application.port.out.PasswordHasher;
 import com.juanperuzzo.job_hunter.application.port.out.TokenProvider;
@@ -312,6 +315,23 @@ public class AppConfig {
             @Value("${auto-send.enabled}") boolean enabled,
             @Value("${auto-send.jitter-seconds}") int jitterSeconds) {
         return new AutoSendScheduler(eligibilityPort, sendEmailUseCase, enabled, jitterSeconds);
+    }
+
+    @Bean
+    public ResumePdfRenderer resumePdfRenderer() {
+        return new ResumePdfRenderer();
+    }
+
+    @Bean
+    public ResumeTailoringService resumeTailoringService(
+            AiPort aiPort,
+            JobRepository jobRepository,
+            JobAnalysisRepository jobAnalysisRepository,
+            UserProfileRepository userProfileRepository,
+            PdfRendererPort pdfRendererPort,
+            @Value("${ai.resume-tailoring.max-chars:8000}") int maxAiChars) {
+        return new ResumeTailoringService(aiPort, jobRepository, jobAnalysisRepository,
+                userProfileRepository, pdfRendererPort, maxAiChars);
     }
 
     @Bean
