@@ -53,3 +53,6 @@ spring-boot.log
 
 # Uploaded files (resumes, etc.)
 uploads/
+
+# Generated test artifacts
+curriculo-ats.pdf
