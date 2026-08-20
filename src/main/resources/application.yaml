@@ -43,6 +43,8 @@ ai:
     timeout-seconds: 30
   resume-extraction:
     max-chars: 8000    # max characters sent to AI; text exceeding this is truncated with a warning
+  resume-tailoring:
+    max-chars: 8000    # max chars of resume text sent to AI; longer text is truncated with a warning
 
 scraper:
   retry:
