@@ -242,6 +242,45 @@ class ResumeTailoringServiceTest {
         assertTrue(promptCaptor.getValue().contains("HABILIDADES TÉCNICAS"));
     }
 
+    @Test
+    @DisplayName("tailorResume should render project links as clickable anchors")
+    void tailorResume_whenProjectHasLink_shouldRenderClickableLink() {
+        newService(8000);
+
+        when(jobRepository.findById(JOB_ID)).thenReturn(Optional.of(job()));
+        when(jobAnalysisRepository.findByJobIdAndUserId(JOB_ID, USER_ID)).thenReturn(Optional.of(analysis()));
+        when(userProfileRepository.findByUserId(USER_ID)).thenReturn(Optional.of(profile()));
+        when(aiPort.complete(anyString())).thenReturn(validAiJson());
+        when(pdfRendererPort.renderPdf(anyString())).thenReturn(new byte[]{1});
+
+        service.tailorResume(USER_ID, JOB_ID);
+
+        verify(pdfRendererPort).renderPdf(htmlCaptor.capture());
+        assertTrue(htmlCaptor.getValue().contains("<a href=\"https://github.com/Uzzoper/job-hunter\">"),
+                "project link must be rendered as a clickable anchor");
+    }
+
+    @Test
+    @DisplayName("tailorResume should not render non-http links as clickable anchors")
+    void tailorResume_whenProjectLinkIsNotHttp_shouldNotRenderClickable() {
+        newService(8000);
+        var aiJson = validAiJson().replace("https://github.com/Uzzoper/job-hunter", "javascript:alert(1)");
+
+        when(jobRepository.findById(JOB_ID)).thenReturn(Optional.of(job()));
+        when(jobAnalysisRepository.findByJobIdAndUserId(JOB_ID, USER_ID)).thenReturn(Optional.of(analysis()));
+        when(userProfileRepository.findByUserId(USER_ID)).thenReturn(Optional.of(profile()));
+        when(aiPort.complete(anyString())).thenReturn(aiJson);
+        when(pdfRendererPort.renderPdf(anyString())).thenReturn(new byte[]{1});
+
+        service.tailorResume(USER_ID, JOB_ID);
+
+        verify(pdfRendererPort).renderPdf(htmlCaptor.capture());
+        assertFalse(htmlCaptor.getValue().contains("<a href=\"javascript:"),
+                "non-http link must not be rendered as a clickable anchor");
+        assertTrue(htmlCaptor.getValue().contains("javascript:alert(1)"),
+                "non-http link must still appear as plain text");
+    }
+
     // =========================================================================
     // Helpers
     // =========================================================================
