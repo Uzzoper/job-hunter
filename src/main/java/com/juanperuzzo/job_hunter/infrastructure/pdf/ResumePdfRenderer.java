@@ -43,7 +43,6 @@ public class ResumePdfRenderer implements PdfRendererPort {
             byte[] fontBytes = loadFont();
             var baos = new ByteArrayOutputStream();
             var builder = new PdfRendererBuilder();
-            builder.useFastMode();
             builder.useFont(() -> new ByteArrayInputStream(fontBytes), FONT_FAMILY);
             builder.withHtmlContent(toWellFormedXml(html), null);
             builder.toStream(baos);
