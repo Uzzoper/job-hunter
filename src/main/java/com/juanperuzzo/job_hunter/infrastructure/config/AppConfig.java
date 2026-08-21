@@ -328,10 +328,11 @@ public class AppConfig {
             JobRepository jobRepository,
             JobAnalysisRepository jobAnalysisRepository,
             UserProfileRepository userProfileRepository,
+            UserRepository userRepository,
             PdfRendererPort pdfRendererPort,
             @Value("${ai.resume-tailoring.max-chars:8000}") int maxAiChars) {
         return new ResumeTailoringService(aiPort, jobRepository, jobAnalysisRepository,
-                userProfileRepository, pdfRendererPort, maxAiChars);
+                userProfileRepository, userRepository, pdfRendererPort, maxAiChars);
     }
 
     @Bean

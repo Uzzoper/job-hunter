@@ -5,14 +5,17 @@ import com.juanperuzzo.job_hunter.application.port.out.JobAnalysisRepository;
 import com.juanperuzzo.job_hunter.application.port.out.JobRepository;
 import com.juanperuzzo.job_hunter.application.port.out.PdfRendererPort;
 import com.juanperuzzo.job_hunter.application.port.out.UserProfileRepository;
+import com.juanperuzzo.job_hunter.application.port.out.UserRepository;
 import com.juanperuzzo.job_hunter.application.service.ResumeTailoringService;
 import com.juanperuzzo.job_hunter.domain.exception.AiException;
 import com.juanperuzzo.job_hunter.domain.exception.AnalysisNotFoundException;
 import com.juanperuzzo.job_hunter.domain.exception.JobNotFoundException;
 import com.juanperuzzo.job_hunter.domain.exception.ProfileNotConfiguredException;
+import com.juanperuzzo.job_hunter.domain.exception.UserNotFoundException;
 import com.juanperuzzo.job_hunter.domain.model.CompanyTone;
 import com.juanperuzzo.job_hunter.domain.model.Job;
 import com.juanperuzzo.job_hunter.domain.model.JobAnalysis;
+import com.juanperuzzo.job_hunter.domain.model.User;
 import com.juanperuzzo.job_hunter.domain.model.UserProfile;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -57,6 +60,9 @@ class ResumeTailoringServiceTest {
     private UserProfileRepository userProfileRepository;
 
     @Mock
+    private UserRepository userRepository;
+
+    @Mock
     private PdfRendererPort pdfRendererPort;
 
     @Captor
@@ -69,7 +75,7 @@ class ResumeTailoringServiceTest {
 
     private void newService(int maxAiChars) {
         service = new ResumeTailoringService(aiPort, jobRepository, jobAnalysisRepository,
-                userProfileRepository, pdfRendererPort, maxAiChars);
+                userProfileRepository, userRepository, pdfRendererPort, maxAiChars);
     }
 
     @Test
@@ -81,6 +87,7 @@ class ResumeTailoringServiceTest {
         when(jobRepository.findById(JOB_ID)).thenReturn(Optional.of(job()));
         when(jobAnalysisRepository.findByJobIdAndUserId(JOB_ID, USER_ID)).thenReturn(Optional.of(analysis()));
         when(userProfileRepository.findByUserId(USER_ID)).thenReturn(Optional.of(profile()));
+        when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user()));
         when(aiPort.complete(anyString())).thenReturn(validAiJson());
         when(pdfRendererPort.renderPdf(anyString())).thenReturn(pdfBytes);
 
@@ -157,6 +164,7 @@ class ResumeTailoringServiceTest {
         when(jobRepository.findById(JOB_ID)).thenReturn(Optional.of(job()));
         when(jobAnalysisRepository.findByJobIdAndUserId(JOB_ID, USER_ID)).thenReturn(Optional.of(analysis()));
         when(userProfileRepository.findByUserId(USER_ID)).thenReturn(Optional.of(profile()));
+        when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user()));
         when(aiPort.complete(anyString())).thenReturn("not json at all");
 
         assertThrows(AiException.class,
@@ -172,6 +180,7 @@ class ResumeTailoringServiceTest {
         when(jobRepository.findById(JOB_ID)).thenReturn(Optional.of(job()));
         when(jobAnalysisRepository.findByJobIdAndUserId(JOB_ID, USER_ID)).thenReturn(Optional.of(analysis()));
         when(userProfileRepository.findByUserId(USER_ID)).thenReturn(Optional.of(profile()));
+        when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user()));
         when(aiPort.complete(anyString())).thenThrow(new RuntimeException("AI timeout"));
 
         var ex = assertThrows(AiException.class,
@@ -188,6 +197,7 @@ class ResumeTailoringServiceTest {
         when(jobRepository.findById(JOB_ID)).thenReturn(Optional.of(job()));
         when(jobAnalysisRepository.findByJobIdAndUserId(JOB_ID, USER_ID)).thenReturn(Optional.of(analysis()));
         when(userProfileRepository.findByUserId(USER_ID)).thenReturn(Optional.of(profile()));
+        when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user()));
         // "Kubernetes" is NOT in RESUME_TEXT -> must be dropped by the honesty guard
         when(aiPort.complete(anyString())).thenReturn(validAiJson());
         when(pdfRendererPort.renderPdf(anyString())).thenReturn(new byte[]{1});
@@ -211,7 +221,8 @@ class ResumeTailoringServiceTest {
         when(jobAnalysisRepository.findByJobIdAndUserId(JOB_ID, USER_ID)).thenReturn(Optional.of(analysis()));
         when(userProfileRepository.findByUserId(USER_ID))
                 .thenReturn(Optional.of(new UserProfile(1L, USER_ID, longResume, List.of(), CompanyTone.FORMAL, List.of(),
-                null, null, null, null, null)));
+                        null, null, null, null, null)));
+        when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user()));
         when(aiPort.complete(anyString())).thenReturn(validAiJson());
         when(pdfRendererPort.renderPdf(anyString())).thenReturn(new byte[]{1});
 
@@ -232,6 +243,7 @@ class ResumeTailoringServiceTest {
         when(jobRepository.findById(JOB_ID)).thenReturn(Optional.of(job()));
         when(jobAnalysisRepository.findByJobIdAndUserId(JOB_ID, USER_ID)).thenReturn(Optional.of(analysis()));
         when(userProfileRepository.findByUserId(USER_ID)).thenReturn(Optional.of(profile()));
+        when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user()));
         when(aiPort.complete(anyString())).thenReturn(validAiJson());
         when(pdfRendererPort.renderPdf(anyString())).thenReturn(new byte[]{1});
 
@@ -252,6 +264,7 @@ class ResumeTailoringServiceTest {
         when(jobRepository.findById(JOB_ID)).thenReturn(Optional.of(job()));
         when(jobAnalysisRepository.findByJobIdAndUserId(JOB_ID, USER_ID)).thenReturn(Optional.of(analysis()));
         when(userProfileRepository.findByUserId(USER_ID)).thenReturn(Optional.of(profile()));
+        when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user()));
         when(aiPort.complete(anyString())).thenReturn(validAiJson());
         when(pdfRendererPort.renderPdf(anyString())).thenReturn(new byte[]{1});
 
@@ -271,6 +284,7 @@ class ResumeTailoringServiceTest {
         when(jobRepository.findById(JOB_ID)).thenReturn(Optional.of(job()));
         when(jobAnalysisRepository.findByJobIdAndUserId(JOB_ID, USER_ID)).thenReturn(Optional.of(analysis()));
         when(userProfileRepository.findByUserId(USER_ID)).thenReturn(Optional.of(profile()));
+        when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user()));
         when(aiPort.complete(anyString())).thenReturn(aiJson);
         when(pdfRendererPort.renderPdf(anyString())).thenReturn(new byte[]{1});
 
@@ -281,6 +295,79 @@ class ResumeTailoringServiceTest {
                 "non-http link must not be rendered as a clickable anchor");
         assertTrue(htmlCaptor.getValue().contains("javascript:alert(1)"),
                 "non-http link must still appear as plain text");
+    }
+
+    @Test
+    @DisplayName("tailorResume should render user name and contact links from profile")
+    void tailorResume_shouldRenderUserNameAndContactLinksFromProfile() {
+        newService(8000);
+
+        when(jobRepository.findById(JOB_ID)).thenReturn(Optional.of(job()));
+        when(jobAnalysisRepository.findByJobIdAndUserId(JOB_ID, USER_ID)).thenReturn(Optional.of(analysis()));
+        when(userProfileRepository.findByUserId(USER_ID)).thenReturn(Optional.of(profileWithContact()));
+        when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user()));
+        when(aiPort.complete(anyString())).thenReturn(validAiJson());
+        when(pdfRendererPort.renderPdf(anyString())).thenReturn(new byte[]{1});
+
+        service.tailorResume(USER_ID, JOB_ID);
+
+        verify(pdfRendererPort).renderPdf(htmlCaptor.capture());
+        var html = htmlCaptor.getValue();
+        assertTrue(html.contains("<h1>Juan Antonio Peruzzo</h1>"),
+                "h1 must contain the registered user name");
+        assertTrue(html.contains("<a href=\"mailto:contato@juan.dev\">contato@juan.dev</a>"),
+                "email anchor must use the profile contact email");
+        assertTrue(html.contains("<a href=\"https://juanperuzzo.is-a.dev\">juanperuzzo.is-a.dev</a>"),
+                "portfolio must be clickable with protocol-stripped display text");
+        assertTrue(html.contains("<a href=\"https://github.com/Uzzoper\">github.com/Uzzoper</a>"),
+                "github must be clickable with protocol-stripped display text");
+        assertTrue(html.contains("<a href=\"https://linkedin.com/in/juanperuzzo\">linkedin.com/in/juanperuzzo</a>"),
+                "linkedin must be clickable with protocol-stripped display text");
+        assertTrue(html.contains("(42) 99833-1363"),
+                "phone must be rendered as plain text");
+    }
+
+    @Test
+    @DisplayName("tailorResume should fall back to registered email and omit empty contact fields")
+    void tailorResume_whenContactFieldsMissing_shouldFallbackToRegisteredEmail() {
+        newService(8000);
+
+        when(jobRepository.findById(JOB_ID)).thenReturn(Optional.of(job()));
+        when(jobAnalysisRepository.findByJobIdAndUserId(JOB_ID, USER_ID)).thenReturn(Optional.of(analysis()));
+        when(userProfileRepository.findByUserId(USER_ID)).thenReturn(Optional.of(profile()));
+        when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user()));
+        when(aiPort.complete(anyString())).thenReturn(validAiJson());
+        when(pdfRendererPort.renderPdf(anyString())).thenReturn(new byte[]{1});
+
+        service.tailorResume(USER_ID, JOB_ID);
+
+        verify(pdfRendererPort).renderPdf(htmlCaptor.capture());
+        var html = htmlCaptor.getValue();
+        assertTrue(html.contains(
+                        "<p class=\"contact\"><a href=\"mailto:juan@example.com\">juan@example.com</a></p>"),
+                "contact line must contain only the fallback email with no dangling separators");
+        assertFalse(html.contains("href=\"https://github.com/Uzzoper\""),
+                "empty profile github must not render a contact anchor");
+        assertFalse(html.contains("linkedin.com/in/juanperuzzo"),
+                "empty linkedin must not render");
+        assertFalse(html.contains("juanperuzzo.is-a.dev"),
+                "empty portfolio must not render");
+        assertFalse(html.contains("(42) 99833-1363"),
+                "empty phone must not render");
+    }
+
+    @Test
+    @DisplayName("tailorResume should throw UserNotFoundException when user does not exist")
+    void tailorResume_whenUserNotFound_shouldThrowUserNotFound() {
+        newService(8000);
+
+        when(jobRepository.findById(JOB_ID)).thenReturn(Optional.of(job()));
+        when(jobAnalysisRepository.findByJobIdAndUserId(JOB_ID, USER_ID)).thenReturn(Optional.of(analysis()));
+        when(userProfileRepository.findByUserId(USER_ID)).thenReturn(Optional.of(profile()));
+        when(userRepository.findById(USER_ID)).thenReturn(Optional.empty());
+
+        assertThrows(UserNotFoundException.class, () -> service.tailorResume(USER_ID, JOB_ID));
+        verifyNoInteractions(aiPort, pdfRendererPort);
     }
 
     // =========================================================================
@@ -302,6 +389,18 @@ class ResumeTailoringServiceTest {
         return new UserProfile(1L, USER_ID, RESUME_TEXT,
                 List.of("Java", "Spring Boot", "PostgreSQL"), CompanyTone.FORMAL, List.of(),
                 null, null, null, null, null);
+    }
+
+    private UserProfile profileWithContact() {
+        return new UserProfile(1L, USER_ID, RESUME_TEXT,
+                List.of("Java", "Spring Boot", "PostgreSQL"), CompanyTone.FORMAL, List.of(),
+                "(42) 99833-1363", "contato@juan.dev",
+                "https://juanperuzzo.is-a.dev", "https://github.com/Uzzoper",
+                "https://linkedin.com/in/juanperuzzo");
+    }
+
+    private User user() {
+        return new User(USER_ID, "juan@example.com", "Juan Antonio Peruzzo", "$2a$hash");
     }
 
     private String validAiJson() {
