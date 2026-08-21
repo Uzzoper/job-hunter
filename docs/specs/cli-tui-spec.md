@@ -71,7 +71,7 @@ cli/src/
     ├── auth_screen.rs  ← Login/register form
     ├── job_list_screen.rs   ← List + filters + search
     ├── job_detail_screen.rs ← Detail + actions (analyze/email/open)
-    └── profile_screen.rs    ← Profile editor (resume/skills/tone)
+    └── profile_screen.rs    ← Profile editor (resume/skills/contact/tone/projects)
 ```
 
 ---
@@ -142,7 +142,12 @@ jh-cli email send <job-id>
 ```
 jh-cli profile show [--json]
 jh-cli profile edit [--resume <text>] [--skills <csv>] [--tone <formal|casual|startup>]
+                   [--phone <str>] [--contact-email <email>]
+                   [--portfolio-url <url>] [--github-url <url>] [--linkedin-url <url>]
 ```
+- Contact fields are optional; omitted flags keep the stored value
+- Passing an empty string (e.g. `--phone ""`) clears the field on the backend
+- Validation mirrors the backend: phone ≤ 30 chars; contact-email must be a valid email ≤ 255 chars; URLs ≤ 500 chars
 
 ### `export` — Export to CSV
 ```
@@ -225,6 +230,11 @@ jh-cli clear-cache
 - `Ctrl+S` = Save (`PUT /api/profile`)
 - `Esc` / `b` = Back without saving
 - Bracketed paste supported for resume/skills
+- **Contact group**: 5 optional single-line inputs rendered together in one bordered block below Skills: Phone, Contact Email, Portfolio URL, GitHub URL, LinkedIn URL
+  - Empty input = "not set"; sent as absent on `PUT /api/profile`
+  - Focus cycle (Tab/↑↓): Resume → Skills → Phone → Contact Email → Portfolio URL → GitHub URL → LinkedIn URL → Tone → Projects
+  - Client-side validation on save mirrors backend limits (phone ≤ 30, email format ≤ 255, URLs ≤ 500)
+  - Contact values are shown in view mode too (same block, read-only)
 - **Projects section**: displayed as a scrollable list below tone. Each project shows `name` + first line of `description` + tech stack
 - `n` = Add new project (opens project edit popup with Name, Description, Tech Stack fields)
 - `d` = Delete selected project (with confirmation)
@@ -248,7 +258,7 @@ jh-cli clear-cache
 | `JobResponse` | `GET /api/jobs` | `id`, `title`, `company`, `url`, `description`, `posted_at`, `source` |
 | `JobDetailResponse` | `GET /api/jobs/{id}` | `JobResponse` + `match_score`, `analysis_json` |
 | `AuthResponse` | `POST /auth/*` | `token`, `user_id`, `name`, `email` |
-| `ProfileResponse` | `GET /api/profile` | `id?`, `user_id`, `resume_text`, `skills[]`, `tone`, `projects[]` (each: `name`, `description`, `tech_stack[]`) |
+| `ProfileResponse` | `GET /api/profile` | `id?`, `user_id`, `resume_text`, `skills[]`, `tone`, `projects[]` (each: `name`, `description`, `tech_stack[]`), optional contact fields: `phone?`, `contactEmail?`, `portfolioUrl?`, `githubUrl?`, `linkedinUrl?` |
 | `EmailDraftResponse` | `GET/POST /api/jobs/{id}/email` | `id`, `job_id`, `subject`, `body`, `status`, `generated_at`, `sent_at?` |
 | `FetchResponse` | `POST /api/jobs/fetch` | `message` |
 | `ErrorResponse` | Error responses | `timestamp`, `status`, `error`, `message` |
