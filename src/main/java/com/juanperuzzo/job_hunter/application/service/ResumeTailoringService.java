@@ -6,13 +6,16 @@ import com.juanperuzzo.job_hunter.application.port.out.JobAnalysisRepository;
 import com.juanperuzzo.job_hunter.application.port.out.JobRepository;
 import com.juanperuzzo.job_hunter.application.port.out.PdfRendererPort;
 import com.juanperuzzo.job_hunter.application.port.out.UserProfileRepository;
+import com.juanperuzzo.job_hunter.application.port.out.UserRepository;
 import com.juanperuzzo.job_hunter.domain.exception.AiException;
 import com.juanperuzzo.job_hunter.domain.exception.AnalysisNotFoundException;
 import com.juanperuzzo.job_hunter.domain.exception.JobNotFoundException;
 import com.juanperuzzo.job_hunter.domain.exception.ProfileNotConfiguredException;
+import com.juanperuzzo.job_hunter.domain.exception.UserNotFoundException;
 import com.juanperuzzo.job_hunter.domain.model.Job;
 import com.juanperuzzo.job_hunter.domain.model.JobAnalysis;
 import com.juanperuzzo.job_hunter.domain.model.TailoredResume;
+import com.juanperuzzo.job_hunter.domain.model.User;
 import com.juanperuzzo.job_hunter.domain.model.UserProfile;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -29,16 +32,22 @@ import java.util.List;
  * Tailors the user's resume for a specific job using AI (Prompt 4), applies an
  * honesty guard that drops any skill not present in the original resume text,
  * fills the static ATS template, and renders the result as PDF bytes.
+ *
+ * <p>Identity and contact data are dynamic (spec v1.1): the candidate name comes
+ * from the authenticated {@link User} record and the contact line is built from
+ * the user's own {@link UserProfile} contact fields — never hardcoded.</p>
  */
 public class ResumeTailoringService implements TailorResumeUseCase {
 
     private static final Logger log = LoggerFactory.getLogger(ResumeTailoringService.class);
     private static final String TEMPLATE_PATH = "resume/ats-template.html";
+    private static final String CONTACT_SEPARATOR = " &#8226; ";
 
     private final AiPort aiPort;
     private final JobRepository jobRepository;
     private final JobAnalysisRepository jobAnalysisRepository;
     private final UserProfileRepository userProfileRepository;
+    private final UserRepository userRepository;
     private final PdfRendererPort pdfRendererPort;
     private final int maxAiChars;
     private final ObjectMapper objectMapper;
@@ -49,18 +58,21 @@ public class ResumeTailoringService implements TailorResumeUseCase {
      * @param jobRepository          repository for loading the target job
      * @param jobAnalysisRepository  repository for loading the job analysis (matched/missing skills)
      * @param userProfileRepository  repository for loading the user's resume text
+     * @param userRepository         repository for loading the user identity (name, registered email)
      * @param pdfRendererPort        port for rendering the filled HTML template to PDF
      * @param maxAiChars             maximum character count of resume text sent to the AI prompt
      */
     public ResumeTailoringService(AiPort aiPort, JobRepository jobRepository,
                                   JobAnalysisRepository jobAnalysisRepository,
                                   UserProfileRepository userProfileRepository,
+                                  UserRepository userRepository,
                                   PdfRendererPort pdfRendererPort,
                                   int maxAiChars) {
         this.aiPort = aiPort;
         this.jobRepository = jobRepository;
         this.jobAnalysisRepository = jobAnalysisRepository;
         this.userProfileRepository = userProfileRepository;
+        this.userRepository = userRepository;
         this.pdfRendererPort = pdfRendererPort;
         this.maxAiChars = maxAiChars;
         this.objectMapper = new ObjectMapper();
@@ -76,6 +88,7 @@ public class ResumeTailoringService implements TailorResumeUseCase {
      * @throws JobNotFoundException          if the job does not exist
      * @throws AnalysisNotFoundException     if the job has not been analyzed for the user
      * @throws ProfileNotConfiguredException if the user has no profile or blank resume text
+     * @throws UserNotFoundException         if the user record no longer exists
      * @throws AiException                   if the AI call fails or returns invalid JSON
      */
     @Override
@@ -93,6 +106,9 @@ public class ResumeTailoringService implements TailorResumeUseCase {
             throw new ProfileNotConfiguredException("Please configure your resume and skills profile first");
         }
 
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new UserNotFoundException("User not found with id: " + userId));
+
         String prompt = buildPrompt(job, analysis, profile);
         String response;
         try {
@@ -103,7 +119,7 @@ public class ResumeTailoringService implements TailorResumeUseCase {
 
         TailoredResume tailored = parseTailoredResume(response, profile.resumeText());
 
-        String html = fillTemplate(tailored);
+        String html = fillTemplate(tailored, user, profile);
         return pdfRendererPort.renderPdf(html);
     }
 
@@ -325,8 +341,10 @@ Resume text:
         return result;
     }
 
-    private String fillTemplate(TailoredResume tailored) {
+    private String fillTemplate(TailoredResume tailored, User user, UserProfile profile) {
         String html = template;
+        html = html.replace("{{FULL_NAME}}", escapeHtml(user.name()));
+        html = html.replace("{{CONTACT}}", renderContact(profile, user));
         html = html.replace("{{OBJECTIVE}}", renderObjective(tailored.objective()));
         html = html.replace("{{SKILLS_GROUPS}}", renderSkillsGroups(tailored.skills()));
         html = html.replace("{{PROJECTS}}", renderProjects(tailored.projects()));
@@ -336,6 +354,55 @@ Resume text:
         html = html.replace("{{LANGUAGES}}", renderLanguages(tailored.languages()));
         html = html.replace("{{DIFFERENTIALS}}", renderSimpleList(tailored.differentials()));
         return html;
+    }
+
+    /**
+     * Builds the contact line from the user's own profile fields (spec v1.1):
+     * phone as plain text, then email, portfolio, GitHub and LinkedIn anchors.
+     * Empty parts are skipped so no dangling separators are rendered; the
+     * registered account email is the fallback for the mailto anchor.
+     */
+    private String renderContact(UserProfile profile, User user) {
+        var parts = new ArrayList<String>();
+        if (isNotBlank(profile.phone())) {
+            parts.add(escapeHtml(profile.phone().trim()));
+        }
+        String email = isNotBlank(profile.contactEmail()) ? profile.contactEmail().trim() : user.email();
+        parts.add("<a href=\"mailto:" + escapeHtml(email) + "\">" + escapeHtml(email) + "</a>");
+        if (isNotBlank(profile.portfolioUrl())) {
+            parts.add(renderContactLink(profile.portfolioUrl()));
+        }
+        if (isNotBlank(profile.githubUrl())) {
+            parts.add(renderContactLink(profile.githubUrl()));
+        }
+        if (isNotBlank(profile.linkedinUrl())) {
+            parts.add(renderContactLink(profile.linkedinUrl()));
+        }
+        return String.join(CONTACT_SEPARATOR, parts);
+    }
+
+    /**
+     * Renders a contact URL reusing {@link #renderLink(String)} for href safety,
+     * with the display text stripped of the leading http(s):// prefix
+     * (e.g. {@code https://github.com/Uzzoper} displays as {@code github.com/Uzzoper}).
+     */
+    private String renderContactLink(String url) {
+        String trimmed = url.trim();
+        return renderLink(trimmed, stripProtocol(trimmed));
+    }
+
+    private boolean isNotBlank(String value) {
+        return value != null && !value.isBlank();
+    }
+
+    private String stripProtocol(String url) {
+        if (url.startsWith("https://")) {
+            return url.substring("https://".length());
+        }
+        if (url.startsWith("http://")) {
+            return url.substring("http://".length());
+        }
+        return url;
     }
 
     private String renderObjective(String objective) {
@@ -383,9 +450,17 @@ Resume text:
      * any other value is rendered as plain text (never as a clickable link).
      */
     private String renderLink(String url) {
+        return renderLink(url, url.trim());
+    }
+
+    /**
+     * Shared href-safety logic: only http(s) URLs become anchors, everything
+     * else is escaped plain text. The display text is provided by the caller.
+     */
+    private String renderLink(String url, String displayText) {
         String trimmed = url.trim();
         if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
-            return "<a href=\"" + escapeHtml(trimmed) + "\">" + escapeHtml(trimmed) + "</a>";
+            return "<a href=\"" + escapeHtml(trimmed) + "\">" + escapeHtml(displayText) + "</a>";
         }
         return escapeHtml(trimmed);
     }

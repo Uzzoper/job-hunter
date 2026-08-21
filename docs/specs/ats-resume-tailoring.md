@@ -306,3 +306,68 @@ Bundle `DejaVuSans.ttf` (free license, full PT-BR accent support) at
 - CLI/TUI integration (download command can be added later)
 - Multiple resume templates per user
 - OCR for image-based PDFs
+
+---
+
+# v1.1 — Dynamic identity & contact (multi-user)
+
+The original template hardcoded the candidate's name and contact line. For a multi-user,
+open-source deployment, identity and contact data must come from each user's own records.
+
+## Problem
+
+`ats-template.html` hardcodes `JUAN ANTONIO PERUZZO` and a contact line with a personal
+phone, email, portfolio and GitHub. Any other user would generate a resume with someone
+else's identity.
+
+## Approach
+
+- `UserProfile` gains five optional fields: `phone`, `contactEmail`, `portfolioUrl`,
+  `githubUrl`, `linkedinUrl`. Nullable; blank/whitespace values are normalized to `null`
+  by the domain constructor.
+- Migration `V8__add_contact_fields_to_user_profiles.sql` adds the matching nullable
+  columns to `user_profiles`.
+- `UserProfileUseCase.saveProfile` changes signature to `saveProfile(Long userId,
+  UserProfile profile)` — the service enforces the authenticated `userId`, preserves the
+  existing profile id, and keeps the resumeText length validation.
+- `ProfileRequest` / `ProfileResponse` expose the five optional fields with validation
+  (`@Email` + `@Size(max = 255)` for contactEmail, `@Size(max = 30)` for phone,
+  `@Size(max = 500)` for URLs).
+- Template placeholders: `<h1>{{FULL_NAME}}</h1>` (CSS `text-transform: uppercase`
+  preserves the current visual) and `<p class="contact">{{CONTACT}}</p>`.
+- `ResumeTailoringService` injects `UserRepository`:
+  - `{{FULL_NAME}}` ← `User.name()` (HTML-escaped)
+  - `{{CONTACT}}` ← built from profile fields, skipping empty ones, joined with `&#8226;`:
+    phone as plain text; email as `mailto:` anchor using `profile.contactEmail`, falling
+    back to `User.email()` when absent; portfolio/GitHub/LinkedIn via `renderLink`
+    (clickable only for http/https), display text without the protocol prefix.
+  - Throws `UserNotFoundException` if the user record no longer exists.
+
+## Business rules (v1.1)
+
+1. Contact fields are always user-supplied — never AI-generated (no hallucination risk
+   on reply-to data).
+2. Empty contact parts are omitted from the line; no dangling separators.
+3. The registered account email is the fallback for the mailto anchor.
+4. Non-http(s) profile URLs render as plain text (same rule as project links).
+
+## Tests (v1.1)
+
+### `ResumeTailoringServiceTest`
+
+- `tailorResume_shouldRenderUserNameAndContactLinksFromProfile()` — h1 contains the
+  escaped user name; mailto anchor uses profile contactEmail; portfolio/GitHub/LinkedIn
+  anchors are clickable with protocol-stripped display text
+- `tailorResume_whenContactFieldsMissing_shouldFallbackToRegisteredEmail()` — mailto uses
+  `User.email()`; no empty links or dangling separators rendered
+- `tailorResume_whenUserNotFound_shouldThrowUserNotFound()`
+
+### `UserProfileServiceTest`
+
+- `saveProfile_shouldPersistContactFields()` — adapter receives all five fields
+- `getProfile_shouldReturnContactFields()` — roundtrip of stored contact fields
+
+### `ProfileControllerTest`
+
+- `saveProfile_withContactFields_shouldReturn200AndEchoThem()`
+- `getProfile_withContactFields_shouldReturnThem()`
