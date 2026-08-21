@@ -51,7 +51,8 @@ class AiAnalysisServiceTest {
     void setUp() {
         aiAnalysisService = new AiAnalysisService(aiPort, jobAnalysisRepository, userProfileRepository, jobRepository);
         defaultProfile = new UserProfile(1L, 1L, "Experienced Java developer",
-                List.of("Java", "Spring Boot", "PostgreSQL"), CompanyTone.FORMAL, List.of());
+                List.of("Java", "Spring Boot", "PostgreSQL"), CompanyTone.FORMAL, List.of(),
+                null, null, null, null, null);
     }
 
     @Nested

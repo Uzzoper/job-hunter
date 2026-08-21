@@ -57,6 +57,9 @@ class ResumeUploadServiceTest {
     @Captor
     private ArgumentCaptor<List<Project>> projectsCaptor;
 
+    @Captor
+    private ArgumentCaptor<UserProfile> profileCaptor;
+
     private ResumeUploadService service;
     private Path tempDir;
 
@@ -88,11 +91,12 @@ class ResumeUploadServiceTest {
                 """;
         var profile = new UserProfile(1L, 1L, "Experienced Java developer with Spring Boot",
                 List.of("Java", "Spring Boot"), CompanyTone.FORMAL,
-                List.of(new Project("ProjectX", "A project", "Java, Maven")));
+                List.of(new Project("ProjectX", "A project", "Java, Maven")),
+                null, null, null, null, null);
 
         when(aiPort.complete(anyString())).thenReturn(aiJson);
         when(userProfileRepository.findByUserId(1L)).thenReturn(Optional.empty());
-        when(userProfileService.saveProfile(eq(1L), anyString(), anyList(), eq(CompanyTone.FORMAL), anyList()))
+        when(userProfileService.saveProfile(eq(1L), any(UserProfile.class)))
                 .thenReturn(profile);
 
         var result = service.uploadResume(1L, file);
@@ -100,9 +104,11 @@ class ResumeUploadServiceTest {
         assertNotNull(result);
         assertEquals(profile, result);
         verify(aiPort).complete(anyString());
-        verify(userProfileService).saveProfile(eq(1L), anyString(),
-                eq(List.of("Java", "Spring Boot")), eq(CompanyTone.FORMAL),
-                eq(List.of(new Project("ProjectX", "A project", "Java, Maven"))));
+        verify(userProfileService).saveProfile(eq(1L), profileCaptor.capture());
+        var savedProfile = profileCaptor.getValue();
+        assertEquals(List.of("Java", "Spring Boot"), savedProfile.skills());
+        assertEquals(CompanyTone.FORMAL, savedProfile.tone());
+        assertEquals(List.of(new Project("ProjectX", "A project", "Java, Maven")), savedProfile.projects());
     }
 
     @Test
@@ -115,18 +121,19 @@ class ResumeUploadServiceTest {
                 ```
                 """;
         var profile = new UserProfile(1L, 1L, "Java developer",
-                List.of("Java"), CompanyTone.FORMAL, List.of());
+                List.of("Java"), CompanyTone.FORMAL, List.of(),
+                null, null, null, null, null);
 
         when(aiPort.complete(anyString())).thenReturn(aiJson);
         when(userProfileRepository.findByUserId(1L)).thenReturn(Optional.empty());
-        when(userProfileService.saveProfile(eq(1L), anyString(), anyList(), eq(CompanyTone.FORMAL), anyList()))
+        when(userProfileService.saveProfile(eq(1L), any(UserProfile.class)))
                 .thenReturn(profile);
 
         var result = service.uploadResume(1L, file);
 
         assertNotNull(result);
-        verify(userProfileService).saveProfile(eq(1L), anyString(),
-                eq(List.of("Java")), eq(CompanyTone.FORMAL), anyList());
+        verify(userProfileService).saveProfile(eq(1L), profileCaptor.capture());
+        assertEquals(List.of("Java"), profileCaptor.getValue().skills());
     }
 
     @Test
@@ -226,7 +233,7 @@ class ResumeUploadServiceTest {
 
         when(aiPort.complete(anyString())).thenReturn("{\"skills\": [], \"projects\": []}");
         when(userProfileRepository.findByUserId(1L)).thenReturn(Optional.empty());
-        when(userProfileService.saveProfile(anyLong(), anyString(), anyList(), any(), anyList()))
+        when(userProfileService.saveProfile(anyLong(), any(UserProfile.class)))
                 .thenThrow(new UserNotFoundException("User not found with id: 1"));
 
         assertThrows(UserNotFoundException.class,
@@ -240,7 +247,7 @@ class ResumeUploadServiceTest {
 
         when(aiPort.complete(anyString())).thenReturn("{\"skills\": [], \"projects\": []}");
         when(userProfileRepository.findByUserId(1L)).thenReturn(Optional.empty());
-        when(userProfileService.saveProfile(anyLong(), anyString(), anyList(), any(), anyList()))
+        when(userProfileService.saveProfile(anyLong(), any(UserProfile.class)))
                 .thenThrow(new IllegalArgumentException("Resume text must be at least 50 characters"));
 
         assertThrows(IllegalArgumentException.class,
@@ -251,20 +258,23 @@ class ResumeUploadServiceTest {
     @DisplayName("uploadResume should keep existing tone when profile exists")
     void uploadResume_whenExistingProfile_shouldPreserveTone() throws Exception {
         var file = validPdfMock("Existing user with a CASUAL tone in the existing profile record.");
-        var existingProfile = new UserProfile(5L, 1L, "Old resume...", List.of("Java"), CompanyTone.CASUAL, List.of());
+        var existingProfile = new UserProfile(5L, 1L, "Old resume...", List.of("Java"), CompanyTone.CASUAL, List.of(),
+                null, null, null, null, null);
         var expectedProfile = new UserProfile(5L, 1L, "Existing user with a CASUAL tone in the existing profile record.",
-                List.of("Spring"), CompanyTone.CASUAL, List.of());
+                List.of("Spring"), CompanyTone.CASUAL, List.of(),
+                null, null, null, null, null);
 
         when(aiPort.complete(anyString())).thenReturn("{\"skills\": [\"Spring\"], \"projects\": []}");
         when(userProfileRepository.findByUserId(1L)).thenReturn(Optional.of(existingProfile));
-        when(userProfileService.saveProfile(eq(1L), anyString(), eq(List.of("Spring")), eq(CompanyTone.CASUAL), anyList()))
+        when(userProfileService.saveProfile(eq(1L), any(UserProfile.class)))
                 .thenReturn(expectedProfile);
 
         var result = service.uploadResume(1L, file);
 
         assertEquals(expectedProfile, result);
-        verify(userProfileService).saveProfile(eq(1L), anyString(), eq(List.of("Spring")),
-                eq(CompanyTone.CASUAL), anyList());
+        verify(userProfileService).saveProfile(eq(1L), profileCaptor.capture());
+        assertEquals(List.of("Spring"), profileCaptor.getValue().skills());
+        assertEquals(CompanyTone.CASUAL, profileCaptor.getValue().tone());
     }
 
     @Test
@@ -272,18 +282,20 @@ class ResumeUploadServiceTest {
     void uploadResume_whenNoExistingProfile_shouldDefaultToneToFormal() throws Exception {
         var file = validPdfMock("New user uploading resume for the very first time.");
         var expectedProfile = new UserProfile(null, 1L, "New user uploading resume for the very first time.",
-                List.of("Kotlin"), CompanyTone.FORMAL, List.of());
+                List.of("Kotlin"), CompanyTone.FORMAL, List.of(),
+                null, null, null, null, null);
 
         when(aiPort.complete(anyString())).thenReturn("{\"skills\": [\"Kotlin\"], \"projects\": []}");
         when(userProfileRepository.findByUserId(1L)).thenReturn(Optional.empty());
-        when(userProfileService.saveProfile(eq(1L), anyString(), eq(List.of("Kotlin")), eq(CompanyTone.FORMAL), anyList()))
+        when(userProfileService.saveProfile(eq(1L), any(UserProfile.class)))
                 .thenReturn(expectedProfile);
 
         var result = service.uploadResume(1L, file);
 
         assertEquals(expectedProfile, result);
-        verify(userProfileService).saveProfile(eq(1L), anyString(), eq(List.of("Kotlin")),
-                eq(CompanyTone.FORMAL), anyList());
+        verify(userProfileService).saveProfile(eq(1L), profileCaptor.capture());
+        assertEquals(List.of("Kotlin"), profileCaptor.getValue().skills());
+        assertEquals(CompanyTone.FORMAL, profileCaptor.getValue().tone());
     }
 
     // =========================================================================
