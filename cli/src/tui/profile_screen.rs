@@ -13,6 +13,17 @@ use ratatui::{
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
+/// Max lengths for contact fields, mirroring backend validation.
+const PHONE_MAX_LEN: usize = 30;
+const CONTACT_EMAIL_MAX_LEN: usize = 255;
+const URL_MAX_LEN: usize = 500;
+
+/// Width of the label column inside the contact block (longest label is
+/// "Portfolio URL" / "Contact Email" = 13 chars + padding).
+const CONTACT_LABEL_WIDTH: u16 = 15;
+/// Width of the focus marker ("► ") before each contact label.
+const CONTACT_MARKER_WIDTH: u16 = 2;
+
 /// Profile screen mode: View or Edit
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProfileMode {
@@ -41,6 +52,11 @@ impl ProfileMode {
 pub enum ProfileField {
     Resume,
     Skills,
+    Phone,
+    ContactEmail,
+    PortfolioUrl,
+    GithubUrl,
+    LinkedinUrl,
     Tone,
     Projects,
 }
@@ -50,13 +66,43 @@ impl ProfileField {
         match self {
             ProfileField::Resume => "Resume",
             ProfileField::Skills => "Skills",
+            ProfileField::Phone => "Phone",
+            ProfileField::ContactEmail => "Contact Email",
+            ProfileField::PortfolioUrl => "Portfolio URL",
+            ProfileField::GithubUrl => "GitHub URL",
+            ProfileField::LinkedinUrl => "LinkedIn URL",
             ProfileField::Tone => "Tone",
             ProfileField::Projects => "Projects",
         }
     }
 
     pub fn all() -> Vec<Self> {
-        vec![ProfileField::Resume, ProfileField::Skills, ProfileField::Tone, ProfileField::Projects]
+        vec![
+            ProfileField::Resume,
+            ProfileField::Skills,
+            ProfileField::Phone,
+            ProfileField::ContactEmail,
+            ProfileField::PortfolioUrl,
+            ProfileField::GithubUrl,
+            ProfileField::LinkedinUrl,
+            ProfileField::Tone,
+            ProfileField::Projects,
+        ]
+    }
+
+    /// Whether this field holds free text with an inline cursor
+    /// (supports Left/Right arrow navigation).
+    pub fn is_text_input(&self) -> bool {
+        matches!(
+            self,
+            ProfileField::Resume
+                | ProfileField::Skills
+                | ProfileField::Phone
+                | ProfileField::ContactEmail
+                | ProfileField::PortfolioUrl
+                | ProfileField::GithubUrl
+                | ProfileField::LinkedinUrl
+        )
     }
 
     pub fn next(&self) -> Self {
@@ -69,6 +115,61 @@ impl ProfileField {
         let fields = Self::all();
         let idx = fields.iter().position(|f| f == self).unwrap_or(0);
         fields[(idx + fields.len() - 1) % fields.len()]
+    }
+}
+
+/// Single-line text input state (value + char cursor) for a contact field.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct ContactInput {
+    pub text: String,
+    pub cursor: usize,
+}
+
+impl ContactInput {
+    /// Build an input from an optional stored value ("not set" = empty).
+    fn from_value(value: Option<&str>) -> Self {
+        Self {
+            text: value.unwrap_or_default().to_string(),
+            cursor: 0,
+        }
+    }
+
+    fn insert_char(&mut self, c: char) {
+        let byte_pos = Self::byte_index(&self.text, self.cursor);
+        self.text.insert(byte_pos, c);
+        self.cursor += 1;
+    }
+
+    fn backspace(&mut self) {
+        if self.cursor == 0 {
+            return;
+        }
+        let byte_pos = Self::byte_index(&self.text, self.cursor - 1);
+        self.text.remove(byte_pos);
+        self.cursor -= 1;
+    }
+
+    fn paste(&mut self, text: &str) {
+        let byte_pos = Self::byte_index(&self.text, self.cursor);
+        self.text.insert_str(byte_pos, text);
+        self.cursor += text.chars().count();
+    }
+
+    fn move_left(&mut self) {
+        self.cursor = self.cursor.saturating_sub(1);
+    }
+
+    fn move_right(&mut self) {
+        let max = self.text.chars().count();
+        self.cursor = self.cursor.saturating_add(1).min(max);
+    }
+
+    /// Convert character index to byte index for String operations.
+    fn byte_index(text: &str, char_index: usize) -> usize {
+        text.char_indices()
+            .nth(char_index)
+            .map(|(i, _)| i)
+            .unwrap_or(text.len())
     }
 }
 
@@ -150,6 +251,11 @@ pub struct ProfileScreen {
     pub mode: ProfileMode,
     pub resume_text: String,
     pub skills_text: String,
+    pub phone: ContactInput,
+    pub contact_email: ContactInput,
+    pub portfolio_url: ContactInput,
+    pub github_url: ContactInput,
+    pub linkedin_url: ContactInput,
     pub tone_selection: usize,
     pub projects: Vec<ProjectResponse>,
     pub project_popup: Option<ProjectPopupState>,
@@ -178,6 +284,11 @@ impl ProfileScreen {
             mode: ProfileMode::View,
             resume_text: String::new(),
             skills_text: String::new(),
+            phone: ContactInput::default(),
+            contact_email: ContactInput::default(),
+            portfolio_url: ContactInput::default(),
+            github_url: ContactInput::default(),
+            linkedin_url: ContactInput::default(),
             tone_selection: 0,
             projects: Vec::new(),
             project_popup: None,
@@ -201,6 +312,7 @@ impl ProfileScreen {
     pub fn set_profile(&mut self, profile: ProfileResponse) {
         self.resume_text = Self::sanitize_text(&profile.resume_text);
         self.skills_text = profile.skills.join(", ");
+        self.set_contact_inputs(&profile);
         self.tone_selection = match profile.tone {
             CompanyTone::Formal => 0,
             CompanyTone::Casual => 1,
@@ -211,6 +323,15 @@ impl ProfileScreen {
         self.clear_validation_errors();
         self.resume_cursor = 0;
         self.skills_cursor = 0;
+    }
+
+    /// Populate the five contact inputs from a profile response.
+    fn set_contact_inputs(&mut self, profile: &ProfileResponse) {
+        self.phone = ContactInput::from_value(profile.phone.as_deref());
+        self.contact_email = ContactInput::from_value(profile.contact_email.as_deref());
+        self.portfolio_url = ContactInput::from_value(profile.portfolio_url.as_deref());
+        self.github_url = ContactInput::from_value(profile.github_url.as_deref());
+        self.linkedin_url = ContactInput::from_value(profile.linkedin_url.as_deref());
     }
 
     pub fn clear_validation_errors(&mut self) {
@@ -274,10 +395,43 @@ impl ProfileScreen {
                 self.skills_text.insert(byte_pos, c);
                 self.skills_cursor += 1;
             }
+            ProfileField::Phone
+            | ProfileField::ContactEmail
+            | ProfileField::PortfolioUrl
+            | ProfileField::GithubUrl
+            | ProfileField::LinkedinUrl => {
+                if let Some(input) = self.focused_contact_mut() {
+                    input.insert_char(c);
+                }
+            }
             ProfileField::Tone => {} // Tone is selected via arrow keys
             ProfileField::Projects => {}
         }
         self.clear_validation_errors();
+    }
+
+    /// Mutable reference to the currently focused contact input, if any.
+    fn focused_contact_mut(&mut self) -> Option<&mut ContactInput> {
+        match self.focused_field {
+            ProfileField::Phone => Some(&mut self.phone),
+            ProfileField::ContactEmail => Some(&mut self.contact_email),
+            ProfileField::PortfolioUrl => Some(&mut self.portfolio_url),
+            ProfileField::GithubUrl => Some(&mut self.github_url),
+            ProfileField::LinkedinUrl => Some(&mut self.linkedin_url),
+            _ => None,
+        }
+    }
+
+    /// Index (row) of the focused field inside the contact block, if any.
+    fn focused_contact_index(&self) -> Option<usize> {
+        match self.focused_field {
+            ProfileField::Phone => Some(0),
+            ProfileField::ContactEmail => Some(1),
+            ProfileField::PortfolioUrl => Some(2),
+            ProfileField::GithubUrl => Some(3),
+            ProfileField::LinkedinUrl => Some(4),
+            _ => None,
+        }
     }
 
     /// Convert character index to byte index for String operations
@@ -359,6 +513,15 @@ impl ProfileScreen {
                     self.skills_cursor -= 1;
                 }
             }
+            ProfileField::Phone
+            | ProfileField::ContactEmail
+            | ProfileField::PortfolioUrl
+            | ProfileField::GithubUrl
+            | ProfileField::LinkedinUrl => {
+                if let Some(input) = self.focused_contact_mut() {
+                    input.backspace();
+                }
+            }
             ProfileField::Tone => {}
             ProfileField::Projects => {}
         }
@@ -376,7 +539,7 @@ impl ProfileScreen {
                 self.resume_text.insert(byte_pos, '\n');
                 self.resume_cursor += 1;
             }
-            ProfileField::Skills | ProfileField::Tone | ProfileField::Projects => {} // handled by caller
+            _ => {} // handled by caller (save or project edit)
         }
         self.clear_validation_errors();
     }
@@ -397,6 +560,15 @@ impl ProfileScreen {
                 let byte_pos = self.char_to_byte_index(&self.skills_text, self.skills_cursor);
                 self.skills_text.insert_str(byte_pos, &text);
                 self.skills_cursor += text.chars().count();
+            }
+            ProfileField::Phone
+            | ProfileField::ContactEmail
+            | ProfileField::PortfolioUrl
+            | ProfileField::GithubUrl
+            | ProfileField::LinkedinUrl => {
+                if let Some(input) = self.focused_contact_mut() {
+                    input.paste(&text);
+                }
             }
             ProfileField::Tone => {} // Tone is selected via arrow keys
             ProfileField::Projects => {}
@@ -443,7 +615,7 @@ impl ProfileScreen {
         }
     }
 
-    /// Handle left arrow for cursor navigation within Resume or Skills text
+    /// Handle left arrow for cursor navigation within text fields
     pub fn handle_left(&mut self) {
         if self.mode != ProfileMode::Edit || self.saving || self.loading.is_loading() {
             return;
@@ -455,12 +627,21 @@ impl ProfileScreen {
             ProfileField::Skills => {
                 self.skills_cursor = self.skills_cursor.saturating_sub(1);
             }
+            ProfileField::Phone
+            | ProfileField::ContactEmail
+            | ProfileField::PortfolioUrl
+            | ProfileField::GithubUrl
+            | ProfileField::LinkedinUrl => {
+                if let Some(input) = self.focused_contact_mut() {
+                    input.move_left();
+                }
+            }
             ProfileField::Tone => {}
             ProfileField::Projects => {}
         }
     }
 
-    /// Handle right arrow for cursor navigation within Resume or Skills text
+    /// Handle right arrow for cursor navigation within text fields
     pub fn handle_right(&mut self) {
         if self.mode != ProfileMode::Edit || self.saving || self.loading.is_loading() {
             return;
@@ -473,6 +654,15 @@ impl ProfileScreen {
             ProfileField::Skills => {
                 let max = self.skills_text.chars().count();
                 self.skills_cursor = self.skills_cursor.saturating_add(1).min(max);
+            }
+            ProfileField::Phone
+            | ProfileField::ContactEmail
+            | ProfileField::PortfolioUrl
+            | ProfileField::GithubUrl
+            | ProfileField::LinkedinUrl => {
+                if let Some(input) = self.focused_contact_mut() {
+                    input.move_right();
+                }
             }
             ProfileField::Tone => {}
             ProfileField::Projects => {}
@@ -500,7 +690,42 @@ impl ProfileScreen {
                 .push("At least one skill is required".to_string());
         }
 
+        // Contact fields — mirror backend validation limits so users get
+        // immediate feedback instead of a failed request.
+        if self.phone.text.chars().count() > PHONE_MAX_LEN {
+            self.validation_errors
+                .push(format!("phone must be at most {PHONE_MAX_LEN} characters"));
+        }
+
+        let email = self.contact_email.text.trim();
+        if !email.is_empty() && !Self::is_valid_email(email) {
+            self.validation_errors
+                .push("contactEmail must be a valid email address".to_string());
+        }
+        if email.chars().count() > CONTACT_EMAIL_MAX_LEN {
+            self.validation_errors
+                .push(format!("contactEmail must be at most {CONTACT_EMAIL_MAX_LEN} characters"));
+        }
+
+        for url in [&self.portfolio_url.text, &self.github_url.text, &self.linkedin_url.text] {
+            if url.chars().count() > URL_MAX_LEN {
+                self.validation_errors
+                    .push(format!("URL must be at most {URL_MAX_LEN} characters"));
+            }
+        }
+
         self.validation_errors.is_empty()
+    }
+
+    /// Basic email plausibility check: local@domain with no whitespace.
+    /// Full RFC validation is left to the backend.
+    fn is_valid_email(s: &str) -> bool {
+        match s.split_once('@') {
+            Some((local, domain)) => {
+                !local.is_empty() && !domain.is_empty() && !s.chars().any(char::is_whitespace)
+            }
+            None => false,
+        }
     }
 
     fn selected_tone(&self) -> CompanyTone {
@@ -518,6 +743,31 @@ impl ProfileScreen {
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty())
             .collect()
+    }
+
+    /// Trim a single-line input; whitespace-only becomes None ("not set").
+    fn optional_trimmed(s: &str) -> Option<String> {
+        let trimmed = s.trim();
+        (!trimmed.is_empty()).then(|| trimmed.to_string())
+    }
+
+    /// Build the API request from the current form state.
+    fn build_request(&self) -> ProfileRequest {
+        ProfileRequest {
+            resume_text: self.resume_text.trim().to_string(),
+            skills: self.parse_skills(),
+            tone: self.selected_tone(),
+            projects: self.projects.iter().map(|p| ProjectRequest {
+                name: p.name.clone(),
+                description: p.description.clone(),
+                tech_stack: p.tech_stack.clone(),
+            }).collect(),
+            phone: Self::optional_trimmed(&self.phone.text),
+            contact_email: Self::optional_trimmed(&self.contact_email.text),
+            portfolio_url: Self::optional_trimmed(&self.portfolio_url.text),
+            github_url: Self::optional_trimmed(&self.github_url.text),
+            linkedin_url: Self::optional_trimmed(&self.linkedin_url.text),
+        }
     }
 
     /// Load profile from API
@@ -560,16 +810,7 @@ impl ProfileScreen {
         self.saving = true;
         self.clear_validation_errors();
 
-        let request = ProfileRequest {
-            resume_text: self.resume_text.trim().to_string(),
-            skills: self.parse_skills(),
-            tone: self.selected_tone(),
-            projects: self.projects.iter().map(|p| ProjectRequest {
-                name: p.name.clone(),
-                description: p.description.clone(),
-                tech_stack: p.tech_stack.clone(),
-            }).collect(),
-        };
+        let request = self.build_request();
 
         let client = self.api_client.clone();
         let config_manager = self.config_manager.clone();
@@ -654,15 +895,17 @@ impl ProfileScreen {
     }
 
     pub fn cancel_edit(&mut self) {
-        if let Some(profile) = &self.profile {
+        // Clone so the mutable updates below don't alias self.profile
+        if let Some(profile) = self.profile.clone() {
             self.resume_text = Self::sanitize_text(&profile.resume_text);
             self.skills_text = profile.skills.join(", ");
+            self.set_contact_inputs(&profile);
             self.tone_selection = match profile.tone {
                 CompanyTone::Formal => 0,
                 CompanyTone::Casual => 1,
                 CompanyTone::Startup => 2,
             };
-            self.projects = profile.projects.clone();
+            self.projects = profile.projects;
         }
         self.project_popup = None;
         self.upload_path_popup = None;
@@ -914,17 +1157,19 @@ impl ProfileScreen {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Min(6),   // Resume
+                Constraint::Min(6),    // Resume
                 Constraint::Length(4), // Skills
+                Constraint::Length(7), // Contact
                 Constraint::Length(4), // Tone
-                Constraint::Min(3),   // Projects
+                Constraint::Min(3),    // Projects
             ])
             .split(area);
 
         self.draw_resume_view(frame, chunks[0], theme, profile);
         self.draw_skills_view(frame, chunks[1], theme, profile);
-        self.draw_tone_view(frame, chunks[2], theme, profile);
-        self.draw_projects_view(frame, chunks[3], theme);
+        self.draw_contacts_view(frame, chunks[2], theme);
+        self.draw_tone_view(frame, chunks[3], theme, profile);
+        self.draw_projects_view(frame, chunks[4], theme);
     }
 
 fn draw_resume_view(&self, frame: &mut Frame, area: Rect, theme: &Theme, profile: &ProfileResponse) {
@@ -1027,10 +1272,11 @@ fn draw_resume_view(&self, frame: &mut Frame, area: Rect, theme: &Theme, profile
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Min(6),    // Resume editor
+                Constraint::Min(4),    // Resume editor
                 Constraint::Length(4), // Skills editor
+                Constraint::Length(7), // Contact editor
                 Constraint::Length(5), // Tone selector
-                Constraint::Min(3),    // Projects editor
+                Constraint::Min(2),    // Projects editor
                 Constraint::Length(3), // Validation errors
             ])
             .split(area);
@@ -1041,14 +1287,17 @@ fn draw_resume_view(&self, frame: &mut Frame, area: Rect, theme: &Theme, profile
         // Skills editor
         self.draw_skills_edit(frame, chunks[1], theme);
 
+        // Contact editor
+        self.draw_contacts_edit(frame, chunks[2], theme);
+
         // Tone selector
-        self.draw_tone_edit(frame, chunks[2], theme);
+        self.draw_tone_edit(frame, chunks[3], theme);
 
         // Projects editor
-        self.draw_projects_edit(frame, chunks[3], theme);
+        self.draw_projects_edit(frame, chunks[4], theme);
 
         // Validation errors
-        self.draw_validation_errors(frame, chunks[4], theme);
+        self.draw_validation_errors(frame, chunks[5], theme);
     }
 
     fn draw_resume_edit(&self, frame: &mut Frame, area: Rect, theme: &Theme) {
@@ -1130,6 +1379,107 @@ fn draw_resume_view(&self, frame: &mut Frame, area: Rect, theme: &Theme, profile
             let cursor_y = inner.y + cursor_row;
             let cursor_x = inner.x + cursor_col.min(inner.width.saturating_sub(1));
             frame.set_cursor_position((cursor_x, cursor_y));
+        }
+    }
+
+    /// Immutable reference to the currently focused contact input, if any.
+    fn focused_contact(&self) -> Option<&ContactInput> {
+        match self.focused_field {
+            ProfileField::Phone => Some(&self.phone),
+            ProfileField::ContactEmail => Some(&self.contact_email),
+            ProfileField::PortfolioUrl => Some(&self.portfolio_url),
+            ProfileField::GithubUrl => Some(&self.github_url),
+            ProfileField::LinkedinUrl => Some(&self.linkedin_url),
+            _ => None,
+        }
+    }
+
+    /// Rows of the contact block in display order.
+    fn contact_rows(&self) -> [(ProfileField, &ContactInput); 5] {
+        [
+            (ProfileField::Phone, &self.phone),
+            (ProfileField::ContactEmail, &self.contact_email),
+            (ProfileField::PortfolioUrl, &self.portfolio_url),
+            (ProfileField::GithubUrl, &self.github_url),
+            (ProfileField::LinkedinUrl, &self.linkedin_url),
+        ]
+    }
+
+    /// Read-only contact block (view mode).
+    fn draw_contacts_view(&self, frame: &mut Frame, area: Rect, theme: &Theme) {
+        self.render_contact_block(frame, area, theme, false);
+    }
+
+    /// Editable contact block (edit mode): five single-line inputs sharing
+    /// one bordered group so the form stays compact on small terminals.
+    fn draw_contacts_edit(&self, frame: &mut Frame, area: Rect, theme: &Theme) {
+        self.render_contact_block(frame, area, theme, true);
+    }
+
+    /// Render the contact group: one row per field with a focus marker,
+    /// a fixed-width label column and the current value (or placeholder).
+    fn render_contact_block(&self, frame: &mut Frame, area: Rect, theme: &Theme, editable: bool) {
+        let focused = editable && self.focused_contact_index().is_some();
+        let border_style = if focused {
+            theme.style_border(true)
+        } else {
+            theme.style_border(false)
+        };
+        let title_style = if focused {
+            theme.style_title()
+        } else {
+            theme.style_dim()
+        };
+
+        let mut lines: Vec<Line> = Vec::new();
+        for (field, input) in self.contact_rows() {
+            let is_row_focused = editable && self.focused_field == field;
+            let label_style = if is_row_focused {
+                theme.style_title()
+            } else {
+                theme.style_dim()
+            };
+            let label = format!(
+                "{:<width$}",
+                field.display_name(),
+                width = CONTACT_LABEL_WIDTH as usize
+            );
+            let value_span = if input.text.is_empty() {
+                Span::styled("(not set)", theme.style_dim())
+            } else {
+                Span::styled(&input.text, theme.style_normal())
+            };
+            lines.push(Line::from(vec![
+                Span::styled(
+                    if is_row_focused { "► " } else { "  " },
+                    label_style,
+                ),
+                Span::styled(label, label_style),
+                value_span,
+            ]));
+        }
+
+        let content = Paragraph::new(Text::from(lines)).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(border_style)
+                .title(Span::styled(" Contact ", title_style)),
+        );
+        frame.render_widget(content, area);
+
+        // Position the terminal cursor inside the focused row's value area
+        if focused {
+            if let (Some(row), Some(input)) =
+                (self.focused_contact_index(), self.focused_contact())
+            {
+                let inner = area.inner(Margin { vertical: 1, horizontal: 1 });
+                let gutter = (CONTACT_MARKER_WIDTH + CONTACT_LABEL_WIDTH) as usize;
+                let visible_width = inner.width as usize;
+                if (row as u16) < inner.height && gutter < visible_width {
+                    let col = input.cursor.min(visible_width - gutter - 1);
+                    frame.set_cursor_position((inner.x + gutter as u16 + col as u16, inner.y + row as u16));
+                }
+            }
         }
     }
 
@@ -1693,7 +2043,7 @@ pub async fn handle_event(
                             ProfileField::Projects if !screen.projects.is_empty() => {
                                 screen.edit_project(screen.projects.len() - 1);
                             }
-                            ProfileField::Skills | ProfileField::Tone | ProfileField::Projects => {
+                            _ => {
                                 let _ = screen.save_profile().await;
                             }
                         }
@@ -1719,14 +2069,14 @@ pub async fn handle_event(
                 }
                 KeyCode::Left => {
                     if screen.mode == ProfileMode::Edit && !screen.saving && !screen.loading.is_loading()
-                        && (screen.focused_field == ProfileField::Resume || screen.focused_field == ProfileField::Skills)
+                        && screen.focused_field.is_text_input()
                     {
                         screen.handle_left();
                     }
                 }
                 KeyCode::Right => {
                     if screen.mode == ProfileMode::Edit && !screen.saving && !screen.loading.is_loading()
-                        && (screen.focused_field == ProfileField::Resume || screen.focused_field == ProfileField::Skills)
+                        && screen.focused_field.is_text_input()
                     {
                         screen.handle_right();
                     }
@@ -1778,6 +2128,11 @@ mod tests {
                     tech_stack: vec!["Rust".into(), "Ratatui".into()],
                 },
             ],
+            phone: Some("+55 42 99833-1363".to_string()),
+            contact_email: Some("juan@example.com".to_string()),
+            portfolio_url: Some("https://juanperuzzo.dev".to_string()),
+            github_url: None,
+            linkedin_url: None,
         }
     }
 
@@ -1836,6 +2191,21 @@ mod tests {
         assert_eq!(screen.focused_field, ProfileField::Skills);
 
         screen.focus_next();
+        assert_eq!(screen.focused_field, ProfileField::Phone);
+
+        screen.focus_next();
+        assert_eq!(screen.focused_field, ProfileField::ContactEmail);
+
+        screen.focus_next();
+        assert_eq!(screen.focused_field, ProfileField::PortfolioUrl);
+
+        screen.focus_next();
+        assert_eq!(screen.focused_field, ProfileField::GithubUrl);
+
+        screen.focus_next();
+        assert_eq!(screen.focused_field, ProfileField::LinkedinUrl);
+
+        screen.focus_next();
         assert_eq!(screen.focused_field, ProfileField::Tone);
 
         screen.focus_next();
@@ -1851,7 +2221,7 @@ mod tests {
         assert_eq!(screen.focused_field, ProfileField::Tone);
 
         screen.focus_prev();
-        assert_eq!(screen.focused_field, ProfileField::Skills);
+        assert_eq!(screen.focused_field, ProfileField::LinkedinUrl);
     }
 
     #[test]
@@ -1906,6 +2276,11 @@ mod tests {
 
         // Navigate to tone field
         screen.focus_next(); // Skills
+        screen.focus_next(); // Phone
+        screen.focus_next(); // ContactEmail
+        screen.focus_next(); // PortfolioUrl
+        screen.focus_next(); // GithubUrl
+        screen.focus_next(); // LinkedinUrl
         screen.focus_next(); // Tone
         assert_eq!(screen.focused_field, ProfileField::Tone);
         assert_eq!(screen.tone_selection, 0); // Formal
@@ -2074,6 +2449,11 @@ mod tests {
     fn profile_field_display_names() {
         assert_eq!(ProfileField::Resume.display_name(), "Resume");
         assert_eq!(ProfileField::Skills.display_name(), "Skills");
+        assert_eq!(ProfileField::Phone.display_name(), "Phone");
+        assert_eq!(ProfileField::ContactEmail.display_name(), "Contact Email");
+        assert_eq!(ProfileField::PortfolioUrl.display_name(), "Portfolio URL");
+        assert_eq!(ProfileField::GithubUrl.display_name(), "GitHub URL");
+        assert_eq!(ProfileField::LinkedinUrl.display_name(), "LinkedIn URL");
         assert_eq!(ProfileField::Tone.display_name(), "Tone");
         assert_eq!(ProfileField::Projects.display_name(), "Projects");
     }
@@ -2081,17 +2461,40 @@ mod tests {
     #[test]
     fn profile_field_navigation() {
         let fields = ProfileField::all();
-        assert_eq!(fields.len(), 4);
+        assert_eq!(fields.len(), 9);
 
         assert_eq!(ProfileField::Resume.next(), ProfileField::Skills);
-        assert_eq!(ProfileField::Skills.next(), ProfileField::Tone);
+        assert_eq!(ProfileField::Skills.next(), ProfileField::Phone);
+        assert_eq!(ProfileField::Phone.next(), ProfileField::ContactEmail);
+        assert_eq!(ProfileField::ContactEmail.next(), ProfileField::PortfolioUrl);
+        assert_eq!(ProfileField::PortfolioUrl.next(), ProfileField::GithubUrl);
+        assert_eq!(ProfileField::GithubUrl.next(), ProfileField::LinkedinUrl);
+        assert_eq!(ProfileField::LinkedinUrl.next(), ProfileField::Tone);
         assert_eq!(ProfileField::Tone.next(), ProfileField::Projects);
         assert_eq!(ProfileField::Projects.next(), ProfileField::Resume);
 
         assert_eq!(ProfileField::Resume.prev(), ProfileField::Projects);
         assert_eq!(ProfileField::Projects.prev(), ProfileField::Tone);
-        assert_eq!(ProfileField::Tone.prev(), ProfileField::Skills);
+        assert_eq!(ProfileField::Tone.prev(), ProfileField::LinkedinUrl);
+        assert_eq!(ProfileField::LinkedinUrl.prev(), ProfileField::GithubUrl);
+        assert_eq!(ProfileField::GithubUrl.prev(), ProfileField::PortfolioUrl);
+        assert_eq!(ProfileField::PortfolioUrl.prev(), ProfileField::ContactEmail);
+        assert_eq!(ProfileField::ContactEmail.prev(), ProfileField::Phone);
+        assert_eq!(ProfileField::Phone.prev(), ProfileField::Skills);
         assert_eq!(ProfileField::Skills.prev(), ProfileField::Resume);
+    }
+
+    #[test]
+    fn profile_field_text_input_classification() {
+        assert!(ProfileField::Resume.is_text_input());
+        assert!(ProfileField::Skills.is_text_input());
+        assert!(ProfileField::Phone.is_text_input());
+        assert!(ProfileField::ContactEmail.is_text_input());
+        assert!(ProfileField::PortfolioUrl.is_text_input());
+        assert!(ProfileField::GithubUrl.is_text_input());
+        assert!(ProfileField::LinkedinUrl.is_text_input());
+        assert!(!ProfileField::Tone.is_text_input());
+        assert!(!ProfileField::Projects.is_text_input());
     }
 
     #[test]

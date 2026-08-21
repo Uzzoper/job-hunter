@@ -720,7 +720,12 @@ mod tests {
                     "resumeText": "Experienced Rust developer...",
                     "skills": ["Rust", "PostgreSQL", "Docker"],
                     "tone": "STARTUP",
-                    "projects": []
+                    "projects": [],
+                    "phone": "+55 42 99833-1363",
+                    "contactEmail": "juan@example.com",
+                    "portfolioUrl": "https://juanperuzzo.dev",
+                    "githubUrl": "https://github.com/juanperuzzo",
+                    "linkedinUrl": "https://linkedin.com/in/juanperuzzo"
                 }));
         });
 
@@ -732,6 +737,42 @@ mod tests {
         assert_eq!(profile.user_id, 1);
         assert_eq!(profile.skills, vec!["Rust", "PostgreSQL", "Docker"]);
         assert_eq!(profile.tone, CompanyTone::Startup);
+        assert_eq!(profile.phone.as_deref(), Some("+55 42 99833-1363"));
+        assert_eq!(profile.contact_email.as_deref(), Some("juan@example.com"));
+        assert_eq!(profile.portfolio_url.as_deref(), Some("https://juanperuzzo.dev"));
+        assert_eq!(profile.github_url.as_deref(), Some("https://github.com/juanperuzzo"));
+        assert_eq!(profile.linkedin_url.as_deref(), Some("https://linkedin.com/in/juanperuzzo"));
+    }
+
+    #[tokio::test]
+    async fn get_profile_without_contact_fields_defaults_to_none() {
+        // Backward compat: old backend payloads have no contact keys.
+        let server = MockServer::start();
+        let client = test_client(&server);
+
+        let mock = server.mock(|when, then| {
+            when.method(Method::GET).path("/api/profile");
+            then.status(200)
+                .header("content-type", "application/json")
+                .json_body(json!({
+                    "id": 1,
+                    "userId": 1,
+                    "resumeText": "Experienced Rust developer...",
+                    "skills": ["Rust"],
+                    "tone": "FORMAL",
+                    "projects": []
+                }));
+        });
+
+        let result = client.get_profile().await;
+        mock.assert();
+        assert!(result.is_ok());
+        let profile = result.unwrap();
+        assert_eq!(profile.phone, None);
+        assert_eq!(profile.contact_email, None);
+        assert_eq!(profile.portfolio_url, None);
+        assert_eq!(profile.github_url, None);
+        assert_eq!(profile.linkedin_url, None);
     }
 
     #[tokio::test]
@@ -749,7 +790,9 @@ mod tests {
                     "resumeText": "Updated resume...",
                     "skills": ["Rust", "Go", "Kubernetes"],
                     "tone": "FORMAL",
-                    "projects": []
+                    "projects": [],
+                    "phone": "+55 42 90000-0000",
+                    "contactEmail": "juan@example.com"
                 }));
         });
 
@@ -758,6 +801,11 @@ mod tests {
             skills: vec!["Rust".into(), "Go".into(), "Kubernetes".into()],
             tone: CompanyTone::Formal,
             projects: vec![],
+            phone: Some("+55 42 90000-0000".into()),
+            contact_email: Some("juan@example.com".into()),
+            portfolio_url: None,
+            github_url: None,
+            linkedin_url: None,
         };
 
         let result = client.update_profile(&req).await;
@@ -766,6 +814,47 @@ mod tests {
         let profile = result.unwrap();
         assert_eq!(profile.skills, vec!["Rust", "Go", "Kubernetes"]);
         assert_eq!(profile.tone, CompanyTone::Formal);
+        assert_eq!(profile.phone.as_deref(), Some("+55 42 90000-0000"));
+    }
+
+    #[tokio::test]
+    async fn update_profile_sends_contact_fields_in_request_body() {
+        let server = MockServer::start();
+        let client = test_client(&server);
+
+        let mock = server.mock(|when, then| {
+            when.method(Method::PUT)
+                .path("/api/profile")
+                .body_contains("\"phone\":\"+55 42 90000-0000\"")
+                .body_contains("\"contactEmail\":\"juan@example.com\"")
+                .body_contains("\"githubUrl\":\"https://github.com/juanperuzzo\"");
+            then.status(200)
+                .header("content-type", "application/json")
+                .json_body(json!({
+                    "id": 1,
+                    "userId": 1,
+                    "resumeText": "Updated resume...",
+                    "skills": ["Rust"],
+                    "tone": "FORMAL",
+                    "projects": []
+                }));
+        });
+
+        let req = ProfileRequest {
+            resume_text: "Updated resume...".into(),
+            skills: vec!["Rust".into()],
+            tone: CompanyTone::Formal,
+            projects: vec![],
+            phone: Some("+55 42 90000-0000".into()),
+            contact_email: Some("juan@example.com".into()),
+            portfolio_url: None,
+            github_url: Some("https://github.com/juanperuzzo".into()),
+            linkedin_url: None,
+        };
+
+        let result = client.update_profile(&req).await;
+        mock.assert();
+        assert!(result.is_ok());
     }
 
     #[tokio::test]
@@ -790,6 +879,11 @@ mod tests {
             skills: vec![],
             tone: CompanyTone::Casual,
             projects: vec![],
+            phone: None,
+            contact_email: None,
+            portfolio_url: None,
+            github_url: None,
+            linkedin_url: None,
         };
 
         let result = client.update_profile(&req).await;
