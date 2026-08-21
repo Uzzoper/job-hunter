@@ -530,6 +530,11 @@ mod full_user_flow {
             skills: vec!["Rust".into(), "Go".into(), "Kubernetes".into()],
             tone: CompanyTone::Formal,
             projects: vec![],
+            phone: None,
+            contact_email: None,
+            portfolio_url: None,
+            github_url: None,
+            linkedin_url: None,
         };
         let updated = client.update_profile(&update_req).await.expect("update profile should succeed");
         profile_update_mock.assert();
@@ -804,6 +809,11 @@ mod error_scenarios {
             skills: vec![],
             tone: CompanyTone::Casual,
             projects: vec![],
+            phone: None,
+            contact_email: None,
+            portfolio_url: None,
+            github_url: None,
+            linkedin_url: None,
         };
         let result = client.update_profile(&req).await;
         assert!(matches!(result, Err(CliError::Api(ApiError::BadRequest(_)))));
