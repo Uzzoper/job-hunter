@@ -116,7 +116,8 @@ class ResumeTailoringServiceTest {
         when(jobRepository.findById(JOB_ID)).thenReturn(Optional.of(job()));
         when(jobAnalysisRepository.findByJobIdAndUserId(JOB_ID, USER_ID)).thenReturn(Optional.of(analysis()));
         when(userProfileRepository.findByUserId(USER_ID))
-                .thenReturn(Optional.of(new UserProfile(1L, USER_ID, "   ", List.of(), CompanyTone.FORMAL, List.of())));
+                .thenReturn(Optional.of(new UserProfile(1L, USER_ID, "   ", List.of(), CompanyTone.FORMAL, List.of(),
+                null, null, null, null, null)));
 
         assertThrows(ProfileNotConfiguredException.class,
                 () -> service.tailorResume(USER_ID, JOB_ID));
@@ -209,7 +210,8 @@ class ResumeTailoringServiceTest {
         when(jobRepository.findById(JOB_ID)).thenReturn(Optional.of(job()));
         when(jobAnalysisRepository.findByJobIdAndUserId(JOB_ID, USER_ID)).thenReturn(Optional.of(analysis()));
         when(userProfileRepository.findByUserId(USER_ID))
-                .thenReturn(Optional.of(new UserProfile(1L, USER_ID, longResume, List.of(), CompanyTone.FORMAL, List.of())));
+                .thenReturn(Optional.of(new UserProfile(1L, USER_ID, longResume, List.of(), CompanyTone.FORMAL, List.of(),
+                null, null, null, null, null)));
         when(aiPort.complete(anyString())).thenReturn(validAiJson());
         when(pdfRendererPort.renderPdf(anyString())).thenReturn(new byte[]{1});
 
@@ -298,7 +300,8 @@ class ResumeTailoringServiceTest {
 
     private UserProfile profile() {
         return new UserProfile(1L, USER_ID, RESUME_TEXT,
-                List.of("Java", "Spring Boot", "PostgreSQL"), CompanyTone.FORMAL, List.of());
+                List.of("Java", "Spring Boot", "PostgreSQL"), CompanyTone.FORMAL, List.of(),
+                null, null, null, null, null);
     }
 
     private String validAiJson() {

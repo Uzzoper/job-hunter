@@ -4,6 +4,7 @@ import com.juanperuzzo.job_hunter.application.port.in.CurrentUserProvider;
 import com.juanperuzzo.job_hunter.application.port.in.UserProfileUseCase;
 import com.juanperuzzo.job_hunter.application.service.ResumeUploadService;
 import com.juanperuzzo.job_hunter.domain.model.Project;
+import com.juanperuzzo.job_hunter.domain.model.UserProfile;
 import com.juanperuzzo.job_hunter.web.dto.ProfileRequest;
 import com.juanperuzzo.job_hunter.web.dto.ProfileResponse;
 import com.juanperuzzo.job_hunter.web.dto.ProjectResponse;
@@ -44,9 +45,11 @@ public class ProfileController {
         List<Project> projects = request.projects().stream()
                 .map(p -> new Project(p.name(), p.description(), String.join(", ", p.techStack())))
                 .toList();
-        var profile = userProfileService.saveProfile(
-                userId, request.resumeText(), request.skills(), request.tone(), projects);
-        var response = toResponse(profile);
+        var profile = new UserProfile(null, userId, request.resumeText(), request.skills(),
+                request.tone(), projects, request.phone(), request.contactEmail(),
+                request.portfolioUrl(), request.githubUrl(), request.linkedinUrl());
+        var saved = userProfileService.saveProfile(userId, profile);
+        var response = toResponse(saved);
         return ResponseEntity.ok(response);
     }
 
@@ -69,6 +72,8 @@ public class ProfileController {
                 .toList();
         return new ProfileResponse(
                 profile.id(), profile.userId(), profile.resumeText(),
-                profile.skills(), profile.tone(), projectResponses);
+                profile.skills(), profile.tone(), projectResponses,
+                profile.phone(), profile.contactEmail(), profile.portfolioUrl(),
+                profile.githubUrl(), profile.linkedinUrl());
     }
 }

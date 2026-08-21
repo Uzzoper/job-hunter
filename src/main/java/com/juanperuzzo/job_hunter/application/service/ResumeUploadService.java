@@ -77,7 +77,9 @@ public class ResumeUploadService {
 
         savePdfToDisk(userId, file);
 
-        CompanyTone tone = userProfileRepository.findByUserId(userId)
+        var existingProfile = userProfileRepository.findByUserId(userId);
+
+        CompanyTone tone = existingProfile
                 .map(UserProfile::tone)
                 .orElse(CompanyTone.FORMAL);
 
@@ -85,7 +87,15 @@ public class ResumeUploadService {
                 .map(p -> new Project(p.name(), p.description(), String.join(", ", p.techStack())))
                 .toList();
 
-        return userProfileService.saveProfile(userId, rawText, extraction.skills(), tone, projects);
+        // Contact fields are user-supplied (spec v1.1) — an AI-driven upload must
+        // never wipe them, so existing values are carried over when present.
+        var profile = new UserProfile(null, userId, rawText, extraction.skills(), tone, projects,
+                existingProfile.map(UserProfile::phone).orElse(null),
+                existingProfile.map(UserProfile::contactEmail).orElse(null),
+                existingProfile.map(UserProfile::portfolioUrl).orElse(null),
+                existingProfile.map(UserProfile::githubUrl).orElse(null),
+                existingProfile.map(UserProfile::linkedinUrl).orElse(null));
+        return userProfileService.saveProfile(userId, profile);
     }
 
     private void validateFile(MultipartFile file) {
