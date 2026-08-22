@@ -207,10 +207,26 @@ jh-cli clear-cache
 | `s` / `S` | Cycle seniority filter (All → Junior → Pleno → Senior) |
 | `d` / `D` | Toggle "dev roles only" filter |
 | `t` / `T` | Cycle apply-type filter (All → Email → External → Unknown) |
-| `f` | (future: advanced filter menu) |
+| `f` / `F` | Trigger backend job scraping (see Fetch Trigger below) |
 | `o` / `O` | Open selected job URL in browser |
 | `r` / `R` | Refresh (force API fetch) |
 | `p` / `P` | Open Profile screen |
+
+#### Fetch Trigger (`f`)
+Pressing plain `f` (or `F`, no modifiers) in the JobList screen triggers backend
+scraping via `POST /api/jobs/fetch`. It mirrors the Profile screen's resume-upload
+pattern (`start_upload` / `pending_upload` / `finish_upload`):
+
+- **Trigger**: `f` sets a `fetch_in_progress` flag on the screen; the actual HTTP
+  call happens in the main loop, which draws one frame showing status, then awaits
+  inline. The UI waits while scraping runs.
+- **Re-trigger guard**: pressing `f` while a fetch is already in progress is a no-op.
+- **Timeout**: the request uses a per-request timeout of 10 minutes (the global
+  client timeout of 30s is too short — scraping all providers takes 40–90s).
+- **On success**: the job list reloads through the same path used by `r`
+  (refresh), and a "Fetch completed" toast is shown.
+- **On failure**: an error toast with the reason is shown; the list stays as-is.
+- `Ctrl+F` remains search focus — only unmodified `f`/`F` triggers the scrape.
 
 ### JobDetail Keybindings
 | Key | Action |
