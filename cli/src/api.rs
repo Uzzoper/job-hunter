@@ -133,6 +133,9 @@ impl ApiClient {
     pub async fn fetch_jobs(&self) -> Result<FetchResponse> {
         let resp = self
             .request(Method::POST, "/api/jobs/fetch")
+            // Scraping all providers takes 40–90s; override the global
+            // 30s client timeout for this long-running synchronous call.
+            .timeout(Duration::from_secs(600))
             .send()
             .await?;
         self.handle_response(resp).await
