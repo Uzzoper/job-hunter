@@ -254,6 +254,17 @@ impl App {
                 continue;
             }
 
+            // Execute pending job fetch (scraping, long-running)
+            let fetch_pending = self.job_list_screen.as_ref()
+                .is_some_and(|s| s.fetch_in_progress);
+            if fetch_pending {
+                terminal.draw(|frame| self.render(frame))?;
+                if let Some(s) = self.job_list_screen.as_mut() {
+                    s.run_fetch().await;
+                }
+                continue;
+            }
+
             // Handle events with timeout to allow for resize handling
             if crossterm::event::poll(std::time::Duration::from_millis(100))? {
                 let event = crossterm::event::read()?;
@@ -463,6 +474,13 @@ impl App {
                     && key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) => {
                     if let Some(screen) = &mut self.job_list_screen {
                         screen.focus_search();
+                    }
+                }
+                crossterm::event::KeyCode::Char('f') | crossterm::event::KeyCode::Char('F')
+                    if self.state == AppState::JobList =>
+                {
+                    if let Some(screen) = &mut self.job_list_screen {
+                        screen.start_fetch();
                     }
                 }
                 crossterm::event::KeyCode::Char('p') | crossterm::event::KeyCode::Char('P') => {
