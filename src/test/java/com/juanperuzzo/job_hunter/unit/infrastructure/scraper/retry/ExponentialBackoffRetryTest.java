@@ -50,4 +50,26 @@ class ExponentialBackoffRetryTest {
         assertThrows(IllegalArgumentException.class, () ->
                 retry.execute(() -> { throw new IllegalArgumentException("bad input"); }));
     }
+
+    @Test
+    @DisplayName("execute should retry non-ScraperException whose message contains a retryable token")
+    void execute_whenNonScraperExceptionHasRetryableMessage_shouldRetry() {
+        var counter = new int[]{0};
+        var result = retry.execute(() -> {
+            counter[0]++;
+            if (counter[0] < 2) {
+                throw new RuntimeException("HTTP error: 429 TOO_MANY_REQUESTS rate limited");
+            }
+            return "success";
+        });
+        assertEquals("success", result);
+        assertEquals(2, counter[0]);
+    }
+
+    @Test
+    @DisplayName("execute should throw ScraperException when a non-ScraperException stays retryable")
+    void execute_whenNonScraperExceptionStaysRetryable_shouldThrowAfterAllAttempts() {
+        assertThrows(ScraperException.class, () ->
+                retry.execute(() -> { throw new RuntimeException("HTTP error: 502 Bad Gateway"); }));
+    }
 }
