@@ -72,15 +72,22 @@ public class ExponentialBackoffRetry implements RetryStrategy {
 
     private static boolean isRetryable(Exception e) {
         if (e instanceof SocketTimeoutException) return true;
-        if (e instanceof ScraperException) {
-            var message = e.getMessage();
-            if (message != null) {
-                var lower = message.toLowerCase();
-                return lower.contains("timeout") || lower.contains("429") || lower.contains("5xx")
-                        || lower.contains("503") || lower.contains("502") || lower.contains("500");
-            }
-        }
+        if (hasRetryableToken(e)) return true;
         return hasTimeoutCause(e);
+    }
+
+    /**
+     * Message-token check applies to ANY exception type so non-scraper clients
+     * (e.g. {@code AiException} wrapping HTTP 429/5xx bodies) are retried too.
+     */
+    private static boolean hasRetryableToken(Throwable e) {
+        var message = e.getMessage();
+        if (message == null) {
+            return false;
+        }
+        var lower = message.toLowerCase();
+        return lower.contains("timeout") || lower.contains("429") || lower.contains("5xx")
+                || lower.contains("503") || lower.contains("502") || lower.contains("500");
     }
 
     private static boolean hasTimeoutCause(Throwable e) {
