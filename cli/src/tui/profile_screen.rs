@@ -533,13 +533,11 @@ impl ProfileScreen {
         if self.mode != ProfileMode::Edit || self.saving || self.loading.is_loading() {
             return;
         }
-        match self.focused_field {
-            ProfileField::Resume => {
-                let byte_pos = self.char_to_byte_index(&self.resume_text, self.resume_cursor);
-                self.resume_text.insert(byte_pos, '\n');
-                self.resume_cursor += 1;
-            }
-            _ => {} // handled by caller (save or project edit)
+        // Other fields are handled by the caller (save or project edit)
+        if self.focused_field == ProfileField::Resume {
+            let byte_pos = self.char_to_byte_index(&self.resume_text, self.resume_cursor);
+            self.resume_text.insert(byte_pos, '\n');
+            self.resume_cursor += 1;
         }
         self.clear_validation_errors();
     }
@@ -1468,17 +1466,16 @@ fn draw_resume_view(&self, frame: &mut Frame, area: Rect, theme: &Theme, profile
         frame.render_widget(content, area);
 
         // Position the terminal cursor inside the focused row's value area
-        if focused {
-            if let (Some(row), Some(input)) =
+        if focused
+            && let (Some(row), Some(input)) =
                 (self.focused_contact_index(), self.focused_contact())
-            {
-                let inner = area.inner(Margin { vertical: 1, horizontal: 1 });
-                let gutter = (CONTACT_MARKER_WIDTH + CONTACT_LABEL_WIDTH) as usize;
-                let visible_width = inner.width as usize;
-                if (row as u16) < inner.height && gutter < visible_width {
-                    let col = input.cursor.min(visible_width - gutter - 1);
-                    frame.set_cursor_position((inner.x + gutter as u16 + col as u16, inner.y + row as u16));
-                }
+        {
+            let inner = area.inner(Margin { vertical: 1, horizontal: 1 });
+            let gutter = (CONTACT_MARKER_WIDTH + CONTACT_LABEL_WIDTH) as usize;
+            let visible_width = inner.width as usize;
+            if (row as u16) < inner.height && gutter < visible_width {
+                let col = input.cursor.min(visible_width - gutter - 1);
+                frame.set_cursor_position((inner.x + gutter as u16 + col as u16, inner.y + row as u16));
             }
         }
     }

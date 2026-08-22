@@ -26,7 +26,7 @@ pub async fn handle(
             github_url,
             linkedin_url,
         } => {
-            handle_edit(
+            let fields = ProfileEditFields {
                 resume,
                 skills,
                 tone,
@@ -36,9 +36,8 @@ pub async fn handle(
                 portfolio_url,
                 github_url,
                 linkedin_url,
-                &client,
-            )
-            .await
+            };
+            handle_edit(fields, &client).await
         }
         crate::ProfileAction::UploadResume { path } => handle_upload_resume(path, &client).await,
     }
@@ -68,7 +67,8 @@ async fn handle_show(use_json: bool, client: &ApiClient) -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn handle_edit(
+/// Optional CLI flag values for the profile edit command.
+struct ProfileEditFields {
     resume: Option<String>,
     skills: Option<String>,
     tone: Option<String>,
@@ -78,8 +78,21 @@ async fn handle_edit(
     portfolio_url: Option<String>,
     github_url: Option<String>,
     linkedin_url: Option<String>,
-    client: &ApiClient,
-) -> anyhow::Result<()> {
+}
+
+async fn handle_edit(fields: ProfileEditFields, client: &ApiClient) -> anyhow::Result<()> {
+    let ProfileEditFields {
+        resume,
+        skills,
+        tone,
+        projects,
+        phone,
+        contact_email,
+        portfolio_url,
+        github_url,
+        linkedin_url,
+    } = fields;
+
     let current = match client.get_profile().await {
         Ok(p) => p,
         Err(CliError::Api(ApiError::Unauthorized(_))) => {
