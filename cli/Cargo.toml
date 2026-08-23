@@ -51,6 +51,7 @@ rpassword = "7"
 
 [dev-dependencies]
 httpmock = "0.7"
+regex = "1.13"
 
 [profile.release]
 opt-level = 3

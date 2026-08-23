@@ -2,6 +2,7 @@ use crate::api::ApiClient;
 use crate::domain::{CompanyTone, ProfileRequest, ProfileResponse, ProjectRequest};
 use crate::error::{ApiError, CliError};
 use crate::util;
+use crate::validation;
 
 /// Handle profile subcommands.
 ///
@@ -20,7 +21,25 @@ pub async fn handle(
             skills,
             tone,
             projects,
-        } => handle_edit(resume, skills, tone, projects, &client).await,
+            phone,
+            contact_email,
+            portfolio_url,
+            github_url,
+            linkedin_url,
+        } => {
+            let fields = ProfileEditFields {
+                resume,
+                skills,
+                tone,
+                projects,
+                phone,
+                contact_email,
+                portfolio_url,
+                github_url,
+                linkedin_url,
+            };
+            handle_edit(fields, &client).await
+        }
         crate::ProfileAction::UploadResume { path } => handle_upload_resume(path, &client).await,
     }
 }
@@ -49,13 +68,46 @@ async fn handle_show(use_json: bool, client: &ApiClient) -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn handle_edit(
+/// Optional CLI flag values for the profile edit command.
+struct ProfileEditFields {
     resume: Option<String>,
     skills: Option<String>,
     tone: Option<String>,
     projects: Option<String>,
-    client: &ApiClient,
-) -> anyhow::Result<()> {
+    phone: Option<String>,
+    contact_email: Option<String>,
+    portfolio_url: Option<String>,
+    github_url: Option<String>,
+    linkedin_url: Option<String>,
+}
+
+async fn handle_edit(fields: ProfileEditFields, client: &ApiClient) -> anyhow::Result<()> {
+    let ProfileEditFields {
+        resume,
+        skills,
+        tone,
+        projects,
+        phone,
+        contact_email,
+        portfolio_url,
+        github_url,
+        linkedin_url,
+    } = fields;
+
+    // Fail fast on invalid contact values before any HTTP request is made.
+    // Mirrors the TUI/backend rules: phone ≤ 30 chars; contact-email valid
+    // format + ≤ 255 chars; URLs ≤ 500 chars.
+    let errors = validation::validate_optional_contact_fields(
+        phone.as_deref(),
+        contact_email.as_deref(),
+        portfolio_url.as_deref(),
+        github_url.as_deref(),
+        linkedin_url.as_deref(),
+    );
+    if let Some(error) = errors.first() {
+        anyhow::bail!("{error}");
+    }
+
     let current = match client.get_profile().await {
         Ok(p) => p,
         Err(CliError::Api(ApiError::Unauthorized(_))) => {
@@ -110,6 +162,11 @@ async fn handle_edit(
             description: p.description,
             tech_stack: p.tech_stack,
         }).collect()),
+        phone: apply_contact_field(current.phone, phone),
+        contact_email: apply_contact_field(current.contact_email, contact_email),
+        portfolio_url: apply_contact_field(current.portfolio_url, portfolio_url),
+        github_url: apply_contact_field(current.github_url, github_url),
+        linkedin_url: apply_contact_field(current.linkedin_url, linkedin_url),
     };
 
     match client.update_profile(&req).await {
@@ -121,6 +178,7 @@ async fn handle_edit(
                 println!("    {}. {}", i + 1, skill);
             }
             println!("  Tone: {}", tone_badge(&saved.tone));
+            print_contact_summary(&saved);
             println!("  Projects ({}):", saved.projects.len());
             for (i, p) in saved.projects.iter().enumerate() {
                 println!("    {}. {} ({})", i + 1, p.name, p.tech_stack.join(", "));
@@ -132,6 +190,46 @@ async fn handle_edit(
         Err(e) => return Err(e.into()),
     }
     Ok(())
+}
+
+/// Merge a contact field flag with the stored value.
+///
+/// Omitted flag (`None`) keeps the stored value; an empty/whitespace
+/// string clears the field ("not set").
+fn apply_contact_field(current: Option<String>, new: Option<String>) -> Option<String> {
+    match new {
+        Some(value) => {
+            let trimmed = value.trim().to_string();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed)
+            }
+        }
+        None => current,
+    }
+}
+
+/// Print the contact section of a profile summary.
+fn print_contact_summary(profile: &ProfileResponse) {
+    let contacts = [
+        ("Phone", &profile.phone),
+        ("Email", &profile.contact_email),
+        ("Portfolio", &profile.portfolio_url),
+        ("GitHub", &profile.github_url),
+        ("LinkedIn", &profile.linkedin_url),
+    ];
+
+    println!("  Contact:");
+    if contacts.iter().all(|(_, v)| v.is_none()) {
+        println!("    (not set)");
+    } else {
+        for (label, value) in contacts {
+            if let Some(v) = value {
+                println!("    {}: {}", label, v);
+            }
+        }
+    }
 }
 
 /// Print profile in human-readable format.
@@ -159,6 +257,25 @@ fn print_profile(profile: &ProfileResponse) {
 
     println!();
     println!("Tone: {}", tone_badge(&profile.tone));
+
+    println!();
+    println!("Contact:");
+    let contacts = [
+        ("Phone", &profile.phone),
+        ("Email", &profile.contact_email),
+        ("Portfolio", &profile.portfolio_url),
+        ("GitHub", &profile.github_url),
+        ("LinkedIn", &profile.linkedin_url),
+    ];
+    if contacts.iter().all(|(_, v)| v.is_none()) {
+        println!("  (not set)");
+    } else {
+        for (label, value) in contacts {
+            if let Some(v) = value {
+                println!("  {}: {}", label, v);
+            }
+        }
+    }
 
     println!();
     println!("Projects ({}):", profile.projects.len());
@@ -232,6 +349,23 @@ mod tests {
             "skills": ["Go", "Kubernetes", "Redis"],
             "tone": "FORMAL",
             "projects": []
+        })
+    }
+
+    /// Profile fixture with all contact fields set.
+    fn sample_profile_with_contacts() -> serde_json::Value {
+        json!({
+            "id": 1,
+            "userId": 1,
+            "resumeText": "Experienced Rust developer with 5 years in systems programming.",
+            "skills": ["Rust", "PostgreSQL", "Docker"],
+            "tone": "STARTUP",
+            "projects": [],
+            "phone": "+55 42 99833-1363",
+            "contactEmail": "juan@example.com",
+            "portfolioUrl": "https://juanperuzzo.dev",
+            "githubUrl": "https://github.com/juanperuzzo",
+            "linkedinUrl": "https://linkedin.com/in/juanperuzzo"
         })
     }
 
@@ -341,6 +475,11 @@ mod tests {
             skills: Some("Go, Kubernetes, Redis".into()),
             tone: Some("formal".into()),
             projects: None,
+            phone: None,
+            contact_email: None,
+            portfolio_url: None,
+            github_url: None,
+            linkedin_url: None,
         };
         let result = handle(action, &server.url(""), &token).await;
 
@@ -389,6 +528,11 @@ mod tests {
             skills: None,
             tone: Some("casual".into()),
             projects: None,
+            phone: None,
+            contact_email: None,
+            portfolio_url: None,
+            github_url: None,
+            linkedin_url: None,
         };
         let result = handle(action, &server.url(""), &token).await;
 
@@ -415,6 +559,11 @@ mod tests {
             skills: None,
             tone: Some("invalid-tone".into()),
             projects: None,
+            phone: None,
+            contact_email: None,
+            portfolio_url: None,
+            github_url: None,
+            linkedin_url: None,
         };
         let result = handle(action, &server.url(""), &token).await;
 
@@ -454,6 +603,11 @@ mod tests {
             skills: Some("".into()),
             tone: None,
             projects: None,
+            phone: None,
+            contact_email: None,
+            portfolio_url: None,
+            github_url: None,
+            linkedin_url: None,
         };
         let result = handle(action, &server.url(""), &token).await;
 
@@ -481,11 +635,151 @@ mod tests {
             skills: None,
             tone: None,
             projects: None,
+            phone: None,
+            contact_email: None,
+            portfolio_url: None,
+            github_url: None,
+            linkedin_url: None,
         };
         let result = handle(action, &server.url(""), &token).await;
 
         assert!(result.is_ok(), "401 should return Ok with hint: {result:?}");
         get_mock.assert();
+    }
+
+    #[tokio::test]
+    async fn edit_contact_fields_sent_in_request() {
+        let server = MockServer::start();
+        let token = Some("test-token".into());
+
+        let get_mock = server.mock(|when, then| {
+            when.method(Method::GET).path("/api/profile");
+            then.status(200)
+                .header("content-type", "application/json")
+                .json_body(sample_profile());
+        });
+
+        let put_mock = server.mock(|when, then| {
+            when.method(Method::PUT)
+                .path("/api/profile")
+                .header("authorization", "Bearer test-token")
+                .body_contains("\"phone\":\"+55 42 99833-1363\"")
+                .body_contains("\"contactEmail\":\"juan@example.com\"")
+                .body_contains("\"githubUrl\":\"https://github.com/juanperuzzo\"");
+            then.status(200)
+                .header("content-type", "application/json")
+                .json_body(sample_updated_profile());
+        });
+
+        let action = crate::ProfileAction::Edit {
+            resume: None,
+            skills: None,
+            tone: None,
+            projects: None,
+            phone: Some("+55 42 99833-1363".into()),
+            contact_email: Some("juan@example.com".into()),
+            portfolio_url: None,
+            github_url: Some("https://github.com/juanperuzzo".into()),
+            linkedin_url: None,
+        };
+        let result = handle(action, &server.url(""), &token).await;
+
+        assert!(result.is_ok(), "edit with contact fields should succeed: {result:?}");
+        get_mock.assert();
+        put_mock.assert();
+    }
+
+    #[tokio::test]
+    async fn edit_empty_contact_flag_clears_field() {
+        let server = MockServer::start();
+        let token = Some("test-token".into());
+
+        // Stored profile has a phone number set
+        let get_mock = server.mock(|when, then| {
+            when.method(Method::GET).path("/api/profile");
+            then.status(200)
+                .header("content-type", "application/json")
+                .json_body(sample_profile_with_contacts());
+        });
+
+        // Empty --phone should clear it: body must NOT contain "phone"
+        let put_with_phone = server.mock(|when, then| {
+            when.method(Method::PUT)
+                .path("/api/profile")
+                .body_matches(regex::Regex::new(".*\"phone\".*").unwrap());
+            then.status(200)
+                .header("content-type", "application/json")
+                .json_body(sample_updated_profile());
+        });
+
+        // Cleared phone is omitted from the body entirely; this catch-all
+        // only catches bodies WITHOUT "phone" (the mock above runs first).
+        let put_cleared = server.mock(|when, then| {
+            when.method(Method::PUT).path("/api/profile");
+            then.status(200)
+                .header("content-type", "application/json")
+                .json_body(sample_updated_profile());
+        });
+
+        let action = crate::ProfileAction::Edit {
+            resume: None,
+            skills: None,
+            tone: None,
+            projects: None,
+            phone: Some(String::new()),
+            contact_email: None,
+            portfolio_url: None,
+            github_url: None,
+            linkedin_url: None,
+        };
+        let result = handle(action, &server.url(""), &token).await;
+
+        assert!(result.is_ok(), "clearing phone should succeed: {result:?}");
+        get_mock.assert();
+        put_cleared.assert();
+        assert_eq!(put_with_phone.hits(), 0, "PUT body must not contain phone");
+    }
+
+    #[tokio::test]
+    async fn edit_omitted_contact_fields_preserve_current() {
+        let server = MockServer::start();
+        let token = Some("test-token".into());
+
+        // Stored profile has contact fields set
+        let get_mock = server.mock(|when, then| {
+            when.method(Method::GET).path("/api/profile");
+            then.status(200)
+                .header("content-type", "application/json")
+                .json_body(sample_profile_with_contacts());
+        });
+
+        // Omitted flags must carry current values into the PUT body
+        let put_mock = server.mock(|when, then| {
+            when.method(Method::PUT)
+                .path("/api/profile")
+                .body_contains("\"phone\":\"+55 42 99833-1363\"")
+                .body_contains("\"contactEmail\":\"juan@example.com\"");
+            then.status(200)
+                .header("content-type", "application/json")
+                .json_body(sample_updated_profile());
+        });
+
+        let action = crate::ProfileAction::Edit {
+            resume: None,
+            skills: None,
+            tone: Some("casual".into()),
+            projects: None,
+            phone: None,
+            contact_email: None,
+            portfolio_url: None,
+            github_url: None,
+            linkedin_url: None,
+        };
+        let result = handle(action, &server.url(""), &token).await;
+
+        assert!(result.is_ok(), "omitted contact flags should keep values: {result:?}");
+        get_mock.assert();
+        put_mock.assert();
     }
 
     // =====================================================================
@@ -505,5 +799,277 @@ mod tests {
     #[test]
     fn tone_badge_startup() {
         assert_eq!(tone_badge(&CompanyTone::Startup), "[STARTUP]");
+    }
+
+    // =====================================================================
+    // apply_contact_field tests
+    // =====================================================================
+
+    #[test]
+    fn apply_contact_field_omitted_keeps_current() {
+        let current = Some("+55 42 99833-1363".to_string());
+        assert_eq!(apply_contact_field(current.clone(), None), current);
+        assert_eq!(apply_contact_field(None, None), None);
+    }
+
+    #[test]
+    fn apply_contact_field_value_replaces_current() {
+        let result = apply_contact_field(Some("old".to_string()), Some("new".to_string()));
+        assert_eq!(result, Some("new".to_string()));
+    }
+
+    #[test]
+    fn apply_contact_field_empty_string_clears() {
+        let result = apply_contact_field(Some("+55 42 99833-1363".to_string()), Some(String::new()));
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn apply_contact_field_whitespace_only_clears_and_trims_values() {
+        let cleared = apply_contact_field(Some("x".to_string()), Some("   ".to_string()));
+        assert_eq!(cleared, None);
+
+        let trimmed = apply_contact_field(None, Some("  https://dev.io  ".to_string()));
+        assert_eq!(trimmed, Some("https://dev.io".to_string()));
+    }
+
+    // =====================================================================
+    // profile edit contact-field validation
+    // =====================================================================
+
+    /// Profile fixture whose stored phone exceeds the backend limit.
+    /// Proves that omitted flags are never validated against limits.
+    fn sample_profile_with_over_long_stored_phone() -> serde_json::Value {
+        json!({
+            "id": 1,
+            "userId": 1,
+            "resumeText": "Experienced Rust developer with 5 years in systems programming.",
+            "skills": ["Rust", "PostgreSQL", "Docker"],
+            "tone": "STARTUP",
+            "projects": [],
+            "phone": "1".repeat(40),
+            "contactEmail": "juan@example.com",
+            "portfolioUrl": "https://juanperuzzo.dev",
+            "githubUrl": "https://github.com/juanperuzzo",
+            "linkedinUrl": "https://linkedin.com/in/juanperuzzo"
+        })
+    }
+
+    #[tokio::test]
+    async fn profile_edit_when_phone_too_long_should_fail() {
+        let server = MockServer::start();
+        let token = Some("test-token".into());
+
+        // Must never be hit: validation happens before any HTTP request.
+        let get_mock = server.mock(|when, then| {
+            when.method(Method::GET).path("/api/profile");
+            then.status(200)
+                .header("content-type", "application/json")
+                .json_body(sample_profile());
+        });
+
+        let action = crate::ProfileAction::Edit {
+            resume: None,
+            skills: None,
+            tone: None,
+            projects: None,
+            phone: Some("1".repeat(31)),
+            contact_email: None,
+            portfolio_url: None,
+            github_url: None,
+            linkedin_url: None,
+        };
+        let result = handle(action, &server.url(""), &token).await;
+
+        let err = result.expect_err("phone over 30 chars must fail validation");
+        assert!(
+            err.to_string().contains("at most 30"),
+            "unexpected error message: {err}"
+        );
+        assert_eq!(get_mock.hits(), 0, "no HTTP request may precede validation");
+    }
+
+    #[tokio::test]
+    async fn profile_edit_when_invalid_email_should_fail() {
+        let server = MockServer::start();
+        let token = Some("test-token".into());
+
+        let get_mock = server.mock(|when, then| {
+            when.method(Method::GET).path("/api/profile");
+            then.status(200)
+                .header("content-type", "application/json")
+                .json_body(sample_profile());
+        });
+
+        let action = crate::ProfileAction::Edit {
+            resume: None,
+            skills: None,
+            tone: None,
+            projects: None,
+            phone: None,
+            contact_email: Some("not-an-email".into()),
+            portfolio_url: None,
+            github_url: None,
+            linkedin_url: None,
+        };
+        let result = handle(action, &server.url(""), &token).await;
+
+        let err = result.expect_err("invalid contact email must fail validation");
+        assert!(
+            err.to_string().contains("valid email"),
+            "unexpected error message: {err}"
+        );
+        assert_eq!(get_mock.hits(), 0, "no HTTP request may precede validation");
+    }
+
+    #[tokio::test]
+    async fn profile_edit_when_email_too_long_should_fail() {
+        let server = MockServer::start();
+        let token = Some("test-token".into());
+
+        let get_mock = server.mock(|when, then| {
+            when.method(Method::GET).path("/api/profile");
+            then.status(200)
+                .header("content-type", "application/json")
+                .json_body(sample_profile());
+        });
+
+        // Valid email format but 258 chars long.
+        let action = crate::ProfileAction::Edit {
+            resume: None,
+            skills: None,
+            tone: None,
+            projects: None,
+            phone: None,
+            contact_email: Some(format!("{}@example.com", "a".repeat(252))),
+            portfolio_url: None,
+            github_url: None,
+            linkedin_url: None,
+        };
+        let result = handle(action, &server.url(""), &token).await;
+
+        let err = result.expect_err("email over 255 chars must fail validation");
+        assert!(
+            err.to_string().contains("at most 255"),
+            "unexpected error message: {err}"
+        );
+        assert_eq!(get_mock.hits(), 0, "no HTTP request may precede validation");
+    }
+
+    #[tokio::test]
+    async fn profile_edit_when_url_too_long_should_fail() {
+        let server = MockServer::start();
+        let token = Some("test-token".into());
+
+        let get_mock = server.mock(|when, then| {
+            when.method(Method::GET).path("/api/profile");
+            then.status(200)
+                .header("content-type", "application/json")
+                .json_body(sample_profile());
+        });
+
+        let action = crate::ProfileAction::Edit {
+            resume: None,
+            skills: None,
+            tone: None,
+            projects: None,
+            phone: None,
+            contact_email: None,
+            portfolio_url: None,
+            github_url: Some(format!("https://example.com/{}", "a".repeat(500))),
+            linkedin_url: None,
+        };
+        let result = handle(action, &server.url(""), &token).await;
+
+        let err = result.expect_err("URL over 500 chars must fail validation");
+        assert!(
+            err.to_string().contains("at most 500"),
+            "unexpected error message: {err}"
+        );
+        assert_eq!(get_mock.hits(), 0, "no HTTP request may precede validation");
+    }
+
+    #[tokio::test]
+    async fn profile_edit_when_valid_boundary_values_should_succeed() {
+        let server = MockServer::start();
+        let token = Some("test-token".into());
+
+        let get_mock = server.mock(|when, then| {
+            when.method(Method::GET).path("/api/profile");
+            then.status(200)
+                .header("content-type", "application/json")
+                .json_body(sample_profile());
+        });
+
+        // All values exactly at their allowed limits must pass.
+        let put_mock = server.mock(|when, then| {
+            when.method(Method::PUT)
+                .path("/api/profile")
+                .body_contains(format!("\"phone\":\"{}\"", "1".repeat(30)))
+                .body_contains(format!("\"contactEmail\":\"{}@example.com\"", "a".repeat(243)))
+                .body_contains(format!("\"portfolioUrl\":\"https://example.com/{}\"", "a".repeat(480)));
+            then.status(200)
+                .header("content-type", "application/json")
+                .json_body(sample_updated_profile());
+        });
+
+        let action = crate::ProfileAction::Edit {
+            resume: None,
+            skills: None,
+            tone: None,
+            projects: None,
+            phone: Some("1".repeat(30)),
+            contact_email: Some(format!("{}@example.com", "a".repeat(243))), // exactly 255
+            portfolio_url: Some(format!("https://example.com/{}", "a".repeat(480))), // exactly 500
+            github_url: Some("https://github.com/juanperuzzo".into()),
+            linkedin_url: Some("https://linkedin.com/in/juanperuzzo".into()),
+        };
+        let result = handle(action, &server.url(""), &token).await;
+
+        assert!(result.is_ok(), "boundary-valid values should pass: {result:?}");
+        get_mock.assert();
+        put_mock.assert();
+    }
+
+    #[tokio::test]
+    async fn profile_edit_when_contact_fields_omitted_should_skip_validation() {
+        let server = MockServer::start();
+        let token = Some("test-token".into());
+
+        // Stored profile has an over-long phone; omitted flags must not
+        // trigger validation of stored values.
+        let get_mock = server.mock(|when, then| {
+            when.method(Method::GET).path("/api/profile");
+            then.status(200)
+                .header("content-type", "application/json")
+                .json_body(sample_profile_with_over_long_stored_phone());
+        });
+
+        let put_mock = server.mock(|when, then| {
+            when.method(Method::PUT).path("/api/profile");
+            then.status(200)
+                .header("content-type", "application/json")
+                .json_body(sample_updated_profile());
+        });
+
+        let action = crate::ProfileAction::Edit {
+            resume: None,
+            skills: None,
+            tone: Some("casual".into()),
+            projects: None,
+            phone: None,
+            contact_email: None,
+            portfolio_url: None,
+            github_url: None,
+            linkedin_url: None,
+        };
+        let result = handle(action, &server.url(""), &token).await;
+
+        assert!(
+            result.is_ok(),
+            "omitted contact flags must skip validation: {result:?}"
+        );
+        get_mock.assert();
+        put_mock.assert();
     }
 }

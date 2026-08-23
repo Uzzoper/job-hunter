@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<title>Currículo</title>
+<style>
+@page {
+    size: A4;
+    margin: 1.5cm;
+}
+
+body {
+    font-family: 'DejaVuSans', sans-serif;
+    font-size: 10pt;
+    color: #000000;
+    line-height: 1.4;
+    margin: 0;
+    padding: 0;
+}
+
+h1 {
+    text-align: center;
+    font-size: 16pt;
+    margin: 0 0 4pt 0;
+    letter-spacing: 1pt;
+    text-transform: uppercase;
+}
+
+.contact {
+    text-align: center;
+    font-size: 9pt;
+    margin: 0 0 12pt 0;
+}
+
+h2 {
+    font-size: 11pt;
+    text-transform: uppercase;
+    border-bottom: 1pt solid #000000;
+    padding-bottom: 2pt;
+    margin: 14pt 0 6pt 0;
+    letter-spacing: 0.5pt;
+}
+
+p {
+    margin: 4pt 0;
+}
+
+ul {
+    margin: 4pt 0;
+    padding-left: 16pt;
+}
+
+li {
+    margin: 2pt 0;
+}
+
+.project-title {
+    margin: 8pt 0 2pt 0;
+}
+
+.project-link {
+    font-size: 9pt;
+    margin: 2pt 0 6pt 0;
+}
+
+.experience-header {
+    margin: 8pt 0 2pt 0;
+}
+
+.education-line {
+    margin: 4pt 0;
+}
+</style>
+</head>
+<body>
+<h1>{{FULL_NAME}}</h1>
+<p class="contact">{{CONTACT}}</p>
+
+<h2>OBJETIVO PROFISSIONAL</h2>
+{{OBJECTIVE}}
+
+<h2>HABILIDADES TÉCNICAS</h2>
+{{SKILLS_GROUPS}}
+
+<h2>PROJETOS</h2>
+{{PROJECTS}}
+
+<h2>EXPERIÊNCIA PROFISSIONAL</h2>
+{{EXPERIENCE}}
+
+<h2>FORMAÇÃO ACADÊMICA</h2>
+{{EDUCATION}}
+
+<h2>CURSOS E CERTIFICAÇÕES</h2>
+{{COURSES}}
+
+<h2>IDIOMAS</h2>
+{{LANGUAGES}}
+
+<h2>DIFERENCIAIS</h2>
+{{DIFFERENTIALS}}
+</body>
+</html>

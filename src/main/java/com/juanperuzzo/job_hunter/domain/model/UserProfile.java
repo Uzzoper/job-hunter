@@ -9,7 +9,12 @@ public record UserProfile(
         String resumeText,
         List<String> skills,
         CompanyTone tone,
-        List<Project> projects
+        List<Project> projects,
+        String phone,
+        String contactEmail,
+        String portfolioUrl,
+        String githubUrl,
+        String linkedinUrl
 ) {
     public UserProfile {
         requireNonNull(userId, "userId must not be null");
@@ -17,5 +22,21 @@ public record UserProfile(
         requireNonNull(skills, "skills must not be null");
         requireNonNull(tone, "tone must not be null");
         requireNonNull(projects, "projects must not be null");
+        phone = normalize(phone);
+        contactEmail = normalize(contactEmail);
+        portfolioUrl = normalize(portfolioUrl);
+        githubUrl = normalize(githubUrl);
+        linkedinUrl = normalize(linkedinUrl);
+    }
+
+    /**
+     * Normalizes an optional contact field: null stays null, blank/whitespace
+     * becomes null, any other value is trimmed.
+     */
+    private static String normalize(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        return value.trim();
     }
 }

@@ -9,5 +9,10 @@ public record ProfileResponse(
     String resumeText,
     List<String> skills,
     CompanyTone tone,
-    List<ProjectResponse> projects
+    List<ProjectResponse> projects,
+    String phone,
+    String contactEmail,
+    String portfolioUrl,
+    String githubUrl,
+    String linkedinUrl
 ) {}

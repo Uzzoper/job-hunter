@@ -1,6 +1,5 @@
 package com.juanperuzzo.job_hunter.unit.infrastructure.scraper.strategy;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import com.github.tomakehurst.wiremock.junit5.WireMockExtension;
 import com.github.tomakehurst.wiremock.junit5.WireMockRuntimeInfo;
 import com.juanperuzzo.job_hunter.application.port.out.RawJob;

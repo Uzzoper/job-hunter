@@ -5,7 +5,7 @@ use crate::tui::theme::{render_empty_state, render_error_popup, render_loading, 
 use crate::tui::Toast;
 use ratatui::{
     Frame,
-    layout::{Constraint, Direction, Layout, Rect},
+    layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::Modifier,
     text::{Line, Span, Text},
     widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState},
@@ -160,6 +160,8 @@ pub struct JobListScreen {
     pub apply_type_filter: ApplyTypeFilter,
     pub seniority_filter: SeniorityFilter,
     pub dev_only: bool,
+    /// True while the backend scrape (`f` key) is running.
+    pub fetch_in_progress: bool,
     api_client: Arc<Mutex<ApiClient>>,
     cache: Arc<Mutex<CacheManager>>,
     toast: Option<Toast>,
@@ -186,6 +188,7 @@ impl JobListScreen {
             apply_type_filter: ApplyTypeFilter::default(),
             seniority_filter: SeniorityFilter::default(),
             dev_only: false,
+            fetch_in_progress: false,
             api_client,
             cache,
             toast: None,
@@ -284,6 +287,45 @@ impl JobListScreen {
                 Err(e) => self.show_toast(format!("Failed to open URL: {}", e)),
             }
         }
+    }
+
+    /// Start a backend scrape — sets the pending flag (synchronous).
+    ///
+    /// Mirrors [`ProfileScreen::start_upload`]: the actual HTTP work happens
+    /// later in [`Self::run_fetch`], driven by the main loop. No-op if a
+    /// fetch is already in progress.
+    pub fn start_fetch(&mut self) {
+        if self.fetch_in_progress {
+            return;
+        }
+        self.fetch_in_progress = true;
+    }
+
+    /// Run the scrape — calls `POST /api/jobs/fetch`, then reloads the list.
+    ///
+    /// Mirrors [`ProfileScreen::finish_upload`]: invoked by the main loop
+    /// after drawing one frame so the UI shows progress while scraping runs.
+    /// On success the list reloads through the same path used by the `r`
+    /// refresh key; on failure an error toast shows the reason. Always
+    /// clears [`Self::fetch_in_progress`].
+    pub async fn run_fetch(&mut self) {
+        let result = {
+            let client = self.api_client.lock().await;
+            client.fetch_jobs().await
+        };
+
+        match result {
+            Ok(_) => {
+                // Same list-reload path as the 'r' refresh key.
+                let _ = self.fetch_jobs().await;
+                self.show_toast("Fetch completed".to_string());
+            }
+            Err(e) => {
+                self.show_toast(format!("Fetch failed: {}", e));
+            }
+        }
+
+        self.fetch_in_progress = false;
     }
 
     fn apply_filters(&mut self) {
@@ -521,6 +563,35 @@ impl JobListScreen {
         self.draw_search_bar(frame, chunks[1], theme);
         self.draw_main_content(frame, chunks[2], theme);
         self.draw_hotkeys_bar(frame, chunks[3], theme);
+        self.draw_toast(frame, area, theme);
+    }
+
+    /// Renders the active toast as a centered overlay box.
+    ///
+    /// Mirrors [`crate::tui::job_detail_screen`] so fetch feedback
+    /// ("Fetch completed" / "Fetch failed") is actually visible.
+    fn draw_toast(&self, frame: &mut Frame, area: Rect, theme: &Theme) {
+        if let Some(toast) = &self.toast {
+            let toast_area = Rect {
+                x: area.x + (area.width.saturating_sub(50)) / 2,
+                y: area.y + 2,
+                width: 50.min(area.width),
+                height: 3,
+            };
+
+            let toast_widget = Paragraph::new(Text::styled(
+                format!(" {} ", toast.message),
+                theme.style_good(),
+            ))
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(theme.style_good()),
+            )
+            .alignment(Alignment::Center);
+
+            frame.render_widget(toast_widget, toast_area);
+        }
     }
 
     fn draw_stats_bar(&self, frame: &mut Frame, area: Rect, theme: &Theme) {
@@ -607,6 +678,16 @@ impl JobListScreen {
     }
 
     fn draw_main_content(&mut self, frame: &mut Frame, area: Rect, theme: &Theme) {
+        if self.fetch_in_progress {
+            render_loading(
+                frame,
+                area,
+                theme,
+                "⟳ Fetching jobs from Gupy, InfoJobs & LinkedIn…",
+            );
+            return;
+        }
+
         if self.status.is_loading() {
             render_loading(frame, area, theme, "Fetching jobs...");
             return;
@@ -782,7 +863,7 @@ impl JobListScreen {
         let hotkeys = if self.search_focus == SearchFocus::Focused {
             " [Esc] Blur search  [Enter] Apply filter  [Backspace] Delete "
         } else {
-            " [↑/↓] Navigate  [Enter] Detail  [/] Search  [r] Refresh  [a] Analyze  [e] Email  [p] Profile  [t] Apply  [s] Seniority  [d] Dev  [o] Open  [q] Quit "
+            " [↑/↓] Navigate  [Enter] Detail  [/] Search  [r] Refresh  [f] Fetch  [a] Analyze  [e] Email  [p] Profile  [t] Apply  [s] Seniority  [d] Dev  [o] Open  [q] Quit "
         };
 
         let hotkeys_widget = Paragraph::new(Text::styled(hotkeys, theme.style_dim()))
@@ -815,6 +896,8 @@ mod tests {
     use crate::cache::CacheManager;
     use crate::domain::JobResponse;
     use chrono::NaiveDate;
+    use httpmock::{Method, MockServer};
+    use serde_json::json;
     use std::sync::Arc;
     use tokio::sync::Mutex;
 
@@ -1696,5 +1779,92 @@ mod tests {
 
         screen.dev_only = true;
         assert!(screen.dev_only);
+    }
+
+    // --- Fetch trigger (`f` key) tests ---
+    #[test]
+    fn start_fetch_sets_flag_and_is_idempotent() {
+        let mut screen = create_test_screen();
+        assert!(!screen.fetch_in_progress);
+
+        screen.start_fetch();
+        assert!(screen.fetch_in_progress);
+
+        // Re-trigger while fetching must be a no-op (flag stays set).
+        screen.start_fetch();
+        assert!(screen.fetch_in_progress);
+    }
+
+    #[tokio::test]
+    async fn run_fetch_success_clears_flag_and_shows_toast() {
+        let server = MockServer::start();
+
+        server.mock(|when, then| {
+            when.method(Method::POST).path("/api/jobs/fetch");
+            then.status(200)
+                .header("content-type", "application/json")
+                .json_body(json!({ "message": "Fetch completed: 15 jobs saved" }));
+        });
+        server.mock(|when, then| {
+            when.method(Method::GET).path("/api/jobs");
+            then.status(200)
+                .header("content-type", "application/json")
+                .json_body(json!([]));
+        });
+
+        let api_client = Arc::new(Mutex::new(ApiClient::new(&server.url("/"))));
+        let cache = Arc::new(Mutex::new(CacheManager::new_in_memory(24).expect("cache")));
+        let mut screen = JobListScreen::new(api_client, cache);
+
+        screen.start_fetch();
+        assert!(screen.fetch_in_progress);
+
+        screen.run_fetch().await;
+
+        assert!(!screen.fetch_in_progress);
+        assert!(screen.toast.is_some());
+        assert_eq!(screen.toast.as_ref().unwrap().message, "Fetch completed");
+    }
+
+    #[tokio::test]
+    async fn run_fetch_failure_clears_flag_and_shows_error_toast() {
+        let server = MockServer::start();
+
+        server.mock(|when, then| {
+            when.method(Method::POST).path("/api/jobs/fetch");
+            then.status(500)
+                .header("content-type", "application/json")
+                .json_body(json!({
+                    "timestamp": "2026-07-14T12:00:00.000",
+                    "status": 500,
+                    "error": "Internal Server Error",
+                    "message": "Scraping failed"
+                }));
+        });
+
+        let api_client = Arc::new(Mutex::new(ApiClient::new(&server.url("/"))));
+        let cache = Arc::new(Mutex::new(CacheManager::new_in_memory(24).expect("cache")));
+        let mut screen = JobListScreen::new(api_client, cache);
+
+        screen.start_fetch();
+        screen.run_fetch().await;
+
+        assert!(!screen.fetch_in_progress);
+        assert!(screen.toast.is_some());
+        assert!(screen.toast.as_ref().unwrap().message.starts_with("Fetch failed"));
+    }
+
+    #[test]
+    fn hotkeys_bar_renders_fetch_hint() {
+        let mut screen = create_test_screen();
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(160, 24)).unwrap();
+
+        terminal.draw(|frame| {
+            screen.draw(frame, frame.area(), &Theme::detect());
+        }).unwrap();
+
+        let buffer = terminal.backend().to_string();
+        assert!(buffer.contains("[f] Fetch"), "footer should advertise [f] Fetch");
     }
 }

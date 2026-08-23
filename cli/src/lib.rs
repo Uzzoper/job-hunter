@@ -7,6 +7,7 @@ pub mod config;
 pub mod cache;
 pub mod error;
 pub mod util;
+pub mod validation;
 pub mod batch;
 pub mod tui;
 
@@ -173,6 +174,21 @@ pub enum ProfileAction {
         /// Projects as JSON array string (replaces all projects)
         #[arg(long)]
         projects: Option<String>,
+        /// Phone number, max 30 chars (empty string clears)
+        #[arg(long)]
+        phone: Option<String>,
+        /// Contact email, max 255 chars (empty string clears)
+        #[arg(long)]
+        contact_email: Option<String>,
+        /// Portfolio URL, max 500 chars (empty string clears)
+        #[arg(long)]
+        portfolio_url: Option<String>,
+        /// GitHub profile URL, max 500 chars (empty string clears)
+        #[arg(long)]
+        github_url: Option<String>,
+        /// LinkedIn profile URL, max 500 chars (empty string clears)
+        #[arg(long)]
+        linkedin_url: Option<String>,
     },
     /// Upload a PDF resume and extract profile with AI
     UploadResume {

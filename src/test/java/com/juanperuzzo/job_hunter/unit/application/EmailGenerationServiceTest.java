@@ -89,7 +89,7 @@ class EmailGenerationServiceTest {
                 "Experienced Java developer with Spring Boot expertise.",
                 List.of("Java", "Spring Boot", "PostgreSQL"),
                 CompanyTone.FORMAL,
-                List.of());
+                List.of(), null, null, null, null, null);
             when(userProfileRepository.findByUserId(any())).thenReturn(Optional.of(validProfile));
 
             Long jobId = 1L;
@@ -140,7 +140,7 @@ class EmailGenerationServiceTest {
                 "Experienced Java developer with Spring Boot expertise.",
                 List.of("Java", "Spring Boot", "PostgreSQL"),
                 CompanyTone.FORMAL,
-                List.of());
+                List.of(), null, null, null, null, null);
             when(userProfileRepository.findByUserId(any())).thenReturn(Optional.of(validProfile));
 
             Long jobId = 2L;
@@ -189,7 +189,7 @@ class EmailGenerationServiceTest {
                 "Experienced Java developer with Spring Boot expertise.",
                 List.of("Java", "Spring Boot", "PostgreSQL"),
                 CompanyTone.FORMAL,
-                List.of());
+                List.of(), null, null, null, null, null);
             when(userProfileRepository.findByUserId(any())).thenReturn(Optional.of(validProfile));
 
             Long jobId = 3L;
@@ -235,7 +235,7 @@ class EmailGenerationServiceTest {
                 "Experienced Java developer with Spring Boot expertise.",
                 List.of("Java", "Spring Boot", "PostgreSQL"),
                 CompanyTone.FORMAL,
-                List.of());
+                List.of(), null, null, null, null, null);
             when(userProfileRepository.findByUserId(any())).thenReturn(Optional.of(validProfile));
 
             Long jobId = 4L;
@@ -269,7 +269,7 @@ class EmailGenerationServiceTest {
                 "Experienced Java developer with Spring Boot expertise.",
                 List.of("Java", "Spring Boot", "PostgreSQL"),
                 CompanyTone.FORMAL,
-                List.of());
+                List.of(), null, null, null, null, null);
             when(userProfileRepository.findByUserId(any())).thenReturn(Optional.of(validProfile));
 
             Long jobId = 5L;
@@ -304,7 +304,8 @@ class EmailGenerationServiceTest {
                     CompanyTone.FORMAL,
                     "Java developer position");
             UserProfile profile = new UserProfile(null, 1L,
-                    "Resume text", List.of("Java"), CompanyTone.FORMAL, List.of());
+                    "Resume text", List.of("Java"), CompanyTone.FORMAL, List.of(),
+                    null, null, null, null, null);
 
             when(jobRepository.findById(jobId)).thenReturn(Optional.of(job));
             when(jobAnalysisRepository.findByJobIdAndUserId(jobId, 1L)).thenReturn(Optional.of(analysis));

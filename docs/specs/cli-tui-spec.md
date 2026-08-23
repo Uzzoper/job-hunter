@@ -71,7 +71,7 @@ cli/src/
     ├── auth_screen.rs  ← Login/register form
     ├── job_list_screen.rs   ← List + filters + search
     ├── job_detail_screen.rs ← Detail + actions (analyze/email/open)
-    └── profile_screen.rs    ← Profile editor (resume/skills/tone)
+    └── profile_screen.rs    ← Profile editor (resume/skills/contact/tone/projects)
 ```
 
 ---
@@ -142,7 +142,12 @@ jh-cli email send <job-id>
 ```
 jh-cli profile show [--json]
 jh-cli profile edit [--resume <text>] [--skills <csv>] [--tone <formal|casual|startup>]
+                   [--phone <str>] [--contact-email <email>]
+                   [--portfolio-url <url>] [--github-url <url>] [--linkedin-url <url>]
 ```
+- Contact fields are optional; omitted flags keep the stored value
+- Passing an empty string (e.g. `--phone ""`) clears the field on the backend
+- Validation mirrors the backend: phone ≤ 30 chars; contact-email must be a valid email ≤ 255 chars; URLs ≤ 500 chars
 
 ### `export` — Export to CSV
 ```
@@ -202,10 +207,26 @@ jh-cli clear-cache
 | `s` / `S` | Cycle seniority filter (All → Junior → Pleno → Senior) |
 | `d` / `D` | Toggle "dev roles only" filter |
 | `t` / `T` | Cycle apply-type filter (All → Email → External → Unknown) |
-| `f` | (future: advanced filter menu) |
+| `f` / `F` | Trigger backend job scraping (see Fetch Trigger below) |
 | `o` / `O` | Open selected job URL in browser |
 | `r` / `R` | Refresh (force API fetch) |
 | `p` / `P` | Open Profile screen |
+
+#### Fetch Trigger (`f`)
+Pressing plain `f` (or `F`, no modifiers) in the JobList screen triggers backend
+scraping via `POST /api/jobs/fetch`. It mirrors the Profile screen's resume-upload
+pattern (`start_upload` / `pending_upload` / `finish_upload`):
+
+- **Trigger**: `f` sets a `fetch_in_progress` flag on the screen; the actual HTTP
+  call happens in the main loop, which draws one frame showing status, then awaits
+  inline. The UI waits while scraping runs.
+- **Re-trigger guard**: pressing `f` while a fetch is already in progress is a no-op.
+- **Timeout**: the request uses a per-request timeout of 10 minutes (the global
+  client timeout of 30s is too short — scraping all providers takes 40–90s).
+- **On success**: the job list reloads through the same path used by `r`
+  (refresh), and a "Fetch completed" toast is shown.
+- **On failure**: an error toast with the reason is shown; the list stays as-is.
+- `Ctrl+F` remains search focus — only unmodified `f`/`F` triggers the scrape.
 
 ### JobDetail Keybindings
 | Key | Action |
@@ -225,6 +246,11 @@ jh-cli clear-cache
 - `Ctrl+S` = Save (`PUT /api/profile`)
 - `Esc` / `b` = Back without saving
 - Bracketed paste supported for resume/skills
+- **Contact group**: 5 optional single-line inputs rendered together in one bordered block below Skills: Phone, Contact Email, Portfolio URL, GitHub URL, LinkedIn URL
+  - Empty input = "not set"; sent as absent on `PUT /api/profile`
+  - Focus cycle (Tab/↑↓): Resume → Skills → Phone → Contact Email → Portfolio URL → GitHub URL → LinkedIn URL → Tone → Projects
+  - Client-side validation on save mirrors backend limits (phone ≤ 30, email format ≤ 255, URLs ≤ 500)
+  - Contact values are shown in view mode too (same block, read-only)
 - **Projects section**: displayed as a scrollable list below tone. Each project shows `name` + first line of `description` + tech stack
 - `n` = Add new project (opens project edit popup with Name, Description, Tech Stack fields)
 - `d` = Delete selected project (with confirmation)
@@ -248,7 +274,7 @@ jh-cli clear-cache
 | `JobResponse` | `GET /api/jobs` | `id`, `title`, `company`, `url`, `description`, `posted_at`, `source` |
 | `JobDetailResponse` | `GET /api/jobs/{id}` | `JobResponse` + `match_score`, `analysis_json` |
 | `AuthResponse` | `POST /auth/*` | `token`, `user_id`, `name`, `email` |
-| `ProfileResponse` | `GET /api/profile` | `id?`, `user_id`, `resume_text`, `skills[]`, `tone`, `projects[]` (each: `name`, `description`, `tech_stack[]`) |
+| `ProfileResponse` | `GET /api/profile` | `id?`, `user_id`, `resume_text`, `skills[]`, `tone`, `projects[]` (each: `name`, `description`, `tech_stack[]`), optional contact fields: `phone?`, `contactEmail?`, `portfolioUrl?`, `githubUrl?`, `linkedinUrl?` |
 | `EmailDraftResponse` | `GET/POST /api/jobs/{id}/email` | `id`, `job_id`, `subject`, `body`, `status`, `generated_at`, `sent_at?` |
 | `FetchResponse` | `POST /api/jobs/fetch` | `message` |
 | `ErrorResponse` | Error responses | `timestamp`, `status`, `error`, `message` |

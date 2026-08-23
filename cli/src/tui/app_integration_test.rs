@@ -475,6 +475,41 @@ async fn job_detail_f_toggles_email_full() {
     assert!(app.job_detail_screen.as_ref().unwrap().show_email_full);
 }
 
+// ===== JobList Fetch Trigger Tests =====
+
+#[tokio::test]
+async fn job_list_f_key_starts_fetch() {
+    let config = Config::default();
+    let api_client = ApiClient::new("http://localhost:8080");
+    let mut app = App::new(api_client, config);
+
+    app.state = AppState::JobList;
+    assert!(!app.job_list_screen.as_ref().unwrap().fetch_in_progress);
+
+    let event = crossterm::event::Event::Key(KeyEvent::new(KeyCode::Char('f'), KeyModifiers::NONE));
+    app.handle_event(event).await.unwrap();
+
+    assert!(app.job_list_screen.as_ref().unwrap().fetch_in_progress);
+}
+
+#[tokio::test]
+async fn job_list_ctrl_f_focuses_search_not_fetch() {
+    let config = Config::default();
+    let api_client = ApiClient::new("http://localhost:8080");
+    let mut app = App::new(api_client, config);
+
+    app.state = AppState::JobList;
+
+    let event = crossterm::event::Event::Key(KeyEvent::new(KeyCode::Char('f'), KeyModifiers::CONTROL));
+    app.handle_event(event).await.unwrap();
+
+    assert_eq!(
+        app.job_list_screen.as_ref().unwrap().search_focus,
+        SearchFocus::Focused
+    );
+    assert!(!app.job_list_screen.as_ref().unwrap().fetch_in_progress);
+}
+
 // ===== Render Tests =====
 
 #[tokio::test]

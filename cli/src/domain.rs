@@ -88,6 +88,9 @@ pub struct EmailDraftResponse {
 }
 
 /// Profile request for updating user profile.
+///
+/// Contact fields are optional: `None` is omitted from the serialized
+/// JSON, which the backend treats as "not set".
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProfileRequest {
@@ -95,9 +98,22 @@ pub struct ProfileRequest {
     pub skills: Vec<String>,
     pub tone: CompanyTone,
     pub projects: Vec<ProjectRequest>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub phone: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub contact_email: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub portfolio_url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub github_url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub linkedin_url: Option<String>,
 }
 
 /// Profile response from the backend.
+///
+/// Contact fields are optional and default to `None` when missing so
+/// payloads from older backends still deserialize.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProfileResponse {
@@ -107,6 +123,16 @@ pub struct ProfileResponse {
     pub skills: Vec<String>,
     pub tone: CompanyTone,
     pub projects: Vec<ProjectResponse>,
+    #[serde(default)]
+    pub phone: Option<String>,
+    #[serde(default)]
+    pub contact_email: Option<String>,
+    #[serde(default)]
+    pub portfolio_url: Option<String>,
+    #[serde(default)]
+    pub github_url: Option<String>,
+    #[serde(default)]
+    pub linkedin_url: Option<String>,
 }
 
 /// Response from fetch endpoints.
@@ -494,6 +520,11 @@ mod tests {
                 description: "A Rust TUI client".into(),
                 tech_stack: vec!["Rust".into()],
             }],
+            phone: Some("+55 42 99833-1363".into()),
+            contact_email: Some("juan@example.com".into()),
+            portfolio_url: Some("https://juanperuzzo.dev".into()),
+            github_url: Some("https://github.com/juanperuzzo".into()),
+            linkedin_url: Some("https://linkedin.com/in/juanperuzzo".into()),
         };
         let json = serde_json::to_string(&req).expect("serialize");
         let deserialized: ProfileRequest = serde_json::from_str(&json).expect("deserialize");
@@ -502,6 +533,50 @@ mod tests {
         assert_eq!(req.tone, deserialized.tone);
         assert_eq!(req.projects.len(), deserialized.projects.len());
         assert_eq!(req.projects[0].name, deserialized.projects[0].name);
+        assert_eq!(req.phone, deserialized.phone);
+        assert_eq!(req.contact_email, deserialized.contact_email);
+        assert_eq!(req.portfolio_url, deserialized.portfolio_url);
+        assert_eq!(req.github_url, deserialized.github_url);
+        assert_eq!(req.linkedin_url, deserialized.linkedin_url);
+    }
+
+    #[test]
+    fn profile_request_serializes_contact_fields_as_camel_case() {
+        let req = ProfileRequest {
+            resume_text: "Experienced developer...".into(),
+            skills: vec!["Rust".into()],
+            tone: CompanyTone::Formal,
+            projects: vec![],
+            phone: Some("1234".into()),
+            contact_email: Some("me@example.com".into()),
+            portfolio_url: None,
+            github_url: None,
+            linkedin_url: None,
+        };
+        let json = serde_json::to_string(&req).expect("serialize");
+        assert!(json.contains("\"phone\":\"1234\""));
+        assert!(json.contains("\"contactEmail\":\"me@example.com\""));
+    }
+
+    #[test]
+    fn profile_request_omits_unset_contact_fields() {
+        let req = ProfileRequest {
+            resume_text: "Experienced developer...".into(),
+            skills: vec!["Rust".into()],
+            tone: CompanyTone::Formal,
+            projects: vec![],
+            phone: None,
+            contact_email: None,
+            portfolio_url: None,
+            github_url: None,
+            linkedin_url: None,
+        };
+        let json = serde_json::to_string(&req).expect("serialize");
+        assert!(!json.contains("phone"));
+        assert!(!json.contains("contactEmail"));
+        assert!(!json.contains("portfolioUrl"));
+        assert!(!json.contains("githubUrl"));
+        assert!(!json.contains("linkedinUrl"));
     }
 
     #[test]
@@ -517,13 +592,57 @@ mod tests {
                 description: "Backend".into(),
                 tech_stack: vec!["Java".into(), "Spring".into()],
             }],
+            phone: Some("+55 42 90000-0000".into()),
+            contact_email: Some("juan@example.com".into()),
+            portfolio_url: Some("https://juanperuzzo.dev".into()),
+            github_url: Some("https://github.com/juanperuzzo".into()),
+            linkedin_url: Some("https://linkedin.com/in/juanperuzzo".into()),
         };
         let json = serde_json::to_string(&resp).expect("serialize");
         let deserialized: ProfileResponse = serde_json::from_str(&json).expect("deserialize");
-        assert_eq!(resp.id, deserialized.id);
-        assert_eq!(resp.tone, deserialized.tone);
-        assert_eq!(resp.projects.len(), deserialized.projects.len());
-        assert_eq!(resp.projects[0].tech_stack, deserialized.projects[0].tech_stack);
+        assert_eq!(resp, deserialized);
+    }
+
+    #[test]
+    fn profile_response_parses_contact_fields_from_camel_case_json() {
+        let json = r#"{
+            "id": 1,
+            "userId": 1,
+            "resumeText": "Experienced developer...",
+            "skills": ["Rust"],
+            "tone": "FORMAL",
+            "projects": [],
+            "phone": "+55 42 90000-0000",
+            "contactEmail": "juan@example.com",
+            "portfolioUrl": "https://juanperuzzo.dev",
+            "githubUrl": "https://github.com/juanperuzzo",
+            "linkedinUrl": "https://linkedin.com/in/juanperuzzo"
+        }"#;
+        let resp: ProfileResponse = serde_json::from_str(json).expect("deserialize");
+        assert_eq!(resp.phone.as_deref(), Some("+55 42 90000-0000"));
+        assert_eq!(resp.contact_email.as_deref(), Some("juan@example.com"));
+        assert_eq!(resp.portfolio_url.as_deref(), Some("https://juanperuzzo.dev"));
+        assert_eq!(resp.github_url.as_deref(), Some("https://github.com/juanperuzzo"));
+        assert_eq!(resp.linkedin_url.as_deref(), Some("https://linkedin.com/in/juanperuzzo"));
+    }
+
+    #[test]
+    fn profile_response_without_contact_fields_defaults_to_none() {
+        // Old backend payloads have no contact keys at all.
+        let json = r#"{
+            "id": 1,
+            "userId": 1,
+            "resumeText": "Experienced developer...",
+            "skills": ["Rust"],
+            "tone": "FORMAL",
+            "projects": []
+        }"#;
+        let resp: ProfileResponse = serde_json::from_str(json).expect("deserialize");
+        assert_eq!(resp.phone, None);
+        assert_eq!(resp.contact_email, None);
+        assert_eq!(resp.portfolio_url, None);
+        assert_eq!(resp.github_url, None);
+        assert_eq!(resp.linkedin_url, None);
     }
 
     #[test]
