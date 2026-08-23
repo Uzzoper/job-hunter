@@ -3,6 +3,7 @@ use crate::config::ConfigManager;
 use crate::domain::{CompanyTone, ProfileRequest, ProfileResponse, ProjectRequest, ProjectResponse};
 use crate::tui::theme::{Theme, render_empty_state, render_error_popup, render_loading};
 use crate::tui::Toast;
+use crate::validation;
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Direction, Layout, Margin, Rect},
@@ -12,11 +13,6 @@ use ratatui::{
 };
 use std::sync::Arc;
 use tokio::sync::Mutex;
-
-/// Max lengths for contact fields, mirroring backend validation.
-const PHONE_MAX_LEN: usize = 30;
-const CONTACT_EMAIL_MAX_LEN: usize = 255;
-const URL_MAX_LEN: usize = 500;
 
 /// Width of the label column inside the contact block (longest label is
 /// "Portfolio URL" / "Contact Email" = 13 chars + padding).
@@ -690,40 +686,18 @@ impl ProfileScreen {
 
         // Contact fields — mirror backend validation limits so users get
         // immediate feedback instead of a failed request.
-        if self.phone.text.chars().count() > PHONE_MAX_LEN {
-            self.validation_errors
-                .push(format!("phone must be at most {PHONE_MAX_LEN} characters"));
-        }
+        self.validation_errors
+            .extend(validation::phone_errors(&self.phone.text));
 
         let email = self.contact_email.text.trim();
-        if !email.is_empty() && !Self::is_valid_email(email) {
-            self.validation_errors
-                .push("contactEmail must be a valid email address".to_string());
-        }
-        if email.chars().count() > CONTACT_EMAIL_MAX_LEN {
-            self.validation_errors
-                .push(format!("contactEmail must be at most {CONTACT_EMAIL_MAX_LEN} characters"));
-        }
+        self.validation_errors
+            .extend(validation::contact_email_errors(email));
 
         for url in [&self.portfolio_url.text, &self.github_url.text, &self.linkedin_url.text] {
-            if url.chars().count() > URL_MAX_LEN {
-                self.validation_errors
-                    .push(format!("URL must be at most {URL_MAX_LEN} characters"));
-            }
+            self.validation_errors.extend(validation::url_errors(url));
         }
 
         self.validation_errors.is_empty()
-    }
-
-    /// Basic email plausibility check: local@domain with no whitespace.
-    /// Full RFC validation is left to the backend.
-    fn is_valid_email(s: &str) -> bool {
-        match s.split_once('@') {
-            Some((local, domain)) => {
-                !local.is_empty() && !domain.is_empty() && !s.chars().any(char::is_whitespace)
-            }
-            None => false,
-        }
     }
 
     fn selected_tone(&self) -> CompanyTone {

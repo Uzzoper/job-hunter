@@ -7,6 +7,7 @@ pub mod config;
 pub mod cache;
 pub mod error;
 pub mod util;
+pub mod validation;
 pub mod batch;
 pub mod tui;
 
