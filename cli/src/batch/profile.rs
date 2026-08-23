@@ -2,6 +2,7 @@ use crate::api::ApiClient;
 use crate::domain::{CompanyTone, ProfileRequest, ProfileResponse, ProjectRequest};
 use crate::error::{ApiError, CliError};
 use crate::util;
+use crate::validation;
 
 /// Handle profile subcommands.
 ///
@@ -92,6 +93,20 @@ async fn handle_edit(fields: ProfileEditFields, client: &ApiClient) -> anyhow::R
         github_url,
         linkedin_url,
     } = fields;
+
+    // Fail fast on invalid contact values before any HTTP request is made.
+    // Mirrors the TUI/backend rules: phone ≤ 30 chars; contact-email valid
+    // format + ≤ 255 chars; URLs ≤ 500 chars.
+    let errors = validation::validate_optional_contact_fields(
+        phone.as_deref(),
+        contact_email.as_deref(),
+        portfolio_url.as_deref(),
+        github_url.as_deref(),
+        linkedin_url.as_deref(),
+    );
+    if let Some(error) = errors.first() {
+        anyhow::bail!("{error}");
+    }
 
     let current = match client.get_profile().await {
         Ok(p) => p,
@@ -816,5 +831,245 @@ mod tests {
 
         let trimmed = apply_contact_field(None, Some("  https://dev.io  ".to_string()));
         assert_eq!(trimmed, Some("https://dev.io".to_string()));
+    }
+
+    // =====================================================================
+    // profile edit contact-field validation
+    // =====================================================================
+
+    /// Profile fixture whose stored phone exceeds the backend limit.
+    /// Proves that omitted flags are never validated against limits.
+    fn sample_profile_with_over_long_stored_phone() -> serde_json::Value {
+        json!({
+            "id": 1,
+            "userId": 1,
+            "resumeText": "Experienced Rust developer with 5 years in systems programming.",
+            "skills": ["Rust", "PostgreSQL", "Docker"],
+            "tone": "STARTUP",
+            "projects": [],
+            "phone": "1".repeat(40),
+            "contactEmail": "juan@example.com",
+            "portfolioUrl": "https://juanperuzzo.dev",
+            "githubUrl": "https://github.com/juanperuzzo",
+            "linkedinUrl": "https://linkedin.com/in/juanperuzzo"
+        })
+    }
+
+    #[tokio::test]
+    async fn profile_edit_when_phone_too_long_should_fail() {
+        let server = MockServer::start();
+        let token = Some("test-token".into());
+
+        // Must never be hit: validation happens before any HTTP request.
+        let get_mock = server.mock(|when, then| {
+            when.method(Method::GET).path("/api/profile");
+            then.status(200)
+                .header("content-type", "application/json")
+                .json_body(sample_profile());
+        });
+
+        let action = crate::ProfileAction::Edit {
+            resume: None,
+            skills: None,
+            tone: None,
+            projects: None,
+            phone: Some("1".repeat(31)),
+            contact_email: None,
+            portfolio_url: None,
+            github_url: None,
+            linkedin_url: None,
+        };
+        let result = handle(action, &server.url(""), &token).await;
+
+        let err = result.expect_err("phone over 30 chars must fail validation");
+        assert!(
+            err.to_string().contains("at most 30"),
+            "unexpected error message: {err}"
+        );
+        assert_eq!(get_mock.hits(), 0, "no HTTP request may precede validation");
+    }
+
+    #[tokio::test]
+    async fn profile_edit_when_invalid_email_should_fail() {
+        let server = MockServer::start();
+        let token = Some("test-token".into());
+
+        let get_mock = server.mock(|when, then| {
+            when.method(Method::GET).path("/api/profile");
+            then.status(200)
+                .header("content-type", "application/json")
+                .json_body(sample_profile());
+        });
+
+        let action = crate::ProfileAction::Edit {
+            resume: None,
+            skills: None,
+            tone: None,
+            projects: None,
+            phone: None,
+            contact_email: Some("not-an-email".into()),
+            portfolio_url: None,
+            github_url: None,
+            linkedin_url: None,
+        };
+        let result = handle(action, &server.url(""), &token).await;
+
+        let err = result.expect_err("invalid contact email must fail validation");
+        assert!(
+            err.to_string().contains("valid email"),
+            "unexpected error message: {err}"
+        );
+        assert_eq!(get_mock.hits(), 0, "no HTTP request may precede validation");
+    }
+
+    #[tokio::test]
+    async fn profile_edit_when_email_too_long_should_fail() {
+        let server = MockServer::start();
+        let token = Some("test-token".into());
+
+        let get_mock = server.mock(|when, then| {
+            when.method(Method::GET).path("/api/profile");
+            then.status(200)
+                .header("content-type", "application/json")
+                .json_body(sample_profile());
+        });
+
+        // Valid email format but 258 chars long.
+        let action = crate::ProfileAction::Edit {
+            resume: None,
+            skills: None,
+            tone: None,
+            projects: None,
+            phone: None,
+            contact_email: Some(format!("{}@example.com", "a".repeat(252))),
+            portfolio_url: None,
+            github_url: None,
+            linkedin_url: None,
+        };
+        let result = handle(action, &server.url(""), &token).await;
+
+        let err = result.expect_err("email over 255 chars must fail validation");
+        assert!(
+            err.to_string().contains("at most 255"),
+            "unexpected error message: {err}"
+        );
+        assert_eq!(get_mock.hits(), 0, "no HTTP request may precede validation");
+    }
+
+    #[tokio::test]
+    async fn profile_edit_when_url_too_long_should_fail() {
+        let server = MockServer::start();
+        let token = Some("test-token".into());
+
+        let get_mock = server.mock(|when, then| {
+            when.method(Method::GET).path("/api/profile");
+            then.status(200)
+                .header("content-type", "application/json")
+                .json_body(sample_profile());
+        });
+
+        let action = crate::ProfileAction::Edit {
+            resume: None,
+            skills: None,
+            tone: None,
+            projects: None,
+            phone: None,
+            contact_email: None,
+            portfolio_url: None,
+            github_url: Some(format!("https://example.com/{}", "a".repeat(500))),
+            linkedin_url: None,
+        };
+        let result = handle(action, &server.url(""), &token).await;
+
+        let err = result.expect_err("URL over 500 chars must fail validation");
+        assert!(
+            err.to_string().contains("at most 500"),
+            "unexpected error message: {err}"
+        );
+        assert_eq!(get_mock.hits(), 0, "no HTTP request may precede validation");
+    }
+
+    #[tokio::test]
+    async fn profile_edit_when_valid_boundary_values_should_succeed() {
+        let server = MockServer::start();
+        let token = Some("test-token".into());
+
+        let get_mock = server.mock(|when, then| {
+            when.method(Method::GET).path("/api/profile");
+            then.status(200)
+                .header("content-type", "application/json")
+                .json_body(sample_profile());
+        });
+
+        // All values exactly at their allowed limits must pass.
+        let put_mock = server.mock(|when, then| {
+            when.method(Method::PUT)
+                .path("/api/profile")
+                .body_contains(format!("\"phone\":\"{}\"", "1".repeat(30)))
+                .body_contains(format!("\"contactEmail\":\"{}@example.com\"", "a".repeat(243)))
+                .body_contains(format!("\"portfolioUrl\":\"https://example.com/{}\"", "a".repeat(480)));
+            then.status(200)
+                .header("content-type", "application/json")
+                .json_body(sample_updated_profile());
+        });
+
+        let action = crate::ProfileAction::Edit {
+            resume: None,
+            skills: None,
+            tone: None,
+            projects: None,
+            phone: Some("1".repeat(30)),
+            contact_email: Some(format!("{}@example.com", "a".repeat(243))), // exactly 255
+            portfolio_url: Some(format!("https://example.com/{}", "a".repeat(480))), // exactly 500
+            github_url: Some("https://github.com/juanperuzzo".into()),
+            linkedin_url: Some("https://linkedin.com/in/juanperuzzo".into()),
+        };
+        let result = handle(action, &server.url(""), &token).await;
+
+        assert!(result.is_ok(), "boundary-valid values should pass: {result:?}");
+        get_mock.assert();
+        put_mock.assert();
+    }
+
+    #[tokio::test]
+    async fn profile_edit_when_contact_fields_omitted_should_skip_validation() {
+        let server = MockServer::start();
+        let token = Some("test-token".into());
+
+        // Stored profile has an over-long phone; omitted flags must not
+        // trigger validation of stored values.
+        let get_mock = server.mock(|when, then| {
+            when.method(Method::GET).path("/api/profile");
+            then.status(200)
+                .header("content-type", "application/json")
+                .json_body(sample_profile_with_over_long_stored_phone());
+        });
+
+        let put_mock = server.mock(|when, then| {
+            when.method(Method::PUT).path("/api/profile");
+            then.status(200)
+                .header("content-type", "application/json")
+                .json_body(sample_updated_profile());
+        });
+
+        let action = crate::ProfileAction::Edit {
+            resume: None,
+            skills: None,
+            tone: Some("casual".into()),
+            projects: None,
+            phone: None,
+            contact_email: None,
+            portfolio_url: None,
+            github_url: None,
+            linkedin_url: None,
+        };
+        let result = handle(action, &server.url(""), &token).await;
+
+        assert!(
+            result.is_ok(),
+            "omitted contact flags must skip validation: {result:?}"
+        );
+        get_mock.assert();
+        put_mock.assert();
     }
 }
