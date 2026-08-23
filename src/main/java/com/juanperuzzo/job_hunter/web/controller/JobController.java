@@ -9,12 +9,15 @@ import com.juanperuzzo.job_hunter.application.port.in.GetEmailDraftUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.GetJobUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.ListJobsUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.SendEmailUseCase;
+import com.juanperuzzo.job_hunter.application.port.in.TailorResumeUseCase;
 import com.juanperuzzo.job_hunter.domain.model.EmailDraft;
 import com.juanperuzzo.job_hunter.domain.model.Job;
 import com.juanperuzzo.job_hunter.domain.model.JobAnalysis;
 import com.juanperuzzo.job_hunter.application.port.in.CurrentUserProvider;
 import com.juanperuzzo.job_hunter.web.dto.EmailDraftResponse;
 import com.juanperuzzo.job_hunter.web.dto.JobResponse;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -34,6 +37,7 @@ public class JobController {
     private final GetEmailDraftUseCase getEmailDraftUseCase;
     private final ApproveDraftUseCase approveDraftUseCase;
     private final SendEmailUseCase sendEmailUseCase;
+    private final TailorResumeUseCase tailorResumeUseCase;
     private final CurrentUserProvider currentUserService;
 
     public JobController(
@@ -46,6 +50,7 @@ public class JobController {
             GetEmailDraftUseCase getEmailDraftUseCase,
             ApproveDraftUseCase approveDraftUseCase,
             SendEmailUseCase sendEmailUseCase,
+            TailorResumeUseCase tailorResumeUseCase,
             CurrentUserProvider currentUserService) {
         this.fetchJobsUseCase = fetchJobsUseCase;
         this.fetchSourceJobsUseCase = fetchSourceJobsUseCase;
@@ -56,6 +61,7 @@ public class JobController {
         this.getEmailDraftUseCase = getEmailDraftUseCase;
         this.approveDraftUseCase = approveDraftUseCase;
         this.sendEmailUseCase = sendEmailUseCase;
+        this.tailorResumeUseCase = tailorResumeUseCase;
         this.currentUserService = currentUserService;
     }
 
@@ -169,6 +175,16 @@ public class JobController {
                 emailDraft.generatedAt()
         );
         return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/{id}/resume")
+    public ResponseEntity<byte[]> generateResume(@PathVariable Long id) {
+        Long userId = currentUserService.getCurrentUserId();
+        byte[] pdf = tailorResumeUseCase.tailorResume(userId, id);
+        return ResponseEntity.ok()
+                .contentType(MediaType.APPLICATION_PDF)
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"curriculo-" + id + ".pdf\"")
+                .body(pdf);
     }
 
 }

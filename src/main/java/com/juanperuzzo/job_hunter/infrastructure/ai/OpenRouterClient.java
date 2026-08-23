@@ -2,6 +2,7 @@ package com.juanperuzzo.job_hunter.infrastructure.ai;
 
 import com.juanperuzzo.job_hunter.application.port.out.AiPort;
 import com.juanperuzzo.job_hunter.domain.exception.AiException;
+import com.juanperuzzo.job_hunter.domain.exception.ScraperException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
@@ -9,7 +10,6 @@ import org.springframework.http.MediaType;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.ResourceAccessException;
-import java.util.Optional;
 
 import java.time.Duration;
 import java.util.List;
@@ -20,10 +20,17 @@ public class OpenRouterClient implements AiPort {
 
     private final RestClient restClient;
     private final String model;
+    private final ExponentialBackoffRetry retryPolicy;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
+    /**
+     * @param retryPolicy optional retry policy; when present, transient failures
+     *                    (HTTP 429/5xx, network timeouts) are retried with
+     *                    exponential backoff before surfacing an {@link AiException}.
+     */
     public OpenRouterClient(String baseUrl, String apiKey, String model, int timeoutSeconds, ExponentialBackoffRetry retryPolicy) {
         this.model = model;
+        this.retryPolicy = retryPolicy;
         SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
         factory.setConnectTimeout(Duration.ofSeconds(timeoutSeconds));
         factory.setReadTimeout(Duration.ofSeconds(timeoutSeconds));
@@ -41,6 +48,18 @@ public class OpenRouterClient implements AiPort {
 
     @Override
     public String complete(String prompt) {
+        if (retryPolicy == null) {
+            return executeCompletion(prompt);
+        }
+        try {
+            return retryPolicy.execute(() -> executeCompletion(prompt));
+        } catch (ScraperException e) {
+            // Translate so AiPort callers keep their exception semantics.
+            throw new AiException("AI call failed after retries", e);
+        }
+    }
+
+    private String executeCompletion(String prompt) {
         try {
             String requestBody = buildRequest(prompt);
 

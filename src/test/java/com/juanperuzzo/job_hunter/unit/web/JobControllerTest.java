@@ -9,6 +9,7 @@ import com.juanperuzzo.job_hunter.application.port.in.GetEmailDraftUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.GetJobUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.ListJobsUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.SendEmailUseCase;
+import com.juanperuzzo.job_hunter.application.port.in.TailorResumeUseCase;
 import com.juanperuzzo.job_hunter.application.port.out.TokenProvider;
 import com.juanperuzzo.job_hunter.domain.model.CompanyTone;
 import com.juanperuzzo.job_hunter.domain.model.EmailDraft;
@@ -46,8 +47,11 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.hamcrest.Matchers.containsString;
 
 @WebMvcTest(controllers = JobController.class, excludeAutoConfiguration = SecurityAutoConfiguration.class)
 @AutoConfigureMockMvc(addFilters = false)
@@ -86,6 +90,9 @@ class JobControllerTest {
 
     @MockitoBean
     private GetEmailDraftUseCase getEmailDraftUseCase;
+
+    @MockitoBean
+    private TailorResumeUseCase tailorResumeUseCase;
 
     @MockitoBean
     private TokenProvider tokenProvider;
@@ -377,6 +384,37 @@ class JobControllerTest {
         mockMvc.perform(post("/api/jobs/{id}/send", JOB_ID))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.message").value("Email 5 has already been sent"));
+    }
+
+    @Test
+    @DisplayName("generateResume should return PDF attachment when tailored resume is generated")
+    void generateResume_whenAuthenticated_shouldReturnPdfAttachment() throws Exception {
+        authenticateAs(1L);
+
+        when(tailorResumeUseCase.tailorResume(1L, JOB_ID)).thenReturn(new byte[]{37, 80, 68, 70, 1, 2, 3});
+
+        mockMvc.perform(post("/api/jobs/{id}/resume", JOB_ID))
+                .andExpect(status().isOk())
+                .andExpect(content().contentType("application/pdf"))
+                .andExpect(header().string("Content-Disposition", containsString("curriculo-10.pdf")));
+
+        verify(tailorResumeUseCase).tailorResume(1L, JOB_ID);
+    }
+
+    @Test
+    @DisplayName("generateResume should return 400 when job has not been analyzed for the user")
+    void generateResume_whenNoAnalysis_shouldReturn400() throws Exception {
+        authenticateAs(1L);
+
+        when(tailorResumeUseCase.tailorResume(1L, JOB_ID))
+                .thenThrow(new AnalysisNotFoundException("Job must be analyzed before tailoring the resume"));
+
+        mockMvc.perform(post("/api/jobs/{id}/resume", JOB_ID))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message")
+                        .value("Job must be analyzed before tailoring the resume"));
+
+        verify(tailorResumeUseCase).tailorResume(1L, JOB_ID);
     }
 
     private void authenticateAs(Long userId) {

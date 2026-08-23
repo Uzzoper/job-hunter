@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.when;
@@ -57,14 +58,16 @@ class UserProfileServiceTest {
     @DisplayName("saveProfile should create profile when none exists")
     void saveProfile_whenProfileDoesNotExist_shouldCreateProfile() {
         var resume = validResume();
-        var saved = new UserProfile(10L, 1L, resume, List.of("Java", "Spring"), CompanyTone.FORMAL, List.of());
+        var input = new UserProfile(null, 1L, resume, List.of("Java", "Spring"), CompanyTone.FORMAL, List.of(),
+                null, null, null, null, null);
+        var saved = new UserProfile(10L, 1L, resume, List.of("Java", "Spring"), CompanyTone.FORMAL, List.of(),
+                null, null, null, null, null);
 
         when(userRepository.findById(1L)).thenReturn(Optional.of(user()));
         when(userProfileRepository.findByUserId(1L)).thenReturn(Optional.empty());
-        when(userProfileRepository.save(new UserProfile(null, 1L, resume, List.of("Java", "Spring"), CompanyTone.FORMAL, List.of())))
-                .thenReturn(saved);
+        when(userProfileRepository.save(input)).thenReturn(saved);
 
-        var profile = userProfileService.saveProfile(1L, resume, List.of("Java", "Spring"), CompanyTone.FORMAL, List.of());
+        var profile = userProfileService.saveProfile(1L, input);
 
         assertEquals(saved, profile);
     }
@@ -74,15 +77,19 @@ class UserProfileServiceTest {
     void saveProfile_whenProfileExists_shouldUpdateProfile() {
         var resume = validResume();
         var existing = new UserProfile(10L, 1L, "Old resume with enough content to be valid for this test.",
-                List.of("Java"), CompanyTone.CASUAL, List.of());
-        var saved = new UserProfile(10L, 1L, resume, List.of("Java", "PostgreSQL"), CompanyTone.STARTUP, List.of());
+                List.of("Java"), CompanyTone.CASUAL, List.of(), null, null, null, null, null);
+        var input = new UserProfile(null, 1L, resume, List.of("Java", "PostgreSQL"), CompanyTone.STARTUP, List.of(),
+                null, null, null, null, null);
+        var saved = new UserProfile(10L, 1L, resume, List.of("Java", "PostgreSQL"), CompanyTone.STARTUP, List.of(),
+                null, null, null, null, null);
 
         when(userRepository.findById(1L)).thenReturn(Optional.of(user()));
         when(userProfileRepository.findByUserId(1L)).thenReturn(Optional.of(existing));
-        when(userProfileRepository.save(new UserProfile(10L, 1L, resume, List.of("Java", "PostgreSQL"), CompanyTone.STARTUP, List.of())))
+        when(userProfileRepository.save(new UserProfile(10L, 1L, resume, List.of("Java", "PostgreSQL"), CompanyTone.STARTUP, List.of(),
+                null, null, null, null, null)))
                 .thenReturn(saved);
 
-        var profile = userProfileService.saveProfile(1L, resume, List.of("Java", "PostgreSQL"), CompanyTone.STARTUP, List.of());
+        var profile = userProfileService.saveProfile(1L, input);
 
         assertEquals(saved, profile);
     }
@@ -91,9 +98,11 @@ class UserProfileServiceTest {
     @DisplayName("saveProfile should throw IllegalArgumentException when resume is too short")
     void saveProfile_whenResumeIsTooShort_shouldThrowIllegalArgumentException() {
         when(userRepository.findById(1L)).thenReturn(Optional.of(user()));
+        var input = new UserProfile(null, 1L, "short", List.of("Java"), CompanyTone.FORMAL, List.of(),
+                null, null, null, null, null);
 
         assertThrows(IllegalArgumentException.class,
-                () -> userProfileService.saveProfile(1L, "short", List.of("Java"), CompanyTone.FORMAL, List.of()));
+                () -> userProfileService.saveProfile(1L, input));
     }
 
     @Test
@@ -102,6 +111,45 @@ class UserProfileServiceTest {
         when(userRepository.findById(99L)).thenReturn(Optional.empty());
 
         assertThrows(UserNotFoundException.class, () -> userProfileService.getProfile(99L));
+    }
+
+    @Test
+    @DisplayName("saveProfile should persist contact fields")
+    void saveProfile_shouldPersistContactFields() {
+        var resume = validResume();
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user()));
+        when(userProfileRepository.findByUserId(1L)).thenReturn(Optional.empty());
+
+        var input = new UserProfile(null, 1L, resume, List.of("Java"), CompanyTone.FORMAL, List.of(),
+                "(42) 99999-0000", "me@example.com", "https://me.dev",
+                "https://github.com/me", "https://linkedin.com/in/me");
+        var saved = new UserProfile(10L, 1L, resume, List.of("Java"), CompanyTone.FORMAL, List.of(),
+                "(42) 99999-0000", "me@example.com", "https://me.dev",
+                "https://github.com/me", "https://linkedin.com/in/me");
+        when(userProfileRepository.save(input)).thenReturn(saved);
+
+        var profile = userProfileService.saveProfile(1L, input);
+
+        assertEquals("(42) 99999-0000", profile.phone());
+        assertEquals("me@example.com", profile.contactEmail());
+        assertEquals("https://me.dev", profile.portfolioUrl());
+        assertEquals("https://github.com/me", profile.githubUrl());
+        assertEquals("https://linkedin.com/in/me", profile.linkedinUrl());
+    }
+
+    @Test
+    @DisplayName("getProfile should return stored contact fields")
+    void getProfile_shouldReturnContactFields() {
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user()));
+        var stored = new UserProfile(10L, 1L, validResume(), List.of("Java"), CompanyTone.FORMAL, List.of(),
+                null, "stored@example.com", "https://stored.dev", null, null);
+        when(userProfileRepository.findByUserId(1L)).thenReturn(Optional.of(stored));
+
+        var profile = userProfileService.getProfile(1L);
+
+        assertEquals("stored@example.com", profile.contactEmail());
+        assertEquals("https://stored.dev", profile.portfolioUrl());
+        assertNull(profile.githubUrl());
     }
 
     private User user() {

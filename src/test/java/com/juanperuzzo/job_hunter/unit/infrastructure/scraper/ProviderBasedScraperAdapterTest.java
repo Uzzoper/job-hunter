@@ -1,14 +1,11 @@
 package com.juanperuzzo.job_hunter.unit.infrastructure.scraper;
 
 import com.juanperuzzo.job_hunter.application.port.out.RawJob;
-import com.juanperuzzo.job_hunter.domain.model.Job;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.ProviderBasedScraperAdapter;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.normalizer.DateParser;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.normalizer.JobNormalizer;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.provider.ProviderRegistry;
-import com.juanperuzzo.job_hunter.infrastructure.scraper.provider.ProviderRegistry.ProviderEntry;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.ratelimit.RateLimiter;
-import com.juanperuzzo.job_hunter.infrastructure.scraper.retry.ExponentialBackoffRetry;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.strategy.ExtractionStrategy;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -16,7 +13,6 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 import java.time.Clock;
-import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.util.List;

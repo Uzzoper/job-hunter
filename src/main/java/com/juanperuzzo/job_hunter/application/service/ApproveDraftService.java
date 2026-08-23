@@ -8,8 +8,6 @@ import com.juanperuzzo.job_hunter.domain.exception.JobNotFoundException;
 import com.juanperuzzo.job_hunter.domain.model.EmailDraft;
 import com.juanperuzzo.job_hunter.domain.model.EmailStatus;
 
-import java.time.LocalDateTime;
-
 public class ApproveDraftService implements ApproveDraftUseCase {
 
     private final EmailDraftRepository emailDraftRepository;

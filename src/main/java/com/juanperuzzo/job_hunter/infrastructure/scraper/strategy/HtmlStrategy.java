@@ -6,9 +6,6 @@ import com.juanperuzzo.job_hunter.infrastructure.scraper.parser.JsonLdParser;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.net.URI;
 import java.util.ArrayList;
 import java.util.List;
@@ -16,8 +13,6 @@ import java.util.Optional;
 import java.util.function.Function;
 
 public class HtmlStrategy implements ExtractionStrategy {
-
-    private static final Logger log = LoggerFactory.getLogger(HtmlStrategy.class);
 
     private final String providerId;
     private final String baseUrl;

@@ -19,6 +19,9 @@ WORKDIR /app
 # Create a non-root user for security
 RUN useradd --system --no-create-home --user-group appuser
 
+# Writable uploads directory (resume PDFs are stored here at runtime)
+RUN mkdir -p /app/uploads/resumes && chown -R appuser:appuser /app/uploads
+
 COPY --from=builder /build/target/*.jar app.jar
 
 EXPOSE 8080

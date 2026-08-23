@@ -61,12 +61,13 @@ public class UserProfilePersistenceAdapter implements UserProfileRepository {
                 profile.userId(),
                 profile.resumeText(),
                 profile.skills().toArray(new String[0]),
-                profile.tone().name()
+                profile.tone().name(),
+                profile.phone(),
+                profile.contactEmail(),
+                profile.portfolioUrl(),
+                profile.githubUrl(),
+                profile.linkedinUrl()
         );
-    }
-
-    private UserProfile toDomain(UserProfileEntity entity) {
-        return toDomain(entity, List.of());
     }
 
     private UserProfile toDomain(UserProfileEntity entity, List<Project> projects) {
@@ -80,7 +81,12 @@ public class UserProfilePersistenceAdapter implements UserProfileRepository {
                 entity.getResumeText(),
                 skills,
                 tone,
-                projects
+                projects,
+                entity.getPhone(),
+                entity.getContactEmail(),
+                entity.getPortfolioUrl(),
+                entity.getGithubUrl(),
+                entity.getLinkedinUrl()
         );
     }
 }

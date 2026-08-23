@@ -12,7 +12,6 @@ import com.juanperuzzo.job_hunter.domain.exception.MissingRecipientException;
 import com.juanperuzzo.job_hunter.domain.exception.UserNotFoundException;
 import com.juanperuzzo.job_hunter.domain.model.EmailDraft;
 import com.juanperuzzo.job_hunter.domain.model.EmailStatus;
-import com.juanperuzzo.job_hunter.domain.model.Job;
 
 import java.time.LocalDateTime;
 
