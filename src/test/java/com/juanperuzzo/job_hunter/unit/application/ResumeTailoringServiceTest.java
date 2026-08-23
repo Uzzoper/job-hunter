@@ -190,6 +190,82 @@ class ResumeTailoringServiceTest {
     }
 
     @Test
+    @DisplayName("tailorResume should throw AiException when AI response lacks the objective field")
+    void parse_whenObjectiveMissing_shouldThrowAiException() {
+        newService(8000);
+
+        when(jobRepository.findById(JOB_ID)).thenReturn(Optional.of(job()));
+        when(jobAnalysisRepository.findByJobIdAndUserId(JOB_ID, USER_ID)).thenReturn(Optional.of(analysis()));
+        when(userProfileRepository.findByUserId(USER_ID)).thenReturn(Optional.of(profile()));
+        when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user()));
+        when(aiPort.complete(anyString())).thenReturn("""
+                {"skills": {"languages": ["Java"], "frameworks": [], "databases": [], "cloudDevOps": [], "tools": [], "concepts": []}}
+                """);
+
+        var ex = assertThrows(AiException.class,
+                () -> service.tailorResume(USER_ID, JOB_ID));
+        assertTrue(ex.getMessage().contains("missing required fields"),
+                "exception must report missing required fields");
+        verifyNoInteractions(pdfRendererPort);
+    }
+
+    @Test
+    @DisplayName("tailorResume should throw AiException when AI objective is blank")
+    void parse_whenObjectiveBlank_shouldThrowAiException() {
+        newService(8000);
+
+        when(jobRepository.findById(JOB_ID)).thenReturn(Optional.of(job()));
+        when(jobAnalysisRepository.findByJobIdAndUserId(JOB_ID, USER_ID)).thenReturn(Optional.of(analysis()));
+        when(userProfileRepository.findByUserId(USER_ID)).thenReturn(Optional.of(profile()));
+        when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user()));
+        when(aiPort.complete(anyString())).thenReturn("""
+                {"objective": "   ", "skills": {"languages": ["Java"]}}
+                """);
+
+        assertThrows(AiException.class,
+                () -> service.tailorResume(USER_ID, JOB_ID));
+        verifyNoInteractions(pdfRendererPort);
+    }
+
+    @Test
+    @DisplayName("tailorResume should throw AiException when AI response lacks the skills object")
+    void parse_whenSkillsAbsent_shouldThrowAiException() {
+        newService(8000);
+
+        when(jobRepository.findById(JOB_ID)).thenReturn(Optional.of(job()));
+        when(jobAnalysisRepository.findByJobIdAndUserId(JOB_ID, USER_ID)).thenReturn(Optional.of(analysis()));
+        when(userProfileRepository.findByUserId(USER_ID)).thenReturn(Optional.of(profile()));
+        when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user()));
+        when(aiPort.complete(anyString())).thenReturn("""
+                {"objective": "Desenvolvedor Java Júnior com foco em Spring Boot"}
+                """);
+
+        assertThrows(AiException.class,
+                () -> service.tailorResume(USER_ID, JOB_ID));
+        verifyNoInteractions(pdfRendererPort);
+    }
+
+    @Test
+    @DisplayName("tailorResume should parse a complete AI response without error")
+    void parse_whenCompleteResponse_shouldParseFine() {
+        newService(8000);
+
+        when(jobRepository.findById(JOB_ID)).thenReturn(Optional.of(job()));
+        when(jobAnalysisRepository.findByJobIdAndUserId(JOB_ID, USER_ID)).thenReturn(Optional.of(analysis()));
+        when(userProfileRepository.findByUserId(USER_ID)).thenReturn(Optional.of(profile()));
+        when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user()));
+        when(aiPort.complete(anyString())).thenReturn(validAiJson());
+        when(pdfRendererPort.renderPdf(anyString())).thenReturn(new byte[]{1});
+
+        var result = service.tailorResume(USER_ID, JOB_ID);
+
+        assertNotNull(result);
+        verify(pdfRendererPort).renderPdf(htmlCaptor.capture());
+        assertTrue(htmlCaptor.getValue().contains("Desenvolvedor Java Júnior com foco em Spring Boot"),
+                "complete response must be parsed and rendered with its objective");
+    }
+
+    @Test
     @DisplayName("tailorResume should drop skills invented by the AI that are not in the original resume")
     void tailorResume_whenAiReturnsInventedSkill_shouldDropSkill() {
         newService(8000);
