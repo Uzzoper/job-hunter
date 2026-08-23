@@ -88,8 +88,8 @@ public class StringListConverter implements AttributeConverter<String[], String>
 - **remove** `org.postgresql:postgresql` and `org.flywaydb:flyway-database-postgresql`
 - **add** `org.xerial:sqlite-jdbc` (runtime)
 - **add** `org.hibernate.orm:hibernate-community-dialects` (runtime — `SQLiteDialect`)
-- **add** the Flyway SQLite support artifact required by the Flyway version managed by Boot
-  (`org.flywaydb:flyway-community-db-support`)
+- no extra Flyway artifact: Boot 4 manages Flyway 11.x, whose `flyway-core` ships native SQLite
+  support (`flyway-community-db-support` has no 11.x line and must NOT be added)
 
 ---
 
