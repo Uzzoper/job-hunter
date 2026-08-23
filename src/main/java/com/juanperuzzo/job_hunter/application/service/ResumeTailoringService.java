@@ -216,9 +216,16 @@ Resume text:
             String json = cleaned.substring(start, end + 1);
             var root = objectMapper.readTree(json);
 
+            // Spec Scenario 4: objective and skills are mandatory; all other sections stay lenient.
             String objective = root.path("objective").asText("");
-
+            if (objective.isBlank()) {
+                throw new AiException("AI response missing required fields");
+            }
             var skillsNode = root.path("skills");
+            if (skillsNode.isMissingNode() || skillsNode.isNull()) {
+                throw new AiException("AI response missing required fields");
+            }
+
             var skills = new TailoredResume.Skills(
                     filterSkills(skillsNode.path("languages"), resumeText),
                     filterSkills(skillsNode.path("frameworks"), resumeText),
