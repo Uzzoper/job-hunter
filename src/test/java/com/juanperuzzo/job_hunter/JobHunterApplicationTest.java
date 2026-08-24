@@ -1,6 +1,7 @@
 package com.juanperuzzo.job_hunter;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
@@ -52,5 +53,22 @@ class JobHunterApplicationTest {
 		JobHunterApplication.ensureSqliteDirectoryExists("jdbc:sqlite:" + db + "?journal_mode=WAL");
 
 		assertTrue(Files.isDirectory(db.getParent()));
+	}
+
+	@Test
+	@DisplayName("ensureSqliteDirectoryExists when parent cannot be created should fail fast pointing at DB_URL")
+	void ensureSqliteDirectoryExists_whenParentCannotBeCreated_shouldFailFastPointingAtDbUrl(@TempDir Path tmp)
+			throws IOException {
+		// An existing regular FILE cannot be turned into a directory, so
+		// Files.createDirectories fails portably without relying on POSIX permissions.
+		Path blocker = tmp.resolve("data");
+		Files.writeString(blocker, "regular file, not a directory");
+		Path db = blocker.resolve("jobhunter.db");
+
+		var ex = assertThrows(IllegalStateException.class,
+				() -> JobHunterApplication.ensureSqliteDirectoryExists("jdbc:sqlite:" + db));
+
+		assertTrue(ex.getMessage().contains("DB_URL"), "error must point at the DB_URL override");
+		assertTrue(ex.getMessage().contains(blocker.toString()), "error must name the failing path");
 	}
 }
