@@ -4,8 +4,8 @@ services:
       context: ./linkedin-scraper
       dockerfile: Dockerfile
     container_name: job-hunter-linkedin-scraper
-    expose:
-      - "3000"
+    ports:
+      - "3000:3000"
     environment:
       - NODE_ENV=production
       - PORT=3000
