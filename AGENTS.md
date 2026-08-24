@@ -22,7 +22,7 @@ Scraper (ProviderRegistry: Gupy + InfoJobs + LinkedIn)
        ↓
    LinkedInScraperClient → LinkedIn Scraper Microservice (Node.js + Playwright)
        ↓
-Persistence (PostgreSQL + Flyway)
+Persistence (SQLite + Flyway)
        ↓
 AI Client (OpenRouter → MiniMax M2.5)
        ↓
@@ -83,7 +83,7 @@ infrastructure → domain
 | Language | Java 21 — use records, text blocks, var |
 | Framework | Spring Boot 4.0.6 |
 | Build | Maven |
-| Database | PostgreSQL via Docker Compose (dev and prod) |
+| Database | SQLite via `sqlite-jdbc` — local file (`./data/jobhunter.db`), no Docker needed |
 | Migrations | Flyway |
 | Security | Spring Security + JWT (jjwt) |
 | Scraping | Jsoup + RestClient |
@@ -227,7 +227,7 @@ Tests follow the same package structure under `src/test/java/.../`. Check the di
 ## Development roadmap
 
 ### Phase 1 — Core (MVP) — ✅ Complete
-- [x] `pom.xml` dependencies (Jsoup, Flyway, WireMock, PostgreSQL)
+- [x] `pom.xml` dependencies (Jsoup, Flyway, WireMock, SQLite)
 - [x] `docker-compose.yml` + `application.yaml`
 - [x] **[TDD]** `JobTest` — domain model RED
 - [x] `Job` record with `isExpired()` and URL-based `equals` → GREEN

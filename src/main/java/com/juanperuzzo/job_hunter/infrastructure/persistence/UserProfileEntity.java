@@ -17,7 +17,8 @@ public class UserProfileEntity {
     @Column(name = "resume_text", nullable = false, columnDefinition = "TEXT")
     private String resumeText;
 
-    @Column(name = "skills", nullable = false, columnDefinition = "TEXT[]")
+    @Column(name = "skills", nullable = false)
+    @Convert(converter = StringListConverter.class)
     private String[] skills;
 
     @Column(name = "tone", length = 50)

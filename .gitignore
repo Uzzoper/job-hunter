@@ -54,5 +54,8 @@ spring-boot.log
 # Uploaded files (resumes, etc.)
 uploads/
 
+# Local SQLite database (runtime data)
+data/
+
 # Generated test artifacts
 curriculo-ats.pdf
