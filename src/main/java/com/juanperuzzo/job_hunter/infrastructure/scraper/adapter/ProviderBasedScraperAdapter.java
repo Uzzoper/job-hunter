@@ -1,4 +1,4 @@
-package com.juanperuzzo.job_hunter.infrastructure.scraper;
+package com.juanperuzzo.job_hunter.infrastructure.scraper.adapter;
 
 import com.juanperuzzo.job_hunter.application.port.out.ScraperPort;
 import com.juanperuzzo.job_hunter.domain.model.Job;
