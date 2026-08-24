@@ -905,3 +905,91 @@ async fn profile_cursor_left_right_ignored_in_view_mode() {
     assert_eq!(app.profile_screen.as_ref().unwrap().resume_cursor, 0);
     assert_eq!(app.profile_screen.as_ref().unwrap().skills_cursor, 0);
 }
+// =========================================================================
+// Startup token validation — skip auth screen with a valid saved token
+// (docs/specs/cli-auth-ux-fixes.md, Scenario 4 — Step 1 RED)
+// =========================================================================
+
+use httpmock::MockServer;
+
+#[tokio::test]
+async fn tui_startup_valid_token_skips_auth_to_job_list() {
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(httpmock::Method::GET)
+            .path("/api/profile")
+            .header("authorization", "Bearer valid-jwt");
+        then.status(200)
+            .header("content-type", "application/json")
+            .json_body(serde_json::json!({
+                "id": 1,
+                "userId": 1,
+                "resumeText": "Valid token startup validation smoke profile.",
+                "skills": [],
+                "tone": "FORMAL",
+                "projects": []
+            }));
+    });
+
+    let mut api_client = ApiClient::new(&server.url("/"));
+    api_client.set_token("valid-jwt");
+    let mut app = App::new(api_client, Config::default());
+    assert_eq!(app.state, AppState::Auth);
+
+    app.attempt_token_validation().await;
+
+    assert_eq!(
+        app.state,
+        AppState::JobList,
+        "a token accepted by the backend must land directly on the job list"
+    );
+}
+
+#[tokio::test]
+async fn tui_startup_invalid_token_falls_back_to_auth_screen() {
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(httpmock::Method::GET)
+            .path("/api/profile")
+            .header("authorization", "Bearer expired-jwt");
+        then.status(401)
+            .header("content-type", "application/json")
+            .json_body(serde_json::json!({ "message": "Token expired" }));
+    });
+
+    let mut api_client = ApiClient::new(&server.url("/"));
+    api_client.set_token("expired-jwt");
+    let mut app = App::new(api_client, Config::default());
+
+    app.attempt_token_validation().await;
+
+    assert_eq!(
+        app.state,
+        AppState::Auth,
+        "a rejected (401) token must fall back to the auth screen"
+    );
+    assert!(
+        app.error_message.is_none(),
+        "an expected 401 must not spam the user with an error popup"
+    );
+}
+
+#[tokio::test]
+async fn tui_startup_unreachable_backend_falls_back_to_auth_with_error() {
+    // Closed port — same unreachable-backend pattern as error_scenarios tests.
+    let mut api_client = ApiClient::new("http://127.0.0.1:1");
+    api_client.set_token("some-jwt");
+    let mut app = App::new(api_client, Config::default());
+
+    app.attempt_token_validation().await;
+
+    assert_eq!(
+        app.state,
+        AppState::Auth,
+        "unreachable backend must fall back to the auth screen"
+    );
+    assert!(
+        app.error_message.is_some(),
+        "the connection error must be visible to the user"
+    );
+}

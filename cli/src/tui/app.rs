@@ -3,6 +3,7 @@ use crate::cache::CacheManager;
 use crate::config::Config;
 use crate::config::ConfigManager;
 use crate::domain::{AuthResponse, JobResponse, ProfileResponse};
+use crate::error::{ApiError, CliError};
 use crate::tui::{auth_screen, job_detail_screen, job_list_screen, profile_screen};
 use crate::tui::job_detail_screen::JobDetailScreen;
 use crate::tui::job_list_screen::{JobListScreen, LoadingState, SearchFocus};
@@ -72,6 +73,34 @@ impl App {
 
     pub fn should_quit(&self) -> bool {
         self.should_quit || self.state == AppState::Quitting
+    }
+
+    /// Validates a saved token at startup and skips the auth screen when the
+    /// backend accepts it (docs/specs/cli-auth-ux-fixes.md, Scenario 4).
+    ///
+    /// One cheap authenticated call (`GET /api/profile`):
+    /// - success → job list screen
+    /// - 401 (expired/invalid) → auth screen, no error popup
+    /// - network error → auth screen with the connection error visible
+    /// - no token configured → auth screen, no call is made
+    pub(crate) async fn attempt_token_validation(&mut self) {
+        let has_token = self.api_client.lock().await.get_token().is_some();
+        if !has_token {
+            return;
+        }
+
+        let result = self.api_client.lock().await.get_profile().await;
+        match result {
+            Ok(_) => self.state = AppState::JobList,
+            Err(CliError::Api(ApiError::Unauthorized(_))) => {
+                // Expected for expired/invalid tokens — fall back silently.
+                self.state = AppState::Auth;
+            }
+            Err(e) => {
+                self.state = AppState::Auth;
+                self.set_error(format!("Could not reach the backend: {e}"));
+            }
+        }
     }
 
     pub fn set_error(&mut self, message: String) {
@@ -204,6 +233,10 @@ impl App {
 
     pub async fn run(&mut self, terminal: &mut Terminal<ratatui::prelude::CrosstermBackend<io::Stdout>>) -> anyhow::Result<()> {
         use crossterm::event::{Event, KeyCode, KeyModifiers};
+
+        // Skip the auth screen when a saved token is still accepted
+        // (docs/specs/cli-auth-ux-fixes.md, Scenario 4).
+        self.attempt_token_validation().await;
 
         while !self.should_quit() {
             terminal.draw(|frame| self.render(frame))?;
