@@ -203,6 +203,24 @@ pub fn load(path: Option<&str>) -> Result<Config> {
     Ok(manager.config)
 }
 
+/// Resolves the effective API token for this invocation.
+///
+/// Precedence (highest first): `--token` flag, `JH_TOKEN` environment
+/// variable, token stored in the config file. The env override is
+/// read-only — it is never persisted back to the config file
+/// (docs/specs/cli-auth-ux-fixes.md, Scenario 3 + Rule 2).
+pub fn resolve_token(flag_token: Option<&str>, config: &Config) -> Option<String> {
+    if let Some(token) = flag_token {
+        return Some(token.to_string());
+    }
+    if let Ok(env_token) = std::env::var("JH_TOKEN")
+        && !env_token.trim().is_empty()
+    {
+        return Some(env_token);
+    }
+    config.token.clone()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -365,6 +383,74 @@ mod tests {
         assert_eq!(
             mode, 0o600,
             "config file should have 600 permissions, got {mode:o}"
+        );
+    }
+
+    // =========================================================================
+    // resolve_token — JH_TOKEN env override
+    // (docs/specs/cli-auth-ux-fixes.md, Scenario 3 — Step 1 RED)
+    // =========================================================================
+
+    /// Serializes tests that mutate process-global environment state.
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    #[test]
+    fn resolve_token_uses_jh_token_env_when_nothing_else_set() {
+        // Compute inside the block so the lock guard drops BEFORE any
+        // assertion — a panicking sibling must not poison this lock.
+        let resolved = {
+            let _guard = ENV_LOCK.lock().unwrap();
+            // Safety: env access is serialized by ENV_LOCK; no other test in
+            // this binary reads JH_TOKEN.
+            unsafe { std::env::set_var("JH_TOKEN", "env-token-123") };
+            let r = super::resolve_token(None, &Config::default());
+            unsafe { std::env::remove_var("JH_TOKEN") };
+            r
+        };
+        assert_eq!(
+            resolved.as_deref(),
+            Some("env-token-123"),
+            "JH_TOKEN must be used when no flag and no config token exist"
+        );
+    }
+
+    #[test]
+    fn resolve_token_jh_token_env_overrides_config_token() {
+        let resolved = {
+            let _guard = ENV_LOCK.lock().unwrap();
+            unsafe { std::env::set_var("JH_TOKEN", "env-token-456") };
+            let config = Config {
+                token: Some("config-token".into()),
+                ..Config::default()
+            };
+            let r = super::resolve_token(None, &config);
+            unsafe { std::env::remove_var("JH_TOKEN") };
+            r
+        };
+        assert_eq!(
+            resolved.as_deref(),
+            Some("env-token-456"),
+            "JH_TOKEN must win over the token stored in the config file"
+        );
+    }
+
+    #[test]
+    fn resolve_token_explicit_flag_beats_jh_token_env() {
+        let resolved = {
+            let _guard = ENV_LOCK.lock().unwrap();
+            unsafe { std::env::set_var("JH_TOKEN", "env-token-789") };
+            let config = Config {
+                token: Some("config-token".into()),
+                ..Config::default()
+            };
+            let r = super::resolve_token(Some("flag-token"), &config);
+            unsafe { std::env::remove_var("JH_TOKEN") };
+            r
+        };
+        assert_eq!(
+            resolved.as_deref(),
+            Some("flag-token"),
+            "--token flag has the highest precedence"
         );
     }
 }
