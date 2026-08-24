@@ -1069,3 +1069,120 @@ mod bearer_token {
         mock.assert();
     }
 }
+
+// =========================================================================
+// 9. Auth commands honor -c/--config
+// (docs/specs/cli-auth-ux-fixes.md, Scenario 2 — Step 1 RED)
+// =========================================================================
+
+mod auth_config_path {
+    use super::*;
+    use jh_cli::batch;
+    use jh_cli::config::Config;
+    use std::path::Path;
+
+    /// Redirects the *default* config directory to an isolated temp dir via
+    /// XDG_CONFIG_HOME (honored by `dirs_next::config_dir()`), so the buggy
+    /// pre-fix behavior cannot pollute the real `~/.config/job-hunter`.
+    ///
+    /// # Safety
+    /// Process-global env mutation; safe here because this is the only test
+    /// in this binary that touches the environment, and it runs alone.
+    unsafe fn isolate_default_config_dir(name: &str) -> PathBuf {
+        let dir = test_dir(name);
+        // Safety: see fn docs — sole env-mutating test in this binary.
+        unsafe {
+            std::env::set_var("XDG_CONFIG_HOME", &dir);
+        }
+        dir
+    }
+
+    fn default_config_in(dir: &Path) -> PathBuf {
+        dir.join("job-hunter").join("config.toml")
+    }
+
+    #[tokio::test]
+    async fn auth_login_and_logout_honor_custom_config_path() {
+        // Safety: this is the only env-mutating test in this binary.
+        let default_dir = unsafe { isolate_default_config_dir("auth_config_path") };
+        let default_config = default_config_in(&default_dir);
+        assert!(
+            !default_config.exists(),
+            "precondition: isolated default config must not exist yet"
+        );
+
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(Method::POST)
+                .path("/api/auth/login")
+                .json_body(json!({
+                    "email": "user@test.com",
+                    "password": "secret123"
+                }));
+            then.status(200)
+                .header("content-type", "application/json")
+                .json_body(json!({
+                    "token": "jwt-custom-path-token",
+                    "userId": 7,
+                    "name": "Test User",
+                    "email": "user@test.com"
+                }));
+        });
+
+        let custom = test_dir("auth_config_path_custom").join("alt-config.toml");
+
+        // ---- login with -c <custom> must persist the token there ----
+        batch::run(
+            jh_cli::Command::Auth {
+                action: jh_cli::AuthAction::Login {
+                    email: "user@test.com".into(),
+                    password: Some("secret123".into()),
+                },
+            },
+            server.url("/"),
+            None,
+            Config::default(),
+            Some(custom.to_str().expect("utf-8 custom path")),
+        )
+        .await
+        .expect("auth login should succeed");
+
+        let saved = std::fs::read_to_string(&custom).expect("custom config must exist after login");
+        assert!(
+            saved.contains("jwt-custom-path-token"),
+            "token must be written to the -c/--config path, got: {saved}"
+        );
+
+        // ---- the default config path must stay untouched ----
+        assert!(
+            !default_config.exists(),
+            "login with -c must not create the default config file"
+        );
+
+        // ---- logout with -c must clear the token in the custom file ----
+        batch::run(
+            jh_cli::Command::Auth {
+                action: jh_cli::AuthAction::Logout,
+            },
+            server.url("/"),
+            None,
+            Config::default(),
+            Some(custom.to_str().unwrap()),
+        )
+        .await
+        .expect("auth logout should succeed");
+
+        let cleared = std::fs::read_to_string(&custom).expect("custom config must still exist");
+        assert!(
+            !cleared.contains("jwt-custom-path-token"),
+            "logout must clear the token from the -c/--config path, got: {cleared}"
+        );
+        assert!(
+            !default_config.exists(),
+            "logout with -c must not touch the default config file"
+        );
+
+        // Safety: restore the process environment for any later tests.
+        unsafe { std::env::remove_var("XDG_CONFIG_HOME") };
+    }
+}

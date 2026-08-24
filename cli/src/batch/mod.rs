@@ -10,10 +10,16 @@ pub async fn run(
     api_url: String,
     token: Option<String>,
     _config: Config,
+    config_path: Option<&str>,
 ) -> anyhow::Result<()> {
     use crate::Command::*;
+
+    // `-c/--config` flows into every command that reads or persists config
+    // (docs/specs/cli-auth-ux-fixes.md, Scenario 2 + Rule 3).
     match command {
-        Auth { action } => auth::handle(action, &api_url, None).await?,
+        Auth { action } => {
+            auth::handle(action, &api_url, config_path.map(std::path::Path::new)).await?
+        }
         List { keyword, min_score, source, csv, json, offline, refresh } => {
             jobs::handle_list(keyword, min_score, source, csv, json, offline, refresh, &api_url, &token, None).await?
         }
@@ -24,7 +30,7 @@ pub async fn run(
         Profile { action } => profile::handle(action, &api_url, &token).await?,
         Export { output, keyword } => jobs::handle_export(output, keyword, &api_url, &token).await?,
         ClearCache => {
-            let config = crate::config::load(None)?;
+            let config = crate::config::load(config_path)?;
             let cache = crate::cache::CacheManager::new(None, config.cache_ttl_hours)?;
             cache.clear()?;
             println!("Cache cleared.");
