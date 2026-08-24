@@ -266,7 +266,7 @@ flowchart TB
     style Scraper fill:#fff3e0,stroke:#f57c00
 ```
 
-The Spring Boot container handles business logic, orchestration, and persistence. The Node.js container handles browser automation exclusively. They communicate via Docker's internal DNS (`http://linkedin-scraper:3000`) — no host port exposure required.
+The Spring Boot container handles business logic, orchestration, and persistence. The Node.js container handles browser automation exclusively. Containers communicate via Docker's internal DNS (`http://linkedin-scraper:3000`); the scraper's port `3000` is also published to the host, so a natively-run backend can reach the containerized scraper via `http://localhost:3000` (see Getting started).
 
 ---
 
@@ -344,7 +344,26 @@ resend:
 
 The application will start on `http://localhost:8080`. Flyway runs automatically and creates the database schema on first startup.
 
-**5. Build and run the CLI**
+**5. LinkedIn scraping (optional)**
+
+LinkedIn runs through the Playwright microservice, containerized via Docker Compose:
+
+```bash
+docker compose up -d linkedin-scraper
+```
+
+Then point a natively-run backend at it in `src/main/resources/application-local.yaml`:
+
+```yaml
+scraper:
+  linkedin:
+    service-url: http://localhost:3000
+```
+
+> Without this, everything still works: Gupy and InfoJobs need no container, and LinkedIn
+> falls back to Jsoup (`scraper.linkedin.mode: jsoup`).
+
+**6. Build and run the CLI**
 
 ```bash
 cd cli
