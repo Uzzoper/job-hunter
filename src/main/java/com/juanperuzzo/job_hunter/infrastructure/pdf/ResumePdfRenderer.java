@@ -1,6 +1,7 @@
 package com.juanperuzzo.job_hunter.infrastructure.pdf;
 
 import com.juanperuzzo.job_hunter.application.port.out.PdfRendererPort;
+import com.juanperuzzo.job_hunter.domain.exception.ResumeRenderingException;
 import com.openhtmltopdf.pdfboxout.PdfRendererBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -35,7 +36,8 @@ public class ResumePdfRenderer implements PdfRendererPort {
      *
      * @param html the HTML document to render
      * @return the rendered PDF bytes
-     * @throws IllegalStateException if the PDF rendering fails
+     * @throws ResumeRenderingException if the PDF rendering fails or the bundled
+     *                                  font is missing from the classpath
      */
     @Override
     public byte[] renderPdf(String html) {
@@ -50,7 +52,7 @@ public class ResumePdfRenderer implements PdfRendererPort {
             return baos.toByteArray();
         } catch (Exception e) {
             log.error("Failed to render PDF", e);
-            throw new IllegalStateException("Failed to render PDF: " + e.getMessage(), e);
+            throw new ResumeRenderingException("Failed to render PDF: " + e.getMessage(), e);
         }
     }
 
@@ -65,7 +67,7 @@ public class ResumePdfRenderer implements PdfRendererPort {
     private byte[] loadFont() throws IOException {
         try (InputStream in = getClass().getClassLoader().getResourceAsStream(FONT_PATH)) {
             if (in == null) {
-                throw new IllegalStateException("Font not found in classpath: " + FONT_PATH);
+                throw new ResumeRenderingException("Font not found in classpath: " + FONT_PATH);
             }
             return in.readAllBytes();
         }
