@@ -125,6 +125,13 @@ Rules:
   Windows Terminal; emulators without it fall back to the `rfd` picker and
   `jh-cli profile upload <path>` (unchanged); inside tmux requires clipboard passthrough (documented)
 
+**Discoverability hint:** drag-and-drop has no visual affordance, so the profile screen must teach it:
+- **GIVEN** the profile has no resume text (empty state)
+- **WHEN** the profile screen renders
+- **THEN** the Resume section shows the callout: *"Drag & drop your resume PDF anywhere in this window to auto-fill your profile — or press [u] to browse."*
+- **AND** the footer hint reads `[u] Upload PDF (or drag & drop)`
+- **AND** the callout disappears once a resume is set (the footer hint stays — re-upload by drag remains valid)
+
 ---
 
 ## Out of scope
