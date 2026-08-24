@@ -268,6 +268,10 @@ flowchart TB
 
 The Spring Boot container handles business logic, orchestration, and persistence. The Node.js container handles browser automation exclusively. Containers communicate via Docker's internal DNS (`http://linkedin-scraper:3000`); the scraper's port `3000` is also published to the host, so a natively-run backend can reach the containerized scraper via `http://localhost:3000` (see Getting started).
 
+> The backend container runs as UID 1000. Before `docker compose up`, pre-create the data
+> directory (`mkdir -p data`) so the bind mount is owned by your user — otherwise Docker
+> creates it as root and the container cannot write the SQLite file.
+
 ---
 
 ## Scraping Pipeline
