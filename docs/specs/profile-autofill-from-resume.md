@@ -78,7 +78,7 @@ No port changes. `ResumeUploadService.uploadResume(Long userId, MultipartFile)` 
 signature; `ResumeExtractionResponse` gains an optional `contact` record:
 
 ```java
-// web/dto/ResumeExtractionResponse.java
+// application/dto/ResumeExtractionResponse.java
 public record ResumeExtractionResponse(List<String> skills,
                                        List<ExtractedProject> projects,
                                        ExtractedContact contact) {

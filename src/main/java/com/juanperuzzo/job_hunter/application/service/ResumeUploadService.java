@@ -1,12 +1,12 @@
 package com.juanperuzzo.job_hunter.application.service;
 
+import com.juanperuzzo.job_hunter.application.dto.ResumeExtractionResponse;
 import com.juanperuzzo.job_hunter.application.port.out.AiPort;
 import com.juanperuzzo.job_hunter.application.port.out.UserProfileRepository;
 import com.juanperuzzo.job_hunter.domain.exception.AiException;
 import com.juanperuzzo.job_hunter.domain.model.CompanyTone;
 import com.juanperuzzo.job_hunter.domain.model.Project;
 import com.juanperuzzo.job_hunter.domain.model.UserProfile;
-import com.juanperuzzo.job_hunter.web.dto.ResumeExtractionResponse;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.pdfbox.Loader;
