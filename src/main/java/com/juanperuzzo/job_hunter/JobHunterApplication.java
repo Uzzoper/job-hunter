@@ -4,11 +4,15 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 @SpringBootApplication
 public class JobHunterApplication {
+
+	private static final Logger log = LoggerFactory.getLogger(JobHunterApplication.class);
 
 	private static final String DEFAULT_DB_URL = "jdbc:sqlite:./data/jobhunter.db";
 
@@ -40,7 +44,7 @@ public class JobHunterApplication {
 		try {
 			Files.createDirectories(parent);
 		} catch (IOException e) {
-			System.err.println("Could not create database directory " + parent + ": " + e.getMessage());
+			log.error("Could not create database directory {}: {}", parent, e.getMessage());
 		}
 	}
 
