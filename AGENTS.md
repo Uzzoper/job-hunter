@@ -111,7 +111,7 @@ infrastructure → domain
 - Database tables: `snake_case` (e.g. `jobs`, `email_drafts`)
 
 ### Primary keys
-- Use `Long` in domain models and `BIGSERIAL` in SQL
+- Use `Long` in domain models and `INTEGER PRIMARY KEY AUTOINCREMENT` in SQL (SQLite)
 - `id` is `null` until persisted — never use it for equality checks
 - `Job` identity is always URL-based
 
