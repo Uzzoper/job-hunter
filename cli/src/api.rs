@@ -49,6 +49,11 @@ impl ApiClient {
         self.token = Some(token.to_string());
     }
 
+    /// Get the currently stored API token, if any.
+    pub fn get_token(&self) -> Option<&str> {
+        self.token.as_deref()
+    }
+
     pub fn clear_token(&mut self) {
         self.token = None;
     }
