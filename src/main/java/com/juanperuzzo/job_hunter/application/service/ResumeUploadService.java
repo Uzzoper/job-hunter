@@ -7,6 +7,7 @@ import com.juanperuzzo.job_hunter.domain.model.CompanyTone;
 import com.juanperuzzo.job_hunter.domain.model.Project;
 import com.juanperuzzo.job_hunter.domain.model.UserProfile;
 import com.juanperuzzo.job_hunter.web.dto.ResumeExtractionResponse;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
@@ -20,10 +21,21 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Pattern;
 
 public class ResumeUploadService {
 
     private static final Logger log = LoggerFactory.getLogger(ResumeUploadService.class);
+
+    /** Contact field limits — mirror of {@code ProfileRequest} bean validation. */
+    private static final int PHONE_MAX_LENGTH = 30;
+    private static final int EMAIL_MAX_LENGTH = 255;
+    private static final int URL_MAX_LENGTH = 500;
+    /**
+     * Pragmatic stand-in for Jakarta's {@code @Email}: requires a
+     * {@code local@domain.tld} shape with no whitespace and a single "@".
+     */
+    private static final Pattern EMAIL_PATTERN = Pattern.compile("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$");
 
     private final AiPort aiPort;
     private final UserProfileService userProfileService;
@@ -87,14 +99,25 @@ public class ResumeUploadService {
                 .map(p -> new Project(p.name(), p.description(), String.join(", ", p.techStack())))
                 .toList();
 
-        // Contact fields are user-supplied (spec v1.1) — an AI-driven upload must
-        // never wipe them, so existing values are carried over when present.
+        // Fill-if-empty merge (docs/specs/profile-autofill-from-resume.md):
+        // extracted contact values apply only to fields that are null/blank on
+        // the stored profile — manual edits always win over AI extraction.
+        var contact = extraction.contact();
+        var stored = existingProfile.orElse(null);
+
+        String phone = mergeContactField(stored == null ? null : stored.phone(),
+                contact == null ? null : contact.phone(), "phone", PHONE_MAX_LENGTH, false);
+        String contactEmail = mergeContactField(stored == null ? null : stored.contactEmail(),
+                contact == null ? null : contact.email(), "contactEmail", EMAIL_MAX_LENGTH, true);
+        String portfolioUrl = mergeContactField(stored == null ? null : stored.portfolioUrl(),
+                contact == null ? null : contact.portfolioUrl(), "portfolioUrl", URL_MAX_LENGTH, false);
+        String githubUrl = mergeContactField(stored == null ? null : stored.githubUrl(),
+                contact == null ? null : contact.githubUrl(), "githubUrl", URL_MAX_LENGTH, false);
+        String linkedinUrl = mergeContactField(stored == null ? null : stored.linkedinUrl(),
+                contact == null ? null : contact.linkedinUrl(), "linkedinUrl", URL_MAX_LENGTH, false);
+
         var profile = new UserProfile(null, userId, rawText, extraction.skills(), tone, projects,
-                existingProfile.map(UserProfile::phone).orElse(null),
-                existingProfile.map(UserProfile::contactEmail).orElse(null),
-                existingProfile.map(UserProfile::portfolioUrl).orElse(null),
-                existingProfile.map(UserProfile::githubUrl).orElse(null),
-                existingProfile.map(UserProfile::linkedinUrl).orElse(null));
+                phone, contactEmail, portfolioUrl, githubUrl, linkedinUrl);
         return userProfileService.saveProfile(userId, profile);
     }
 
@@ -172,13 +195,70 @@ public class ResumeUploadService {
                 }
             }
 
-            return new ResumeExtractionResponse(skills, projects);
+            return new ResumeExtractionResponse(skills, projects, parseContact(root));
         } catch (AiException e) {
             throw e;
         } catch (Exception e) {
             log.error("Failed to parse AI extraction response. Raw: {}", response, e);
             throw new AiException("Failed to parse AI extraction: " + e.getMessage(), e);
         }
+    }
+
+    /**
+     * Parses the optional {@code contact} object tolerantly: absent, null, or
+     * non-object nodes (string/array) are treated as "no contact data" and
+     * yield {@code null} instead of a parse error.
+     */
+    private ResumeExtractionResponse.ExtractedContact parseContact(JsonNode root) {
+        var contactNode = root.get("contact");
+        if (contactNode == null || !contactNode.isObject()) {
+            return null;
+        }
+        return new ResumeExtractionResponse.ExtractedContact(
+                textOrNull(contactNode, "phone"),
+                textOrNull(contactNode, "email"),
+                textOrNull(contactNode, "portfolioUrl"),
+                textOrNull(contactNode, "githubUrl"),
+                textOrNull(contactNode, "linkedinUrl"));
+    }
+
+    private static String textOrNull(JsonNode node, String field) {
+        var value = node.get(field);
+        if (value == null || value.isNull()) {
+            return null;
+        }
+        var text = value.asText().trim();
+        return text.isEmpty() ? null : text;
+    }
+
+    /**
+     * Fill-if-empty merge for a single contact field: an extracted value is
+     * applied only when the stored value is null/blank; existing values always
+     * win. An extracted value that fails the {@code PUT /api/profile} validation
+     * rules is dropped with a warning instead of failing the upload.
+     *
+     * @param currentValue  value currently stored on the profile (may be null)
+     * @param extractedValue value coming from the AI contact object (may be null)
+     * @param fieldName      field name used in log messages
+     * @param maxLength      maximum accepted length (mirrors {@code @Size})
+     * @param requireEmailFormat when true, also enforces the email format rule
+     */
+    private static String mergeContactField(String currentValue, String extractedValue,
+                                            String fieldName, int maxLength,
+                                            boolean requireEmailFormat) {
+        if (currentValue != null && !currentValue.isBlank()) {
+            return currentValue;
+        }
+        if (extractedValue == null || extractedValue.isBlank()) {
+            return null;
+        }
+        String candidate = extractedValue.trim();
+        if (candidate.length() > maxLength
+                || (requireEmailFormat && !EMAIL_PATTERN.matcher(candidate).matches())) {
+            log.warn("Dropping invalid extracted contact field '{}' (fails PUT /api/profile validation)", fieldName);
+            return null;
+        }
+        return candidate;
     }
 
     private String buildPrompt(String rawText) {
@@ -202,13 +282,22 @@ Response format:
       "description": "<short description, max 80 chars>",
       "techStack": ["tech 1", "tech 2", ...]
     }
-  ]
+  ],
+  "contact": {
+    "phone": "<phone number or null>",
+    "email": "<email address or null>",
+    "portfolioUrl": "<portfolio URL or null>",
+    "githubUrl": "<GitHub URL or null>",
+    "linkedinUrl": "<LinkedIn URL or null>"
+  }
 }
 
 Rules:
 - skills: extract all technical skills (languages, frameworks, tools, databases)
 - projects: extract personal, academic, and professional projects mentioned.
   Each project must have a name and description. techStack can be empty if not mentioned.
+- contact: extract the candidate's contact details when present in the resume.
+  Use null for any field that is not found. Never invent values.
 - If no skills are found, return an empty array.
 - If no projects are found, return an empty array.
 
