@@ -23,7 +23,7 @@ async fn main() -> anyhow::Result<()> {
     }
 
     if cli.tui || cli.command.is_none() {
-        jh_cli::tui::run(api_client, config).await?;
+        jh_cli::tui::run(api_client, config, cli.config.as_deref()).await?;
         return Ok(());
     }
 
