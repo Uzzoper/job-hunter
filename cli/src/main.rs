@@ -9,7 +9,9 @@ async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
     let config = config::load(cli.config.as_deref())?;
-    let token: Option<String> = cli.token.or_else(|| config.token.clone());
+    // Precedence: --token flag > JH_TOKEN env > config file token.
+    // The env override is read-only; it is never written back to the config.
+    let token: Option<String> = config::resolve_token(cli.token.as_deref(), &config);
     let api_url = cli
         .api_url
         .or_else(|| Some(config.base_url.clone()))
@@ -26,7 +28,7 @@ async fn main() -> anyhow::Result<()> {
     }
 
     let command = cli.command.unwrap();
-    batch::run(command, api_url, token, config).await?;
+    batch::run(command, api_url, token, config, cli.config.as_deref()).await?;
 
     Ok(())
 }
