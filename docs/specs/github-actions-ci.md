@@ -15,11 +15,11 @@
 - **AND** `concurrency.cancel-in-progress: true` cancels superseded runs for the same ref
 
 ### Scenario 2: backend job passes in a fresh checkout
-- **GIVEN** a clean checkout with no local Postgres instance
+- **GIVEN** a clean checkout with no local database and no `DB_*` env vars
 - **WHEN** `./mvnw test --batch-mode` runs
-- **THEN** the `integration/AuthIntegrationTest` (`@SpringBootTest(RANDOM_PORT)`) connects to a Postgres 16 service container mapped to `localhost:5433`
-- **AND** the service is created with `POSTGRES_DB=jobhunter`, `POSTGRES_USER=juan` and `POSTGRES_PASSWORD=juan` — throwaway credentials for the ephemeral container, unrelated to any real database
-- **AND** the job exports `DB_URL`, `DB_USER`, `DB_PASSWORD` so the context can boot (no defaults exist in `application.yaml`); the test reads `DB_USER`/`DB_PASSWORD` from the environment via `requireEnv` (no hardcoded credentials in the test)
+- **THEN** the `integration/AuthIntegrationTest` (`@SpringBootTest(RANDOM_PORT)`) connects to a temp-file SQLite datasource (no service containers, no Docker)
+- **AND** the datasource is overridden via `DynamicPropertySource` (`jdbc:sqlite:<tempfile>`, driver `org.sqlite.JDBC`) and Flyway applies the consolidated baseline migration
+- **AND** the job requires no database env vars — `application.yaml` defaults to the local SQLite file
 - **AND** the unit test suites (JUnit 5 + Mockito + WireMock) still run without a Spring context
 
 ### Scenario 3: code-quality runs only checks that actually exist
@@ -47,7 +47,7 @@
 - Java 21 (Temurin) via `actions/setup-java@v4` with Maven cache — never bare `mvn`, only `./mvnw`
 - Node.js 22 with npm cache keyed on `linkedin-scraper/package-lock.json`
 - Rust via `dtolnay/rust-toolchain@stable`; `Swatinem/rust-cache@v2` scoped to the `cli` workspace
-- Postgres service image matches `docker-compose.yaml` (`postgres:16-alpine`), port mapping `5433:5432` on `localhost`
+- The backend job is hermetic: no database service containers — SQLite (temp file) is the only database in CI
 - The `Code Quality` backend job is only reintroduced together with actual formatter/checkstyle plugins in `pom.xml`
 - All YAML files end with a trailing newline
 - CI/quality workflow commits use the `ci` commit type (added to `AGENTS.md`)
@@ -58,8 +58,8 @@
 
 | Situation | Expected behavior |
 |---|---|
-| Postgres service not reachable at `localhost:5433` | Backend job fails on context boot — service is mandatory for `./mvnw test` |
-| `AuthIntegrationTest` credentials drift from service env | Backend job fails with auth error — service user/password must match the `DB_USER`/`DB_PASSWORD` env vars the job exports (the test reads them via `requireEnv`) |
+| SQLite temp file cannot be created (disk/permissions) | Backend job fails on context boot — the integration tests own their datasource path |
+| Flyway baseline drifts from entity mappings | Backend job fails on first SQLite query — `V1__baseline_schema.sql` must match the JPA entities |
 | Rust lint error | CLI job fails via `-- -D warnings` |
 | TypeScript compile error | Scraper job fails via `tsc --noEmit` |
 | Release already exists at tag | `gh release upload --clobber` overwrites assets; `gh release create` fallback only on missing release |
@@ -82,7 +82,7 @@
 Read the spec at docs/specs/github-actions-ci.md.
 
 Fix the three workflows to match this spec:
-1. ci.yml — add the Postgres 16 service and DB_* job env vars; ensure trailing newline.
+1. ci.yml — no database service containers; the backend job is hermetic (SQLite via test `DynamicPropertySource`); ensure trailing newline.
 2. code-quality.yml — remove the no-op backend job; ensure trailing newline.
 3. cli-release.yml — add `GH_REPO: ${{ github.repository }}` to the upload step (the `release` job has no checkout); ensure trailing newline.
 Also add the `ci` type to the commit convention table in AGENTS.md.

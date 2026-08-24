@@ -1,23 +1,4 @@
 services:
-  postgres:
-    image: postgres:16-alpine
-    container_name: job-hunter-db
-    environment:
-      POSTGRES_DB: jobhunter
-      POSTGRES_USER: ${DB_USER}
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
-    ports:
-      - "5433:5432"
-    volumes:
-      - job_hunter_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d jobhunter"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 10s
-    restart: unless-stopped
-
   linkedin-scraper:
     build:
       context: ./linkedin-scraper
@@ -44,18 +25,13 @@ services:
     ports:
       - "8080:8080"
     environment:
-      DB_URL: jdbc:postgresql://postgres:5432/jobhunter
-      DB_USER: ${DB_USER}
-      DB_PASSWORD: ${DB_PASSWORD}
       JWT_SECRET: ${JWT_SECRET}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
       RESEND_API_KEY: ${RESEND_API_KEY}
+    volumes:
+      # SQLite database file lives on the host (./data/jobhunter.db)
+      - ./data:/app/data
     depends_on:
-      postgres:
-        condition: service_healthy
       linkedin-scraper:
         condition: service_started
     restart: unless-stopped
-
-volumes:
-  job_hunter_data:
