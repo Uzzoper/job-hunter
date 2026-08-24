@@ -4,15 +4,11 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 @SpringBootApplication
 public class JobHunterApplication {
-
-	private static final Logger log = LoggerFactory.getLogger(JobHunterApplication.class);
 
 	private static final String DEFAULT_DB_URL = "jdbc:sqlite:./data/jobhunter.db";
 
@@ -28,6 +24,8 @@ public class JobHunterApplication {
 	 * (e.g. a future external database) are ignored.
 	 *
 	 * @param dbUrl the JDBC URL from {@code DB_URL} or the default
+	 * @throws IllegalStateException if the directory cannot be created, so startup
+	 *                               fails fast instead of surfacing an opaque SQLite error later
 	 */
 	static void ensureSqliteDirectoryExists(String dbUrl) {
 		if (dbUrl == null || !dbUrl.startsWith("jdbc:sqlite:")) {
@@ -44,7 +42,8 @@ public class JobHunterApplication {
 		try {
 			Files.createDirectories(parent);
 		} catch (IOException e) {
-			log.error("Could not create database directory {}: {}", parent, e.getMessage());
+			throw new IllegalStateException("Could not create SQLite database directory " + parent
+					+ ": " + e.getMessage() + ". Set DB_URL to a writable location.", e);
 		}
 	}
 
