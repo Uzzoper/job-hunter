@@ -189,13 +189,22 @@ Response format:
       "description": "<short description, max 80 chars>",
       "techStack": ["tech 1", "tech 2", ...]
     }
-  ]
+  ],
+  "contact": {
+    "phone": "<phone number or null>",
+    "email": "<email address or null>",
+    "portfolioUrl": "<portfolio URL or null>",
+    "githubUrl": "<GitHub URL or null>",
+    "linkedinUrl": "<LinkedIn URL or null>"
+  }
 }
 
 Rules:
 - skills: extract all technical skills (languages, frameworks, tools, databases)
 - projects: extract personal, academic, and professional projects mentioned.
   Each project must have a name and description. techStack can be empty if not mentioned.
+- contact: extract the candidate's contact details when present in the resume.
+  Use null for any field that is not found. Never invent values.
 - If no skills are found, return an empty array.
 - If no projects are found, return an empty array.
 
@@ -305,4 +314,5 @@ Resume text:
 | v1.0 | 2025-04 | Initial prompts |
 | v2.0 | 2026-07 | Add reference example email, update rules to 3-5 paragraphs and 2-3 projects, add new projects (Job Hunter, LovLink, Portfolio), add mandatory signature block |
 | v3.0 | 2026-08 | Add Prompt 4 resume tailoring |
+| v3.1 | 2026-08 | Prompt 3 gains the `contact` object (phone, email, portfolioUrl, githubUrl, linkedinUrl; null when not found) — profile auto-fill from resume upload |
 ```

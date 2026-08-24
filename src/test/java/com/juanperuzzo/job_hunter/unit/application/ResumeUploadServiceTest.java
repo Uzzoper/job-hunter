@@ -299,6 +299,173 @@ class ResumeUploadServiceTest {
     }
 
     // =========================================================================
+    // Profile auto-fill from resume upload
+    // (docs/specs/profile-autofill-from-resume.md — Step 1 RED)
+    // =========================================================================
+
+    @Test
+    @DisplayName("uploadResume should fill empty contact fields from the AI extraction")
+    void upload_whenProfileHasEmptyContacts_shouldFillFromExtraction() throws Exception {
+        var file = validPdfMock("John Doe phone +55 42 99999-0000 github.com/juan");
+        var aiJson = """
+                {"skills": ["Java"], "projects": [],
+                 "contact": {"phone": "+55 42 99999-0000", "email": "juan@example.com",
+                             "portfolioUrl": "https://juan.dev", "githubUrl": "github.com/juan",
+                             "linkedinUrl": "linkedin.com/in/juan"}}
+                """;
+        var existingProfile = new UserProfile(5L, 1L, "Old resume text that is long enough to pass.",
+                List.of("Java"), CompanyTone.CASUAL, List.of(),
+                null, null, null, null, null);
+        var savedProfile = new UserProfile(5L, 1L, "John Doe phone +55 42 99999-0000 github.com/juan",
+                List.of("Java"), CompanyTone.CASUAL, List.of(),
+                "+55 42 99999-0000", "juan@example.com", "https://juan.dev", "github.com/juan",
+                "linkedin.com/in/juan");
+
+        when(aiPort.complete(anyString())).thenReturn(aiJson);
+        when(userProfileRepository.findByUserId(1L)).thenReturn(Optional.of(existingProfile));
+        when(userProfileService.saveProfile(eq(1L), any(UserProfile.class)))
+                .thenReturn(savedProfile);
+
+        var result = service.uploadResume(1L, file);
+
+        assertNotNull(result);
+        verify(userProfileService).saveProfile(eq(1L), profileCaptor.capture());
+        var saved = profileCaptor.getValue();
+        assertEquals("+55 42 99999-0000", saved.phone());
+        assertEquals("juan@example.com", saved.contactEmail());
+        assertEquals("https://juan.dev", saved.portfolioUrl());
+        assertEquals("github.com/juan", saved.githubUrl());
+        assertEquals("linkedin.com/in/juan", saved.linkedinUrl());
+    }
+
+    @Test
+    @DisplayName("uploadResume should keep manually-set contacts and fill only empty ones")
+    void upload_whenContactAlreadySet_shouldKeepExistingValue() throws Exception {
+        var file = validPdfMock("Juan Peruzzo resume with contact details");
+        var aiJson = """
+                {"skills": ["Java"], "projects": [],
+                 "contact": {"phone": "+55 42 98888-1111", "email": "ai@example.com",
+                             "portfolioUrl": "https://ai.dev", "githubUrl": "github.com/ai-extracted",
+                             "linkedinUrl": "linkedin.com/in/ai-extracted"}}
+                """;
+        var existingProfile = new UserProfile(5L, 1L, "Old resume text that is long enough to pass.",
+                List.of("Java"), CompanyTone.CASUAL, List.of(),
+                null, null, null, "github.com/juan", null);
+        var savedProfile = new UserProfile(5L, 1L, "Juan Peruzzo resume with contact details",
+                List.of("Java"), CompanyTone.CASUAL, List.of(),
+                "+55 42 98888-1111", "ai@example.com", "https://ai.dev", "github.com/juan",
+                "linkedin.com/in/ai-extracted");
+
+        when(aiPort.complete(anyString())).thenReturn(aiJson);
+        when(userProfileRepository.findByUserId(1L)).thenReturn(Optional.of(existingProfile));
+        when(userProfileService.saveProfile(eq(1L), any(UserProfile.class)))
+                .thenReturn(savedProfile);
+
+        var result = service.uploadResume(1L, file);
+
+        assertNotNull(result);
+        verify(userProfileService).saveProfile(eq(1L), profileCaptor.capture());
+        var saved = profileCaptor.getValue();
+        // Manual edit always wins over AI (fill-if-empty rule)
+        assertEquals("github.com/juan", saved.githubUrl());
+        // Empty contact fields ARE filled from the extraction
+        assertEquals("+55 42 98888-1111", saved.phone());
+        assertEquals("ai@example.com", saved.contactEmail());
+        assertEquals("https://ai.dev", saved.portfolioUrl());
+        assertEquals("linkedin.com/in/ai-extracted", saved.linkedinUrl());
+    }
+
+    @Test
+    @DisplayName("uploadResume should keep contacts unchanged when extraction has no contact object")
+    void upload_whenExtractionHasNoContact_shouldKeepContactsAsIs() throws Exception {
+        var file = validPdfMock("Resume without any contact information at all");
+        var aiJson = """
+                {"skills": ["Java"], "projects": []}
+                """;
+        var existingProfile = new UserProfile(5L, 1L, "Old resume text that is long enough to pass.",
+                List.of("Java"), CompanyTone.CASUAL, List.of(),
+                "+55 42 99777-2222", null, null, "github.com/juan", null);
+        var savedProfile = new UserProfile(5L, 1L, "Resume without any contact information at all",
+                List.of("Java"), CompanyTone.CASUAL, List.of(),
+                "+55 42 99777-2222", null, null, "github.com/juan", null);
+
+        when(aiPort.complete(anyString())).thenReturn(aiJson);
+        when(userProfileRepository.findByUserId(1L)).thenReturn(Optional.of(existingProfile));
+        when(userProfileService.saveProfile(eq(1L), any(UserProfile.class)))
+                .thenReturn(savedProfile);
+
+        var result = service.uploadResume(1L, file);
+
+        assertNotNull(result);
+        verify(userProfileService).saveProfile(eq(1L), profileCaptor.capture());
+        var saved = profileCaptor.getValue();
+        assertEquals("+55 42 99777-2222", saved.phone());
+        assertNull(saved.contactEmail());
+        assertNull(saved.portfolioUrl());
+        assertEquals("github.com/juan", saved.githubUrl());
+        assertNull(saved.linkedinUrl());
+    }
+
+    @Test
+    @DisplayName("uploadResume should drop only the invalid extracted email and still succeed")
+    void upload_whenExtractedEmailInvalid_shouldDropOnlyThatField() throws Exception {
+        var file = validPdfMock("Resume with a typo in the extracted contact email");
+        var aiJson = """
+                {"skills": ["Java"], "projects": [],
+                 "contact": {"phone": "+55 42 99666-3333", "email": "not-an-email",
+                             "portfolioUrl": null, "githubUrl": null, "linkedinUrl": null}}
+                """;
+        var existingProfile = new UserProfile(5L, 1L, "Old resume text that is long enough to pass.",
+                List.of("Java"), CompanyTone.CASUAL, List.of(),
+                null, null, null, null, null);
+        var savedProfile = new UserProfile(5L, 1L, "Resume with a typo in the extracted contact email",
+                List.of("Java"), CompanyTone.CASUAL, List.of(),
+                "+55 42 99666-3333", null, null, null, null);
+
+        when(aiPort.complete(anyString())).thenReturn(aiJson);
+        when(userProfileRepository.findByUserId(1L)).thenReturn(Optional.of(existingProfile));
+        when(userProfileService.saveProfile(eq(1L), any(UserProfile.class)))
+                .thenReturn(savedProfile);
+
+        var result = service.uploadResume(1L, file);
+
+        assertNotNull(result);
+        verify(userProfileService).saveProfile(eq(1L), profileCaptor.capture());
+        var saved = profileCaptor.getValue();
+        // Valid field is applied, invalid one is dropped, upload still succeeds
+        assertEquals("+55 42 99666-3333", saved.phone());
+        assertNull(saved.contactEmail());
+    }
+
+    @Test
+    @DisplayName("uploadResume should treat a malformed contact node as no contact data")
+    void upload_whenContactNodeMalformed_shouldTreatAsNoContactData() throws Exception {
+        var file = validPdfMock("Resume uploaded with a malformed AI contact response");
+        var aiJson = """
+                {"skills": ["Java"], "projects": [], "contact": "some string"}
+                """;
+        var existingProfile = new UserProfile(5L, 1L, "Old resume text that is long enough to pass.",
+                List.of("Java"), CompanyTone.CASUAL, List.of(),
+                "+55 42 99555-4444", null, null, null, null);
+        var savedProfile = new UserProfile(5L, 1L, "Resume uploaded with a malformed AI contact response",
+                List.of("Java"), CompanyTone.CASUAL, List.of(),
+                "+55 42 99555-4444", null, null, null, null);
+
+        when(aiPort.complete(anyString())).thenReturn(aiJson);
+        when(userProfileRepository.findByUserId(1L)).thenReturn(Optional.of(existingProfile));
+        when(userProfileService.saveProfile(eq(1L), any(UserProfile.class)))
+                .thenReturn(savedProfile);
+
+        assertDoesNotThrow(() -> service.uploadResume(1L, file));
+
+        verify(userProfileService).saveProfile(eq(1L), profileCaptor.capture());
+        var saved = profileCaptor.getValue();
+        assertEquals("+55 42 99555-4444", saved.phone());
+        assertNull(saved.contactEmail());
+        assertNull(saved.githubUrl());
+    }
+
+    // =========================================================================
     // Helpers
     // =========================================================================
 
