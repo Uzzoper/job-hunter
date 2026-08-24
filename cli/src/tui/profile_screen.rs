@@ -19,6 +19,9 @@ use tokio::sync::Mutex;
 const CONTACT_LABEL_WIDTH: u16 = 15;
 /// Width of the focus marker ("► ") before each contact label.
 const CONTACT_MARKER_WIDTH: u16 = 2;
+/// Discoverability hint shown inside an empty Resume section
+/// (docs/specs/profile-autofill-from-resume.md, "Discoverability hint").
+const RESUME_DROP_HINT: &str = "Drag & drop your resume PDF anywhere in this window to auto-fill your profile — or press [u] to browse.";
 
 /// Profile screen mode: View or Edit
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1160,7 +1163,15 @@ fn draw_resume_view(&self, frame: &mut Frame, area: Rect, theme: &Theme, profile
         let count_style = if valid { theme.style_good() } else { theme.style_warn() };
         let count_text = format!(" ({}/50 min)", char_count);
 
-        let content = Paragraph::new(Text::styled(&profile.resume_text, theme.style_normal()))
+        // Discoverability hint while the resume is still empty; disappears
+        // once a resume is set.
+        let text = if profile.resume_text.is_empty() {
+            Text::styled(RESUME_DROP_HINT, theme.style_dim().add_modifier(Modifier::ITALIC))
+        } else {
+            Text::styled(&profile.resume_text, theme.style_normal())
+        };
+
+        let content = Paragraph::new(text)
             .block(
                 Block::default()
                     .borders(Borders::ALL)
@@ -1301,7 +1312,15 @@ fn draw_resume_view(&self, frame: &mut Frame, area: Rect, theme: &Theme, profile
             theme.style_dim()
         };
 
-        let content = Paragraph::new(Text::styled(&self.resume_text, theme.style_normal()))
+        // Discoverability hint while the resume is still empty; disappears
+        // once a resume is set.
+        let text = if self.resume_text.is_empty() {
+            Text::styled(RESUME_DROP_HINT, theme.style_dim().add_modifier(Modifier::ITALIC))
+        } else {
+            Text::styled(&self.resume_text, theme.style_normal())
+        };
+
+        let content = Paragraph::new(text)
             .block(
                 Block::default()
                     .borders(Borders::ALL)
@@ -1729,7 +1748,7 @@ fn draw_resume_view(&self, frame: &mut Frame, area: Rect, theme: &Theme, profile
                 if self.upload_path_popup.is_some() {
                     " [Enter] Confirm  [Esc] Cancel "
                 } else {
-                    " [e] Edit  [u] Upload PDF  [r] Reload  [q/b] Back  [Esc] Quit "
+                    " [e] Edit  [u] Upload PDF (or drag & drop)  [r] Reload  [q/b] Back  [Esc] Quit "
                 }
             }
             ProfileMode::Edit => {
@@ -3230,5 +3249,83 @@ mod tests {
 
         assert_eq!(result, Some(path.clone()));
         cleanup_temp(&path);
+    }
+    // =========================================================================
+    // Drag-and-drop discoverability hint
+    // (docs/specs/profile-autofill-from-resume.md, "Discoverability hint")
+    // =========================================================================
+
+    /// Renders the screen and returns the full text contents of the frame.
+    fn render_screen_contents(screen: &mut ProfileScreen) -> String {
+        let mut terminal = Terminal::new(TestBackend::new(120, 40)).unwrap();
+        terminal
+            .draw(|frame| {
+                screen.draw(frame, frame.area());
+            })
+            .unwrap();
+        terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect()
+    }
+
+    #[test]
+    fn resume_callout_shown_when_resume_empty_view_mode() {
+        let mut screen = create_test_screen();
+        let mut profile = sample_profile();
+        profile.resume_text = String::new();
+        screen.set_profile(profile);
+
+        let contents = render_screen_contents(&mut screen);
+
+        assert!(
+            contents.contains("Drag & drop your resume PDF"),
+            "empty resume must show the drag-and-drop callout, got:\n{contents}"
+        );
+    }
+
+    #[test]
+    fn resume_callout_hidden_when_resume_set_view_mode() {
+        let mut screen = create_test_screen();
+        screen.set_profile(sample_profile()); // sample has a non-empty resume
+
+        let contents = render_screen_contents(&mut screen);
+
+        assert!(
+            !contents.contains("Drag & drop"),
+            "callout must disappear once a resume is set"
+        );
+    }
+
+    #[test]
+    fn resume_callout_shown_when_resume_empty_edit_mode() {
+        let mut screen = create_test_screen();
+        let mut profile = sample_profile();
+        profile.resume_text = String::new();
+        screen.set_profile(profile);
+        screen.toggle_mode(); // Edit mode
+
+        let contents = render_screen_contents(&mut screen);
+
+        assert!(
+            contents.contains("Drag & drop your resume PDF"),
+            "empty resume must show the callout in edit mode too, got:\n{contents}"
+        );
+    }
+
+    #[test]
+    fn footer_hint_mentions_drag_and_drop() {
+        let mut screen = create_test_screen();
+        screen.set_profile(sample_profile());
+
+        let contents = render_screen_contents(&mut screen);
+
+        assert!(
+            contents.contains("(or drag & drop)"),
+            "footer must advertise drag-and-drop next to [u] Upload PDF, got:\n{contents}"
+        );
     }
 }
