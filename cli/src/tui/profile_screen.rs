@@ -1788,7 +1788,7 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &mut crate::tui::app::App) {
     if app.profile_screen.is_none() {
         let api_client = app.api_client.clone();
         let config_manager = Arc::new(Mutex::new(
-            ConfigManager::load(None).unwrap_or_default(),
+            ConfigManager::load(app.config_path.as_deref()).unwrap_or_default(),
         ));
         app.profile_screen = Some(ProfileScreen::new(api_client, config_manager));
     }

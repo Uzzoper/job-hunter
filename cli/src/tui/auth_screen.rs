@@ -456,7 +456,9 @@ pub async fn submit(&mut self, app: &mut App) -> anyhow::Result<()> {
 pub fn draw(frame: &mut Frame, area: Rect, app: &mut App) {
     if app.auth_screen.is_none() {
         let api_client = app.api_client.clone();
-        let config_manager = Arc::new(Mutex::new(ConfigManager::load(None).unwrap_or_default()));
+        let config_manager = Arc::new(Mutex::new(
+            ConfigManager::load(app.config_path.as_deref()).unwrap_or_default(),
+        ));
         app.auth_screen = Some(AuthScreen::new(api_client, config_manager));
     }
 

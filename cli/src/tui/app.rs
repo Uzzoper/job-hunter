@@ -10,6 +10,7 @@ use crate::tui::job_list_screen::{JobListScreen, LoadingState, SearchFocus};
 use crate::tui::profile_screen::ProfileScreen;
 use ratatui::Terminal;
 use std::io;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -38,14 +39,31 @@ pub struct App {
     pub job_list_screen: Option<JobListScreen>,
     pub job_detail_screen: Option<job_detail_screen::JobDetailScreen>,
     pub profile_screen: Option<ProfileScreen>,
+    /// Config path from `-c/--config`; all TUI-internal config reads/writes
+    /// honor it (docs/specs/cli-auth-ux-fixes.md, Rule 3). `None` = default.
+    pub config_path: Option<PathBuf>,
 }
 
 impl App {
+    /// Creates the app using the default config location.
     pub fn new(api_client: ApiClient, config: Config) -> Self {
+        Self::with_config_path(api_client, config, None)
+    }
+
+    /// Creates the app with an explicit config path so in-TUI login and
+    /// profile edit-save read/persist the `-c/--config` file instead of the
+    /// default one (docs/specs/cli-auth-ux-fixes.md, Scenario 2 + Rule 3).
+    pub fn with_config_path(
+        api_client: ApiClient,
+        config: Config,
+        config_path: Option<&Path>,
+    ) -> Self {
         let cache = Arc::new(Mutex::new(CacheManager::new(None, config.cache_ttl_hours).expect("cache init")));
         let api_client_arc = Arc::new(Mutex::new(api_client));
         let cache_arc = cache.clone();
-        let config_manager = Arc::new(Mutex::new(ConfigManager::load(None).unwrap_or_default()));
+        let config_manager = Arc::new(Mutex::new(
+            ConfigManager::load(config_path).unwrap_or_default(),
+        ));
         let job_list_screen = Some(JobListScreen::new(api_client_arc.clone(), cache_arc.clone()));
         let job_detail_screen = Some(JobDetailScreen::new(api_client_arc.clone(), cache_arc));
         let profile_screen = Some(ProfileScreen::new(
@@ -68,6 +86,7 @@ impl App {
             job_list_screen,
             job_detail_screen,
             profile_screen,
+            config_path: config_path.map(Path::to_path_buf),
         }
     }
 
