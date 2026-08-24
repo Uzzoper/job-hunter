@@ -5,6 +5,7 @@ import com.juanperuzzo.job_hunter.application.port.out.UserProfileRepository;
 import com.juanperuzzo.job_hunter.application.service.ResumeUploadService;
 import com.juanperuzzo.job_hunter.application.service.UserProfileService;
 import com.juanperuzzo.job_hunter.domain.exception.AiException;
+import com.juanperuzzo.job_hunter.domain.exception.InvalidResumeTextException;
 import com.juanperuzzo.job_hunter.domain.exception.UserNotFoundException;
 import com.juanperuzzo.job_hunter.domain.model.CompanyTone;
 import com.juanperuzzo.job_hunter.domain.model.Project;
@@ -241,16 +242,16 @@ class ResumeUploadServiceTest {
     }
 
     @Test
-    @DisplayName("uploadResume should propagate IllegalArgumentException from userProfileService")
-    void uploadResume_whenResumeTextTooShort_shouldPropagateIllegalArgument() throws Exception {
+    @DisplayName("uploadResume should propagate InvalidResumeTextException from userProfileService")
+    void uploadResume_whenResumeTextTooShort_shouldPropagateInvalidResumeTextException() throws Exception {
         var file = validPdfMock("short"); // text < 50 chars
 
         when(aiPort.complete(anyString())).thenReturn("{\"skills\": [], \"projects\": []}");
         when(userProfileRepository.findByUserId(1L)).thenReturn(Optional.empty());
         when(userProfileService.saveProfile(anyLong(), any(UserProfile.class)))
-                .thenThrow(new IllegalArgumentException("Resume text must be at least 50 characters"));
+                .thenThrow(new InvalidResumeTextException("Resume text must be at least 50 characters"));
 
-        assertThrows(IllegalArgumentException.class,
+        assertThrows(InvalidResumeTextException.class,
                 () -> service.uploadResume(1L, file));
     }
 

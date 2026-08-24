@@ -12,6 +12,8 @@ import com.juanperuzzo.job_hunter.domain.exception.DraftAlreadyApprovedException
 import com.juanperuzzo.job_hunter.domain.exception.EmailAlreadySentException;
 import com.juanperuzzo.job_hunter.domain.exception.EmailDeliveryException;
 import com.juanperuzzo.job_hunter.domain.exception.MissingRecipientException;
+import com.juanperuzzo.job_hunter.domain.exception.InvalidResumeTextException;
+import com.juanperuzzo.job_hunter.domain.exception.ResumeRenderingException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -116,6 +118,16 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(EmailDeliveryException.class)
     public ResponseEntity<Map<String, Object>> handleEmailDeliveryError(EmailDeliveryException ex) {
         return buildResponse(HttpStatus.BAD_GATEWAY, ex.getMessage());
+    }
+
+    @ExceptionHandler(InvalidResumeTextException.class)
+    public ResponseEntity<Map<String, Object>> handleInvalidResumeText(InvalidResumeTextException ex) {
+        return buildResponse(HttpStatus.BAD_REQUEST, ex.getMessage());
+    }
+
+    @ExceptionHandler(ResumeRenderingException.class)
+    public ResponseEntity<Map<String, Object>> handleResumeRenderingError(ResumeRenderingException ex) {
+        return buildResponse(HttpStatus.INTERNAL_SERVER_ERROR, ex.getMessage());
     }
 
     @ExceptionHandler(DataIntegrityViolationException.class)

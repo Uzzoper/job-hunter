@@ -11,6 +11,7 @@ import com.juanperuzzo.job_hunter.domain.exception.AiException;
 import com.juanperuzzo.job_hunter.domain.exception.AnalysisNotFoundException;
 import com.juanperuzzo.job_hunter.domain.exception.JobNotFoundException;
 import com.juanperuzzo.job_hunter.domain.exception.ProfileNotConfiguredException;
+import com.juanperuzzo.job_hunter.domain.exception.ResumeRenderingException;
 import com.juanperuzzo.job_hunter.domain.exception.UserNotFoundException;
 import com.juanperuzzo.job_hunter.domain.model.CompanyTone;
 import com.juanperuzzo.job_hunter.domain.model.Job;
@@ -25,6 +26,8 @@ import org.mockito.Captor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.io.InputStream;
+import java.lang.reflect.InvocationTargetException;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
@@ -444,6 +447,30 @@ class ResumeTailoringServiceTest {
 
         assertThrows(UserNotFoundException.class, () -> service.tailorResume(USER_ID, JOB_ID));
         verifyNoInteractions(aiPort, pdfRendererPort);
+    }
+
+    @Test
+    @DisplayName("loadTemplate should throw ResumeRenderingException when template is not found in classpath")
+    void loadTemplate_whenTemplateNotFound_shouldThrowResumeRenderingException() throws Exception {
+        // Classloader that cannot see any bundled resource, simulating a
+        // missing resume/ats-template.html on the classpath.
+        ClassLoader emptyClassLoader = new ClassLoader() {
+            @Override
+            public InputStream getResourceAsStream(String name) {
+                return null;
+            }
+        };
+
+        var loadTemplate = ResumeTailoringService.class.getDeclaredMethod("loadTemplate", ClassLoader.class);
+        loadTemplate.setAccessible(true);
+
+        var ex = assertThrows(InvocationTargetException.class,
+                () -> loadTemplate.invoke(null, emptyClassLoader));
+
+        assertInstanceOf(ResumeRenderingException.class, ex.getCause(),
+                "template-not-found must surface as ResumeRenderingException");
+        assertTrue(ex.getCause().getMessage().contains("Template not found in classpath"),
+                "message must identify the missing template");
     }
 
     // =========================================================================
