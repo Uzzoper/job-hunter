@@ -53,6 +53,9 @@ ai:
     max-chars: 8000    # max chars of resume text sent to AI; longer text is truncated with a warning
 
 scraper:
+  # NOTE: scraper.retry.* also governs AI calls (OpenRouter/Ollama) — the same
+  # ExponentialBackoffRetry policy wraps AI completions, retrying transient
+  # HTTP 429/5xx and timeouts with exponential backoff (docs/specs/retry-backoff-ai.md).
   retry:
     max-attempts: 3
     base-delay-millis: 1000

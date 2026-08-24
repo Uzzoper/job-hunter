@@ -367,6 +367,10 @@ scraper:
 > Without this, everything still works: Gupy and InfoJobs need no container, and LinkedIn
 > falls back to Jsoup (`scraper.linkedin.mode: jsoup`).
 
+> **Retry/backoff**: the `scraper.retry.*` properties (`max-attempts`, `base-delay-millis`,
+> `max-delay-millis`, `max-jitter-millis`) also govern AI calls (OpenRouter/Ollama) —
+> transient HTTP 429/5xx responses and timeouts are retried with exponential backoff.
+
 **6. Build and run the CLI**
 
 ```bash
