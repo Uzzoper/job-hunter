@@ -1,4 +1,4 @@
-package com.juanperuzzo.job_hunter.web.dto;
+package com.juanperuzzo.job_hunter.application.dto;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.List;
