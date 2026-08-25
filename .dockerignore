@@ -3,6 +3,10 @@ target/
 .gitignore
 .gitattributes
 .env
+# Local profile config carries secrets — never let it reach the build context
+# (mvn package would embed it in app.jar). **/ form: bare names only match at
+# the context root, and this file lives under src/main/resources/.
+**/application-local.yaml
 *.md
 .DS_Store
 node_modules/
