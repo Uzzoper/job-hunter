@@ -104,7 +104,7 @@ auto-send:
 # and by analysis when ai.provider=hermes. The bot needs an email tool (MCP/skill)
 # configured in its profile for delivery to actually happen.
 hermes:
-  base-url: http://localhost:9119
+  base-url: http://localhost:9119/v1   # gateway serves the OpenAI-compatible API under /v1
   api-key: ${HERMES_API_KEY}
   model: default
   timeout-seconds: 120
