@@ -30,7 +30,7 @@ Olá. Tudo bem?
 
 Gostaria de me candidatar à vaga de {JOB_TITLE} na {COMPANY}.
 
-Atualmente curso Engenharia de Software e venho me especializando em desenvolvimento back-end com Java. Tenho experiência prática com Java, Spring Boot, APIs REST, Git, bancos de dados relacionais e desenvolvimento de aplicações web.
+Sou desenvolvedor back-end focado no ecossistema Java/Spring, com projetos em produção construídos com Java, Spring Boot, APIs REST, Git e bancos de dados relacionais.
 
 Alguns destaques do meu portfólio:
 
@@ -38,9 +38,9 @@ Alguns destaques do meu portfólio:
 • LovLink (lovlink.com.br) — SaaS comercial em produção, banco de dados PostgreSQL, integração de pagamentos via Mercado Pago e arquitetura full stack moderna.
 • Jishuu (jishuu.vercel.app) — plataforma com autenticação OAuth 2.0 (Google), gerenciamento de usuários e persistência de dados utilizando PostgreSQL.
 
-Além dos requisitos da vaga, possuo conhecimentos em JavaScript, React, Node.js, Docker, testes automatizados e versionamento com Git. Estou sempre buscando aprimorar minhas habilidades e aprender novas tecnologias para contribuir cada vez mais com o time e com os projetos em que atuo.
+Além dos requisitos da vaga, trabalho também com JavaScript, React, Node.js, Docker e testes automatizados. Posso demonstrar qualquer um desses projetos em funcionamento em uma conversa rápida.
 
-Segue meu currículo em anexo. Fico à disposição para uma conversa.
+Segue meu currículo em anexo. Podemos agendar uma conversa para eu mostrar esses projetos rodando?
 
 Atenciosamente,
 
