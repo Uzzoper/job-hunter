@@ -20,6 +20,11 @@ Key property: **this repo contains no email-delivery logic**. The Java side hand
 2. Gateway running: `hermes serve` (default `http://localhost:9119`) with strong `API_SERVER_KEY`
 3. `HERMES_API_KEY` env var set to that key
 4. Tool approvals for the bot's email action pre-approved (a mid-run approval prompt would stall the request until timeout)
+5. **Resume attachment** (single-user setup): the user's PDF lives inside the Bot profile
+   (`~/.hermes/profiles/<bot>/resume.pdf`) and a `SOUL.md` standing instruction tells the Bot
+   to attach it on every Job Hunter application email. The backend sends no file and knows
+   nothing about it — re-uploading a resume in the app requires re-copying the file manually.
+   Multi-user would need per-send staging through `EmailSenderPort` instead (deliberately deferred).
 
 ---
 
