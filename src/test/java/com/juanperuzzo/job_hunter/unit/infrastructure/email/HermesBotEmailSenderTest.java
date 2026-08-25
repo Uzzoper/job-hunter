@@ -1,5 +1,6 @@
 package com.juanperuzzo.job_hunter.unit.infrastructure.email;
 
+import com.juanperuzzo.job_hunter.domain.exception.EmailDeliveryException;
 import com.juanperuzzo.job_hunter.infrastructure.email.HermesBotEmailSender;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -64,22 +65,22 @@ class HermesBotEmailSenderTest {
     }
 
     @Test
-    @DisplayName("send when HTTP 4xx/5xx should throw RuntimeException")
-    void send_whenHttpError_shouldThrowRuntimeException() {
+    @DisplayName("send when HTTP 4xx/5xx should throw EmailDeliveryException")
+    void send_whenHttpError_shouldThrowEmailDeliveryException() {
         wireMockServer.stubFor(post(urlEqualTo("/chat/completions"))
                 .willReturn(aResponse()
                         .withStatus(500)
                         .withHeader("Content-Type", "application/json")
                         .withBody("{\"error\": \"Internal Server Error\"}")));
 
-        assertThrows(RuntimeException.class, () -> hermesBotEmailSender.send(
+        assertThrows(EmailDeliveryException.class, () -> hermesBotEmailSender.send(
                 "juan@example.com", "jobs@company.com", "Subject", "Body"));
     }
 
     @Test
-    @DisplayName("send when timeout should throw RuntimeException")
+    @DisplayName("send when timeout should throw EmailDeliveryException")
     @Timeout(value = 10)
-    void send_whenTimeout_shouldThrowRuntimeException() {
+    void send_whenTimeout_shouldThrowEmailDeliveryException() {
         wireMockServer.stubFor(post(urlEqualTo("/chat/completions"))
                 .willReturn(aResponse()
                         .withFixedDelay(10000)
@@ -89,7 +90,7 @@ class HermesBotEmailSenderTest {
                                 {"choices": [{"message": {"content": "EMAIL_SENT"}}]}
                                 """)));
 
-        assertThrows(RuntimeException.class, () -> hermesBotEmailSender.send(
+        assertThrows(EmailDeliveryException.class, () -> hermesBotEmailSender.send(
                 "juan@example.com", "jobs@company.com", "Subject", "Body"));
     }
 
