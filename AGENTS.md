@@ -24,9 +24,11 @@ Scraper (ProviderRegistry: Gupy + InfoJobs + LinkedIn)
        ↓
 Persistence (SQLite + Flyway)
        ↓
-AI Client (OpenRouter → MiniMax M2.5)
+AI Client (provider switch: openrouter | ollama | hermes — Hermes Agent gateway)
        ↓
 Job analysis + personalized email generation
+       ↓
+Email sending delegated to a Hermes Agent bot (HermesBotEmailSender → hermes serve)
        ↓
 REST API (auth required except register/login)
 ```
@@ -55,7 +57,8 @@ com.juanperuzzo.job_hunter
 ├── infrastructure/              ← technical details
 │   ├── scraper/                 → ProviderRegistry, LinkedInScraperClient,
 │                                  GupyProvider, InfoJobsProvider, LinkedInProvider
-│   ├── ai/                      → OpenRouterClient
+│   ├── ai/                      → OpenRouterClient, OllamaClient, HermesAgentClient
+│   ├── email/                   → HermesBotEmailSender
 │   ├── persistence/             → JPA adapters per entity
 │   ├── security/                → JWT filter, token service, CurrentUserService
 │   └── config/                  → AppConfig
