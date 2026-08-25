@@ -69,7 +69,26 @@ Key property: **this repo contains no email-delivery logic**. The Java side hand
 - **WHEN** `complete(prompt)` is called
 - **THEN** the request body is valid JSON carrying the prompt intact
 
+### Embedded gateway errors (HTTP 200)
+
+Observed against the real gateway: when the upstream model provider is saturated,
+it may answer a **well-formed chat-completions body carrying `finish_reason: "error"`**
+instead of an HTTP error status. A bare 2xx must not be trusted as success.
+
+#### Scenario 8: gateway answers HTTP 200 with embedded error (sender)
+- **GIVEN** a response with `choices[0].finish_reason == "error"`
+- **WHEN** `send(...)` is called
+- **THEN** throws `EmailDeliveryException` carrying the response content
+- **AND** the reply is not logged as a successful acknowledgement
+
+#### Scenario 9: gateway answers HTTP 200 with embedded error (analysis client)
+- **GIVEN** the same gateway behavior
+- **WHEN** `complete(prompt)` is called
+- **THEN** throws `AiException` carrying the response content
+
 ### Wiring (`AppConfig`)
+
+#### Scenario 10: provider selection
 
 #### Scenario 8: provider selection
 - **GIVEN** `ai.provider=hermes` in configuration
@@ -83,7 +102,7 @@ Key property: **this repo contains no email-delivery logic**. The Java side hand
 ## Business rules
 
 - No retry policy inside these adapters — matches `OllamaClient`; `scraper.retry.*` governs AI calls where applicable
-- Success criterion for sending is HTTP 2xx + non-empty parseable reply — the same trust level as Resend returning 202. The `EMAIL_SENT` / `EMAIL_TOOL_MISSING` markers are conventions in the instruction text, logged when present but **not** enforced: matching free-form LLM replies would be brittle. If the bot lacks an email tool, the gateway still answers 2xx — check the logs
+- Success criterion for sending is HTTP 2xx + non-empty parseable reply **without an embedded error** (`finish_reason != "error"`) — structured metadata is enforced, free-form content is not. The `EMAIL_SENT` / `EMAIL_TOOL_MISSING` markers are conventions in the instruction text, logged when present but **not** enforced: matching free-form LLM replies would be brittle. If the bot lacks an email tool, the gateway still answers 2xx — check the logs
 - One shared `hermes:` config block (`base-url`, `api-key`, `model`, `timeout-seconds`) serves both adapters — same gateway, same credentials
 - Timeout default is 120 s (vs Resend's 15 s): the bot may run tools before replying
 - `"stream": false` is sent explicitly; if a future gateway ignores it and answers SSE-only, parsing must be adjusted then
@@ -129,8 +148,10 @@ ai:
 |---|---|---|
 | Gateway HTTP 4xx/5xx on send | `EmailDeliveryException` | draft stays `PENDING`; `EmailSendingService` passes it through unwrapped |
 | Gateway unreachable/timeout on send | `EmailDeliveryException` | cause carries the timeout; draft stays `PENDING` |
+| Gateway 200 with `finish_reason: "error"` on send | `EmailDeliveryException` | embedded upstream failure treated as delivery failure; draft stays `PENDING` |
 | Gateway HTTP 4xx/5xx on analysis | `AiException` | propagates to AI use cases like other providers |
 | Gateway unreachable/timeout on analysis | `AiException` | propagates |
+| Gateway 200 with `finish_reason: "error"` on analysis | `AiException` | embedded upstream failure treated as completion failure |
 | Bot has no email tool configured | none (2xx) | visible only via logged reply (`EMAIL_TOOL_MISSING` convention) |
 
 ---
