@@ -137,6 +137,7 @@ jh-cli email send <job-id>
 - `--copy` copies body to clipboard (arboard)
 - `approve` changes draft status from `PENDING` → `APPROVED` (required before send)
 - `send` sends the email via Resend API; returns with status `SENT` and `sent_at` timestamp
+  *(update 2026-08: delivery now goes through the Hermes Agent bot — `hermes-agent-integration.md`; status behavior unchanged)*
 
 ### `profile` — User Profile
 ```
