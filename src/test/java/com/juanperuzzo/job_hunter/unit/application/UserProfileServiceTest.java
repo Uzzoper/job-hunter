@@ -3,6 +3,7 @@ package com.juanperuzzo.job_hunter.unit.application;
 import com.juanperuzzo.job_hunter.application.port.out.UserProfileRepository;
 import com.juanperuzzo.job_hunter.application.port.out.UserRepository;
 import com.juanperuzzo.job_hunter.application.service.UserProfileService;
+import com.juanperuzzo.job_hunter.domain.exception.InvalidResumeTextException;
 import com.juanperuzzo.job_hunter.domain.exception.UserNotFoundException;
 import com.juanperuzzo.job_hunter.domain.model.CompanyTone;
 import com.juanperuzzo.job_hunter.domain.model.User;
@@ -95,13 +96,13 @@ class UserProfileServiceTest {
     }
 
     @Test
-    @DisplayName("saveProfile should throw IllegalArgumentException when resume is too short")
-    void saveProfile_whenResumeIsTooShort_shouldThrowIllegalArgumentException() {
+    @DisplayName("saveProfile should throw InvalidResumeTextException when resume is too short")
+    void saveProfile_whenResumeIsTooShort_shouldThrowInvalidResumeTextException() {
         when(userRepository.findById(1L)).thenReturn(Optional.of(user()));
         var input = new UserProfile(null, 1L, "short", List.of("Java"), CompanyTone.FORMAL, List.of(),
                 null, null, null, null, null);
 
-        assertThrows(IllegalArgumentException.class,
+        assertThrows(InvalidResumeTextException.class,
                 () -> userProfileService.saveProfile(1L, input));
     }
 

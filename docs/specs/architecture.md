@@ -26,7 +26,7 @@ analyzes each listing with AI, and generates personalized application emails.
                                                                [FetchJobsService]  ◄──  [REST API] (manual)
                                                                        │
                                                                        ▼
-                                                               [JobRepository]  ──►  [PostgreSQL]
+                                                                [JobRepository]  ──►  [SQLite]
                     │
                     ▼ (on demand)
             [AiAnalysisService]  ──►  [OpenRouterClient]  ──►  [OpenRouter API]
@@ -35,7 +35,7 @@ analyzes each listing with AI, and generates personalized application emails.
          [EmailGenerationService]  ──►  [OpenRouterClient]
                     │
                     ▼
-            [EmailDraftRepository]  ──►  [PostgreSQL]
+            [EmailDraftRepository]  ──►  [SQLite]
                     │
                     ▼
             [REST API]  ──►  [Web Interface]
@@ -193,7 +193,7 @@ CREATE TABLE email_drafts (
 ## Architectural decisions
 
 ### Why Clean Architecture?
-Allows swapping the scraper (Gupy → LinkedIn), the database (PostgreSQL → MongoDB),
+Allows swapping the scraper (Gupy → LinkedIn), the database (SQLite → PostgreSQL),
 or the AI provider (OpenRouter → Groq) without touching the services.
 Each change is isolated to the `infrastructure` layer.
 
@@ -205,10 +205,13 @@ The project does not need reactivity — HTTP calls are synchronous and infreque
 Simulates the HTTP server locally — fast tests, no network dependency,
 no API key required in CI.
 
-### Why PostgreSQL in both dev and prod?
-Identical environments eliminate "works locally, breaks in prod" surprises.
-Flyway guarantees the schema is the same in both environments.
-PostgreSQL runs via Docker Compose in development.
+### Why SQLite as the only database?
+The app is local-first: each user clones and runs it on their own machine, so the
+database must require zero infrastructure. SQLite is a single file (`./data/jobhunter.db`)
+— no server, no Docker, no credentials — and backups are file copies. Flyway owns the
+schema with a consolidated baseline migration. WAL mode allows concurrent reads during
+scraper/scheduler writes. The repository ports keep a future PostgreSQL re-adoption
+(e.g. a hosted SaaS) cheap — only the `infrastructure` layer would change.
 
 ### Why records for DTOs and domain models?
 Records are immutable by default, have auto-generated `equals`/`hashCode`/`toString`,
@@ -277,9 +280,8 @@ See `docs/specs/cli-tui-spec.md` for full command reference, keybindings, data m
 ```yaml
 spring:
   datasource:
-    url: jdbc:postgresql://localhost:5432/jobhunter
-    username: ${DB_USER}
-    password: ${DB_PASSWORD}
+    url: ${DB_URL:jdbc:sqlite:./data/jobhunter.db}
+    driver-class-name: org.sqlite.JDBC
   flyway:
     enabled: true
 

@@ -20,10 +20,12 @@ public class JobAnalysisEntity {
     @Column(name = "match_score", nullable = false)
     private Integer matchScore;
 
-    @Column(name = "matched_skills", nullable = false, columnDefinition = "TEXT[]")
+    @Column(name = "matched_skills", nullable = false)
+    @Convert(converter = StringListConverter.class)
     private String[] matchedSkills;
 
-    @Column(name = "missing_skills", nullable = false, columnDefinition = "TEXT[]")
+    @Column(name = "missing_skills", nullable = false)
+    @Convert(converter = StringListConverter.class)
     private String[] missingSkills;
 
     @Column(name = "company_tone", nullable = false, length = 50)

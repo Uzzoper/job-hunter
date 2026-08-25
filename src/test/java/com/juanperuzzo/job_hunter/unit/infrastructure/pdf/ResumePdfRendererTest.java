@@ -1,5 +1,6 @@
 package com.juanperuzzo.job_hunter.unit.infrastructure.pdf;
 
+import com.juanperuzzo.job_hunter.domain.exception.ResumeRenderingException;
 import com.juanperuzzo.job_hunter.infrastructure.pdf.ResumePdfRenderer;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.interactive.action.PDActionURI;
@@ -94,6 +95,21 @@ class ResumePdfRendererTest {
             assertEquals("https://github.com/Uzzoper/job-hunter",
                     ((PDActionURI) link.getAction()).getURI());
         }
+    }
+
+    @Test
+    @DisplayName("render should throw ResumeRenderingException when the HTML is malformed")
+    void render_whenHtmlIsMalformed_shouldThrowResumeRenderingException() {
+        // A non-void element left unclosed cannot be auto-fixed by the
+        // void-element self-closing pass, so strict XML parsing fails.
+        var malformedHtml = "<html><body><div>unclosed element";
+
+        var ex = assertThrows(ResumeRenderingException.class,
+                () -> renderer.renderPdf(malformedHtml));
+
+        assertTrue(ex.getMessage().contains("Failed to render PDF"),
+                "message must describe the rendering failure");
+        assertNotNull(ex.getCause(), "the underlying parse error must be preserved as cause");
     }
 
     private static String extractText(byte[] pdf) throws IOException {

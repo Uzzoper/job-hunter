@@ -1,7 +1,7 @@
-package com.juanperuzzo.job_hunter.unit.infrastructure.scraper;
+package com.juanperuzzo.job_hunter.unit.infrastructure.scraper.adapter;
 
 import com.juanperuzzo.job_hunter.application.port.out.RawJob;
-import com.juanperuzzo.job_hunter.infrastructure.scraper.ProviderBasedScraperAdapter;
+import com.juanperuzzo.job_hunter.infrastructure.scraper.adapter.ProviderBasedScraperAdapter;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.normalizer.DateParser;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.normalizer.JobNormalizer;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.provider.ProviderRegistry;

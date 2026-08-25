@@ -22,6 +22,9 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.web.client.RestClient;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -36,6 +39,18 @@ class AuthIntegrationTest {
     private static final String TEST_PASSWORD = "secret123";
     private static final String TEST_NAME = "TestUser";
 
+    private static final Path SQLITE_FILE = createTempSqliteFile();
+
+    private static Path createTempSqliteFile() {
+        try {
+            var file = Files.createTempFile("jobhunter-auth-test-", ".db");
+            file.toFile().deleteOnExit();
+            return file;
+        } catch (IOException e) {
+            throw new IllegalStateException("Failed to create temporary SQLite database file", e);
+        }
+    }
+
     @LocalServerPort
     private int port;
 
@@ -48,21 +63,13 @@ class AuthIntegrationTest {
 
     @DynamicPropertySource
     static void configureProperties(DynamicPropertyRegistry registry) {
-        registry.add("DB_USER", () -> requireEnv("DB_USER"));
-        registry.add("DB_PASSWORD", () -> requireEnv("DB_PASSWORD"));
+        registry.add("spring.datasource.url", () -> "jdbc:sqlite:" + SQLITE_FILE.toAbsolutePath());
+        registry.add("spring.datasource.driver-class-name", () -> "org.sqlite.JDBC");
+        registry.add("spring.datasource.username", () -> "");
+        registry.add("spring.datasource.password", () -> "");
         registry.add("jwt.secret", () -> "test-secret-key-min-32-chars-long-for-hmac!!123");
         registry.add("OPENROUTER_API_KEY", () -> "sk-test-dummy-key");
         registry.add("RESEND_API_KEY", () -> "test-resend-key");
-    }
-
-    private static String requireEnv(String name) {
-        String value = System.getenv(name);
-        if (value == null || value.isBlank()) {
-            throw new IllegalStateException(
-                "Missing required environment variable " + name
-                    + " — export it before running integration tests (e.g. `set -a && source .env && set +a`)");
-        }
-        return value;
     }
 
     @BeforeAll

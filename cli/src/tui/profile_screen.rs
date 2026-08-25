@@ -19,6 +19,9 @@ use tokio::sync::Mutex;
 const CONTACT_LABEL_WIDTH: u16 = 15;
 /// Width of the focus marker ("► ") before each contact label.
 const CONTACT_MARKER_WIDTH: u16 = 2;
+/// Discoverability hint shown inside an empty Resume section
+/// (docs/specs/profile-autofill-from-resume.md, "Discoverability hint").
+const RESUME_DROP_HINT: &str = "Drag & drop your resume PDF anywhere in this window to auto-fill your profile — or press [u] to browse.";
 
 /// Profile screen mode: View or Edit
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -843,6 +846,16 @@ impl ProfileScreen {
         self.pending_upload = Some(path);
     }
 
+    /// Start upload for an already-sanitized path (drag-and-drop). Mirrors
+    /// [`Self::start_upload`] without the popup/validation stage: sets the
+    /// pending flag so the main loop runs the same async upload with the same
+    /// success/error banners.
+    pub fn start_upload_with_path(&mut self, path: &str) {
+        self.upload_path_popup = None;
+        self.uploading = true;
+        self.pending_upload = Some(path.to_string());
+    }
+
     /// Finish upload — does the API call (async)
     pub async fn finish_upload(&mut self, path: &str) {
         let client = self.api_client.clone();
@@ -1150,7 +1163,15 @@ fn draw_resume_view(&self, frame: &mut Frame, area: Rect, theme: &Theme, profile
         let count_style = if valid { theme.style_good() } else { theme.style_warn() };
         let count_text = format!(" ({}/50 min)", char_count);
 
-        let content = Paragraph::new(Text::styled(&profile.resume_text, theme.style_normal()))
+        // Discoverability hint while the resume is still empty; disappears
+        // once a resume is set.
+        let text = if profile.resume_text.is_empty() {
+            Text::styled(RESUME_DROP_HINT, theme.style_dim().add_modifier(Modifier::ITALIC))
+        } else {
+            Text::styled(&profile.resume_text, theme.style_normal())
+        };
+
+        let content = Paragraph::new(text)
             .block(
                 Block::default()
                     .borders(Borders::ALL)
@@ -1291,7 +1312,15 @@ fn draw_resume_view(&self, frame: &mut Frame, area: Rect, theme: &Theme, profile
             theme.style_dim()
         };
 
-        let content = Paragraph::new(Text::styled(&self.resume_text, theme.style_normal()))
+        // Discoverability hint while the resume is still empty; disappears
+        // once a resume is set.
+        let text = if self.resume_text.is_empty() {
+            Text::styled(RESUME_DROP_HINT, theme.style_dim().add_modifier(Modifier::ITALIC))
+        } else {
+            Text::styled(&self.resume_text, theme.style_normal())
+        };
+
+        let content = Paragraph::new(text)
             .block(
                 Block::default()
                     .borders(Borders::ALL)
@@ -1719,7 +1748,7 @@ fn draw_resume_view(&self, frame: &mut Frame, area: Rect, theme: &Theme, profile
                 if self.upload_path_popup.is_some() {
                     " [Enter] Confirm  [Esc] Cancel "
                 } else {
-                    " [e] Edit  [u] Upload PDF  [r] Reload  [q/b] Back  [Esc] Quit "
+                    " [e] Edit  [u] Upload PDF (or drag & drop)  [r] Reload  [q/b] Back  [Esc] Quit "
                 }
             }
             ProfileMode::Edit => {
@@ -1778,7 +1807,7 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &mut crate::tui::app::App) {
     if app.profile_screen.is_none() {
         let api_client = app.api_client.clone();
         let config_manager = Arc::new(Mutex::new(
-            ConfigManager::load(None).unwrap_or_default(),
+            ConfigManager::load(app.config_path.as_deref()).unwrap_or_default(),
         ));
         app.profile_screen = Some(ProfileScreen::new(api_client, config_manager));
     }
@@ -1798,6 +1827,16 @@ pub async fn handle_event(
         // Handle bracketed paste events
         if let crossterm::event::Event::Paste(text) = event {
             if let Some(screen) = &mut app.profile_screen {
+                // Drag-and-drop: terminals emit the dropped file path as a
+                // bracketed paste. If it sanitizes to an existing PDF, run the
+                // same upload flow as the path input popup
+                // (docs/specs/profile-autofill-from-resume.md).
+                if !screen.uploading
+                    && let Some(path) = sanitize_dropped_path(&text)
+                {
+                    screen.start_upload_with_path(&path.to_string_lossy());
+                    return Ok(());
+                }
                 if screen.upload_path_popup.is_some() {
                     if let Some(popup) = &mut screen.upload_path_popup {
                         let byte_pos = popup.path.char_indices()
@@ -2066,6 +2105,73 @@ pub async fn handle_event(
         }
     }
     Ok(())
+}
+
+/// Sanitizes a file path pasted into the terminal (drag-and-drop emits the
+/// path as bracketed-paste text, often wrapped in whitespace/newlines,
+/// surrounding quotes, or a `file://` URI with percent-escapes).
+///
+/// Pipeline per docs/specs/profile-autofill-from-resume.md:
+/// 1. trim whitespace/newlines
+/// 2. strip one pair of surrounding single/double quotes
+/// 3. strip a leading `file://` prefix and decode percent-escapes (`%20` -> space)
+/// 4. accept only if the resulting path is an existing `.pdf` file (case-insensitive)
+pub(crate) fn sanitize_dropped_path(raw: &str) -> Option<std::path::PathBuf> {
+    // 1. Trim surrounding whitespace/newlines
+    let mut candidate = raw.trim();
+    if candidate.is_empty() {
+        return None;
+    }
+
+    // 2. Strip one pair of surrounding quotes (some terminals quote paths)
+    if candidate.len() >= 2 {
+        let bytes = candidate.as_bytes();
+        let first = bytes[0];
+        let last = bytes[bytes.len() - 1];
+        if (first == b'\'' && last == b'\'') || (first == b'"' && last == b'"') {
+            candidate = &candidate[1..candidate.len() - 1];
+        }
+    }
+
+    // 3. Strip a leading file:// URI prefix and decode percent-escapes
+    if let Some(rest) = candidate.strip_prefix("file://") {
+        candidate = rest;
+    }
+    let decoded = decode_percent_escapes(candidate);
+
+    let path = std::path::PathBuf::from(&decoded);
+
+    // 4. Accept only existing .pdf files (case-insensitive extension)
+    if path.extension().is_none_or(|ext| !ext.eq_ignore_ascii_case("pdf")) {
+        return None;
+    }
+    if !path.is_file() {
+        return None;
+    }
+    Some(path)
+}
+
+/// Decodes `%XX` percent-escapes by hand (no new dependencies). Invalid or
+/// incomplete escapes are left as-is; if decoding produces invalid UTF-8 the
+/// original input is returned unchanged.
+fn decode_percent_escapes(input: &str) -> String {
+    let bytes = input.as_bytes();
+    let mut decoded: Vec<u8> = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            let hi = (bytes[i + 1] as char).to_digit(16);
+            let lo = (bytes[i + 2] as char).to_digit(16);
+            if let (Some(hi), Some(lo)) = (hi, lo) {
+                decoded.push((hi * 16 + lo) as u8);
+                i += 3;
+                continue;
+            }
+        }
+        decoded.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8(decoded).unwrap_or_else(|_| input.to_string())
 }
 
 #[cfg(test)]
@@ -3037,5 +3143,189 @@ mod tests {
 
         screen.popup_focus_prev();
         assert_eq!(screen.project_popup.as_ref().unwrap().focused_field, ProjectPopupField::TechStack);
+    }
+
+    // =========================================================================
+    // sanitize_dropped_path (drag-and-drop upload, Step 1 RED)
+    // docs/specs/profile-autofill-from-resume.md
+    // =========================================================================
+
+    /// Creates a unique temp file with the given name and PDF magic bytes.
+    fn temp_pdf_file(file_name: &str) -> std::path::PathBuf {
+        let path = std::env::temp_dir().join(format!("jh-autofill-test-{}-{}", std::process::id(), file_name));
+        let _ = std::fs::remove_file(&path);
+        std::fs::write(&path, b"%PDF-1.4\n").expect("failed to create temp pdf");
+        path
+    }
+
+    fn cleanup_temp(path: &std::path::Path) {
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn sanitize_dropped_path_trims_whitespace_and_newlines() {
+        let path = temp_pdf_file("trim.pdf");
+        let raw = format!("  \n{}\n  ", path.display());
+
+        let result = sanitize_dropped_path(&raw);
+
+        assert_eq!(result, Some(path.clone()));
+        cleanup_temp(&path);
+    }
+
+    #[test]
+    fn sanitize_dropped_path_strips_surrounding_quotes() {
+        let path = temp_pdf_file("quoted.pdf");
+
+        let single_quoted = format!("'{}'", path.display());
+        assert_eq!(sanitize_dropped_path(&single_quoted), Some(path.clone()));
+
+        let double_quoted = format!("\"{}\"", path.display());
+        assert_eq!(sanitize_dropped_path(&double_quoted), Some(path.clone()));
+
+        cleanup_temp(&path);
+    }
+
+    #[test]
+    fn sanitize_dropped_path_strips_file_uri_and_decodes_percent_escapes() {
+        // Real file whose name contains a space, addressed as a
+        // `file://.../meu%20cv.pdf` URI (same shape as file:///home/u/meu%20cv.pdf)
+        let dir = std::env::temp_dir().join(format!("jh-autofill-test-dir-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("failed to create temp dir");
+        let path = dir.join("meu cv.pdf");
+        let _ = std::fs::remove_file(&path);
+        std::fs::write(&path, b"%PDF-1.4\n").expect("failed to create temp pdf");
+
+        let uri = format!("file://{}/meu%20cv.pdf", dir.display());
+
+        let result = sanitize_dropped_path(&uri);
+
+        assert_eq!(result, Some(path));
+
+        cleanup_temp(&dir.join("meu cv.pdf"));
+        let _ = std::fs::remove_dir(&dir);
+    }
+
+    #[test]
+    fn sanitize_dropped_path_rejects_non_pdf_extension() {
+        let pdf = temp_pdf_file("control.pdf");
+        let txt = pdf.with_extension("txt");
+        std::fs::write(&txt, b"not a pdf").expect("failed to create temp txt");
+
+        assert_eq!(sanitize_dropped_path(&txt.display().to_string()), None);
+        // Positive control: proves None comes from the extension check,
+        // not from a sanitizer that rejects everything.
+        assert_eq!(
+            sanitize_dropped_path(&pdf.display().to_string()),
+            Some(pdf.clone())
+        );
+
+        cleanup_temp(&txt);
+        cleanup_temp(&pdf);
+    }
+
+    #[test]
+    fn sanitize_dropped_path_rejects_nonexistent_file() {
+        let missing = std::env::temp_dir().join(format!("jh-autofill-missing-{}.pdf", std::process::id()));
+        let _ = std::fs::remove_file(&missing); // ensure it does not exist
+
+        assert_eq!(sanitize_dropped_path(&missing.display().to_string()), None);
+        // Positive control: an existing .pdf is accepted, proving None comes
+        // from the existence check, not from a sanitizer that rejects everything.
+        let existing = temp_pdf_file("exists.pdf");
+        assert_eq!(
+            sanitize_dropped_path(&existing.display().to_string()),
+            Some(existing.clone())
+        );
+
+        cleanup_temp(&existing);
+    }
+
+    #[test]
+    fn sanitize_dropped_path_accepts_existing_pdf() {
+        let path = temp_pdf_file("accept.pdf");
+
+        let result = sanitize_dropped_path(&path.display().to_string());
+
+        assert_eq!(result, Some(path.clone()));
+        cleanup_temp(&path);
+    }
+    // =========================================================================
+    // Drag-and-drop discoverability hint
+    // (docs/specs/profile-autofill-from-resume.md, "Discoverability hint")
+    // =========================================================================
+
+    /// Renders the screen and returns the full text contents of the frame.
+    fn render_screen_contents(screen: &mut ProfileScreen) -> String {
+        let mut terminal = Terminal::new(TestBackend::new(120, 40)).unwrap();
+        terminal
+            .draw(|frame| {
+                screen.draw(frame, frame.area());
+            })
+            .unwrap();
+        terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect()
+    }
+
+    #[test]
+    fn resume_callout_shown_when_resume_empty_view_mode() {
+        let mut screen = create_test_screen();
+        let mut profile = sample_profile();
+        profile.resume_text = String::new();
+        screen.set_profile(profile);
+
+        let contents = render_screen_contents(&mut screen);
+
+        assert!(
+            contents.contains("Drag & drop your resume PDF"),
+            "empty resume must show the drag-and-drop callout, got:\n{contents}"
+        );
+    }
+
+    #[test]
+    fn resume_callout_hidden_when_resume_set_view_mode() {
+        let mut screen = create_test_screen();
+        screen.set_profile(sample_profile()); // sample has a non-empty resume
+
+        let contents = render_screen_contents(&mut screen);
+
+        assert!(
+            !contents.contains("Drag & drop"),
+            "callout must disappear once a resume is set"
+        );
+    }
+
+    #[test]
+    fn resume_callout_shown_when_resume_empty_edit_mode() {
+        let mut screen = create_test_screen();
+        let mut profile = sample_profile();
+        profile.resume_text = String::new();
+        screen.set_profile(profile);
+        screen.toggle_mode(); // Edit mode
+
+        let contents = render_screen_contents(&mut screen);
+
+        assert!(
+            contents.contains("Drag & drop your resume PDF"),
+            "empty resume must show the callout in edit mode too, got:\n{contents}"
+        );
+    }
+
+    #[test]
+    fn footer_hint_mentions_drag_and_drop() {
+        let mut screen = create_test_screen();
+        screen.set_profile(sample_profile());
+
+        let contents = render_screen_contents(&mut screen);
+
+        assert!(
+            contents.contains("(or drag & drop)"),
+            "footer must advertise drag-and-drop next to [u] Upload PDF, got:\n{contents}"
+        );
     }
 }
