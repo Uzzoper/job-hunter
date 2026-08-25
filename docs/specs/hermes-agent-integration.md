@@ -37,12 +37,12 @@ Key property: **this repo contains no email-delivery logic**. The Java side hand
 #### Scenario 2: gateway returns HTTP 4xx/5xx
 - **GIVEN** the gateway rejects the request (bad key, server error)
 - **WHEN** `send(...)` is called
-- **THEN** throws `RuntimeException` (the calling service wraps it into `EmailDeliveryException`; draft stays `PENDING`)
+- **THEN** throws `EmailDeliveryException` (draft stays `PENDING`; `EmailSendingService` propagates it without re-wrapping)
 
 #### Scenario 3: gateway unreachable / slow
 - **GIVEN** the gateway is down or does not answer within `hermes.timeout-seconds`
 - **WHEN** `send(...)` is called
-- **THEN** throws `RuntimeException` with a timeout-related cause
+- **THEN** throws `EmailDeliveryException` with a timeout-related cause
 
 ### HermesAgentClient (implements `AiPort`, mirrors `OllamaClient`)
 
@@ -122,8 +122,8 @@ ai:
 
 | Situation | Exception thrown | Expected behavior |
 |---|---|---|
-| Gateway HTTP 4xx/5xx on send | `RuntimeException` | `EmailSendingService` wraps into `EmailDeliveryException`; draft stays `PENDING` |
-| Gateway unreachable/timeout on send | `RuntimeException` | same wrapping; cause carries the timeout |
+| Gateway HTTP 4xx/5xx on send | `EmailDeliveryException` | draft stays `PENDING`; `EmailSendingService` passes it through unwrapped |
+| Gateway unreachable/timeout on send | `EmailDeliveryException` | cause carries the timeout; draft stays `PENDING` |
 | Gateway HTTP 4xx/5xx on analysis | `AiException` | propagates to AI use cases like other providers |
 | Gateway unreachable/timeout on analysis | `AiException` | propagates |
 | Bot has no email tool configured | none (2xx) | visible only via logged reply (`EMAIL_TOOL_MISSING` convention) |

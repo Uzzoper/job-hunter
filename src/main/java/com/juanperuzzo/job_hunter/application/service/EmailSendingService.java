@@ -51,6 +51,9 @@ public class EmailSendingService implements SendEmailUseCase {
 
         try {
             emailSenderPort.send(user.email(), contactEmail, draft.subject(), draft.body());
+        } catch (EmailDeliveryException e) {
+            // adapters already throw the domain exception — don't re-wrap
+            throw e;
         } catch (RuntimeException e) {
             throw new EmailDeliveryException("Failed to send email for job " + jobId, e);
         }

@@ -120,4 +120,22 @@ class EmailSendingServiceTest {
         assertThrows(EmailDeliveryException.class, () -> emailSendingService.send(USER_ID, JOB_ID));
         verify(emailDraftRepository, never()).save(any());
     }
+
+    @Test
+    @DisplayName("should propagate EmailDeliveryException from sender without re-wrapping")
+    void send_whenSenderThrowsEmailDeliveryException_shouldPropagateUnwrapped() {
+        var draft = new EmailDraft(DRAFT_ID, JOB_ID, USER_ID, "Subject", "Body", EmailStatus.PENDING, LocalDateTime.now());
+        var job = new Job(JOB_ID, "Dev", "Company", "https://job", "Desc", LocalDate.now(), "source", CONTACT_EMAIL);
+        var user = new User(USER_ID, USER_EMAIL, "Candidate", "hash");
+        var deliveryException = new EmailDeliveryException("Hermes API error: 502");
+
+        when(emailDraftRepository.findByJobIdAndUserId(JOB_ID, USER_ID)).thenReturn(Optional.of(draft));
+        when(jobRepository.findById(JOB_ID)).thenReturn(Optional.of(job));
+        when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user));
+        doThrow(deliveryException).when(emailSenderPort).send(any(), any(), any(), any());
+
+        var thrown = assertThrows(EmailDeliveryException.class, () -> emailSendingService.send(USER_ID, JOB_ID));
+        assertSame(deliveryException, thrown);
+        verify(emailDraftRepository, never()).save(any());
+    }
 }

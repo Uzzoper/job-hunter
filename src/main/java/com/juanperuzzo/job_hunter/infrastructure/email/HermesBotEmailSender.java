@@ -1,9 +1,9 @@
 package com.juanperuzzo.job_hunter.infrastructure.email;
 
 import com.juanperuzzo.job_hunter.application.port.out.EmailSenderPort;
+import com.juanperuzzo.job_hunter.domain.exception.EmailDeliveryException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-import com.fasterxml.jackson.annotation.JsonProperty;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
@@ -58,15 +58,17 @@ public class HermesBotEmailSender implements EmailSenderPort {
                     .retrieve()
                     .onStatus(status -> status.is4xxClientError() || status.is5xxServerError(),
                             (req, resp) -> {
-                                throw new RuntimeException("Hermes API error: " + resp.getStatusCode());
+                                throw new EmailDeliveryException("Hermes API error: " + resp.getStatusCode());
                             })
                     .body(String.class);
 
             log.info("Hermes bot acknowledged email to {}: {}", to, extractText(responseBody));
         } catch (ResourceAccessException e) {
-            throw new RuntimeException("Request to Hermes gateway timed out", e);
+            throw new EmailDeliveryException("Request to Hermes gateway timed out", e);
+        } catch (EmailDeliveryException e) {
+            throw e;
         } catch (Exception e) {
-            throw new RuntimeException("Failed to delegate email sending to Hermes bot", e);
+            throw new EmailDeliveryException("Failed to delegate email sending to Hermes bot", e);
         }
     }
 
@@ -95,23 +97,11 @@ public class HermesBotEmailSender implements EmailSenderPort {
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
-    private static class ChatCompletionResponse {
-        @JsonProperty("choices")
-        private List<Choice> choices;
-        public List<Choice> choices() { return choices; }
-    }
+    private record ChatCompletionResponse(List<Choice> choices) {}
 
     @JsonIgnoreProperties(ignoreUnknown = true)
-    private static class Choice {
-        @JsonProperty("message")
-        private Message message;
-        public Message message() { return message; }
-    }
+    private record Choice(Message message) {}
 
     @JsonIgnoreProperties(ignoreUnknown = true)
-    private static class Message {
-        @JsonProperty("content")
-        private String content;
-        public String content() { return content; }
-    }
+    private record Message(String content) {}
 }
