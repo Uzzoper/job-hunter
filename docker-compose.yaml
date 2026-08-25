@@ -34,6 +34,8 @@ services:
     volumes:
       # SQLite database file lives on the host (./data/jobhunter.db)
       - ./data:/app/data
+      # Resume uploads must survive container recreation
+      - ./uploads:/app/uploads
     depends_on:
       linkedin-scraper:
         condition: service_started
