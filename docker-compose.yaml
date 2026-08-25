@@ -27,7 +27,7 @@ services:
     environment:
       JWT_SECRET: ${JWT_SECRET}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
-      RESEND_API_KEY: ${RESEND_API_KEY}
+      HERMES_API_KEY: ${HERMES_API_KEY}
     volumes:
       # SQLite database file lives on the host (./data/jobhunter.db)
       - ./data:/app/data

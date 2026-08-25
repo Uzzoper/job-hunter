@@ -16,9 +16,10 @@ import com.juanperuzzo.job_hunter.application.service.EmailSendingService;
 import com.juanperuzzo.job_hunter.application.service.FetchJobsService;
 import com.juanperuzzo.job_hunter.application.service.FetchSourceJobsService;
 import com.juanperuzzo.job_hunter.application.service.ResumeTailoringService;
+import com.juanperuzzo.job_hunter.infrastructure.ai.HermesAgentClient;
 import com.juanperuzzo.job_hunter.infrastructure.ai.OllamaClient;
 import com.juanperuzzo.job_hunter.infrastructure.ai.OpenRouterClient;
-import com.juanperuzzo.job_hunter.infrastructure.email.ResendEmailSender;
+import com.juanperuzzo.job_hunter.infrastructure.email.HermesBotEmailSender;
 import com.juanperuzzo.job_hunter.infrastructure.pdf.ResumePdfRenderer;
 import com.juanperuzzo.job_hunter.infrastructure.scheduler.AutoSendScheduler;
 import com.juanperuzzo.job_hunter.application.port.out.PasswordHasher;
@@ -213,6 +214,16 @@ public class AppConfig {
     }
 
     @Bean
+    @ConditionalOnProperty(name = "ai.provider", havingValue = "hermes")
+    public HermesAgentClient hermesAgentClient(
+            @Value("${hermes.base-url}") String baseUrl,
+            @Value("${hermes.api-key}") String apiKey,
+            @Value("${hermes.model}") String model,
+            @Value("${hermes.timeout-seconds}") int timeoutSeconds) {
+        return new HermesAgentClient(baseUrl, apiKey, model, timeoutSeconds);
+    }
+
+    @Bean
     public FetchJobsService fetchJobsService(ScraperPort scraperPort, JobRepository jobRepository) {
         return new FetchJobsService(scraperPort, jobRepository);
     }
@@ -277,11 +288,12 @@ public class AppConfig {
     }
 
     @Bean
-    public ResendEmailSender resendEmailSender(
-            @Value("${resend.base-url}") String baseUrl,
-            @Value("${resend.api-key}") String apiKey,
-            @Value("${resend.timeout-seconds}") int timeoutSeconds) {
-        return new ResendEmailSender(baseUrl, apiKey, timeoutSeconds);
+    public HermesBotEmailSender hermesBotEmailSender(
+            @Value("${hermes.base-url}") String baseUrl,
+            @Value("${hermes.api-key}") String apiKey,
+            @Value("${hermes.model}") String model,
+            @Value("${hermes.timeout-seconds}") int timeoutSeconds) {
+        return new HermesBotEmailSender(baseUrl, apiKey, model, timeoutSeconds);
     }
 
     @Bean
