@@ -200,10 +200,10 @@ flowchart BT
 
     subgraph Infrastructure["🟠 Infrastructure"]
         I1["scraper/ — ProviderBasedScraperAdapter,<br/>GupyProvider, InfoJobsProvider,<br/>LinkedInProvider, LinkedInScraperClient,<br/>ProviderRegistry, JobNormalizer,<br/>DateParser, JsonLdParser,<br/>RateLimiter, RetryStrategy,<br/>ExtractionStrategy, HtmlStrategy,<br/>RestApiStrategy"]
-        I2["ai/ — OpenRouterClient, OllamaClient"]
+        I2["ai/ — OpenRouterClient, OllamaClient,<br/>HermesAgentClient"]
         I3["persistence/ — JPA adapters,<br/>repositories, entities"]
         I4["security/ — JwtTokenFilter,<br/>JwtTokenService, SecurityConfig,<br/>CurrentUserService"]
-        I5["email/ — ResendEmailSender"]
+        I5["email/ — HermesBotEmailSender"]
         I6["scheduler/ — AutoSendScheduler"]
         I7["config/ — AppConfig,<br/>LinkedInScraperProperties"]
     end
@@ -323,7 +323,7 @@ Create `src/main/resources/application-local.yaml`:
 
 ```yaml
 ai:
-  provider: openrouter   # or ollama for local inference
+  provider: openrouter   # or ollama / hermes for local inference
   openrouter:
     api-key: YOUR_OPENROUTER_API_KEY
   ollama:
@@ -334,11 +334,28 @@ ai:
 jwt:
   secret: a-key-with-at-least-32-characters-for-hmac
 
-resend:
-  api-key: YOUR_RESEND_API_KEY
+hermes:
+  base-url: http://localhost:9119
+  api-key: YOUR_HERMES_API_KEY   # equals the gateway API_SERVER_KEY
+  model: default                 # model pinned on the Bot profile
+  timeout-seconds: 120
 ```
 
 > This file is in `.gitignore` and will never be committed.
+
+### Email sending via Hermes Agent (required for `POST /api/jobs/{id}/send`)
+
+Application emails are not sent by an email API — they are delegated to a
+[Hermes Agent](https://hermes-agent.nousresearch.com) bot, which performs the
+delivery with the email tool configured in its own profile:
+
+1. Install Hermes Agent and create a Bot profile with an **email tool** enabled (MCP server or skill)
+2. Start the headless gateway with a strong key: `API_SERVER_KEY=<key> hermes serve` (default port `9119`)
+3. Export `HERMES_API_KEY=<same key>` before running job-hunter
+4. Pre-approve the bot's email action — a mid-run approval prompt would stall requests until timeout
+
+The same gateway doubles as an AI analysis provider via `ai.provider: hermes`.
+
 
 **4. Run the application**
 
@@ -404,7 +421,7 @@ Start the TUI (default mode, no subcommand needed):
 | `GET` | `/api/jobs/{id}/email` | Get generated email draft | Yes |
 | `POST` | `/api/jobs/{id}/email` | Generate new email for the job | Yes |
 | `POST` | `/api/jobs/{id}/email/approve` | Approve a PENDING draft for auto-send | Yes |
-| `POST` | `/api/jobs/{id}/send` | Send email via Resend using user's email as from | Yes |
+| `POST` | `/api/jobs/{id}/send` | Send email via Hermes bot using user's email as from | Yes |
 | `GET` | `/api/profile` | Get authenticated user's profile | Yes |
 | `PUT` | `/api/profile` | Save/update user profile | Yes |
 | `POST` | `/api/profile/upload-resume` | Upload PDF resume → AI extracts skills & projects | Yes |
