@@ -4,6 +4,7 @@ import com.juanperuzzo.job_hunter.application.port.out.EmailSenderPort;
 import com.juanperuzzo.job_hunter.domain.exception.EmailDeliveryException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
@@ -62,7 +63,7 @@ public class HermesBotEmailSender implements EmailSenderPort {
                             })
                     .body(String.class);
 
-            log.info("Hermes bot acknowledged email to {}: {}", to, extractText(responseBody));
+            log.info("Hermes bot acknowledged email to {}: {}", to, extractReply(responseBody));
         } catch (ResourceAccessException e) {
             throw new EmailDeliveryException("Request to Hermes gateway timed out", e);
         } catch (EmailDeliveryException e) {
@@ -87,10 +88,17 @@ public class HermesBotEmailSender implements EmailSenderPort {
                 When the email has been sent, reply only with: EMAIL_SENT""".formatted(from, to, subject, body);
     }
 
-    private String extractText(String responseBody) {
+    private String extractReply(String responseBody) {
         try {
             ChatCompletionResponse response = objectMapper.readValue(responseBody, ChatCompletionResponse.class);
-            return response.choices().get(0).message().content();
+            Choice choice = response.choices().get(0);
+            if ("error".equalsIgnoreCase(choice.finishReason())) {
+                // gateway answers well-formed 200s when the upstream provider fails
+                throw new EmailDeliveryException("Hermes bot failed: " + choice.message().content());
+            }
+            return choice.message().content();
+        } catch (EmailDeliveryException e) {
+            throw e;
         } catch (Exception e) {
             return "<unparseable response>";
         }
@@ -100,7 +108,7 @@ public class HermesBotEmailSender implements EmailSenderPort {
     private record ChatCompletionResponse(List<Choice> choices) {}
 
     @JsonIgnoreProperties(ignoreUnknown = true)
-    private record Choice(Message message) {}
+    private record Choice(Message message, @JsonProperty("finish_reason") String finishReason) {}
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     private record Message(String content) {}

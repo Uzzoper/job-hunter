@@ -117,6 +117,49 @@ class HermesAgentClientTest {
     }
 
     @Test
+    @DisplayName("complete when HTTP 200 carries finish_reason error should throw AiException")
+    void complete_whenEmbeddedError_shouldThrowAiException() {
+        wireMockServer.stubFor(post(urlEqualTo("/chat/completions"))
+                .willReturn(aResponse()
+                        .withStatus(200)
+                        .withHeader("Content-Type", "application/json")
+                        .withBody("""
+                                {
+                                    "choices": [{
+                                        "message": {
+                                            "content": "upstream provider saturated"
+                                        },
+                                        "finish_reason": "error"
+                                    }]
+                                }
+                                """)));
+
+        var thrown = assertThrows(AiException.class, () -> hermesAgentClient.complete("Test prompt"));
+        assertTrue(thrown.getMessage().contains("upstream provider saturated"));
+    }
+
+    @Test
+    @DisplayName("complete with normal finish_reason should return response text")
+    void complete_withNormalFinishReason_shouldReturnResponseText() {
+        wireMockServer.stubFor(post(urlEqualTo("/chat/completions"))
+                .willReturn(aResponse()
+                        .withStatus(200)
+                        .withHeader("Content-Type", "application/json")
+                        .withBody("""
+                                {
+                                    "choices": [{
+                                        "message": {
+                                            "content": "all good"
+                                        },
+                                        "finish_reason": "stop"
+                                    }]
+                                }
+                                """)));
+
+        assertEquals("all good", hermesAgentClient.complete("Test prompt"));
+    }
+
+    @Test
     @DisplayName("complete should send Authorization header with bearer key")
     void complete_shouldSendAuthorizationHeader() {
         wireMockServer.stubFor(post(urlEqualTo("/chat/completions"))

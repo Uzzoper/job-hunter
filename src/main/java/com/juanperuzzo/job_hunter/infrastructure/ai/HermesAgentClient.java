@@ -4,6 +4,7 @@ import com.juanperuzzo.job_hunter.application.port.out.AiPort;
 import com.juanperuzzo.job_hunter.domain.exception.AiException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
@@ -86,7 +87,14 @@ public class HermesAgentClient implements AiPort {
     private String extractText(String responseBody) {
         try {
             ChatCompletionResponse response = objectMapper.readValue(responseBody, ChatCompletionResponse.class);
-            return response.choices().get(0).message().content();
+            Choice choice = response.choices().get(0);
+            if ("error".equalsIgnoreCase(choice.finishReason())) {
+                // gateway answers well-formed 200s when the upstream provider fails
+                throw new AiException("Hermes returned an embedded error: " + choice.message().content());
+            }
+            return choice.message().content();
+        } catch (AiException e) {
+            throw e;
         } catch (Exception e) {
             throw new AiException("Failed to parse Hermes response", e);
         }
@@ -96,7 +104,7 @@ public class HermesAgentClient implements AiPort {
     private record ChatCompletionResponse(List<Choice> choices) {}
 
     @JsonIgnoreProperties(ignoreUnknown = true)
-    private record Choice(Message message) {}
+    private record Choice(Message message, @JsonProperty("finish_reason") String finishReason) {}
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     private record Message(String content) {}

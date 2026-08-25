@@ -94,6 +94,28 @@ class HermesBotEmailSenderTest {
                 "juan@example.com", "jobs@company.com", "Subject", "Body"));
     }
 
+    @Test
+    @DisplayName("send when HTTP 200 carries finish_reason error should throw EmailDeliveryException")
+    void send_whenEmbeddedError_shouldThrowEmailDeliveryException() {
+        wireMockServer.stubFor(post(urlEqualTo("/chat/completions"))
+                .willReturn(aResponse()
+                        .withStatus(200)
+                        .withHeader("Content-Type", "application/json")
+                        .withBody("""
+                                {
+                                    "choices": [{
+                                        "message": {
+                                            "content": "upstream provider saturated"
+                                        },
+                                        "finish_reason": "error"
+                                    }]
+                                }
+                                """)));
+
+        assertThrows(EmailDeliveryException.class, () -> hermesBotEmailSender.send(
+                "juan@example.com", "jobs@company.com", "Subject", "Body"));
+    }
+
     private void stubAcknowledgement() {
         wireMockServer.stubFor(post(urlEqualTo("/chat/completions"))
                 .willReturn(aResponse()
