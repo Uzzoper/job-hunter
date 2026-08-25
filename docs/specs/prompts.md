@@ -28,7 +28,7 @@ Candidate profile:
  * Portfolio — personal website (Next.js, React, TypeScript, Tailwind, shadcn/ui)
 - English: advanced (fluent reading, intermediate conversation)
 - Location: Ponta Grossa – PR, Brazil (open to remote)
-- Goal: internship or junior developer position
+- Goal: software developer position (back-end focus, open to junior roles)
 ```
 
 ---
@@ -95,7 +95,7 @@ Olá. Tudo bem?
 
 Gostaria de me candidatar à vaga de Desenvolvedor Java Júnior.
 
-Atualmente curso Engenharia de Software e venho me especializando em desenvolvimento back-end com Java. Tenho experiência prática com Java, Spring Boot, APIs REST, Git, bancos de dados relacionais e desenvolvimento de aplicações web.
+Sou desenvolvedor back-end focado no ecossistema Java/Spring, com projetos em produção construídos com Java, Spring Boot, APIs REST, Git e bancos de dados relacionais.
 
 Alguns destaques do meu portfólio:
 
@@ -103,9 +103,9 @@ Alguns destaques do meu portfólio:
 • LovLink (lovlink.com.br) — SaaS comercial em produção, banco de dados PostgreSQL, integração de pagamentos via Mercado Pago e arquitetura full stack moderna.
 • Jishuu (jishuu.vercel.app) — plataforma com autenticação OAuth 2.0 (Google), gerenciamento de usuários e persistência de dados utilizando PostgreSQL.
 
-Além dos requisitos da vaga, possuo conhecimentos em JavaScript, React, Node.js, Docker, testes automatizados e versionamento com Git. Estou sempre buscando aprimorar minhas habilidades e aprender novas tecnologias para contribuir cada vez mais com o time e com os projetos em que atuo.
+Além dos requisitos da vaga, trabalho também com JavaScript, React, Node.js, Docker e testes automatizados. Posso demonstrar qualquer um desses projetos em funcionamento em uma conversa rápida.
 
-Segue meu currículo em anexo. Fico à disposição para uma conversa.
+Segue meu currículo em anexo. Podemos agendar uma conversa para eu mostrar esses projetos rodando?
 
 Atenciosamente,
 
@@ -124,6 +124,7 @@ MANDATORY RULES:
 7. Language: Brazilian Portuguese
 8. End with the exact signature block from the example (name, phone, portfolio, GitHub)
 9. Include the phrase "Segue meu currículo em anexo" before the signature
+10. Positioning: write as a professional developer who delivers working software — never use trainee phrasing ("em formação", "aprendendo", "buscando oportunidade", "venho me especializando"); education appears at most once as plain fact, never as the opening; close with a confident call to action, never with "fico à disposição"
 
 Tone guide:
 - formal:  respectful language, formal verbs, "Prezados"
@@ -145,7 +146,7 @@ Job listing:
 Title: {{JOB_TITLE}}
 Company: {{COMPANY}}
 Skills the candidate has for this role: {{MATCHED_SKILLS}}
-Skills the candidate lacks (may mention willingness to learn): {{MISSING_SKILLS}}
+Skills the candidate lacks (address matter-of-factly if relevant — never apologize or promise to learn them): {{MISSING_SKILLS}}
 Job summary: {{JOB_SUMMARY}}
 ```
 
@@ -315,4 +316,5 @@ Resume text:
 | v2.0 | 2026-07 | Add reference example email, update rules to 3-5 paragraphs and 2-3 projects, add new projects (Job Hunter, LovLink, Portfolio), add mandatory signature block |
 | v3.0 | 2026-08 | Add Prompt 4 resume tailoring |
 | v3.1 | 2026-08 | Prompt 3 gains the `contact` object (phone, email, portfolioUrl, githubUrl, linkedinUrl; null when not found) — profile auto-fill from resume upload |
+| v3.2 | 2026-08 | Prompt 2 repositioned as a professional developer: reference example rewritten without trainee phrasing ("em formação", "venho me especializando", "aprimorando habilidades"), new rule 10 (professional positioning, confident CTA instead of "fico à disposição"), missing skills addressed matter-of-factly |
 ```
