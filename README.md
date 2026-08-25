@@ -4,7 +4,7 @@
 [![Rust CLI Release](https://github.com/Uzzoper/job-hunter/actions/workflows/cli-release.yml/badge.svg)](https://github.com/Uzzoper/job-hunter/actions/workflows/cli-release.yml)
 ![Java](https://img.shields.io/badge/Java-21-orange?logo=openjdk)
 ![Spring Boot](https://img.shields.io/badge/Spring_Boot-4.0.6-brightgreen?logo=springboot)
-![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-blue?logo=postgresql)
+![SQLite](https://img.shields.io/badge/SQLite-3-003B57?logo=sqlite)
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker)
 ![Rust](https://img.shields.io/badge/Rust-2024-ed760e?logo=rust)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript)
@@ -33,7 +33,7 @@ flowchart TB
         S4 --> S7
         S6 --> S7
         S7 --> S8[JobNormalizer]
-        S8 --> S9[(PostgreSQL)]
+        S8 --> S9[(SQLite)]
     end
 
     subgraph AI["AI Analysis"]
@@ -62,7 +62,7 @@ flowchart TB
 0. Register or login via `/api/auth/register` and `/api/auth/login` to receive a JWT token.
    All subsequent requests must include `Authorization: Bearer <token>`.
 1. The scraper fetches job listings from Gupy, InfoJobs, and LinkedIn, filtered by keywords.
-2. Each listing is saved to PostgreSQL — duplicates are skipped by URL.
+2. Each listing is saved to SQLite (`./data/jobhunter.db`) — duplicates are skipped by URL.
 3. On demand, the AI analyzes the listing against your profile and returns a match score (0–100), matched/missing skills, and company tone.
 4. The AI then generates a personalized application email in Brazilian Portuguese, tailored to the company tone and mentioning a relevant portfolio project.
 5. Optionally, the auto-send scheduler sends emails in priority order (highest matchScore first) — high-scoring jobs use a template email (no AI), low-scoring ones get an AI-personalized draft. Requires manual approval by default and respects a daily cap of 50/user.
@@ -114,7 +114,7 @@ sequenceDiagram
     participant Scraper as ProviderRegistry
     participant AI as AiAnalysisService
     participant Email as EmailGenerationService
-    participant DB as PostgreSQL
+    participant DB as SQLite
 
     User ->> API: POST /api/auth/register
     API ->> Auth: create user
@@ -170,7 +170,7 @@ sequenceDiagram
 | Local Cache | SQLite via Rusqlite (Rust) |
 | Framework | Spring Boot 4.0.6 |
 | Architecture | Clean Architecture |
-| Database | PostgreSQL 16 (Docker) |
+| Database | SQLite (local file — no server, no Docker) |
 | Migrations | Flyway |
 | Security | Spring Security + JWT (jjwt) |
 | Scraping | RestClient + Jsoup |
@@ -256,7 +256,7 @@ flowchart TB
             Router --> Detail
         end
 
-        Database[("PostgreSQL")]
+        Database[("SQLite<br/>./data/jobhunter.db")]
 
         Client -->|"HTTP :3000<br/>internal network"| Router
         Registry --> Database
@@ -266,7 +266,11 @@ flowchart TB
     style Scraper fill:#fff3e0,stroke:#f57c00
 ```
 
-The Spring Boot container handles business logic, orchestration, and persistence. The Node.js container handles browser automation exclusively. They communicate via Docker's internal DNS (`http://linkedin-scraper:3000`) — no host port exposure required.
+The Spring Boot container handles business logic, orchestration, and persistence. The Node.js container handles browser automation exclusively. Containers communicate via Docker's internal DNS (`http://linkedin-scraper:3000`); the scraper's port `3000` is also published to the host, so a natively-run backend can reach the containerized scraper via `http://localhost:3000` (see Getting started).
+
+> The backend container runs as UID 1000. Before `docker compose up`, pre-create the data
+> directory (`mkdir -p data`) so the bind mount is owned by your user — otherwise Docker
+> creates it as root and the container cannot write the SQLite file.
 
 ---
 
@@ -295,9 +299,9 @@ Each source is wrapped by a **Provider** that selects the right **Strategy** (RE
 ### Prerequisites
 
 - Java 21
-- Docker + Docker Compose
 - An [OpenRouter](https://openrouter.ai) API key (free tier works) or [Ollama](https://ollama.com) running locally
 - Rust 2024 edition (for the CLI binary — `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`)
+- Docker + Docker Compose (optional — only to run the LinkedIn scraper container; the database needs none)
 
 ### Setup
 
@@ -308,22 +312,16 @@ git clone https://github.com/Uzzoper/job-hunter.git
 cd job-hunter
 ```
 
-**2. Start the database**
+**2. Database — nothing to do**
 
-```bash
-docker compose up -d
-```
+The backend uses an embedded SQLite file (`./data/jobhunter.db`, overridable via `DB_URL`).
+Flyway creates the file and the schema automatically on first startup — no server, no container.
 
 **3. Create the local configuration file**
 
 Create `src/main/resources/application-local.yaml`:
 
 ```yaml
-spring:
-  datasource:
-    username: your_db_user
-    password: your_db_password
-
 ai:
   provider: openrouter   # or ollama for local inference
   openrouter:
@@ -350,7 +348,30 @@ resend:
 
 The application will start on `http://localhost:8080`. Flyway runs automatically and creates the database schema on first startup.
 
-**5. Build and run the CLI**
+**5. LinkedIn scraping (optional)**
+
+LinkedIn runs through the Playwright microservice, containerized via Docker Compose:
+
+```bash
+docker compose up -d linkedin-scraper
+```
+
+Then point a natively-run backend at it in `src/main/resources/application-local.yaml`:
+
+```yaml
+scraper:
+  linkedin:
+    service-url: http://localhost:3000
+```
+
+> Without this, everything still works: Gupy and InfoJobs need no container, and LinkedIn
+> falls back to Jsoup (`scraper.linkedin.mode: jsoup`).
+
+> **Retry/backoff**: the `scraper.retry.*` properties (`max-attempts`, `base-delay-millis`,
+> `max-delay-millis`, `max-jitter-millis`) also govern AI calls (OpenRouter/Ollama) —
+> transient HTTP 429/5xx responses and timeouts are retried with exponential backoff.
+
+**6. Build and run the CLI**
 
 ```bash
 cd cli

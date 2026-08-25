@@ -11,6 +11,7 @@ import com.juanperuzzo.job_hunter.domain.exception.AiException;
 import com.juanperuzzo.job_hunter.domain.exception.AnalysisNotFoundException;
 import com.juanperuzzo.job_hunter.domain.exception.JobNotFoundException;
 import com.juanperuzzo.job_hunter.domain.exception.ProfileNotConfiguredException;
+import com.juanperuzzo.job_hunter.domain.exception.ResumeRenderingException;
 import com.juanperuzzo.job_hunter.domain.exception.UserNotFoundException;
 import com.juanperuzzo.job_hunter.domain.model.Job;
 import com.juanperuzzo.job_hunter.domain.model.JobAnalysis;
@@ -531,13 +532,25 @@ Resume text:
     }
 
     private String loadTemplate() {
-        try (InputStream in = getClass().getClassLoader().getResourceAsStream(TEMPLATE_PATH)) {
+        return loadTemplate(getClass().getClassLoader());
+    }
+
+    /**
+     * Loads the ATS HTML template from the given classloader.
+     *
+     * @param classLoader classloader used to locate the bundled template
+     * @return the raw template content
+     * @throws ResumeRenderingException if the template is missing from the
+     *                                  classpath or cannot be read
+     */
+    static String loadTemplate(ClassLoader classLoader) {
+        try (InputStream in = classLoader.getResourceAsStream(TEMPLATE_PATH)) {
             if (in == null) {
-                throw new IllegalStateException("Template not found in classpath: " + TEMPLATE_PATH);
+                throw new ResumeRenderingException("Template not found in classpath: " + TEMPLATE_PATH);
             }
             return new String(in.readAllBytes(), StandardCharsets.UTF_8);
         } catch (IOException e) {
-            throw new IllegalStateException("Failed to load resume template", e);
+            throw new ResumeRenderingException("Failed to load resume template", e);
         }
     }
 }

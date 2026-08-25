@@ -50,7 +50,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.regex.Pattern;
 
-import com.juanperuzzo.job_hunter.infrastructure.scraper.ProviderBasedScraperAdapter;
+import com.juanperuzzo.job_hunter.infrastructure.scraper.adapter.ProviderBasedScraperAdapter;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.normalizer.DateParser;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.normalizer.JobNormalizer;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.client.LinkedInScraperClient;

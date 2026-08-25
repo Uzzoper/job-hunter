@@ -905,3 +905,250 @@ async fn profile_cursor_left_right_ignored_in_view_mode() {
     assert_eq!(app.profile_screen.as_ref().unwrap().resume_cursor, 0);
     assert_eq!(app.profile_screen.as_ref().unwrap().skills_cursor, 0);
 }
+// =========================================================================
+// Startup token validation — skip auth screen with a valid saved token
+// (docs/specs/cli-auth-ux-fixes.md, Scenario 4 — Step 1 RED)
+// =========================================================================
+
+use httpmock::MockServer;
+
+#[tokio::test]
+async fn tui_startup_valid_token_skips_auth_to_job_list() {
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(httpmock::Method::GET)
+            .path("/api/profile")
+            .header("authorization", "Bearer valid-jwt");
+        then.status(200)
+            .header("content-type", "application/json")
+            .json_body(serde_json::json!({
+                "id": 1,
+                "userId": 1,
+                "resumeText": "Valid token startup validation smoke profile.",
+                "skills": [],
+                "tone": "FORMAL",
+                "projects": []
+            }));
+    });
+
+    let mut api_client = ApiClient::new(&server.url("/"));
+    api_client.set_token("valid-jwt");
+    let mut app = App::new(api_client, Config::default());
+    assert_eq!(app.state, AppState::Auth);
+
+    app.attempt_token_validation().await;
+
+    assert_eq!(
+        app.state,
+        AppState::JobList,
+        "a token accepted by the backend must land directly on the job list"
+    );
+}
+
+#[tokio::test]
+async fn tui_startup_invalid_token_falls_back_to_auth_screen() {
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(httpmock::Method::GET)
+            .path("/api/profile")
+            .header("authorization", "Bearer expired-jwt");
+        then.status(401)
+            .header("content-type", "application/json")
+            .json_body(serde_json::json!({ "message": "Token expired" }));
+    });
+
+    let mut api_client = ApiClient::new(&server.url("/"));
+    api_client.set_token("expired-jwt");
+    let mut app = App::new(api_client, Config::default());
+
+    app.attempt_token_validation().await;
+
+    assert_eq!(
+        app.state,
+        AppState::Auth,
+        "a rejected (401) token must fall back to the auth screen"
+    );
+    assert!(
+        app.error_message.is_none(),
+        "an expected 401 must not spam the user with an error popup"
+    );
+}
+
+#[tokio::test]
+async fn tui_startup_unreachable_backend_falls_back_to_auth_with_error() {
+    // Closed port — same unreachable-backend pattern as error_scenarios tests.
+    let mut api_client = ApiClient::new("http://127.0.0.1:1");
+    api_client.set_token("some-jwt");
+    let mut app = App::new(api_client, Config::default());
+
+    app.attempt_token_validation().await;
+
+    assert_eq!(
+        app.state,
+        AppState::Auth,
+        "unreachable backend must fall back to the auth screen"
+    );
+    assert!(
+        app.error_message.is_some(),
+        "the connection error must be visible to the user"
+    );
+}
+
+// =========================================================================
+// -c/--config flows into TUI-internal config handles
+// (docs/specs/cli-auth-ux-fixes.md Rule 3 — bounded fix, RED first)
+// =========================================================================
+
+use std::path::PathBuf;
+
+use crate::tui::profile_screen::ProfileMode;
+
+/// Serializes tests that redirect the process-global config directory.
+/// Tokio mutex because the guard is intentionally held across `.await`.
+static CONFIG_DIR_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+/// Redirects the *default* config dir to an isolated temp location via
+/// XDG_CONFIG_HOME so assertions can prove the default path is untouched.
+///
+/// # Safety
+/// Process-global env mutation, serialized by CONFIG_DIR_LOCK within this
+/// module. Other tests only construct config handles opportunistically and
+/// tolerate any readable directory.
+unsafe fn isolate_default_config_dir(name: &str) -> PathBuf {
+    let dir = std::env::temp_dir()
+        .join("jh-tui-config-path-test")
+        .join(name);
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("create isolated default dir");
+    unsafe {
+        std::env::set_var("XDG_CONFIG_HOME", &dir);
+    }
+    dir
+}
+
+fn default_config_in(dir: &std::path::Path) -> PathBuf {
+    dir.join("job-hunter").join("config.toml")
+}
+
+fn fresh_custom_config(name: &str) -> PathBuf {
+    let dir = std::env::temp_dir()
+        .join("jh-tui-config-path-test")
+        .join(name);
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("create custom dir");
+    dir.join("alt-config.toml")
+}
+
+#[tokio::test]
+async fn tui_login_persists_token_to_custom_config_path() {
+    let _guard = CONFIG_DIR_LOCK.lock().await;
+    // Safety: serialized by CONFIG_DIR_LOCK.
+    let default_dir = unsafe { isolate_default_config_dir("tui_login_custom") };
+    let default_config = default_config_in(&default_dir);
+
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(httpmock::Method::POST)
+            .path("/api/auth/login")
+            .json_body(serde_json::json!({
+                "email": "tui@test.com",
+                "password": "secret123"
+            }));
+        then.status(200)
+            .header("content-type", "application/json")
+            .json_body(serde_json::json!({
+                "token": "jwt-tui-login-token",
+                "userId": 9,
+                "name": "TUI User",
+                "email": "tui@test.com"
+            }));
+    });
+
+    let custom = fresh_custom_config("tui_login_custom_custom");
+    let api_client = ApiClient::new(&server.url("/"));
+    let mut app = App::with_config_path(api_client, Config::default(), Some(&custom));
+
+    // Render once so the auth screen is lazily created through the app's
+    // config path (auth_screen draw).
+    let mut terminal = Terminal::new(TestBackend::new(100, 30)).unwrap();
+    terminal.draw(|frame| app.render(frame)).unwrap();
+
+    // Fill credentials: email -> Down -> password
+    {
+        let screen = app.auth_screen.as_mut().unwrap();
+        for c in "tui@test.com".chars() {
+            screen.handle_char(c);
+        }
+        screen.focus_next();
+        for c in "secret123".chars() {
+            screen.handle_char(c);
+        }
+    }
+
+    // Enter submits the in-TUI login
+    let event = crossterm::event::Event::Key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    app.handle_event(event).await.unwrap();
+
+    let saved =
+        std::fs::read_to_string(&custom).expect("custom config must be written by in-TUI login");
+    assert!(
+        saved.contains("jwt-tui-login-token"),
+        "in-TUI login must persist the token to the -c/--config path, got: {saved}"
+    );
+    assert!(
+        !default_config.exists(),
+        "in-TUI login must not create or write the default config file"
+    );
+}
+
+#[tokio::test]
+async fn tui_profile_save_writes_custom_config_not_default() {
+    let _guard = CONFIG_DIR_LOCK.lock().await;
+    // Safety: serialized by CONFIG_DIR_LOCK.
+    let default_dir = unsafe { isolate_default_config_dir("tui_profile_save") };
+    let default_config = default_config_in(&default_dir);
+
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(httpmock::Method::PUT).path("/api/profile");
+        then.status(200)
+            .header("content-type", "application/json")
+            .json_body(serde_json::json!({
+                "id": 1,
+                "userId": 1,
+                "resumeText": "Valid resume text long enough for validation checks.",
+                "skills": ["Rust"],
+                "tone": "FORMAL",
+                "projects": []
+            }));
+    });
+
+    let custom = fresh_custom_config("tui_profile_save_custom");
+    let mut api_client = ApiClient::new(&server.url("/"));
+    api_client.set_token("t");
+    let mut app = App::with_config_path(api_client, Config::default(), Some(&custom));
+    app.state = AppState::Profile;
+
+    // Fill valid profile fields and drive the save flow
+    {
+        let screen = app.profile_screen.as_mut().unwrap();
+        screen.mode = ProfileMode::Edit;
+        screen.resume_text = "Valid resume text long enough for validation checks.".to_string();
+        screen.skills_text = "Rust".to_string();
+    }
+    app.profile_screen
+        .as_mut()
+        .unwrap()
+        .save_profile()
+        .await
+        .expect("profile save should succeed");
+
+    assert!(
+        !default_config.exists(),
+        "profile save must not create or write the default config file"
+    );
+    assert!(
+        custom.exists(),
+        "config writes belong to the -c/--config path when one is configured"
+    );
+}

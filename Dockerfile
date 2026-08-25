@@ -16,11 +16,14 @@ RUN mvn package -DskipTests -B
 FROM eclipse-temurin:21-jre
 WORKDIR /app
 
-# Create a non-root user for security
-RUN useradd --system --no-create-home --user-group appuser
+# Create a non-root user for security — fixed UID 1000 so bind-mounted host
+# directories (./data) are writable when the host user is the first Linux user.
+# The eclipse-temurin (Ubuntu 24.04) base ships an 'ubuntu' user at UID 1000 — remove it first.
+RUN userdel --remove ubuntu 2>/dev/null; \
+    useradd --system --no-create-home --user-group --uid 1000 appuser
 
-# Writable uploads directory (resume PDFs are stored here at runtime)
-RUN mkdir -p /app/uploads/resumes && chown -R appuser:appuser /app/uploads
+# Writable runtime directories (resume PDFs and the SQLite database live here)
+RUN mkdir -p /app/uploads/resumes /app/data && chown -R appuser:appuser /app/uploads /app/data
 
 COPY --from=builder /build/target/*.jar app.jar
 

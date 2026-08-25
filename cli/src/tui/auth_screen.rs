@@ -443,8 +443,8 @@ pub async fn submit(&mut self, app: &mut App) -> anyhow::Result<()> {
 
     fn draw_status(&self, frame: &mut Frame, area: Rect, theme: &Theme) {
         let shortcuts = match self.mode {
-            AuthMode::Login => " [Tab] Switch  [Enter] Login  [q] Quit ",
-            AuthMode::Register => " [Tab] Switch  [Enter] Register  [q] Quit ",
+            AuthMode::Login => " [Tab] Next field  [Ctrl+T] Switch  [Enter] Login  [q] Quit ",
+            AuthMode::Register => " [Tab] Next field  [Ctrl+T] Switch  [Enter] Register  [q] Quit ",
         };
         let para = Paragraph::new(Text::styled(shortcuts, theme.style_dim()))
             .alignment(Alignment::Center)
@@ -456,7 +456,9 @@ pub async fn submit(&mut self, app: &mut App) -> anyhow::Result<()> {
 pub fn draw(frame: &mut Frame, area: Rect, app: &mut App) {
     if app.auth_screen.is_none() {
         let api_client = app.api_client.clone();
-        let config_manager = Arc::new(Mutex::new(ConfigManager::load(None).unwrap_or_default()));
+        let config_manager = Arc::new(Mutex::new(
+            ConfigManager::load(app.config_path.as_deref()).unwrap_or_default(),
+        ));
         app.auth_screen = Some(AuthScreen::new(api_client, config_manager));
     }
 
@@ -486,6 +488,21 @@ pub async fn handle_event(event: crossterm::event::Event, app: &mut App) -> anyh
                 app.state = AppState::Quitting;
             }
             crossterm::event::KeyCode::Tab => {
+                if let Some(screen) = &mut app.auth_screen {
+                    screen.focus_next();
+                }
+            }
+            crossterm::event::KeyCode::BackTab => {
+                if let Some(screen) = &mut app.auth_screen {
+                    screen.focus_prev();
+                }
+            }
+            // Dedicated Login/Register toggle (docs/specs/cli-auth-ux-fixes.md,
+            // Scenario 1). Must stay above the generic Char arm so Ctrl+T is
+            // not typed into the focused field.
+            crossterm::event::KeyCode::Char('t') | crossterm::event::KeyCode::Char('T')
+                if key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) =>
+            {
                 if let Some(screen) = &mut app.auth_screen {
                     screen.toggle_mode();
                 }
@@ -796,5 +813,93 @@ mod tests {
         assert_eq!(InputField::Name.display_name(), "Name");
         assert_eq!(InputField::Email.display_name(), "Email");
         assert_eq!(InputField::Password.display_name(), "Password");
+    }
+
+    // =========================================================================
+    // Tab / Shift+Tab field navigation
+    // (docs/specs/cli-auth-ux-fixes.md, Scenario 1 — Step 1 RED)
+    // =========================================================================
+
+    use crate::config::Config;
+    use crate::tui::app::{App, AppState};
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+    /// Builds an App in Auth state with an auth screen attached, mirroring the
+    /// `app_integration_test.rs` construction pattern.
+    fn create_test_app_with_auth_screen() -> App {
+        let api_client = ApiClient::new("http://localhost:8080");
+        let mut app = App::new(api_client, Config::default());
+        app.auth_screen = Some(create_test_screen());
+        app
+    }
+
+    fn key_event(code: KeyCode, modifiers: KeyModifiers) -> crossterm::event::Event {
+        crossterm::event::Event::Key(KeyEvent::new(code, modifiers))
+    }
+
+    #[tokio::test]
+    async fn tab_moves_focus_to_next_field_without_changing_mode() {
+        let mut app = create_test_app_with_auth_screen();
+        assert_eq!(app.state, AppState::Auth);
+
+        handle_event(key_event(KeyCode::Tab, KeyModifiers::NONE), &mut app)
+            .await
+            .expect("handle_event should succeed");
+
+        let screen = app.auth_screen.as_ref().unwrap();
+        assert_eq!(
+            screen.focused_field,
+            InputField::Password,
+            "Tab must move focus from Email to Password"
+        );
+        assert_eq!(
+            screen.mode,
+            AuthMode::Login,
+            "Tab must not toggle Login/Register mode"
+        );
+    }
+
+    #[tokio::test]
+    async fn tab_wraps_from_password_back_to_email() {
+        let mut app = create_test_app_with_auth_screen();
+        if let Some(screen) = app.auth_screen.as_mut() {
+            screen.focus_next(); // Email -> Password
+        }
+
+        handle_event(key_event(KeyCode::Tab, KeyModifiers::NONE), &mut app)
+            .await
+            .expect("handle_event should succeed");
+
+        let screen = app.auth_screen.as_ref().unwrap();
+        assert_eq!(
+            screen.focused_field,
+            InputField::Email,
+            "Tab must wrap around from Password back to Email"
+        );
+        assert_eq!(screen.mode, AuthMode::Login);
+    }
+
+    #[tokio::test]
+    async fn shift_tab_moves_focus_to_previous_field_without_changing_mode() {
+        let mut app = create_test_app_with_auth_screen();
+        if let Some(screen) = app.auth_screen.as_mut() {
+            screen.focus_next(); // Email -> Password
+        }
+
+        handle_event(key_event(KeyCode::BackTab, KeyModifiers::SHIFT), &mut app)
+            .await
+            .expect("handle_event should succeed");
+
+        let screen = app.auth_screen.as_ref().unwrap();
+        assert_eq!(
+            screen.focused_field,
+            InputField::Email,
+            "Shift+Tab must move focus back from Password to Email"
+        );
+        assert_eq!(
+            screen.mode,
+            AuthMode::Login,
+            "Shift+Tab must not toggle Login/Register mode"
+        );
     }
 }

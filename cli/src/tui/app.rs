@@ -3,12 +3,14 @@ use crate::cache::CacheManager;
 use crate::config::Config;
 use crate::config::ConfigManager;
 use crate::domain::{AuthResponse, JobResponse, ProfileResponse};
+use crate::error::{ApiError, CliError};
 use crate::tui::{auth_screen, job_detail_screen, job_list_screen, profile_screen};
 use crate::tui::job_detail_screen::JobDetailScreen;
 use crate::tui::job_list_screen::{JobListScreen, LoadingState, SearchFocus};
 use crate::tui::profile_screen::ProfileScreen;
 use ratatui::Terminal;
 use std::io;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -37,14 +39,31 @@ pub struct App {
     pub job_list_screen: Option<JobListScreen>,
     pub job_detail_screen: Option<job_detail_screen::JobDetailScreen>,
     pub profile_screen: Option<ProfileScreen>,
+    /// Config path from `-c/--config`; all TUI-internal config reads/writes
+    /// honor it (docs/specs/cli-auth-ux-fixes.md, Rule 3). `None` = default.
+    pub config_path: Option<PathBuf>,
 }
 
 impl App {
+    /// Creates the app using the default config location.
     pub fn new(api_client: ApiClient, config: Config) -> Self {
+        Self::with_config_path(api_client, config, None)
+    }
+
+    /// Creates the app with an explicit config path so in-TUI login and
+    /// profile edit-save read/persist the `-c/--config` file instead of the
+    /// default one (docs/specs/cli-auth-ux-fixes.md, Scenario 2 + Rule 3).
+    pub fn with_config_path(
+        api_client: ApiClient,
+        config: Config,
+        config_path: Option<&Path>,
+    ) -> Self {
         let cache = Arc::new(Mutex::new(CacheManager::new(None, config.cache_ttl_hours).expect("cache init")));
         let api_client_arc = Arc::new(Mutex::new(api_client));
         let cache_arc = cache.clone();
-        let config_manager = Arc::new(Mutex::new(ConfigManager::load(None).unwrap_or_default()));
+        let config_manager = Arc::new(Mutex::new(
+            ConfigManager::load(config_path).unwrap_or_default(),
+        ));
         let job_list_screen = Some(JobListScreen::new(api_client_arc.clone(), cache_arc.clone()));
         let job_detail_screen = Some(JobDetailScreen::new(api_client_arc.clone(), cache_arc));
         let profile_screen = Some(ProfileScreen::new(
@@ -67,11 +86,40 @@ impl App {
             job_list_screen,
             job_detail_screen,
             profile_screen,
+            config_path: config_path.map(Path::to_path_buf),
         }
     }
 
     pub fn should_quit(&self) -> bool {
         self.should_quit || self.state == AppState::Quitting
+    }
+
+    /// Validates a saved token at startup and skips the auth screen when the
+    /// backend accepts it (docs/specs/cli-auth-ux-fixes.md, Scenario 4).
+    ///
+    /// One cheap authenticated call (`GET /api/profile`):
+    /// - success → job list screen
+    /// - 401 (expired/invalid) → auth screen, no error popup
+    /// - network error → auth screen with the connection error visible
+    /// - no token configured → auth screen, no call is made
+    pub(crate) async fn attempt_token_validation(&mut self) {
+        let has_token = self.api_client.lock().await.get_token().is_some();
+        if !has_token {
+            return;
+        }
+
+        let result = self.api_client.lock().await.get_profile().await;
+        match result {
+            Ok(_) => self.state = AppState::JobList,
+            Err(CliError::Api(ApiError::Unauthorized(_))) => {
+                // Expected for expired/invalid tokens — fall back silently.
+                self.state = AppState::Auth;
+            }
+            Err(e) => {
+                self.state = AppState::Auth;
+                self.set_error(format!("Could not reach the backend: {e}"));
+            }
+        }
     }
 
     pub fn set_error(&mut self, message: String) {
@@ -204,6 +252,10 @@ impl App {
 
     pub async fn run(&mut self, terminal: &mut Terminal<ratatui::prelude::CrosstermBackend<io::Stdout>>) -> anyhow::Result<()> {
         use crossterm::event::{Event, KeyCode, KeyModifiers};
+
+        // Skip the auth screen when a saved token is still accepted
+        // (docs/specs/cli-auth-ux-fixes.md, Scenario 4).
+        self.attempt_token_validation().await;
 
         while !self.should_quit() {
             terminal.draw(|frame| self.render(frame))?;
