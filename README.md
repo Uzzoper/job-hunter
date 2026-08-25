@@ -354,6 +354,23 @@ delivery with the email tool configured in its own profile:
 3. Export `HERMES_API_KEY=<same key>` before running job-hunter
 4. Pre-approve the bot's email action — a mid-run approval prompt would stall requests until timeout
 
+#### Resume attachment
+
+Emails are sent with the resume attached, handled entirely by the Bot (no backend
+involvement). Give the resume to the bot once and make it a standing rule:
+
+```bash
+cp uploads/<userId>/resume.pdf ~/.hermes/profiles/<bot>/resume.pdf
+cat >> ~/.hermes/profiles/<bot>/SOUL.md <<'EOF'
+## Resume attachment
+When sending a Job Hunter application email, always attach your local
+copy of the resume at ~/.hermes/profiles/<bot>/resume.pdf.
+EOF
+```
+
+> Re-uploading a resume in the app does **not** sync to the Bot's copy — repeat the
+> `cp` after a new upload. This setup assumes a single user (one fixed resume per Bot).
+
 The same gateway doubles as an AI analysis provider via `ai.provider: hermes`.
 
 
