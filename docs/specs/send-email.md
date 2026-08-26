@@ -120,3 +120,7 @@ and a Resend-backed EmailSenderPort adapter (RestClient,
 same pattern as OpenRouterClient) under infrastructure/email/.
 No new Spring Boot starter needed — it's a plain HTTP call.
 ```
+
+> **Update (2026-08):** the Resend-backed adapter was replaced by
+> `HermesBotEmailSender` (Hermes Agent bot delegation) — see
+> `hermes-agent-integration.md`. The `EmailSendingService` scenarios above are unchanged.

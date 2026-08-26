@@ -37,7 +37,7 @@ jwt:
   expiration-hours: 24
 
 ai:
-  provider: openrouter   # "openrouter" (default) | "ollama"
+  provider: openrouter   # "openrouter" (default) | "ollama" | "hermes"
   ollama:
     base-url: http://localhost:11434/v1
     model: llama3.2
@@ -47,6 +47,7 @@ ai:
     api-key: ${OPENROUTER_API_KEY}
     model: poolside/laguna-s-2.1:free
     timeout-seconds: 30
+  # when ai.provider=hermes, the gateway config below is reused for analysis
   resume-extraction:
     max-chars: 8000    # max characters sent to AI; text exceeding this is truncated with a warning
   resume-tailoring:
@@ -99,10 +100,14 @@ auto-send:
   jitter-seconds: 30
   daily-cap: 50
 
-resend:
-  base-url: https://api.resend.com
-  api-key: ${RESEND_API_KEY}
-  timeout-seconds: 15
+# Hermes Agent gateway ("hermes gateway run") — used both by the email-sending bot
+# and by analysis when ai.provider=hermes. The bot needs an email tool (himalaya CLI)
+# configured in its profile for delivery to actually happen.
+hermes:
+  base-url: http://localhost:9119/v1   # gateway serves the OpenAI-compatible API under /v1
+  api-key: ${HERMES_API_KEY}
+  model: default
+  timeout-seconds: 120
 
 app:
   cors:
