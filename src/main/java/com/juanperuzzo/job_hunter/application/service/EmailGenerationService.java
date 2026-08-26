@@ -123,7 +123,7 @@ public class EmailGenerationService implements GenerateEmailUseCase, GetEmailDra
 
             Gostaria de me candidatar à vaga de Desenvolvedor Java Júnior.
 
-            Atualmente curso Engenharia de Software e venho me especializando em desenvolvimento back-end com Java. Tenho experiência prática com Java, Spring Boot, APIs REST, Git, bancos de dados relacionais e desenvolvimento de aplicações web.
+            Sou desenvolvedor back-end focado no ecossistema Java/Spring, com projetos em produção construídos com Java, Spring Boot, APIs REST, Git e bancos de dados relacionais.
 
             Alguns destaques do meu portfólio:
 
@@ -131,9 +131,9 @@ public class EmailGenerationService implements GenerateEmailUseCase, GetEmailDra
             • LovLink (lovlink.com.br) — SaaS comercial em produção, banco de dados PostgreSQL, integração de pagamentos via Mercado Pago e arquitetura full stack moderna.
             • Jishuu (jishuu.vercel.app) — plataforma com autenticação OAuth 2.0 (Google), gerenciamento de usuários e persistência de dados utilizando PostgreSQL.
 
-            Além dos requisitos da vaga, possuo conhecimentos em JavaScript, React, Node.js, Docker, testes automatizados e versionamento com Git. Estou sempre buscando aprimorar minhas habilidades e aprender novas tecnologias para contribuir cada vez mais com o time e com os projetos em que atuo.
+            Além dos requisitos da vaga, trabalho também com JavaScript, React, Node.js, Docker e testes automatizados. Posso demonstrar qualquer um desses projetos em funcionamento em uma conversa rápida.
 
-            Segue meu currículo em anexo. Fico à disposição para uma conversa.
+            Segue meu currículo em anexo. Podemos agendar uma conversa para eu mostrar esses projetos rodando?
 
             Atenciosamente,
 
@@ -152,6 +152,7 @@ public class EmailGenerationService implements GenerateEmailUseCase, GetEmailDra
             7. Language: Brazilian Portuguese
             8. End with the exact signature block (name, phone, portfolio, GitHub)
             9. Include the phrase "Segue meu currículo em anexo" before the signature
+            10. Positioning: write as a professional developer who delivers working software — never use trainee phrasing ("em formação", "aprendendo", "buscando oportunidade", "venho me especializando"); education appears at most once as plain fact, never as the opening; close with a confident call to action, never with "fico à disposição"
 
             Tone guide:
             - formal: respectful, "Prezados"
@@ -167,7 +168,7 @@ public class EmailGenerationService implements GenerateEmailUseCase, GetEmailDra
 
             Job: %s at %s
             Matched skills: %s
-            Missing skills (show willingness to learn): %s
+            Missing skills (address matter-of-factly if relevant — never apologize or promise to learn them): %s
             Summary: %s
             """.formatted(tone, resumeExcerpt, String.join(", ", profile.skills()),
                 projectsText, job.title(), job.company(),

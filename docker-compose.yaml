@@ -5,7 +5,9 @@ services:
       dockerfile: Dockerfile
     container_name: job-hunter-linkedin-scraper
     ports:
-      - "3000:3000"
+      # Loopback only: the scraper drives a real browser and has no auth —
+      # never publish it on a public interface.
+      - "127.0.0.1:3000:3000"
     environment:
       - NODE_ENV=production
       - PORT=3000
@@ -23,14 +25,17 @@ services:
       dockerfile: Dockerfile
     container_name: job-hunter-backend
     ports:
-      - "8080:8080"
+      # JWT-protected, but nothing here needs to be reachable off-host
+      - "127.0.0.1:8080:8080"
     environment:
       JWT_SECRET: ${JWT_SECRET}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
-      RESEND_API_KEY: ${RESEND_API_KEY}
+      HERMES_API_KEY: ${HERMES_API_KEY}
     volumes:
       # SQLite database file lives on the host (./data/jobhunter.db)
       - ./data:/app/data
+      # Resume uploads must survive container recreation
+      - ./uploads:/app/uploads
     depends_on:
       linkedin-scraper:
         condition: service_started

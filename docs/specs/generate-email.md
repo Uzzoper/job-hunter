@@ -21,7 +21,7 @@
 - **GIVEN** a `JobAnalysis` with `matchScore < 30`
 - **WHEN** `generate(userId, jobId)` is called
 - **THEN** generation proceeds normally — not blocked by low score
-- **AND** the email mentions willingness to learn the missing skills
+- **AND** the email addresses missing skills matter-of-factly — professional positioning, no trainee phrasing
 
 ### Scenario 3: formal tone
 - **GIVEN** `companyTone == FORMAL`
