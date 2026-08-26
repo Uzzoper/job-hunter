@@ -19,8 +19,8 @@ import java.util.Map;
 /**
  * Email sender backed by a Hermes Agent bot. Instead of calling an email API
  * directly, the send request is delegated as an instruction to the Hermes Agent
- * gateway ("hermes serve", OpenAI-compatible chat completions); the bot performs
- * the actual delivery with the email tool configured in its profile (MCP, skill).
+ * gateway ("hermes gateway", OpenAI-compatible chat completions); the bot performs
+ * the actual delivery with the email tool configured in its profile (himalaya CLI).
  */
 public class HermesBotEmailSender implements EmailSenderPort {
 
