@@ -10,16 +10,16 @@
 
 ## Context
 
-The application emails are no longer sent through an email API (Resend). Instead they are delegated to a **Hermes Agent** bot (Nous Research): a named profile running behind the headless gateway (`hermes serve`), which exposes an OpenAI-compatible API (`POST /v1/chat/completions`, default port 9119, bearer-key auth). The same gateway can also serve as the AI analysis provider (`ai.provider=hermes`), alongside `openrouter` and `ollama`.
+The application emails are no longer sent through an email API (Resend). Instead they are delegated to a **Hermes Agent** bot (Nous Research): a named profile running behind the headless gateway (`hermes gateway run`, typically installed as a systemd user service), which exposes an OpenAI-compatible API (`POST /v1/chat/completions`, default port 9119, bearer-key auth). The same gateway can also serve as the AI analysis provider (`ai.provider=hermes`), alongside `openrouter` and `ollama`.
 
-Key property: **this repo contains no email-delivery logic**. The Java side hands the bot a structured send instruction; the bot performs delivery with whatever email tool is configured in its own profile (MCP server, skill). Analysis likewise reuses the standard chat-completions shape already spoken by `OpenRouterClient`/`OllamaClient`.
+Key property: **this repo contains no email-delivery logic**. The Java side hands the bot a structured send instruction; the bot performs delivery with whatever email tool is configured in its own profile (in the validated setup: the himalaya CLI v2, driven by a standing instruction in the profile's `SOUL.md`). Analysis likewise reuses the standard chat-completions shape already spoken by `OpenRouterClient`/`OllamaClient`.
 
 ### External prerequisites (not code)
 
-1. Hermes Agent installed; a Bot profile created with an **email tool** enabled (MCP/skill)
-2. Gateway running: `hermes serve` (default `http://localhost:9119`) with strong `API_SERVER_KEY`
+1. Hermes Agent installed; a dedicated Bot profile created (`hermes profile create jobhunter-bot --clone-all`) whose **email tool** is the himalaya CLI v2 (`~/.local/bin/himalaya` — adjust to your `$HOME`), configured via `~/.config/himalaya/config.toml` (password resolved by shell command straight from the profile `.env`, never duplicated). The send protocol lives as a standing instruction in the profile's `SOUL.md`: send with `himalaya message compose --send --attach resume.pdf` and reply only `EMAIL_SENT` (success) or `EMAIL_TOOL_MISSING` (tool/config missing)
+2. Gateway running: `hermes gateway run` — or persisted as a systemd user service (`jobhunter-bot gateway install` + linger) — serving `http://localhost:9119/v1` with strong `API_SERVER_KEY` and `API_SERVER_PORT=9119` set in the profile `.env` (the key auto-enables the platform `api_server`)
 3. `HERMES_API_KEY` env var set to that key
-4. Tool approvals for the bot's email action pre-approved (a mid-run approval prompt would stall the request until timeout)
+4. `approvals.mode: off` in the bot profile's `config.yaml` (interactive approvals would stall the request until timeout)
 5. **Resume attachment** (single-user setup): the user's PDF lives inside the Bot profile
    (`~/.hermes/profiles/<bot>/resume.pdf`) and a `SOUL.md` standing instruction tells the Bot
    to attach it on every Job Hunter application email. The backend sends no file and knows
@@ -89,8 +89,6 @@ instead of an HTTP error status. A bare 2xx must not be trusted as success.
 ### Wiring (`AppConfig`)
 
 #### Scenario 10: provider selection
-
-#### Scenario 8: provider selection
 - **GIVEN** `ai.provider=hermes` in configuration
 - **WHEN** the Spring context starts
 - **THEN** a `HermesAgentClient` bean backs `AiPort` (same mechanism as `openrouter`/`ollama`)
@@ -129,9 +127,9 @@ Configuration:
 
 ```yaml
 hermes:
-  base-url: http://localhost:9119   # hermes serve gateway
-  api-key: ${HERMES_API_KEY}        # equals API_SERVER_KEY
-  model: default                    # model pinned on the Bot profile
+  base-url: http://localhost:9119/v1  # clients append /chat/completions — the /v1 suffix is mandatory (404 without it)
+  api-key: ${HERMES_API_KEY}          # equals the profile's API_SERVER_KEY
+  model: default                      # model pinned on the Bot profile
   timeout-seconds: 120
 ```
 
@@ -148,17 +146,29 @@ ai:
 |---|---|---|
 | Gateway HTTP 4xx/5xx on send | `EmailDeliveryException` | draft stays `PENDING`; `EmailSendingService` passes it through unwrapped |
 | Gateway unreachable/timeout on send | `EmailDeliveryException` | cause carries the timeout; draft stays `PENDING` |
-| Gateway 200 with `finish_reason: "error"` on send | `EmailDeliveryException` | embedded upstream failure treated as delivery failure; draft stays `PENDING` |
+| Upstream provider saturated → gateway answers HTTP 200 with `finish_reason: "error"` on send | `EmailDeliveryException` | embedded upstream failure treated as delivery failure, not as acknowledgement; draft stays `PENDING` |
 | Gateway HTTP 4xx/5xx on analysis | `AiException` | propagates to AI use cases like other providers |
 | Gateway unreachable/timeout on analysis | `AiException` | propagates |
-| Gateway 200 with `finish_reason: "error"` on analysis | `AiException` | embedded upstream failure treated as completion failure |
-| Bot has no email tool configured | none (2xx) | visible only via logged reply (`EMAIL_TOOL_MISSING` convention) |
+| Upstream provider saturated → HTTP 200 with `finish_reason: "error"` on analysis | `AiException` | embedded upstream failure treated as completion failure |
+| Bot has no email tool configured | none (2xx) | visible only via logged reply — the `EMAIL_SENT` / `EMAIL_TOOL_MISSING` markers are log conventions, **not** enforcement; actual delivery is verified out of band |
+
+---
+
+## Operations
+
+- Gateway logs: `journalctl --user -u hermes-gateway-jobhunter-bot -f`, or the
+  profile log files at `~/.hermes/profiles/jobhunter-bot/logs/{gateway,agent}.log`
+  (adjust to your `$HOME`)
+- Sent-mail check (out of band, on the gateway host):
+  `himalaya envelope list -a <account> -m "[Gmail]/E-mails enviados"`
+- Key rotation: change `API_SERVER_KEY` in the profile `.env` **and** the
+  backend's `HERMES_API_KEY` together — the two must always match
 
 ---
 
 ## Out of scope
 
-- Installing or configuring Hermes Agent, creating the Bot profile, or attaching its email tool/MCP — external prerequisite documented in README
+- Installing or configuring Hermes Agent, creating the Bot profile, or wiring its email tool (himalaya CLI) — external prerequisite documented in README
 - The async `/v1/runs` lifecycle (approvals, steering, event streaming) — a possible future hardening if fire-and-forget chat completions prove unreliable
 - Verifying actual inbox delivery from the backend — out of band
 - Form-based application agents (see `send-email.md` out-of-scope notes)
