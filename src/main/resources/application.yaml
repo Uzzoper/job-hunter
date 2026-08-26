@@ -100,8 +100,8 @@ auto-send:
   jitter-seconds: 30
   daily-cap: 50
 
-# Hermes Agent gateway ("hermes serve") — used both by the email-sending bot
-# and by analysis when ai.provider=hermes. The bot needs an email tool (MCP/skill)
+# Hermes Agent gateway ("hermes gateway run") — used both by the email-sending bot
+# and by analysis when ai.provider=hermes. The bot needs an email tool (himalaya CLI)
 # configured in its profile for delivery to actually happen.
 hermes:
   base-url: http://localhost:9119/v1   # gateway serves the OpenAI-compatible API under /v1

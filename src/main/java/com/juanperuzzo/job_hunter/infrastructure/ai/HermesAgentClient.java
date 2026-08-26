@@ -17,7 +17,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * AI client backed by the Hermes Agent gateway ("hermes serve"), which exposes an
+ * AI client backed by the Hermes Agent gateway ("hermes gateway"), which exposes an
  * OpenAI-compatible chat completions endpoint on localhost:9119 by default.
  */
 public class HermesAgentClient implements AiPort {
