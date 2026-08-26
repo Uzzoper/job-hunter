@@ -409,14 +409,14 @@ The same gateway doubles as an AI analysis provider via `ai.provider: hermes`
 
 The steps above assume a working bot profile. Starting from zero, in order:
 
-**1. Gmail app password.** Enable 2FA first
+**Step 1 — Gmail app password.** Enable 2FA first
 ([myaccount.google.com/signinoptions/twosv](https://myaccount.google.com/signinoptions/twosv)),
 then generate an App Password at
 [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords) —
 the page only exists with 2FA on. The password is shown once, formatted
 `xxxx xxxx xxxx xxxx`; store it somewhere safe before closing the tab.
 
-**2. himalaya config.** Create `~/.config/himalaya/config.toml` using the v2
+**Step 2 — himalaya config.** Create `~/.config/himalaya/config.toml` using the v2
 schema. Older tutorials use the v1 syntax (`backend.type = "imap"`), which v2
 silently ignores — use exactly this shape:
 
@@ -436,7 +436,7 @@ smtp.sasl.plain.password.command = ["sh", "-c", "grep '^EMAIL_PASSWORD=' ~/.herm
 mailbox.alias.sent = "[Gmail]/E-mails enviados"   # folder names vary with the account language — list them via: himalaya mailbox list
 ```
 
-**3. Profile `.env` credentials.** Add the `EMAIL_` variables next to
+**Step 3 — Profile `.env` credentials.** Add the `EMAIL_` variables next to
 `API_SERVER_KEY`/`API_SERVER_PORT` in `~/.hermes/profiles/jobhunter-bot/.env`:
 
 ```bash
@@ -449,7 +449,7 @@ EMAIL_SMTP_HOST=smtp.gmail.com
 These feed the gateway's inbox adapter and are what the `grep` lines in the
 himalaya config resolve the password from — the secret lives only here.
 
-**4. Send protocol.** Paste into the profile's `SOUL.md` so every send follows
+**Step 4 — Send protocol.** Paste into the profile's `SOUL.md` so every send follows
 the same contract:
 
 ```markdown
@@ -467,14 +467,14 @@ If the tool or its configuration is missing or broken, reply only:
 EMAIL_TOOL_MISSING
 ```
 
-**5. Gateway key.** Generate a strong one and set it as `API_SERVER_KEY` in the
+**Step 5 — Gateway key.** Generate a strong one and set it as `API_SERVER_KEY` in the
 profile `.env` (and later as `HERMES_API_KEY` on the job-hunter side):
 
 ```bash
 openssl rand -hex 24
 ```
 
-**6. Smoke test.** Before plugging the backend in, prove the tool works by hand:
+**Step 6 — Smoke test.** Before plugging the backend in, prove the tool works by hand:
 
 ```bash
 himalaya message send -a dev -- < test.eml
