@@ -41,8 +41,10 @@ flowchart TB
         I2 --> I3{Provider}
         I3 -->|openrouter| I4["OpenRouter API<br/>poolside/laguna-s-2.1:free"]
         I3 -->|ollama| I5["Ollama (local)<br/>llama3.2"]
+        I3 -->|hermes| I7["Hermes gateway<br/>jobhunter-bot"]
         I4 --> I6[JobAnalysis<br/>score + skills + tone]
         I5 --> I6
+        I7 --> I6
     end
 
     subgraph Email["Email Generation"]
@@ -50,8 +52,10 @@ flowchart TB
         E2 --> E3{Provider}
         E3 -->|openrouter| E4["OpenRouter API"]
         E3 -->|ollama| E5["Ollama (local)"]
+        E3 -->|hermes| E7["Hermes gateway<br/>jobhunter-bot"]
         E4 --> E6[EmailDraft<br/>ready to send]
         E5 --> E6
+        E7 --> E6
     end
 
     Auth -->|Authorization: Bearer| Scraper
@@ -142,7 +146,7 @@ sequenceDiagram
     User ->> API: POST /api/jobs/:id/analyze
     API ->> AI: analyze(jobId)
     AI ->> AI: build prompt
-    AI ->> AI: call OpenRouter
+    AI ->> AI: call AI provider<br/>(OpenRouter / Ollama / Hermes)
     AI ->> DB: save analysis
     DB -->> AI: analysis saved
     AI -->> API: score, matchedSkills, missingSkills, companyTone
@@ -151,7 +155,7 @@ sequenceDiagram
     User ->> API: POST /api/jobs/:id/email
     API ->> Email: generate(jobId)
     Email ->> Email: build prompt
-    Email ->> Email: call OpenRouter
+    Email ->> Email: call AI provider<br/>(OpenRouter / Ollama / Hermes)
     Email ->> DB: save draft
     DB -->> Email: draft saved
     Email -->> API: subject, body
@@ -175,7 +179,7 @@ sequenceDiagram
 | Security | Spring Security + JWT (jjwt) |
 | Scraping | RestClient + Jsoup |
 | Browser Automation | Playwright (Node.js + TypeScript, separate container) |
-| AI | OpenRouter API (poolside/laguna-s-2.1:free) ou Ollama local (llama3.2) |
+| AI | OpenRouter API, Ollama local, or Hermes Agent gateway (OpenAI-compatible) |
 | Tests | JUnit 5 + Mockito + WireMock / Rust async tests |
 | Build | Maven / Cargo |
 
@@ -299,7 +303,7 @@ Each source is wrapped by a **Provider** that selects the right **Strategy** (RE
 ### Prerequisites
 
 - Java 21
-- An [OpenRouter](https://openrouter.ai) API key (free tier works) or [Ollama](https://ollama.com) running locally
+- An [OpenRouter](https://openrouter.ai) API key (free tier works), [Ollama](https://ollama.com) running locally, or a local **Hermes Agent** bot profile (gateway on localhost:9119 — see 'Email sending via Hermes Agent' below), which also handles email delivery
 - Rust 2024 edition (for the CLI binary — `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`)
 - Docker + Docker Compose (optional — only to run the LinkedIn scraper container; the database needs none)
 
