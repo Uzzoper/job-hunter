@@ -90,7 +90,7 @@ infrastructure → domain
 | Migrations | Flyway |
 | Security | Spring Security + JWT (jjwt) |
 | Scraping | Jsoup + RestClient |
-| AI | OpenRouter API (OpenAI-compatible) |
+| AI | OpenRouter API, Ollama local, or Hermes Agent gateway (OpenAI-compatible) |
 | Logging | SLF4J (`private static final Logger log`) |
 | Tests | JUnit 5 + Mockito + WireMock |
 
