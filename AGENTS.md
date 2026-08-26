@@ -28,7 +28,7 @@ AI Client (provider switch: openrouter | ollama | hermes — Hermes Agent gatewa
        ↓
 Job analysis + personalized email generation
        ↓
-Email sending delegated to a Hermes Agent bot (HermesBotEmailSender → hermes serve)
+Email sending delegated to a Hermes Agent bot (HermesBotEmailSender → Hermes gateway, jobhunter-bot profile as a systemd user service)
        ↓
 REST API (auth required except register/login)
 ```
@@ -142,12 +142,13 @@ infrastructure → domain
 ## AI integration
 
 ### Provider support
-Two AI providers are supported, configurable via `ai.provider`:
+Three AI providers are supported, configurable via `ai.provider`:
 
 | Provider | Config value | Default |
 |---|---|---|
 | OpenRouter | `openrouter` | ✅ (default) |
 | Ollama (local) | `ollama` | — |
+| Hermes gateway | `hermes` | — |
 
 #### OpenRouter (default)
 ```yaml
@@ -170,7 +171,23 @@ ai:
     timeout-seconds: 60
 ```
 
-Ollama is selected via `@ConditionalOnProperty(name = "ai.provider", havingValue = "ollama")` in `AppConfig`. Both providers implement the same `AiPort` interface.
+Ollama is selected via `@ConditionalOnProperty(name = "ai.provider", havingValue = "ollama")` in `AppConfig`. All providers implement the same `AiPort` interface.
+
+#### Hermes gateway
+```yaml
+ai:
+  provider: hermes
+hermes:                                # shared block — also used by the email-sending bot
+  base-url: http://localhost:9119/v1
+  api-key: ${HERMES_API_KEY}
+  model: jobhunter-bot                 # model pinned on the Bot profile
+  timeout-seconds: 120
+```
+
+Selected via `@ConditionalOnProperty(name = "ai.provider", havingValue = "hermes")` in `AppConfig`.
+
+> The `base-url` MUST end in `/v1`: both Hermes clients append `/chat/completions`,
+> so a base URL without the suffix answers 404.
 
 ### Prompts
 All prompts are documented and versioned in `docs/specs/prompts.md`.

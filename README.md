@@ -347,12 +347,35 @@ hermes:
 
 Application emails are not sent by an email API — they are delegated to a
 [Hermes Agent](https://hermes-agent.nousresearch.com) bot, which performs the
-delivery with the email tool configured in its own profile:
+delivery from its own profile:
 
-1. Install Hermes Agent and create a Bot profile with an **email tool** enabled (MCP server or skill)
-2. Start the headless gateway with a strong key: `API_SERVER_KEY=<key> hermes serve` (default port `9119`)
-3. Export `HERMES_API_KEY=<same key>` before running job-hunter
-4. Pre-approve the bot's email action — a mid-run approval prompt would stall requests until timeout
+1. Install Hermes Agent and create a dedicated profile:
+   `hermes profile create jobhunter-bot --clone-all`
+2. Give the profile an **email tool**: the [himalaya](https://github.com/pimalaya/himalaya)
+   CLI v2 (`~/.local/bin/himalaya` — adjust to your `$HOME`), configured via
+   `~/.config/himalaya/config.toml`. Its password is resolved by a shell command
+   reading the profile `.env` directly, so the secret is never duplicated. The send
+   protocol lives as a standing instruction in the profile's `SOUL.md`: send with
+   `himalaya message compose --send --attach resume.pdf` and reply only
+   `EMAIL_SENT` (success) or `EMAIL_TOOL_MISSING` (tool/config missing)
+3. In the profile `.env`, set `API_SERVER_KEY=YOUR_HERMES_API_KEY` and
+   `API_SERVER_PORT=9119` — the key auto-enables the gateway's OpenAI-compatible
+   API server
+4. Set `approvals.mode: off` in the profile's `config.yaml` — an interactive
+   approval prompt would stall requests until timeout
+5. Export `HERMES_API_KEY=YOUR_HERMES_API_KEY` before running job-hunter
+
+#### Running the bot as a service (recommended)
+
+Install the gateway as a systemd **user** service so it survives logout/reboot:
+
+```bash
+jobhunter-bot gateway install && jobhunter-bot gateway start
+loginctl enable-linger        # keeps the unit alive without an active session
+journalctl --user -u hermes-gateway-jobhunter-bot -f
+```
+
+Containerizing the bot is a possible future evolution — not a supported setup today.
 
 #### Resume attachment
 
@@ -371,7 +394,8 @@ EOF
 > Re-uploading a resume in the app does **not** sync to the Bot's copy — repeat the
 > `cp` after a new upload. This setup assumes a single user (one fixed resume per Bot).
 
-The same gateway doubles as an AI analysis provider via `ai.provider: hermes`.
+The same gateway doubles as an AI analysis provider via `ai.provider: hermes`
+(`hermes.base-url` must end in `/v1` — the clients append `/chat/completions`).
 
 
 **4. Run the application**
