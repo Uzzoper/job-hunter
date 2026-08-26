@@ -16,12 +16,13 @@ Key property: **this repo contains no email-delivery logic**. The Java side hand
 
 ### External prerequisites (not code)
 
-1. Hermes Agent installed; a dedicated Bot profile created (`hermes profile create jobhunter-bot --clone-all`) whose **email tool** is the himalaya CLI v2 (`~/.local/bin/himalaya` — adjust to your `$HOME`), configured via `~/.config/himalaya/config.toml` (password resolved by shell command straight from the profile `.env`, never duplicated). The send protocol lives as a standing instruction in the profile's `SOUL.md`: send with `himalaya message compose --send --attach resume.pdf` and reply only `EMAIL_SENT` (success) or `EMAIL_TOOL_MISSING` (tool/config missing)
+1. Hermes Agent installed; a dedicated Bot profile created (`hermes profile create jobhunter-bot --clone-all`) whose **email tool** is the himalaya CLI v2 (`~/.local/bin/himalaya` — adjust to your `$HOME`), configured via `~/.config/himalaya/config.toml` (password resolved by shell command straight from the profile `.env`, never duplicated). The send protocol lives as a standing instruction in the profile's `SOUL.md`: send with `himalaya message compose --send --attach YourName.pdf` (himalaya uses the filename as the attachment name) and reply only `EMAIL_SENT` (success) or `EMAIL_TOOL_MISSING` (tool/config missing)
 2. Gateway running: `hermes gateway run` — or persisted as a systemd user service (`jobhunter-bot gateway install` + linger) — serving `http://localhost:9119/v1` with strong `API_SERVER_KEY` and `API_SERVER_PORT=9119` set in the profile `.env` (the key auto-enables the platform `api_server`)
 3. `HERMES_API_KEY` env var set to that key
 4. `approvals.mode: off` in the bot profile's `config.yaml` (interactive approvals would stall the request until timeout)
 5. **Resume attachment** (single-user setup): the user's PDF lives inside the Bot profile
-   (`~/.hermes/profiles/<bot>/resume.pdf`) and a `SOUL.md` standing instruction tells the Bot
+   (`~/.hermes/profiles/<bot>/YourName.pdf` — himalaya uses the filename as the
+   attachment name) and a `SOUL.md` standing instruction tells the Bot
    to attach it on every Job Hunter application email. The backend sends no file and knows
    nothing about it — re-uploading a resume in the app requires re-copying the file manually.
    Multi-user would need per-send staging through `EmailSenderPort` instead (deliberately deferred).
