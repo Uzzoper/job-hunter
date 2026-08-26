@@ -4,7 +4,8 @@ import com.juanperuzzo.job_hunter.application.port.out.AiPort;
 import com.juanperuzzo.job_hunter.domain.exception.AiException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-import com.fasterxml.jackson.annotation.JsonProperty;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
@@ -15,6 +16,8 @@ import java.util.List;
 import java.util.Map;
 
 public class OllamaClient implements AiPort {
+
+    private static final Logger log = LoggerFactory.getLogger(OllamaClient.class);
 
     private final RestClient restClient;
     private final String model;
@@ -48,6 +51,7 @@ public class OllamaClient implements AiPort {
                                 try {
                                     body = new String(resp.getBody().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
                                 } catch (Exception e) {
+                                    log.warn("Failed to read AI error response body", e);
                                 }
                                 throw new AiException("Ollama HTTP error: " + resp.getStatusCode() +
                                         (body != null && !body.isBlank() ? " " + body : ""));
@@ -84,23 +88,11 @@ public class OllamaClient implements AiPort {
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
-    private static class ChatCompletionResponse {
-        @JsonProperty("choices")
-        private List<Choice> choices;
-        public List<Choice> choices() { return choices; }
-    }
+    private record ChatCompletionResponse(List<Choice> choices) {}
 
     @JsonIgnoreProperties(ignoreUnknown = true)
-    private static class Choice {
-        @JsonProperty("message")
-        private Message message;
-        public Message message() { return message; }
-    }
+    private record Choice(Message message) {}
 
     @JsonIgnoreProperties(ignoreUnknown = true)
-    private static class Message {
-        @JsonProperty("content")
-        private String content;
-        public String content() { return content; }
-    }
+    private record Message(String content) {}
 }

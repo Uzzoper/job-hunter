@@ -25,8 +25,12 @@ impl ApiClient {
     ///
     /// The client uses a connection pool with reasonable timeouts.
     pub fn new(base_url: &str) -> Self {
+        // Bot-delegated sends take ~27–40 s and run inside the backend's own
+        // Hermes budget (hermes.timeout-seconds=120). 150 s covers the full
+        // round trip so the server always answers first on true stalls — a
+        // shorter cap aborted requests whose backend side still completed.
         let client = Client::builder()
-            .timeout(Duration::from_secs(30))
+            .timeout(Duration::from_secs(150))
             .connect_timeout(Duration::from_secs(10))
             .pool_idle_timeout(Duration::from_secs(90))
             .pool_max_idle_per_host(10)
@@ -199,7 +203,11 @@ impl ApiClient {
     pub async fn send_email(&self, job_id: i64) -> Result<EmailDraftResponse> {
         let resp = self
             .request(Method::POST, &format!("/api/jobs/{job_id}/send"))
-            .timeout(Duration::from_secs(60))
+            // Overrides the global timeout (per-request wins in reqwest):
+            // delivery is delegated to the Hermes bot (himalaya + Gmail SMTP),
+            // measured at 26–40 s. Must stay above the backend's 120 s Hermes
+            // budget or the CLI aborts sends the backend still completes.
+            .timeout(Duration::from_secs(150))
             .send()
             .await?;
         self.handle_response(resp).await

@@ -41,8 +41,10 @@ flowchart TB
         I2 --> I3{Provider}
         I3 -->|openrouter| I4["OpenRouter API<br/>poolside/laguna-s-2.1:free"]
         I3 -->|ollama| I5["Ollama (local)<br/>llama3.2"]
+        I3 -->|hermes| I7["Hermes gateway<br/>jobhunter-bot"]
         I4 --> I6[JobAnalysis<br/>score + skills + tone]
         I5 --> I6
+        I7 --> I6
     end
 
     subgraph Email["Email Generation"]
@@ -50,8 +52,10 @@ flowchart TB
         E2 --> E3{Provider}
         E3 -->|openrouter| E4["OpenRouter API"]
         E3 -->|ollama| E5["Ollama (local)"]
+        E3 -->|hermes| E7["Hermes gateway<br/>jobhunter-bot"]
         E4 --> E6[EmailDraft<br/>ready to send]
         E5 --> E6
+        E7 --> E6
     end
 
     Auth -->|Authorization: Bearer| Scraper
@@ -142,7 +146,7 @@ sequenceDiagram
     User ->> API: POST /api/jobs/:id/analyze
     API ->> AI: analyze(jobId)
     AI ->> AI: build prompt
-    AI ->> AI: call OpenRouter
+    AI ->> AI: call AI provider<br/>(OpenRouter / Ollama / Hermes)
     AI ->> DB: save analysis
     DB -->> AI: analysis saved
     AI -->> API: score, matchedSkills, missingSkills, companyTone
@@ -151,7 +155,7 @@ sequenceDiagram
     User ->> API: POST /api/jobs/:id/email
     API ->> Email: generate(jobId)
     Email ->> Email: build prompt
-    Email ->> Email: call OpenRouter
+    Email ->> Email: call AI provider<br/>(OpenRouter / Ollama / Hermes)
     Email ->> DB: save draft
     DB -->> Email: draft saved
     Email -->> API: subject, body
@@ -175,7 +179,7 @@ sequenceDiagram
 | Security | Spring Security + JWT (jjwt) |
 | Scraping | RestClient + Jsoup |
 | Browser Automation | Playwright (Node.js + TypeScript, separate container) |
-| AI | OpenRouter API (poolside/laguna-s-2.1:free) ou Ollama local (llama3.2) |
+| AI | OpenRouter API, Ollama local, or Hermes Agent gateway (OpenAI-compatible) |
 | Tests | JUnit 5 + Mockito + WireMock / Rust async tests |
 | Build | Maven / Cargo |
 
@@ -200,10 +204,10 @@ flowchart BT
 
     subgraph Infrastructure["🟠 Infrastructure"]
         I1["scraper/ — ProviderBasedScraperAdapter,<br/>GupyProvider, InfoJobsProvider,<br/>LinkedInProvider, LinkedInScraperClient,<br/>ProviderRegistry, JobNormalizer,<br/>DateParser, JsonLdParser,<br/>RateLimiter, RetryStrategy,<br/>ExtractionStrategy, HtmlStrategy,<br/>RestApiStrategy"]
-        I2["ai/ — OpenRouterClient, OllamaClient"]
+        I2["ai/ — OpenRouterClient, OllamaClient,<br/>HermesAgentClient"]
         I3["persistence/ — JPA adapters,<br/>repositories, entities"]
         I4["security/ — JwtTokenFilter,<br/>JwtTokenService, SecurityConfig,<br/>CurrentUserService"]
-        I5["email/ — ResendEmailSender"]
+        I5["email/ — HermesBotEmailSender"]
         I6["scheduler/ — AutoSendScheduler"]
         I7["config/ — AppConfig,<br/>LinkedInScraperProperties"]
     end
@@ -299,7 +303,7 @@ Each source is wrapped by a **Provider** that selects the right **Strategy** (RE
 ### Prerequisites
 
 - Java 21
-- An [OpenRouter](https://openrouter.ai) API key (free tier works) or [Ollama](https://ollama.com) running locally
+- An [OpenRouter](https://openrouter.ai) API key (free tier works), [Ollama](https://ollama.com) running locally, or a local **Hermes Agent** bot profile (gateway on localhost:9119 — see 'Email sending via Hermes Agent' below), which also handles email delivery
 - Rust 2024 edition (for the CLI binary — `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`)
 - Docker + Docker Compose (optional — only to run the LinkedIn scraper container; the database needs none)
 
@@ -323,7 +327,7 @@ Create `src/main/resources/application-local.yaml`:
 
 ```yaml
 ai:
-  provider: openrouter   # or ollama for local inference
+  provider: openrouter   # or ollama / hermes for local inference
   openrouter:
     api-key: YOUR_OPENROUTER_API_KEY
   ollama:
@@ -334,11 +338,151 @@ ai:
 jwt:
   secret: a-key-with-at-least-32-characters-for-hmac
 
-resend:
-  api-key: YOUR_RESEND_API_KEY
+hermes:
+  base-url: http://localhost:9119/v1   # OpenAI-compatible API root
+  api-key: YOUR_HERMES_API_KEY   # equals the gateway API_SERVER_KEY
+  model: default                 # model pinned on the Bot profile
+  timeout-seconds: 120
 ```
 
 > This file is in `.gitignore` and will never be committed.
+
+### Email sending via Hermes Agent (required for `POST /api/jobs/{id}/send`)
+
+Application emails are not sent by an email API — they are delegated to a
+[Hermes Agent](https://hermes-agent.nousresearch.com) bot, which performs the
+delivery from its own profile:
+
+1. Install Hermes Agent and create a dedicated profile:
+   `hermes profile create jobhunter-bot --clone-all`
+2. Give the profile an **email tool**: the [himalaya](https://github.com/pimalaya/himalaya)
+   CLI v2 (`~/.local/bin/himalaya` — adjust to your `$HOME`), configured via
+   `~/.config/himalaya/config.toml`. Its password is resolved by a shell command
+   reading the profile `.env` directly, so the secret is never duplicated. The send
+   protocol lives as a standing instruction in the profile's `SOUL.md`: send with
+   `himalaya message compose --send --attach YourName.pdf` and reply only
+   `EMAIL_SENT` (success) or `EMAIL_TOOL_MISSING` (tool/config missing)
+3. In the profile `.env`, set `API_SERVER_KEY=YOUR_HERMES_API_KEY` and
+   `API_SERVER_PORT=9119` — the key auto-enables the gateway's OpenAI-compatible
+   API server
+4. Set `approvals.mode: off` in the profile's `config.yaml` — an interactive
+   approval prompt would stall requests until timeout
+5. Export `HERMES_API_KEY=YOUR_HERMES_API_KEY` before running job-hunter
+
+#### Running the bot as a service (recommended)
+
+Install the gateway as a systemd **user** service so it survives logout/reboot:
+
+```bash
+jobhunter-bot gateway install && jobhunter-bot gateway start
+loginctl enable-linger        # keeps the unit alive without an active session
+journalctl --user -u hermes-gateway-jobhunter-bot -f
+```
+
+Containerizing the bot is a possible future evolution — not a supported setup today.
+
+#### Resume attachment
+
+Emails are sent with the resume attached, handled entirely by the Bot (no backend
+involvement). Give the resume to the bot once and make it a standing rule:
+
+> **Tip:** name the file after yourself (e.g. `YourName.pdf`) — himalaya uses the
+> filename as the attachment name, so recipients save an identified CV instead of
+> a generic `resume.pdf`.
+
+```bash
+cp uploads/<userId>/resume.pdf ~/.hermes/profiles/<bot>/YourName.pdf
+cat >> ~/.hermes/profiles/<bot>/SOUL.md <<'EOF'
+## Resume attachment
+When sending a Job Hunter application email, always attach your local
+copy of the resume at ~/.hermes/profiles/<bot>/YourName.pdf.
+EOF
+```
+
+> Re-uploading a resume in the app does **not** sync to the Bot's copy — repeat the
+> `cp` after a new upload. This setup assumes a single user (one fixed resume per Bot).
+
+The same gateway doubles as an AI analysis provider via `ai.provider: hermes`
+(`hermes.base-url` must end in `/v1` — the clients append `/chat/completions`).
+
+#### Bot setup from scratch
+
+The steps above assume a working bot profile. Starting from zero, in order:
+
+**Step 1 — Gmail app password.** Enable 2FA first
+([myaccount.google.com/signinoptions/twosv](https://myaccount.google.com/signinoptions/twosv)),
+then generate an App Password at
+[myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords) —
+the page only exists with 2FA on. The password is shown once, formatted
+`xxxx xxxx xxxx xxxx`; store it somewhere safe before closing the tab.
+
+**Step 2 — himalaya config.** Create `~/.config/himalaya/config.toml` using the v2
+schema. Older tutorials use the v1 syntax (`backend.type = "imap"`), which v2
+silently ignores — use exactly this shape:
+
+```toml
+[accounts.dev]
+default = true
+email = "YOUR_EMAIL@gmail.com"
+
+imap.server = "imaps://imap.gmail.com:993"
+imap.sasl.plain.username = "YOUR_EMAIL@gmail.com"
+imap.sasl.plain.password.command = ["sh", "-c", "grep '^EMAIL_PASSWORD=' ~/.hermes/profiles/jobhunter-bot/.env | cut -d= -f2-"]
+
+smtp.server = "smtps://smtp.gmail.com:465"
+smtp.sasl.plain.username = "YOUR_EMAIL@gmail.com"
+smtp.sasl.plain.password.command = ["sh", "-c", "grep '^EMAIL_PASSWORD=' ~/.hermes/profiles/jobhunter-bot/.env | cut -d= -f2-"]
+
+mailbox.alias.sent = "[Gmail]/E-mails enviados"   # folder names vary with the account language — list them via: himalaya mailbox list
+```
+
+**Step 3 — Profile `.env` credentials.** Add the `EMAIL_` variables next to
+`API_SERVER_KEY`/`API_SERVER_PORT` in `~/.hermes/profiles/jobhunter-bot/.env`:
+
+```bash
+EMAIL_ADDRESS=YOUR_EMAIL@gmail.com
+EMAIL_PASSWORD=YOUR_GMAIL_APP_PASSWORD   # the xxxx xxxx xxxx xxxx value from step 1
+EMAIL_IMAP_HOST=imap.gmail.com
+EMAIL_SMTP_HOST=smtp.gmail.com
+```
+
+These feed the gateway's inbox adapter and are what the `grep` lines in the
+himalaya config resolve the password from — the secret lives only here.
+
+**Step 4 — Send protocol.** Paste into the profile's `SOUL.md` so every send follows
+the same contract:
+
+```markdown
+## Email sending protocol
+
+To send an application email, run:
+
+    himalaya message compose -a dev --send -t <to> -s <subject> --body-file <file> \
+      --attach ~/.hermes/profiles/jobhunter-bot/YourName.pdf
+
+Never alter the subject or body. When the message has been sent, reply only:
+EMAIL_SENT
+
+If the tool or its configuration is missing or broken, reply only:
+EMAIL_TOOL_MISSING
+```
+
+**Step 5 — Gateway key.** Generate a strong one and set it as `API_SERVER_KEY` in the
+profile `.env` (and later as `HERMES_API_KEY` on the job-hunter side):
+
+```bash
+openssl rand -hex 24
+```
+
+**Step 6 — Smoke test.** Before plugging the backend in, prove the tool works by hand:
+
+```bash
+himalaya message send -a dev -- < test.eml
+```
+
+Then confirm the message landed in the Sent folder. If that round trip works,
+every delegated send from job-hunter uses exactly the same path.
+
 
 **4. Run the application**
 
@@ -404,7 +548,7 @@ Start the TUI (default mode, no subcommand needed):
 | `GET` | `/api/jobs/{id}/email` | Get generated email draft | Yes |
 | `POST` | `/api/jobs/{id}/email` | Generate new email for the job | Yes |
 | `POST` | `/api/jobs/{id}/email/approve` | Approve a PENDING draft for auto-send | Yes |
-| `POST` | `/api/jobs/{id}/send` | Send email via Resend using user's email as from | Yes |
+| `POST` | `/api/jobs/{id}/send` | Send email via Hermes bot using user's email as from | Yes |
 | `GET` | `/api/profile` | Get authenticated user's profile | Yes |
 | `PUT` | `/api/profile` | Save/update user profile | Yes |
 | `POST` | `/api/profile/upload-resume` | Upload PDF resume → AI extracts skills & projects | Yes |
