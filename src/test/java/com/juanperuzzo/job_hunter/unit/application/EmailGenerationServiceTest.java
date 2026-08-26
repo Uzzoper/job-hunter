@@ -158,7 +158,7 @@ class EmailGenerationServiceTest {
             EmailDraft draft = emailGenerationService.generate(1L, jobId);
 
             assertNotNull(draft);
-            // Should mention willingness to learn (we can only verify it doesn't throw)
+            // Low score doesn't block generation; prompt handles missing skills matter-of-factly
             assertTrue(draft.subject().startsWith("Subject: "));
         }
     }
