@@ -360,7 +360,7 @@ delivery from its own profile:
    `~/.config/himalaya/config.toml`. Its password is resolved by a shell command
    reading the profile `.env` directly, so the secret is never duplicated. The send
    protocol lives as a standing instruction in the profile's `SOUL.md`: send with
-   `himalaya message compose --send --attach resume.pdf` and reply only
+   `himalaya message compose --send --attach YourName.pdf` and reply only
    `EMAIL_SENT` (success) or `EMAIL_TOOL_MISSING` (tool/config missing)
 3. In the profile `.env`, set `API_SERVER_KEY=YOUR_HERMES_API_KEY` and
    `API_SERVER_PORT=9119` — the key auto-enables the gateway's OpenAI-compatible
@@ -386,12 +386,16 @@ Containerizing the bot is a possible future evolution — not a supported setup 
 Emails are sent with the resume attached, handled entirely by the Bot (no backend
 involvement). Give the resume to the bot once and make it a standing rule:
 
+> **Tip:** name the file after yourself (e.g. `YourName.pdf`) — himalaya uses the
+> filename as the attachment name, so recipients save an identified CV instead of
+> a generic `resume.pdf`.
+
 ```bash
-cp uploads/<userId>/resume.pdf ~/.hermes/profiles/<bot>/resume.pdf
+cp uploads/<userId>/resume.pdf ~/.hermes/profiles/<bot>/YourName.pdf
 cat >> ~/.hermes/profiles/<bot>/SOUL.md <<'EOF'
 ## Resume attachment
 When sending a Job Hunter application email, always attach your local
-copy of the resume at ~/.hermes/profiles/<bot>/resume.pdf.
+copy of the resume at ~/.hermes/profiles/<bot>/YourName.pdf.
 EOF
 ```
 
@@ -454,7 +458,7 @@ the same contract:
 To send an application email, run:
 
     himalaya message compose -a dev --send -t <to> -s <subject> --body-file <file> \
-      --attach ~/.hermes/profiles/jobhunter-bot/resume.pdf
+      --attach ~/.hermes/profiles/jobhunter-bot/YourName.pdf
 
 Never alter the subject or body. When the message has been sent, reply only:
 EMAIL_SENT
