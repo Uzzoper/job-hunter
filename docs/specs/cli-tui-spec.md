@@ -223,7 +223,7 @@ pattern (`start_upload` / `pending_upload` / `finish_upload`):
   inline. The UI waits while scraping runs.
 - **Re-trigger guard**: pressing `f` while a fetch is already in progress is a no-op.
 - **Timeout**: the request uses a per-request timeout of 10 minutes (the global
-  client timeout of 30s is too short — scraping all providers takes 40–90s).
+  client timeout of 150s is too short — scraping all providers takes 40–90s).
 - **On success**: the job list reloads through the same path used by `r`
   (refresh), and a "Fetch completed" toast is shown.
 - **On failure**: an error toast with the reason is shown; the list stays as-is.
@@ -377,6 +377,28 @@ CREATE INDEX idx_jobs_cached_at ON jobs(cached_at);
 | `ConfigManager` | `anyhow::Result<Config>` — wraps `toml`, `std::io`, and missing-directory errors via `anyhow::Context` |
 | TUI | Errors caught in `handle_event` → `App.set_error(msg)` → popup |
 | Batch | Errors printed to stderr, exit code 1 |
+
+### Expected Operation Times
+
+Measured end-to-end against the local backend (Hermes gateway on the same host):
+
+| Operation | Typical duration | Client timeout |
+|---|---|---|
+| `list` / `detail` / profile reads | < 1 s | 150 s (global) |
+| `fetch` (all providers) | 40–90 s | 600 s (per-request) |
+| `analyze` / `email generate` (AI) | up to ~30 s | 180 s (per-request) |
+| `email send` (delegated to the Hermes bot: himalaya + Gmail SMTP) | 26–40 s | 150 s |
+
+The global client timeout is **150 s** — comfortably above bot-delegated sends,
+which run well inside the backend's own Hermes budget (`hermes.timeout-seconds:
+120`). On a true stall the backend therefore answers first with an API error;
+the CLI must never abort a send that the backend still completes.
+
+> **UX note — apparent timeout on `email send`:** if a send seems to fail with a
+> network error, check the Sent folder before retrying. The backend may have
+> completed the delivery after the client gave up; a retry is answered by the
+> backend's idempotency guard with HTTP 409 Conflict ("Email has already been
+> sent"), which surfaces as a clear warning instead of a duplicate application.
 
 ### Error Types (`error.rs`)
 
