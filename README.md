@@ -401,6 +401,84 @@ EOF
 The same gateway doubles as an AI analysis provider via `ai.provider: hermes`
 (`hermes.base-url` must end in `/v1` — the clients append `/chat/completions`).
 
+#### Bot setup from scratch
+
+The steps above assume a working bot profile. Starting from zero, in order:
+
+**1. Gmail app password.** Enable 2FA first
+([myaccount.google.com/signinoptions/twosv](https://myaccount.google.com/signinoptions/twosv)),
+then generate an App Password at
+[myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords) —
+the page only exists with 2FA on. The password is shown once, formatted
+`xxxx xxxx xxxx xxxx`; store it somewhere safe before closing the tab.
+
+**2. himalaya config.** Create `~/.config/himalaya/config.toml` using the v2
+schema. Older tutorials use the v1 syntax (`backend.type = "imap"`), which v2
+silently ignores — use exactly this shape:
+
+```toml
+[accounts.dev]
+default = true
+email = "YOUR_EMAIL@gmail.com"
+
+imap.server = "imaps://imap.gmail.com:993"
+imap.sasl.plain.username = "YOUR_EMAIL@gmail.com"
+imap.sasl.plain.password.command = ["sh", "-c", "grep '^EMAIL_PASSWORD=' ~/.hermes/profiles/jobhunter-bot/.env | cut -d= -f2-"]
+
+smtp.server = "smtps://smtp.gmail.com:465"
+smtp.sasl.plain.username = "YOUR_EMAIL@gmail.com"
+smtp.sasl.plain.password.command = ["sh", "-c", "grep '^EMAIL_PASSWORD=' ~/.hermes/profiles/jobhunter-bot/.env | cut -d= -f2-"]
+
+mailbox.alias.sent = "[Gmail]/E-mails enviados"   # folder names vary with the account language — list them via: himalaya mailbox list
+```
+
+**3. Profile `.env` credentials.** Add the `EMAIL_` variables next to
+`API_SERVER_KEY`/`API_SERVER_PORT` in `~/.hermes/profiles/jobhunter-bot/.env`:
+
+```bash
+EMAIL_ADDRESS=YOUR_EMAIL@gmail.com
+EMAIL_PASSWORD=YOUR_GMAIL_APP_PASSWORD   # the xxxx xxxx xxxx xxxx value from step 1
+EMAIL_IMAP_HOST=imap.gmail.com
+EMAIL_SMTP_HOST=smtp.gmail.com
+```
+
+These feed the gateway's inbox adapter and are what the `grep` lines in the
+himalaya config resolve the password from — the secret lives only here.
+
+**4. Send protocol.** Paste into the profile's `SOUL.md` so every send follows
+the same contract:
+
+```markdown
+## Email sending protocol
+
+To send an application email, run:
+
+    himalaya message compose -a dev --send -t <to> -s <subject> --body-file <file> \
+      --attach ~/.hermes/profiles/jobhunter-bot/resume.pdf
+
+Never alter the subject or body. When the message has been sent, reply only:
+EMAIL_SENT
+
+If the tool or its configuration is missing or broken, reply only:
+EMAIL_TOOL_MISSING
+```
+
+**5. Gateway key.** Generate a strong one and set it as `API_SERVER_KEY` in the
+profile `.env` (and later as `HERMES_API_KEY` on the job-hunter side):
+
+```bash
+openssl rand -hex 24
+```
+
+**6. Smoke test.** Before plugging the backend in, prove the tool works by hand:
+
+```bash
+himalaya message send -a dev -- < test.eml
+```
+
+Then confirm the message landed in the Sent folder. If that round trip works,
+every delegated send from job-hunter uses exactly the same path.
+
 
 **4. Run the application**
 
