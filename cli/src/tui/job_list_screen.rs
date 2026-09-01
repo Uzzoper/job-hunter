@@ -12,7 +12,7 @@ use ratatui::{
 };
 use std::collections::HashMap;
 use std::sync::Arc;
-
+use std::time::Instant;
 use tokio::sync::Mutex;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -162,6 +162,15 @@ pub struct JobListScreen {
     pub dev_only: bool,
     /// True while the backend scrape (`f` key) is running.
     pub fetch_in_progress: bool,
+    /// Wall-clock instant when the current fetch started; used for the
+    /// heuristic provider-phase message in the loading popup.
+    pub fetch_started_at: Option<Instant>,
+    /// Handle to the spawned fetch task; `None` when idle.
+    pub fetch_handle: Option<tokio::task::JoinHandle<()>>,
+    /// Shared slot where the spawned fetch task records its outcome
+    /// (`Ok(())` on success, `Err(msg)` with the reason on failure).
+    /// The poll branch reads it to translate the completion into a toast.
+    pub fetch_outcome: Arc<Mutex<Option<Result<(), String>>>>,
     api_client: Arc<Mutex<ApiClient>>,
     cache: Arc<Mutex<CacheManager>>,
     toast: Option<Toast>,
@@ -189,6 +198,9 @@ impl JobListScreen {
             seniority_filter: SeniorityFilter::default(),
             dev_only: false,
             fetch_in_progress: false,
+            fetch_started_at: None,
+            fetch_handle: None,
+            fetch_outcome: Arc::new(Mutex::new(None)),
             api_client,
             cache,
             toast: None,
@@ -275,7 +287,7 @@ impl JobListScreen {
     }
 
     /// Show a toast notification
-    fn show_toast(&mut self, message: String) {
+    pub(crate) fn show_toast(&mut self, message: String) {
         self.toast = Some(Toast::new(message));
     }
 
@@ -299,6 +311,43 @@ impl JobListScreen {
             return;
         }
         self.fetch_in_progress = true;
+        self.fetch_started_at = Some(Instant::now());
+    }
+
+    /// Abort the in-flight fetch and reset all progress state.
+    ///
+    /// The caller should also show a "Fetch cancelled" toast via
+    /// `show_toast` (or let [`App`] handle it).
+    pub fn cancel_fetch(&mut self) {
+        if let Some(handle) = self.fetch_handle.take() {
+            handle.abort();
+        }
+        self.fetch_in_progress = false;
+        self.fetch_started_at = None;
+        self.fetch_outcome = Arc::new(Mutex::new(None));
+        self.show_toast("Fetch cancelled".to_string());
+    }
+
+    /// Heuristic provider-phase label derived from elapsed wall time.
+    ///
+    /// No backend truth — purely a UX estimate. Each provider is assumed
+    /// to take roughly 10 s (total ~30 s). Labels update every draw frame.
+    pub fn fetch_phase_message(&self) -> String {
+        let elapsed = self
+            .fetch_started_at
+            .map(|t| t.elapsed().as_secs())
+            .unwrap_or(0);
+        let (phase, label) = match elapsed {
+            0..=10 => (1, "Scraping Gupy"),
+            11..=20 => (2, "Scraping InfoJobs"),
+            _ => (3, "Scraping LinkedIn"),
+        };
+        format!("{label}… ({phase}/3) — {elapsed}s / ~30s  [Esc] Cancel")
+    }
+
+    /// True when a fetch task is currently in flight.
+    pub fn is_fetching(&self) -> bool {
+        self.fetch_in_progress
     }
 
     /// Run the scrape — calls `POST /api/jobs/fetch`, then reloads the list.
@@ -326,6 +375,7 @@ impl JobListScreen {
         }
 
         self.fetch_in_progress = false;
+        self.fetch_started_at = None;
     }
 
     fn apply_filters(&mut self) {
@@ -679,12 +729,7 @@ impl JobListScreen {
 
     fn draw_main_content(&mut self, frame: &mut Frame, area: Rect, theme: &Theme) {
         if self.fetch_in_progress {
-            render_loading(
-                frame,
-                area,
-                theme,
-                "⟳ Fetching jobs from Gupy, InfoJobs & LinkedIn…",
-            );
+            render_loading(frame, area, theme, &self.fetch_phase_message());
             return;
         }
 
@@ -860,7 +905,9 @@ impl JobListScreen {
     }
 
     fn draw_hotkeys_bar(&self, frame: &mut Frame, area: Rect, theme: &Theme) {
-        let hotkeys = if self.search_focus == SearchFocus::Focused {
+        let hotkeys = if self.fetch_in_progress {
+            " [Esc] Cancel fetch  [Ctrl+C] Quit "
+        } else if self.search_focus == SearchFocus::Focused {
             " [Esc] Blur search  [Enter] Apply filter  [Backspace] Delete "
         } else {
             " [↑/↓] Navigate  [Enter] Detail  [/] Search  [r] Refresh  [f] Fetch  [a] Analyze  [e] Email  [p] Profile  [t] Apply  [s] Seniority  [d] Dev  [o] Open  [q] Quit "
@@ -899,6 +946,7 @@ mod tests {
     use httpmock::{Method, MockServer};
     use serde_json::json;
     use std::sync::Arc;
+    use std::time::{Duration, Instant};
     use tokio::sync::Mutex;
 
     fn create_test_screen() -> JobListScreen {
@@ -1786,13 +1834,99 @@ mod tests {
     fn start_fetch_sets_flag_and_is_idempotent() {
         let mut screen = create_test_screen();
         assert!(!screen.fetch_in_progress);
+        assert!(screen.fetch_started_at.is_none());
 
         screen.start_fetch();
         assert!(screen.fetch_in_progress);
+        assert!(screen.fetch_started_at.is_some(), "timestamp must be recorded");
 
-        // Re-trigger while fetching must be a no-op (flag stays set).
+        let first_started_at = screen.fetch_started_at;
+        // Re-trigger while fetching must be a no-op (flag stays set, no new timestamp).
         screen.start_fetch();
         assert!(screen.fetch_in_progress);
+        assert_eq!(
+            screen.fetch_started_at, first_started_at,
+            "no-op re-trigger must not overwrite the timestamp"
+        );
+    }
+
+    #[tokio::test]
+    async fn cancel_fetch_clears_flag_and_resets_state() {
+        let mut screen = create_test_screen();
+        screen.start_fetch();
+        assert!(screen.fetch_in_progress);
+        assert!(screen.fetch_started_at.is_some());
+
+        screen.fetch_handle = Some(tokio::spawn(async {}));
+        assert!(screen.fetch_handle.is_some());
+
+        screen.cancel_fetch();
+
+        assert!(!screen.fetch_in_progress);
+        assert!(screen.fetch_started_at.is_none());
+        assert!(screen.fetch_handle.is_none());
+        assert_eq!(
+            screen.toast.as_ref().unwrap().message,
+            "Fetch cancelled",
+            "cancel_fetch should set a cancellation toast"
+        );
+    }
+
+    #[test]
+    fn fetch_phase_message_at_3s_is_gupy() {
+        let mut screen = create_test_screen();
+        screen.fetch_started_at = Some(Instant::now() - Duration::from_secs(3));
+        let msg = screen.fetch_phase_message();
+        assert!(msg.contains("Gupy"), "expected Gupy phase, got: {msg}");
+        assert!(msg.contains("1/3"), "expected phase 1/3, got: {msg}");
+        assert!(msg.contains("3s"), "expected elapsed 3s, got: {msg}");
+    }
+
+    #[test]
+    fn fetch_phase_message_at_12s_is_infojobs() {
+        let mut screen = create_test_screen();
+        screen.fetch_started_at = Some(Instant::now() - Duration::from_secs(12));
+        let msg = screen.fetch_phase_message();
+        assert!(msg.contains("InfoJobs"), "expected InfoJobs phase, got: {msg}");
+        assert!(msg.contains("2/3"), "expected phase 2/3, got: {msg}");
+        assert!(msg.contains("12s"), "expected elapsed 12s, got: {msg}");
+    }
+
+    #[test]
+    fn fetch_phase_message_at_25s_is_linkedin() {
+        let mut screen = create_test_screen();
+        screen.fetch_started_at = Some(Instant::now() - Duration::from_secs(25));
+        let msg = screen.fetch_phase_message();
+        assert!(msg.contains("LinkedIn"), "expected LinkedIn phase, got: {msg}");
+        assert!(msg.contains("3/3"), "expected phase 3/3, got: {msg}");
+        assert!(msg.contains("25s"), "expected elapsed 25s, got: {msg}");
+    }
+
+    #[test]
+    fn fetch_phase_message_without_timestamp_defaults_to_gupy_and_0s() {
+        let screen = create_test_screen();
+        assert!(screen.fetch_started_at.is_none());
+        let msg = screen.fetch_phase_message();
+        assert!(msg.contains("0s / ~30s"), "expected elapsed 0s, got: {msg}");
+        assert!(msg.contains("[Esc] Cancel"), "expected cancel hint, got: {msg}");
+    }
+
+    #[test]
+    fn draw_main_content_while_fetching_renders_loading_phase() {
+        let mut screen = create_test_screen();
+        screen.set_jobs(sample_jobs());
+        screen.start_fetch();
+
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(120, 80)).unwrap();
+        terminal
+            .draw(|frame| {
+                screen.draw(frame, frame.area(), &Theme::detect());
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().to_string();
+        assert!(buffer.contains("Scraping Gupy"), "expected phase label in buffer");
     }
 
     #[tokio::test]

@@ -1,7 +1,47 @@
 #[cfg(test)]
 mod tests {
-    use crate::tui::theme::Theme;
+    use crate::tui::theme::{spinner_frame, render_loading, SPINNER_FRAMES, Theme};
     use ratatui::style::{Color, Modifier};
+
+    #[test]
+    fn spinner_frame_cycles_within_10_frames() {
+        // spinner_frame() indexes a 10-frame cycle by (now_ms / 100) % 10,
+        // so successive instant calls share a bucket. Sample across ~1.1s to
+        // observe rotation ("no stuck frame").
+        let mut seen = std::collections::HashSet::new();
+        for _ in 0..10 {
+            seen.insert(spinner_frame());
+            std::thread::sleep(std::time::Duration::from_millis(110));
+        }
+        assert!(
+            seen.len() >= 3,
+            "spinner must rotate over time, only saw {} distinct frames: {:?}",
+            seen.len(),
+            seen
+        );
+        for frame in seen {
+            assert!(
+                SPINNER_FRAMES.contains(&frame),
+                "spinner frame {frame:?} not in SPINNER_FRAMES"
+            );
+        }
+    }
+
+    #[test]
+    fn render_loading_does_not_panic_with_fetch_message() {
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 24)).unwrap();
+        terminal
+            .draw(|frame| {
+                render_loading(
+                    frame,
+                    frame.area(),
+                    &Theme::detect(),
+                    &"Scraping Gupy… (1/3) — 3s / ~30s  [Esc] Cancel".to_string(),
+                );
+            })
+            .unwrap();
+    }
 
     #[test]
     fn cyberpunk_theme_has_correct_colors() {
