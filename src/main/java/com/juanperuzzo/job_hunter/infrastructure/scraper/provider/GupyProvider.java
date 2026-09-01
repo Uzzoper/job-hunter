@@ -98,6 +98,13 @@ public class GupyProvider implements ExtractionStrategy {
         var workModel = isRemote ? "Remoto" : null;
         var company = node.path("careerPageName").asText(null);
 
+        // Scenario 10: persist careerPageUrl as companyWebsite even when jobUrl exists.
+        var metadata = new HashMap<String, String>();
+        var careerPageUrl = node.path("careerPageUrl").asText("");
+        if (!careerPageUrl.isBlank()) {
+            metadata.put("companyWebsite", normalizeUrl(careerPageUrl));
+        }
+
         return new RawJob(
                 title,
                 company,
@@ -107,7 +114,14 @@ public class GupyProvider implements ExtractionStrategy {
                 locationStr,
                 workModel,
                 "gupy",
-                null);
+                metadata);
+    }
+
+    /** Normalize an absolute company URL to a canonical form (no trailing slash). */
+    private static String normalizeUrl(String url) {
+        if (url == null || url.isBlank()) return null;
+        var trimmed = url.trim();
+        return trimmed.endsWith("/") ? trimmed.substring(0, trimmed.length() - 1) : trimmed;
     }
 
     private static String getJobUrl(JsonNode node) {

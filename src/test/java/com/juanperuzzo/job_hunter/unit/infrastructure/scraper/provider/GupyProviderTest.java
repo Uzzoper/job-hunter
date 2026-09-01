@@ -119,6 +119,35 @@ class GupyProviderTest {
     class EdgeCases {
 
         @Test
+        @DisplayName("extract_whenCareerPageUrlPresent_shouldSetCompanyWebsite - Scenario 10")
+        void extract_whenCareerPageUrlPresent_shouldSetCompanyWebsite() {
+            // Use the provider's real mapper (first constructor wires GupyProvider.mapNode)
+            var realMapperProvider = new GupyProvider(baseUrl, 5, List.of("desenvolvedor"), 20, retry);
+
+            stubFor(get(urlPathEqualTo("/api/v1/jobs"))
+                    .withQueryParam("jobName", equalTo("desenvolvedor"))
+                    .withQueryParam("limit", equalTo("20"))
+                    .willReturn(okJson("""
+                        {"data": [{
+                          "name": "Dev Java",
+                          "careerPageName": "TechCo",
+                          "jobUrl": "https://techco.gupy.io/jobs/123",
+                          "careerPageUrl": "https://techco.gupy.io",
+                          "publishedDate": "2026-07-01",
+                          "description": "Vaga"
+                        }]}
+                        """)));
+
+            var jobs = realMapperProvider.extract();
+            assertEquals(1, jobs.size());
+
+            var job = jobs.get(0);
+            assertEquals("https://techco.gupy.io/jobs/123", job.url(), "jobUrl should still win for url");
+            assertEquals("https://techco.gupy.io", job.metadata().get("companyWebsite"),
+                    "careerPageUrl should be stored as companyWebsite even when jobUrl exists");
+        }
+
+        @Test
         @DisplayName("extract should skip entries with blank URL")
         void extract_whenBlankUrl_shouldSkip() {
             stubFor(get(urlPathEqualTo("/api/v1/jobs"))

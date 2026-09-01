@@ -199,6 +199,11 @@ public class LinkedInScraperClient implements ExtractionStrategy {
         var metadata = new HashMap<String, String>();
         metadata.put("jobId", id);
 
+        var companyWebsite = node.path("companyWebsite").asText("");
+        if (!companyWebsite.isBlank()) {
+            metadata.put("companyWebsite", normalizeCompanyWebsite(companyWebsite));
+        }
+
         var requirements = node.path("requirements");
         if (requirements.isArray()) {
             var reqList = new ArrayList<String>();
@@ -260,6 +265,13 @@ public class LinkedInScraperClient implements ExtractionStrategy {
                 card.source(),
                 metadata
         );
+    }
+
+    /** Normalize a company website URL to a canonical form (no trailing slash). */
+    private static String normalizeCompanyWebsite(String url) {
+        if (url == null || url.isBlank()) return null;
+        var trimmed = url.trim();
+        return trimmed.endsWith("/") ? trimmed.substring(0, trimmed.length() - 1) : trimmed;
     }
 
     private void handleErrorResponse(int statusCode, byte[] body) {

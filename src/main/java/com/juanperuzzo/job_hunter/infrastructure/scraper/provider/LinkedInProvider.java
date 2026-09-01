@@ -394,6 +394,7 @@ public class LinkedInProvider implements com.juanperuzzo.job_hunter.infrastructu
         var description = extractDescriptionFromDetail(document);
         var seniority = extractSeniorityFromDetail(document);
         var workType = extractWorkTypeFromDetail(document);
+        var companyWebsite = extractCompanyWebsiteFromDetail(document);
 
         var metadata = new HashMap<>(job.metadata());
         if (!seniority.isEmpty()) {
@@ -401,6 +402,9 @@ public class LinkedInProvider implements com.juanperuzzo.job_hunter.infrastructu
         }
         if (!workType.isEmpty()) {
             metadata.put("workType", workType);
+        }
+        if (companyWebsite != null) {
+            metadata.put("companyWebsite", companyWebsite);
         }
         if (!location.isBlank()) {
             metadata.put("locationFilter", location);
@@ -423,6 +427,28 @@ public class LinkedInProvider implements com.juanperuzzo.job_hunter.infrastructu
                 job.source(),
                 metadata
         );
+    }
+
+    /**
+     * Scenario 11: parse the company website from a job detail page org link.
+     * Returns null when no org link is present.
+     */
+    private String extractCompanyWebsiteFromDetail(Document document) {
+        var orgLink = document.selectFirst("a.topcard__org-name-link, a[data-tracking-control-name=public_jobs_topcard-org-name]");
+        if (orgLink != null) {
+            var url = orgLink.absUrl("href");
+            if (!url.isBlank()) {
+                return normalizeCompanyWebsite(url);
+            }
+        }
+        return null;
+    }
+
+    /** Normalize a company website URL to a canonical form (no trailing slash). */
+    private static String normalizeCompanyWebsite(String url) {
+        if (url == null || url.isBlank()) return null;
+        var trimmed = url.trim();
+        return trimmed.endsWith("/") ? trimmed.substring(0, trimmed.length() - 1) : trimmed;
     }
 
     private String extractDescriptionFromDetail(Document document) {
