@@ -3,6 +3,7 @@ package com.juanperuzzo.job_hunter.infrastructure.scraper.normalizer;
 import com.juanperuzzo.job_hunter.application.port.out.NormalizerPort;
 import com.juanperuzzo.job_hunter.application.port.out.RawJob;
 import com.juanperuzzo.job_hunter.domain.model.Job;
+import org.jsoup.Jsoup;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -17,7 +18,7 @@ import java.util.regex.Pattern;
  * Centralized normalizer that transforms a {@link RawJob} into a domain {@link Job}.
  * <p>
  * Pipeline: clean → normalize → parseDate → matchKeywords → isExcluded →
- * matchLocation → filterByAge → decode → mapToJob.
+ * matchLocation → filterByAge → decode → extract (mailto → deobfuscate → regex) → mapToJob.
  */
 public class JobNormalizer implements NormalizerPort {
 
@@ -40,6 +41,15 @@ public class JobNormalizer implements NormalizerPort {
     private static final List<String> PLACEHOLDER_DOMAINS = List.of(
             "example.com", "exemplo.com", "test.com", "domain.com",
             "yourdomain.com", "seuemail.com");
+
+    private static final Pattern OBFUSCATED_AT_BRACKET = Pattern.compile("\\s*\\[at\\]\\s*", Pattern.CASE_INSENSITIVE);
+    private static final Pattern OBFUSCATED_AT_PARENTHESES = Pattern.compile("\\s*\\(at\\)\\s*", Pattern.CASE_INSENSITIVE);
+    private static final Pattern OBFUSCATED_AT_WORD = Pattern.compile("\\s+at\\s+", Pattern.CASE_INSENSITIVE);
+    private static final Pattern OBFUSCATED_DOT_BRACKET = Pattern.compile("\\s*\\[dot\\]\\s*", Pattern.CASE_INSENSITIVE);
+    private static final Pattern OBFUSCATED_DOT_PARENTHESES = Pattern.compile("\\s*\\(dot\\)\\s*", Pattern.CASE_INSENSITIVE);
+    private static final Pattern OBFUSCATED_ARROBA_BRACKET = Pattern.compile("\\s*\\[arroba\\]\\s*", Pattern.CASE_INSENSITIVE);
+    private static final Pattern OBFUSCATED_ARROBA_PARENTHESES = Pattern.compile("\\s*\\(arroba\\)\\s*", Pattern.CASE_INSENSITIVE);
+    private static final Pattern ZERO_WIDTH_CHARS = Pattern.compile("[\\u200B\\u200C\\u200D\\uFEFF]");
 
     private final DateParser dateParser;
     private final List<String> keywords;
@@ -105,8 +115,10 @@ public class JobNormalizer implements NormalizerPort {
         var company = raw.company() != null ? cleanText(raw.company()) : "";
         var description = raw.description() != null ? decodeEntities(raw.description()) : "";
         var contactEmail = extractContactEmail(raw.title(), raw.description());
+        var companyWebsite = normalizeCompanyWebsite(raw.metadata().get("companyWebsite"));
 
-        return new Job(null, cleanText(raw.title()), company, raw.url(), description, postedDate, raw.source(), contactEmail);
+        return new Job(null, cleanText(raw.title()), company, raw.url(), description, postedDate, raw.source(),
+                contactEmail, companyWebsite);
     }
 
     public List<Job> normalizeAll(List<RawJob> rawJobs) {
@@ -154,20 +166,100 @@ public class JobNormalizer implements NormalizerPort {
                 .replace("&quot;", "\"")
                 .replace("&#39;", "'")
                 .replace("&nbsp;", " ")
+                .replace("&#64;", "@")
+                .replace("&#x40;", "@")
                 .replaceAll("&[a-zA-Z]+;", "?");
     }
 
     /**
-     * Extract a contact email from title or description.
-     * Checks title first, then description.
-     * Returns null if no valid email is found.
+     * Extract a contact email from title or description, following the P0 priority:
+     * <ol>
+     *   <li>{@code mailto:} links first (DOM order, title before description)</li>
+     *   <li>regex over the decoded + parsed text, on a de-obfuscated copy (title before description)</li>
+     * </ol>
+     * Returns null if no valid email is found. Existing filters
+     * (noreply/donotreply/no-reply/apply + placeholder domains) still apply.
      */
     static String extractContactEmail(String title, String description) {
-        var candidate = extractFirstEmail(title);
+        var mailto = extractMailto(title);
+        if (mailto == null && description != null) {
+            mailto = extractMailto(description);
+        }
+        if (mailto != null) {
+            return mailto;
+        }
+
+        var candidate = extractFirstEmail(deobfuscate(toPlainText(title)));
         if (candidate == null && description != null) {
-            candidate = extractFirstEmail(description);
+            candidate = extractFirstEmail(deobfuscate(toPlainText(description)));
         }
         return candidate;
+    }
+
+    /**
+     * Scan {@code a[href^=mailto:]} anchors in DOM order and return the first
+     * mailto recipient that passes {@link #isContactEmail(String)}.
+     */
+    private static String extractMailto(String html) {
+        if (html == null || html.isBlank()) return null;
+
+        var doc = Jsoup.parse(html);
+        for (var anchor : doc.select("a[href^=mailto:]")) {
+            var href = anchor.attr("href");
+            if (href == null || href.isBlank()) continue;
+
+            var email = href.substring("mailto:".length()).trim();
+            if (email.isEmpty()) continue;
+
+            // Drop query params commonly appended to mailto (e.g. ?subject=...)
+            var queryIndex = email.indexOf('?');
+            if (queryIndex >= 0) {
+                email = email.substring(0, queryIndex).trim();
+            }
+
+            if (isContactEmail(email)) {
+                return email;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Reduce raw HTML to its visible text: decode entities first, then parse with Jsoup
+     * so email-shaped strings inside attributes (e.g. CSS classes) are never matched.
+     */
+    private static String toPlainText(String html) {
+        if (html == null || html.isBlank()) return "";
+        return Jsoup.parse(decodeEntities(html)).text();
+    }
+
+    /**
+     * Normalize a text copy for extraction: turn common obfuscations
+     * ([at], (at), padded AT, [dot], (dot), [arroba], (arroba), numeric entities)
+     * into their real separators and strip zero-width characters.
+     */
+    private static String deobfuscate(String text) {
+        if (text == null || text.isBlank()) return "";
+
+        var result = OBFUSCATED_AT_BRACKET.matcher(text).replaceAll("@");
+        result = OBFUSCATED_AT_PARENTHESES.matcher(result).replaceAll("@");
+        result = OBFUSCATED_AT_WORD.matcher(result).replaceAll("@");
+        result = OBFUSCATED_DOT_BRACKET.matcher(result).replaceAll(".");
+        result = OBFUSCATED_DOT_PARENTHESES.matcher(result).replaceAll(".");
+        result = OBFUSCATED_ARROBA_BRACKET.matcher(result).replaceAll("@");
+        result = OBFUSCATED_ARROBA_PARENTHESES.matcher(result).replaceAll("@");
+
+        return ZERO_WIDTH_CHARS.matcher(result).replaceAll("");
+    }
+
+    /**
+     * Copy the provider-supplied company website into the domain model.
+     * Returns null for absent or blank metadata.
+     */
+    private static String normalizeCompanyWebsite(String website) {
+        if (website == null) return null;
+        var trimmed = website.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 
     private static String extractFirstEmail(String text) {

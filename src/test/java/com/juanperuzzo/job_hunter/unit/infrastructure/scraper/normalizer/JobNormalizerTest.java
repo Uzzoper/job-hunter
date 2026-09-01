@@ -468,6 +468,95 @@ class JobNormalizerTest {
     }
 
     @Nested
+    @DisplayName("normalize - email enrichment extraction (P0)")
+    class EmailEnrichmentExtraction {
+
+        @BeforeEach
+        void setUp() {
+            // "developer" covers the Scenario 7 title, "desenvolvedor" the rest
+            normalizer = new JobNormalizer(dateParser, List.of("developer", "desenvolvedor"),
+                    List.of(), List.of(), 90, FIXED_CLOCK);
+        }
+
+        @Test
+        @DisplayName("should prefer mailto over text email regardless of position")
+        void normalize_whenMailtoPresent_shouldPreferMailtoOverTextEmail() {
+            var job = normalizer.normalize(new RawJob(
+                    "Desenvolvedor Java", "Company", "https://example.com/job",
+                    "Contact jobs@techcorp.com or <a href=\"mailto:rh@techcorp.com\">Apply</a>",
+                    "2026-07-01", null, null, "test", null));
+            assertNotNull(job);
+            assertEquals("rh@techcorp.com", job.contactEmail());
+        }
+
+        @Test
+        @DisplayName("should decode HTML entities before extracting")
+        void normalize_whenHtmlEntities_shouldDecodeBeforeExtract() {
+            var job = normalizer.normalize(new RawJob(
+                    "Desenvolvedor Java", "Company", "https://example.com/job",
+                    "Send to hiring&#64;techcorp.com or hiring&#x40;techcorp.com",
+                    "2026-07-01", null, null, "test", null));
+            assertNotNull(job);
+            assertEquals("hiring@techcorp.com", job.contactEmail());
+        }
+
+        @Test
+        @DisplayName("should deobfuscate [at], [dot], [arroba] and (at)/(dot) then extract")
+        void normalize_whenObfuscatedAtDotArroba_shouldDeobfuscateAndExtract() {
+            var job = normalizer.normalize(new RawJob(
+                    "Desenvolvedor Java", "Company", "https://example.com/job",
+                    "Contact rh [at] techcorp [dot] com or rh [arroba] techcorp.com or rh(at)techcorp(dot)com",
+                    "2026-07-01", null, null, "test", null));
+            assertNotNull(job);
+            assertEquals("rh@techcorp.com", job.contactEmail());
+        }
+
+        @Test
+        @DisplayName("should strip zero-width chars before extracting")
+        void normalize_whenZeroWidthChars_shouldStripAndExtract() {
+            var job = normalizer.normalize(new RawJob(
+                    "Desenvolvedor Java", "Company", "https://example.com/job",
+                    "Contact rh\u200B@techcorp.com",
+                    "2026-07-01", null, null, "test", null));
+            assertNotNull(job);
+            assertEquals("rh@techcorp.com", job.contactEmail());
+        }
+
+        @Test
+        @DisplayName("should ignore CSS class false positives and extract mailto")
+        void normalize_whenHtmlWithCssFalsePositive_shouldIgnoreClassAndExtractMailto() {
+            var job = normalizer.normalize(new RawJob(
+                    "Desenvolvedor Java", "Company", "https://example.com/job",
+                    "<div class=\"user@company.com\">Contact apply@company.com <a href=\"mailto:rh@company.com\">RH</a></div>",
+                    "2026-07-01", null, null, "test", null));
+            assertNotNull(job);
+            assertEquals("rh@company.com", job.contactEmail());
+        }
+
+        @Test
+        @DisplayName("should keep applying noreply/apply/placeholder filters")
+        void normalize_whenApplyAndNoreply_shouldFilterAndReturnNull() {
+            var job = normalizer.normalize(new RawJob(
+                    "Desenvolvedor Java", "Company", "https://example.com/job",
+                    "noreply@company.com, donotreply@company.com, no-reply@company.com, apply@company.com, test@example.com",
+                    "2026-07-01", null, null, "test", null));
+            assertNotNull(job);
+            assertNull(job.contactEmail());
+        }
+
+        @Test
+        @DisplayName("should prefer description mailto over title text email")
+        void normalize_whenTitleHasTextEmailButDescriptionMailto_shouldPreferMailto() {
+            var job = normalizer.normalize(new RawJob(
+                    "Developer — jobs@company.com", "Company", "https://example.com/job",
+                    "<a href=\"mailto:rh@company.com\">RH</a>",
+                    "2026-07-01", null, null, "test", null));
+            assertNotNull(job);
+            assertEquals("rh@company.com", job.contactEmail());
+        }
+    }
+
+    @Nested
     @DisplayName("normalizeAll")
     class NormalizeAll {
 
