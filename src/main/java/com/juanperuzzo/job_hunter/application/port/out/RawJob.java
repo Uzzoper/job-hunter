@@ -8,6 +8,12 @@ import static java.util.Objects.requireNonNull;
 /**
  * Intermediate DTO between provider extraction and domain normalization.
  * All fields nullable except url.
+ * <p>
+ * Metadata keys (see email-enrichment spec):
+ * <ul>
+ *   <li>{@code companyWebsite} — absolute company site URL (nullable), copied to {@code Job.companyWebsite}</li>
+ *   <li>{@code detailFailed} — {@code "true"} when a provider fell back to its card snippet after a detail fetch failure</li>
+ * </ul>
  */
 public record RawJob(
         String title,
