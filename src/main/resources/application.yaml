@@ -65,6 +65,9 @@ scraper:
   rate-limiter:
     default-permits-per-second: 5
     default-burst: 3
+  rest-client:
+    timeout-seconds: 10
+    max-connections: 20
   normalizer:
     max-age-days: 90
   gupy:
@@ -77,6 +80,16 @@ scraper:
     keywords: desenvolvedor,programador,estágio,junior,ti,tecnologia,dev,software,analista
     max-pages: 3
     timeout-seconds: 10
+    detail-concurrency: 2
+    detail-timeout-seconds: 5
+  enricher:
+    enabled: true
+    timeout-seconds: 5
+    max-pages-per-company: 2
+    concurrency: 2
+    per-domain-permits-per-second: 1
+    cache-ttl-hours: 24
+    contact-paths: /contato,/contact,/trabalhe-conosco,/carreiras
   linkedin:
     enabled: true
     mode: service          # "service" (Playwright) | "jsoup" (current, fallback)

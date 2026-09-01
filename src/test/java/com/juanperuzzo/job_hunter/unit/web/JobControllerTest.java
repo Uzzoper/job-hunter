@@ -3,11 +3,13 @@ package com.juanperuzzo.job_hunter.unit.web;
 import com.juanperuzzo.job_hunter.application.port.in.AnalyzeJobUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.ApproveDraftUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.FetchJobsUseCase;
+import com.juanperuzzo.job_hunter.application.port.in.FetchResult;
 import com.juanperuzzo.job_hunter.application.port.in.FetchSourceJobsUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.GenerateEmailUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.GetEmailDraftUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.GetJobUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.ListJobsUseCase;
+import com.juanperuzzo.job_hunter.application.port.in.ProviderFetchStats;
 import com.juanperuzzo.job_hunter.application.port.in.SendEmailUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.TailorResumeUseCase;
 import com.juanperuzzo.job_hunter.application.port.out.TokenProvider;
@@ -265,25 +267,44 @@ class JobControllerTest {
     }
 
     @Test
-    @DisplayName("fetchJobs should return 200 when fetch completes successfully")
+    @DisplayName("fetchJobs should return 200 with FetchResult stats")
     void fetchJobs_whenSuccessful_shouldReturn200() throws Exception {
         authenticateAs(1L);
 
+        var result = new FetchResult(
+                3, 2, 1,
+                List.of(new ProviderFetchStats("gupy", 2, 1, 1, 0, null),
+                        new ProviderFetchStats("infojobs", 1, 1, 0, 0, null)));
+        when(fetchJobsUseCase.fetchAndSave()).thenReturn(result);
+
         mockMvc.perform(post("/api/jobs/fetch"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.message").value("Fetch completed successfully"));
+                .andExpect(jsonPath("$.totalFetched").value(3))
+                .andExpect(jsonPath("$.totalSaved").value(2))
+                .andExpect(jsonPath("$.totalWithEmail").value(1))
+                .andExpect(jsonPath("$.perProvider.length()").value(2))
+                .andExpect(jsonPath("$.perProvider[0].source").value("gupy"))
+                .andExpect(jsonPath("$.perProvider[0].fetched").value(2))
+                .andExpect(jsonPath("$.perProvider[1].source").value("infojobs"));
 
         verify(fetchJobsUseCase).fetchAndSave();
     }
 
     @Test
-    @DisplayName("fetchLinkedInJobs should return 200 when fetch completes successfully")
+    @DisplayName("fetchLinkedInJobs should return 200 with FetchResult for the single source")
     void fetchLinkedInJobs_whenValidRequest_shouldReturnSavedJobCount() throws Exception {
         authenticateAs(1L);
 
+        var result = new FetchResult(
+                1, 1, 0,
+                List.of(new ProviderFetchStats("linkedin", 1, 1, 0, 0, null)));
+        when(fetchSourceJobsUseCase.fetchAndSave("linkedin")).thenReturn(result);
+
         mockMvc.perform(post("/api/jobs/fetch/linkedin"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.message").value("LinkedIn fetch completed successfully"));
+                .andExpect(jsonPath("$.totalFetched").value(1))
+                .andExpect(jsonPath("$.totalSaved").value(1))
+                .andExpect(jsonPath("$.perProvider[0].source").value("linkedin"));
 
         verify(fetchSourceJobsUseCase).fetchAndSave("linkedin");
     }
