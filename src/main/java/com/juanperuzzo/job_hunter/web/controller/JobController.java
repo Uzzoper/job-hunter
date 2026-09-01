@@ -15,6 +15,7 @@ import com.juanperuzzo.job_hunter.domain.model.Job;
 import com.juanperuzzo.job_hunter.domain.model.JobAnalysis;
 import com.juanperuzzo.job_hunter.application.port.in.CurrentUserProvider;
 import com.juanperuzzo.job_hunter.web.dto.EmailDraftResponse;
+import com.juanperuzzo.job_hunter.web.dto.FetchResultResponse;
 import com.juanperuzzo.job_hunter.web.dto.JobResponse;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -125,15 +126,15 @@ public class JobController {
     }
 
     @PostMapping("/fetch")
-    public ResponseEntity<?> fetchJobs() {
-        fetchJobsUseCase.fetchAndSave();
-        return ResponseEntity.ok(java.util.Map.of("message", "Fetch completed successfully"));
+    public ResponseEntity<FetchResultResponse> fetchJobs() {
+        var result = fetchJobsUseCase.fetchAndSave();
+        return ResponseEntity.ok(FetchResultResponse.from(result));
     }
 
     @PostMapping("/fetch/linkedin")
-    public ResponseEntity<?> fetchLinkedInJobs() {
-        fetchSourceJobsUseCase.fetchAndSave("linkedin");
-        return ResponseEntity.ok(java.util.Map.of("message", "LinkedIn fetch completed successfully"));
+    public ResponseEntity<FetchResultResponse> fetchLinkedInJobs() {
+        var result = fetchSourceJobsUseCase.fetchAndSave("linkedin");
+        return ResponseEntity.ok(FetchResultResponse.from(result));
     }
 
     @PostMapping("/{id}/email/approve")

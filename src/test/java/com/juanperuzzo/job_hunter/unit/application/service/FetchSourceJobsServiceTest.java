@@ -18,6 +18,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.time.LocalDate;
 import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
@@ -38,7 +40,7 @@ class FetchSourceJobsServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new FetchSourceJobsService(sourceFetchPort, jobRepository, normalizer);
+        service = new FetchSourceJobsService(sourceFetchPort, jobRepository, normalizer, null);
     }
 
     @Nested
@@ -61,9 +63,14 @@ class FetchSourceJobsServiceTest {
             when(normalizer.normalize(rawJob)).thenReturn(job);
             when(jobRepository.existsByUrl("https://example.com/job/1")).thenReturn(false);
 
-            service.fetchAndSave("gupy");
+            var result = service.fetchAndSave("gupy");
 
             verify(jobRepository, times(1)).save(job);
+            assertEquals(1, result.totalFetched());
+            assertEquals(1, result.totalSaved());
+            assertEquals(1, result.perProvider().size());
+            assertEquals("gupy", result.perProvider().get(0).source());
+            assertEquals(null, result.perProvider().get(0).error());
         }
     }
 
@@ -72,17 +79,17 @@ class FetchSourceJobsServiceTest {
     class ProviderFailsTests {
 
         @Test
-        @DisplayName("fetchAndSave should throw ScraperException when source fetch fails")
-        void fetchAndSave_whenProviderFails_shouldThrowScraperException() {
+        @DisplayName("fetchAndSave should capture the error in FetchResult instead of failing the request")
+        void fetchAndSave_whenProviderFails_shouldReportError() {
             when(sourceFetchPort.fetch("gupy")).thenThrow(new ScraperException("Failed to fetch from gupy"));
 
-            try {
-                service.fetchAndSave("gupy");
-            } catch (ScraperException e) {
-                // expected
-            }
+            var result = service.fetchAndSave("gupy");
 
             verify(jobRepository, never()).save(any());
+            assertEquals(0, result.totalSaved());
+            assertEquals(1, result.perProvider().size());
+            assertNotNull(result.perProvider().get(0).error());
+            assertEquals("Failed to fetch from gupy", result.perProvider().get(0).error());
         }
     }
 
@@ -95,9 +102,37 @@ class FetchSourceJobsServiceTest {
         void fetchAndSave_whenEmpty_shouldReturnEmptyList() {
             when(sourceFetchPort.fetch("gupy")).thenReturn(List.of());
 
-            service.fetchAndSave("gupy");
+            var result = service.fetchAndSave("gupy");
 
             verify(jobRepository, never()).save(any());
+            assertEquals(0, result.totalFetched());
+            assertEquals(0, result.totalSaved());
+            assertEquals(1, result.perProvider().size());
+        }
+    }
+
+    @Nested
+    @DisplayName("Scenario 17: withEmail and detailFailedCount reporting")
+    class StatsTests {
+
+        @Test
+        @DisplayName("fetchAndSave should report withEmail count when enriched jobs carry emails")
+        void fetchAndSave_whenJobsHaveEmail_shouldCountWithEmail() {
+            var rawWithoutEmail = new RawJob(
+                    "Java Developer", "Company A", "https://example.com/job/1",
+                    "Description", "2025-01-01", null, null, "gupy", null);
+            var jobWithEmail = new Job(null, "Java Developer", "Company A",
+                    "https://example.com/job/1", "Description",
+                    LocalDate.now(), "gupy", "rh@acme.com", null);
+
+            when(sourceFetchPort.fetch("gupy")).thenReturn(List.of(rawWithoutEmail));
+            when(normalizer.normalize(rawWithoutEmail)).thenReturn(jobWithEmail);
+            when(jobRepository.existsByUrl("https://example.com/job/1")).thenReturn(false);
+
+            var result = service.fetchAndSave("gupy");
+
+            assertEquals(1, result.totalWithEmail());
+            assertEquals(1, result.perProvider().get(0).withEmail());
         }
     }
 }

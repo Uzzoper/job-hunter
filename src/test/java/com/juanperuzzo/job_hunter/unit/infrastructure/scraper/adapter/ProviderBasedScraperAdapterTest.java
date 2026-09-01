@@ -1,6 +1,7 @@
 package com.juanperuzzo.job_hunter.unit.infrastructure.scraper.adapter;
 
 import com.juanperuzzo.job_hunter.application.port.out.RawJob;
+import com.juanperuzzo.job_hunter.domain.model.Job;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.adapter.ProviderBasedScraperAdapter;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.normalizer.DateParser;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.normalizer.JobNormalizer;
@@ -51,7 +52,7 @@ class ProviderBasedScraperAdapterTest {
                     null, noopRateLimiter, createNormalizer(List.of("dev2")));
 
             adapter = new ProviderBasedScraperAdapter(registry);
-            var jobs = adapter.fetch();
+            var jobs = adapter.fetch().jobs();
 
             assertEquals(2, jobs.size());
         }
@@ -65,7 +66,7 @@ class ProviderBasedScraperAdapterTest {
                     null, noopRateLimiter, createNormalizer(List.of("dev1")));
 
             adapter = new ProviderBasedScraperAdapter(registry);
-            var jobs = adapter.fetch();
+            var jobs = adapter.fetch().jobs();
 
             assertEquals(1, jobs.size());
         }
@@ -74,7 +75,8 @@ class ProviderBasedScraperAdapterTest {
         @DisplayName("fetch should return empty when no providers registered")
         void fetch_whenNoProviders_shouldReturnEmpty() {
             adapter = new ProviderBasedScraperAdapter(registry);
-            assertTrue(adapter.fetch().isEmpty());
+            assertTrue(adapter.fetch().jobs().isEmpty());
+            assertTrue(adapter.fetch().perProvider().isEmpty());
         }
     }
 
@@ -94,9 +96,15 @@ class ProviderBasedScraperAdapterTest {
                     null, noopRateLimiter, createNormalizer(List.of("dev")));
 
             adapter = new ProviderBasedScraperAdapter(registry);
-            var jobs = adapter.fetch();
+            var result = adapter.fetch();
 
-            assertEquals(1, jobs.size());
+            assertEquals(1, result.jobs().size());
+
+            var failing = result.perProvider().stream()
+                    .filter(s -> s.source().equals("failing")).findFirst().orElseThrow();
+            assertEquals(0, failing.fetched());
+            assertNotNull(failing.error());
+            assertEquals("fail", failing.error());
         }
 
         @Test
@@ -113,9 +121,11 @@ class ProviderBasedScraperAdapterTest {
             }, null, noopRateLimiter, createNormalizer(List.of()));
 
             adapter = new ProviderBasedScraperAdapter(registry);
-            var jobs = adapter.fetch();
+            var result = adapter.fetch();
 
-            assertTrue(jobs.isEmpty());
+            assertTrue(result.jobs().isEmpty());
+            assertEquals(2, result.perProvider().size());
+            assertTrue(result.perProvider().stream().allMatch(s -> s.error() != null));
         }
 
         @Test
@@ -129,14 +139,71 @@ class ProviderBasedScraperAdapterTest {
                             List.of(), List.of(), 90, FIXED_CLOCK));
 
             adapter = new ProviderBasedScraperAdapter(registry);
-            var jobs = adapter.fetch();
+            var jobs = adapter.fetch().jobs();
 
             assertEquals(1, jobs.size());
         }
     }
 
+    @Nested
+    @DisplayName("Scenario 17: per-provider fetch statistics")
+    class FetchStats {
+
+        @Test
+        @DisplayName("fetch should report fetched and detailFailedCount per provider")
+        void fetch_whenMixedProviders_shouldReturnPerProviderStats() {
+            registry.register(createStub("p1",
+                            rawWithMetadata("Dev1", "https://a.com/1", null),
+                            rawWithMetadata("Dev2", "https://a.com/2", "true")),
+                    null, noopRateLimiter, createNormalizer(List.of("dev1", "dev2")));
+            registry.register(createStub("p2", raw("Dev3", "https://a.com/3")),
+                    null, noopRateLimiter, createNormalizer(List.of("dev3")));
+
+            adapter = new ProviderBasedScraperAdapter(registry);
+            var result = adapter.fetch();
+
+            var p1 = result.perProvider().stream()
+                    .filter(s -> s.source().equals("p1")).findFirst().orElseThrow();
+            assertEquals(2, p1.fetched());
+            assertEquals(1, p1.detailFailedCount());
+            assertNull(p1.error());
+
+            var p2 = result.perProvider().stream()
+                    .filter(s -> s.source().equals("p2")).findFirst().orElseThrow();
+            assertEquals(1, p2.fetched());
+            assertEquals(0, p2.detailFailedCount());
+        }
+
+        @Test
+        @DisplayName("fetch should enrich jobs through the company site enricher before dedup")
+        void fetch_whenEnricherPresent_shouldApplyEnrichment() {
+            registry.register(createStub("p1", raw("Dev1", "https://a.com/1")),
+                    null, noopRateLimiter, createNormalizer(List.of("dev1")));
+
+            adapter = new ProviderBasedScraperAdapter(registry, job -> {
+                if (job.contactEmail() == null) {
+                    return new Job(job.id(), job.title(), job.company(), job.url(), job.description(),
+                            job.postedAt(), job.source(), "enriched@company.com", job.companyWebsite());
+                }
+                return job;
+            });
+            var jobs = adapter.fetch().jobs();
+
+            assertEquals(1, jobs.size());
+            assertEquals("enriched@company.com", jobs.get(0).contactEmail());
+        }
+    }
+
     private static RawJob raw(String title, String url) {
-        return new RawJob(title, "Co", url, "desc", "2026-07-01", null, null, "test", null);
+        return rawWithMetadata(title, url, null);
+    }
+
+    private static RawJob rawWithMetadata(String title, String url, String detailFailed) {
+        var metadata = new java.util.HashMap<String, String>();
+        if (detailFailed != null) {
+            metadata.put("detailFailed", detailFailed);
+        }
+        return new RawJob(title, "Co", url, "desc", "2026-07-01", null, null, "test", metadata);
     }
 
     private static ExtractionStrategy createStub(String id, RawJob... jobs) {

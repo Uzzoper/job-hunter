@@ -6,6 +6,7 @@ import com.juanperuzzo.job_hunter.application.port.out.AiPort;
 import com.juanperuzzo.job_hunter.application.port.out.EmailDraftRepository;
 import com.juanperuzzo.job_hunter.application.port.out.EmailSenderPort;
 import com.juanperuzzo.job_hunter.application.port.out.JobRepository;
+import com.juanperuzzo.job_hunter.application.port.out.CompanySiteEnrichmentPort;
 import com.juanperuzzo.job_hunter.application.port.out.NormalizerPort;
 import com.juanperuzzo.job_hunter.application.port.out.PdfRendererPort;
 import com.juanperuzzo.job_hunter.application.port.out.ScraperPort;
@@ -35,15 +36,20 @@ import com.juanperuzzo.job_hunter.application.service.TemplateEmailService;
 import com.juanperuzzo.job_hunter.application.service.UserProfileService;
 import com.juanperuzzo.job_hunter.infrastructure.security.JwtTokenService;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.retry.ExponentialBackoffRetry;
+import com.juanperuzzo.job_hunter.infrastructure.scraper.ratelimit.RateLimiter;
+import com.juanperuzzo.job_hunter.infrastructure.scraper.ratelimit.TokenBucketRateLimiter;
+import com.juanperuzzo.job_hunter.infrastructure.scraper.strategy.ExtractionStrategy;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.context.annotation.Primary;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.web.client.RestClient;
 
 import java.time.Clock;
 import java.time.Duration;
@@ -52,6 +58,7 @@ import java.util.Optional;
 import java.util.regex.Pattern;
 
 import com.juanperuzzo.job_hunter.infrastructure.scraper.adapter.ProviderBasedScraperAdapter;
+import com.juanperuzzo.job_hunter.infrastructure.scraper.enricher.CompanySiteEnricher;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.normalizer.DateParser;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.normalizer.JobNormalizer;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.client.LinkedInScraperClient;
@@ -59,9 +66,6 @@ import com.juanperuzzo.job_hunter.infrastructure.scraper.provider.GupyProvider;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.provider.InfoJobsProvider;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.provider.LinkedInProvider;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.provider.ProviderRegistry;
-import com.juanperuzzo.job_hunter.infrastructure.scraper.ratelimit.RateLimiter;
-import com.juanperuzzo.job_hunter.infrastructure.scraper.ratelimit.TokenBucketRateLimiter;
-import com.juanperuzzo.job_hunter.infrastructure.scraper.strategy.ExtractionStrategy;
 
 @Configuration
 @EnableConfigurationProperties(LinkedInScraperProperties.class)
@@ -91,6 +95,55 @@ public class AppConfig {
     @Bean
     public DateParser dateParser() {
         return new DateParser(Clock.systemUTC());
+    }
+
+    /**
+     * Shared {@link RestClient} used by scraping infra (connection timeouts from
+     * {@code scraper.rest-client.timeout-seconds}). Providers may keep their own
+     * per-call clients; this bean serves the company-site enricher and future use.
+     */
+    @Bean
+    public RestClient scraperRestClient(
+            @Value("${scraper.rest-client.timeout-seconds:10}") int timeoutSeconds) {
+        var requestFactory = new SimpleClientHttpRequestFactory();
+        requestFactory.setConnectTimeout(timeoutSeconds * 1000);
+        requestFactory.setReadTimeout(timeoutSeconds * 1000);
+        return RestClient.builder()
+                .requestFactory(requestFactory)
+                .defaultHeader("User-Agent", "JobHunter/1.0")
+                .build();
+    }
+
+    /**
+     * Per-domain rate limiter for the company-site enricher (1 req/s per domain,
+     * burst 1) — email-enrichment spec Scenario 14. Distinct from the provider-wide
+     * {@link RateLimiter} bean so enricher throttling never interferes with provider calls.
+     */
+    @Bean
+    public RateLimiter enricherRateLimiter(
+            @Value("${scraper.enricher.per-domain-permits-per-second:1}") double permitsPerSecond) {
+        return new TokenBucketRateLimiter(permitsPerSecond, 1, java.util.Map.of());
+    }
+
+    @Bean
+    public CompanySiteEnricher companySiteEnricher(
+            RestClient scraperRestClient,
+            ExponentialBackoffRetry exponentialBackoffRetry,
+            @Qualifier("enricherRateLimiter") RateLimiter enricherRateLimiter,
+            @Value("${scraper.enricher.enabled:true}") boolean enabled,
+            @Value("${scraper.enricher.concurrency:2}") int concurrency,
+            @Value("${scraper.enricher.max-pages-per-company:2}") int maxPages,
+            @Value("${scraper.enricher.cache-ttl-hours:24}") int cacheTtlHours,
+            @Value("#{'${scraper.enricher.contact-paths:/contato,/contact,/trabalhe-conosco,/carreiras}'.split(',')}") List<String> contactPaths) {
+        return new CompanySiteEnricher(
+                scraperRestClient,
+                exponentialBackoffRetry,
+                enricherRateLimiter,
+                enabled,
+                concurrency,
+                maxPages,
+                Duration.ofHours(cacheTtlHours),
+                contactPaths);
     }
 
     @Bean
@@ -189,8 +242,10 @@ public class AppConfig {
 
     @Bean
     @Primary
-    public ProviderBasedScraperAdapter providerBasedScraperAdapter(ProviderRegistry providerRegistry) {
-        return new ProviderBasedScraperAdapter(providerRegistry);
+    public ProviderBasedScraperAdapter providerBasedScraperAdapter(
+            ProviderRegistry providerRegistry,
+            CompanySiteEnricher companySiteEnricher) {
+        return new ProviderBasedScraperAdapter(providerRegistry, companySiteEnricher);
     }
 
     @Bean
@@ -229,8 +284,8 @@ public class AppConfig {
     }
 
     @Bean
-    public FetchSourceJobsService fetchSourceJobsService(SourceFetchPort sourceFetchPort, JobRepository jobRepository, @Qualifier("linkedinNormalizerPort") NormalizerPort normalizerPort) {
-        return new FetchSourceJobsService(sourceFetchPort, jobRepository, normalizerPort);
+    public FetchSourceJobsService fetchSourceJobsService(SourceFetchPort sourceFetchPort, JobRepository jobRepository, @Qualifier("linkedinNormalizerPort") NormalizerPort normalizerPort, CompanySiteEnricher companySiteEnricher) {
+        return new FetchSourceJobsService(sourceFetchPort, jobRepository, normalizerPort, companySiteEnricher);
     }
 
     @Bean
