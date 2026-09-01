@@ -2,6 +2,9 @@ package com.juanperuzzo.job_hunter.infrastructure.scraper.provider;
 
 import com.juanperuzzo.job_hunter.application.port.out.RawJob;
 import com.juanperuzzo.job_hunter.domain.exception.ScraperException;
+import com.juanperuzzo.job_hunter.infrastructure.scraper.parser.JsonLdParser;
+import com.juanperuzzo.job_hunter.infrastructure.scraper.ratelimit.RateLimiter;
+import com.juanperuzzo.job_hunter.infrastructure.scraper.ratelimit.TokenBucketRateLimiter;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.retry.ExponentialBackoffRetry;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.strategy.ExtractionStrategy;
 import org.jsoup.nodes.Document;
@@ -14,10 +17,17 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Semaphore;
 
 public class InfoJobsProvider implements ExtractionStrategy {
 
     private static final Logger log = LoggerFactory.getLogger(InfoJobsProvider.class);
+
+    private static final int DEFAULT_DETAIL_CONCURRENCY = 2;
+    private static final int DEFAULT_DETAIL_TIMEOUT_SECONDS = 5;
+    private static final String DETAIL_RATE_LIMIT_KEY = "infojobs-detail";
 
     private final String providerId;
     private final String baseUrl;
@@ -25,6 +35,9 @@ public class InfoJobsProvider implements ExtractionStrategy {
     private final List<String> keywords;
     private final int maxPages;
     private final ExponentialBackoffRetry retry;
+    private final int detailConcurrency;
+    private final int detailTimeoutSeconds;
+    private final RateLimiter rateLimiter;
 
     public InfoJobsProvider(
             String baseUrl,
@@ -32,12 +45,29 @@ public class InfoJobsProvider implements ExtractionStrategy {
             List<String> keywords,
             int maxPages,
             ExponentialBackoffRetry retry) {
+        this(baseUrl, timeoutSeconds, keywords, maxPages, retry,
+                DEFAULT_DETAIL_CONCURRENCY, DEFAULT_DETAIL_TIMEOUT_SECONDS,
+                new TokenBucketRateLimiter(1.0, 1, null));
+    }
+
+    public InfoJobsProvider(
+            String baseUrl,
+            int timeoutSeconds,
+            List<String> keywords,
+            int maxPages,
+            ExponentialBackoffRetry retry,
+            int detailConcurrency,
+            int detailTimeoutSeconds,
+            RateLimiter rateLimiter) {
         this.providerId = "infojobs";
         this.baseUrl = removeTrailingSlash(baseUrl);
         this.timeoutSeconds = timeoutSeconds;
         this.keywords = keywords;
         this.maxPages = maxPages;
         this.retry = retry;
+        this.detailConcurrency = detailConcurrency;
+        this.detailTimeoutSeconds = detailTimeoutSeconds;
+        this.rateLimiter = rateLimiter;
     }
 
     @Override
@@ -54,7 +84,7 @@ public class InfoJobsProvider implements ExtractionStrategy {
                 var uri = buildSearchUri(keyword, page);
                 try {
                     var jobs = retry.execute(() -> {
-                        var html = fetchHtml(uri);
+                        var html = fetchHtml(uri, timeoutSeconds);
                         if (isBotChallenge(html)) {
                             throw new ScraperException("InfoJobs returned a bot challenge page");
                         }
@@ -72,12 +102,176 @@ public class InfoJobsProvider implements ExtractionStrategy {
             }
         }
 
-        var result = List.copyOf(uniqueJobs.values());
-        log.info("{}: total unique jobs fetched: {}", providerId, result.size());
-        return result;
+        var jobs = List.copyOf(uniqueJobs.values());
+        var enriched = enrichWithDetails(jobs);
+        log.info("{}: total unique jobs fetched: {}", providerId, enriched.size());
+        return enriched;
     }
 
-    private String fetchHtml(URI uri) {
+    /**
+     * Fetch each job's detail page concurrently (virtual threads bounded by a
+     * {@code Semaphore}), rate-limited per domain, with retry. On any failure the
+     * card snippet is kept and {@code metadata.detailFailed=true} is set — per-card
+     * failure is never allowed to discard the job or abort the batch.
+     */
+    private List<RawJob> enrichWithDetails(List<RawJob> jobs) {
+        if (jobs.isEmpty() || detailConcurrency <= 0) {
+            return jobs;
+        }
+
+        var semaphore = new Semaphore(detailConcurrency);
+        try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            var futures = jobs.stream()
+                    .map(job -> executor.submit(() -> enrichOne(job, semaphore)))
+                    .toList();
+
+            var results = new ArrayList<RawJob>(jobs.size());
+            for (var future : futures) {
+                try {
+                    results.add(future.get());
+                } catch (ExecutionException | InterruptedException e) {
+                    if (e instanceof InterruptedException) {
+                        Thread.currentThread().interrupt();
+                    }
+                    log.warn("{}: detail enrichment task failed unexpectedly", providerId);
+                }
+            }
+            return results;
+        }
+    }
+
+    private RawJob enrichOne(RawJob job, Semaphore semaphore) {
+        try {
+            semaphore.acquire();
+            try {
+                var detailUri = URI.create(job.url());
+                var detailHtml = fetchDetailHtml(detailUri);
+                return mergeDetail(job, detailHtml);
+            } catch (Exception e) {
+                log.debug("{}: detail fetch failed for {}: {}, keeping snippet", providerId, job.url(), e.getMessage());
+                return markDetailFailed(job);
+            } finally {
+                semaphore.release();
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return markDetailFailed(job);
+        }
+    }
+
+    private String fetchDetailHtml(URI uri) {
+        rateLimiter.acquire(DETAIL_RATE_LIMIT_KEY);
+        return retry.execute(() -> {
+            var html = fetchHtml(uri, detailTimeoutSeconds);
+            if (isBotChallenge(html)) {
+                throw new ScraperException("InfoJobs detail returned a bot challenge page");
+            }
+            return html;
+        });
+    }
+
+    /**
+     * Merge full detail text (and optional companyWebsite) into a job. When the
+     * detail body has no usable description, the card snippet is preserved.
+     */
+    private RawJob mergeDetail(RawJob job, String detailHtml) {
+        if (detailHtml == null || detailHtml.isBlank()) {
+            return markDetailFailed(job);
+        }
+
+        var doc = org.jsoup.Jsoup.parse(detailHtml, baseUrl);
+        var description = extractDetailDescription(doc, job);
+        var website = extractCompanyWebsite(doc, job.company());
+
+        var metadata = new HashMap<>(job.metadata());
+        if (website != null && !website.isBlank()) {
+            metadata.put("companyWebsite", website);
+        }
+
+        return new RawJob(
+                job.title(),
+                job.company(),
+                job.url(),
+                description,
+                job.rawDate(),
+                job.location(),
+                job.workModel(),
+                job.source(),
+                metadata);
+    }
+
+    /**
+     * Try HTML selectors for the full description, then JSON-LD, then fall back to
+     * the existing card snippet.
+     */
+    private String extractDetailDescription(Document doc, RawJob job) {
+        for (var selector : List.of("[data-testid=job-description]", ".description", ".job-description")) {
+            var element = first(doc, selector);
+            if (element.isPresent()) {
+                var text = clean(element.get().text());
+                if (text.length() > job.description().length()) {
+                    return text;
+                }
+            }
+        }
+
+        var jsonLd = new JsonLdParser().parseFromDocument(doc);
+        if (jsonLd.isPresent()) {
+            var desc = jsonLd.get().description();
+            if (desc != null && !desc.isBlank()) {
+                return clean(desc);
+            }
+        }
+
+        // No fuller text available — keep the card snippet
+        return job.description();
+    }
+
+    /**
+     * Extract an absolute company website URL from a card/detail document, following
+     * the spec (Scenario 11): an anchor near the company name or an anchor whose
+     * href contains "company". Matches only anchors that look like a company link
+     * (never a job/navigation link). Returns null when absent.
+     */
+    private String extractCompanyWebsite(Element root, String companyName) {
+        // 1. Anchor inside/next to a company-name element
+        for (var selector : List.of(
+                "[data-testid=company-name] a[href]",
+                ".company a[href], .empresa a[href], .company-name a[href]")) {
+            var anchor = root.selectFirst(selector);
+            if (anchor != null) {
+                var url = absoluteUrl(anchor, baseUrl);
+                if (url != null) {
+                    return url;
+                }
+            }
+        }
+        // 2. Any anchor whose href contains "company"
+        var companyKeywordAnchor = root.selectFirst("a[href*=company]");
+        if (companyKeywordAnchor != null) {
+            var url = absoluteUrl(companyKeywordAnchor, baseUrl);
+            if (url != null) {
+                return url;
+            }
+        }
+        // 3. Anchor whose text matches the known company name (the "near company name" rule)
+        if (companyName != null && !companyName.isBlank()) {
+            var expected = clean(companyName);
+            for (var anchor : root.select("a[href]")) {
+                if (!clean(anchor.text()).equalsIgnoreCase(expected)) {
+                    continue;
+                }
+                var href = anchor.absUrl("href");
+                if (href.isBlank() || href.contains("/vagas") || href.contains("/vaga-de")) {
+                    continue;
+                }
+                return normalizeUrl(href);
+            }
+        }
+        return null;
+    }
+
+    private String fetchHtml(URI uri, int timeoutSeconds) {
         var requestFactory = new org.springframework.http.client.SimpleClientHttpRequestFactory();
         requestFactory.setConnectTimeout(timeoutSeconds * 1000);
         requestFactory.setReadTimeout(timeoutSeconds * 1000);
@@ -86,10 +280,11 @@ public class InfoJobsProvider implements ExtractionStrategy {
                 .requestFactory(requestFactory)
                 .defaultHeader("User-Agent", "JobHunter/1.0")
                 .build();
-        return client.get()
+        var bytes = client.get()
                 .uri(uri)
                 .retrieve()
-                .body(String.class);
+                .body(byte[].class);
+        return bytes == null ? "" : new String(bytes, java.nio.charset.StandardCharsets.UTF_8);
     }
 
     private URI buildSearchUri(String keyword, int page) {
@@ -147,9 +342,11 @@ public class InfoJobsProvider implements ExtractionStrategy {
         var location = extractLocation(cardText);
         var workModel = extractWorkModel(cardText);
         var description = extractDescription(cardText, workModel);
+        var website = extractCompanyWebsite(card.get(), company);
 
         return Optional.of(new RawJob(
-                title, company, url, description, null, location, workModel, "infojobs", null));
+                title, company, url, description, null, location, workModel, "infojobs",
+                metadata(website)));
     }
 
     private Optional<RawJob> mapCardToRawJob(Element card) {
@@ -169,8 +366,27 @@ public class InfoJobsProvider implements ExtractionStrategy {
         var workModel = textFrom(card, "[data-testid=work-model], .work-model, .modelo-trabalho");
         var description = textFrom(card, "[data-testid=job-snippet], .description, .descricao, .snippet");
         var rawDate = textFrom(card, "[data-testid=posted-date], .posted-date, .date, .data");
+        var website = extractCompanyWebsite(card, company);
 
-        return Optional.of(new RawJob(title, company, url, description, rawDate, location, workModel, "infojobs", null));
+        return Optional.of(new RawJob(
+                title, company, url, description, rawDate, location, workModel, "infojobs",
+                metadata(website)));
+    }
+
+    private static HashMap<String, String> metadata(String website) {
+        var metadata = new HashMap<String, String>();
+        if (website != null && !website.isBlank()) {
+            metadata.put("companyWebsite", website);
+        }
+        return metadata;
+    }
+
+    private static RawJob markDetailFailed(RawJob job) {
+        var metadata = new HashMap<>(job.metadata());
+        metadata.put("detailFailed", "true");
+        return new RawJob(
+                job.title(), job.company(), job.url(), job.description(),
+                job.rawDate(), job.location(), job.workModel(), job.source(), metadata);
     }
 
     private Optional<Element> findLikelyCardContainer(Element titleLink) {
@@ -239,6 +455,20 @@ public class InfoJobsProvider implements ExtractionStrategy {
                 .filter(url -> !url.isEmpty())
                 .findFirst()
                 .orElse("");
+    }
+
+    /** Resolve a possibly-relative href to an absolute URL against the base. */
+    private static String absoluteUrl(Element element, String baseUrl) {
+        var abs = element.absUrl("href");
+        if (abs.isBlank()) return null;
+        return normalizeUrl(abs);
+    }
+
+    /** Normalize an absolute company URL to a canonical form (no trailing slash). */
+    private static String normalizeUrl(String url) {
+        if (url == null || url.isBlank()) return null;
+        var trimmed = url.trim();
+        return trimmed.endsWith("/") ? trimmed.substring(0, trimmed.length() - 1) : trimmed;
     }
 
     private static Optional<Element> first(Element root, String selector) {

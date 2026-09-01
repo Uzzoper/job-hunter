@@ -22,11 +22,12 @@ class InfoJobsProviderTest {
 
     private String baseUrl;
     private InfoJobsProvider provider;
+    private ExponentialBackoffRetry retry;
 
     @BeforeEach
     void setUp(WireMockRuntimeInfo wmRuntimeInfo) {
         baseUrl = wmRuntimeInfo.getHttpBaseUrl();
-        var retry = new ExponentialBackoffRetry(2, Duration.ofMillis(1), Duration.ofMillis(10), Duration.ofMillis(2));
+        retry = new ExponentialBackoffRetry(2, Duration.ofMillis(1), Duration.ofMillis(10), Duration.ofMillis(2));
         provider = new InfoJobsProvider(baseUrl, 5, List.of("desenvolvedor"), 1, retry);
     }
 
@@ -126,5 +127,168 @@ class InfoJobsProviderTest {
             var jobs = provider.extract();
             assertTrue(jobs.isEmpty());
         }
+    }
+
+    @Nested
+    @DisplayName("Scenario 8: InfoJobs fetches detail page concurrently")
+    class DetailFetch {
+
+        @Test
+        @DisplayName("extract should use full description from detail page")
+        void extract_whenDetailAvailable_shouldUseFullDescription() {
+            var detailProvider = buildDetailProvider();
+
+            stubFor(get(urlPathEqualTo("/vagas-de-emprego-desenvolvedor.aspx"))
+                    .willReturn(ok("""
+                        <html><body>
+                        <article class="js_rowCard">
+                          <h2><a href="/vaga-de-123__DEV" title="Desenvolvedor Java">Desenvolvedor Java</a></h2>
+                          <span class="company">TechCo</span>
+                          <span class="localizacao">São Paulo, SP</span>
+                          <span class="date">Há 3 dias</span>
+                          <p class="descricao">Breve resumo na busca</p>
+                        </article>
+                        </body></html>
+                        """)));
+
+            stubFor(get(urlPathEqualTo("/vaga-de-123__DEV"))
+                    .willReturn(ok("""
+                        <html><body>
+                        <div data-testid="job-description">
+                          <p>Responsabilidades: desenvolver APIs REST com Java 21 e Spring Boot.</p>
+                          <p>Você atuará no time de plataforma, participando de todas as fases do ciclo de vida.</p>
+                          <p>Requisitos: experiência com microsserviços e banco de dados relacional.</p>
+                        </div>
+                        </body></html>
+                        """)));
+
+            var jobs = detailProvider.extract();
+            assertEquals(1, jobs.size());
+
+            var job = jobs.get(0);
+            assertTrue(job.description().contains("Responsabilidades"),
+                    "Full detail description should be used, got: " + job.description());
+            assertTrue(job.description().contains("microsserviços"),
+                    "Detail description should include the full detail text, got: " + job.description());
+            assertFalse(job.description().contains("Breve resumo na busca"),
+                    "Should NOT use the short card snippet when detail is available");
+        }
+
+        @Test
+        @DisplayName("extract should respect detail concurrency (at most 2 concurrent detail calls)")
+        void extract_whenDetailConcurrent_shouldRespectConcurrency() {
+            var detailProvider = buildDetailProvider();
+            var detailDelayMillis = 200;
+
+            stubFor(get(urlPathEqualTo("/vagas-de-emprego-desenvolvedor.aspx"))
+                    .willReturn(ok("""
+                        <html><body>
+                        <article class="js_rowCard">
+                          <h2><a href="/vaga-de-1__DEV" title="Vaga 1">Vaga 1</a></h2>
+                          <span class="company">A</span>
+                          <p class="descricao">s1</p>
+                        </article>
+                        <article class="js_rowCard">
+                          <h2><a href="/vaga-de-2__DEV" title="Vaga 2">Vaga 2</a></h2>
+                          <span class="company">B</span>
+                          <p class="descricao">s2</p>
+                        </article>
+                        <article class="js_rowCard">
+                          <h2><a href="/vaga-de-3__DEV" title="Vaga 3">Vaga 3</a></h2>
+                          <span class="company">C</span>
+                          <p class="descricao">s3</p>
+                        </article>
+                        </body></html>
+                        """)));
+
+            for (int i = 1; i <= 3; i++) {
+                stubFor(get(urlPathEqualTo("/vaga-de-" + i + "__DEV"))
+                        .willReturn(ok("<html><body><div data-testid=\"job-description\"><p>detail " + i + "</p></div></body></html>")
+                                .withFixedDelay(detailDelayMillis)));
+            }
+
+            long start = System.nanoTime();
+            var jobs = detailProvider.extract();
+            long elapsedMillis = (System.nanoTime() - start) / 1_000_000;
+
+            assertEquals(3, jobs.size());
+            for (var job : jobs) {
+                assertTrue(job.description().startsWith("detail"),
+                        "Should have used detail description, got: " + job.description());
+            }
+
+            // 3 delayed calls with concurrency 2 complete in ~ceil(3/2)*delay = 400ms;
+            // sequential would take ~600ms. A generous midpoint proves concurrency.
+            long expectedParallel = (long) Math.ceil(3.0 / 2) * detailDelayMillis;
+            long sequential = (long) 3 * detailDelayMillis;
+            long cutoff = (expectedParallel + sequential) / 2;
+            assertTrue(elapsedMillis < cutoff,
+                    "Detail fetches should overlap (concurrency 2): elapsed=" + elapsedMillis
+                            + "ms cutoff=" + cutoff + "ms");
+        }
+
+        @Test
+        @DisplayName("extract should fall back to card snippet and mark detailFailed when detail fetch fails")
+        void extract_whenDetailFails_shouldFallbackToSnippetAndMarkDetailFailed() {
+            var detailProvider = buildDetailProvider();
+
+            stubFor(get(urlPathEqualTo("/vagas-de-emprego-desenvolvedor.aspx"))
+                    .willReturn(ok("""
+                        <html><body>
+                        <article class="js_rowCard">
+                          <h2><a href="/vaga-de-999__DEV" title="Desenvolvedor Java">Desenvolvedor Java</a></h2>
+                          <span class="company">TechCo</span>
+                          <span class="localizacao">São Paulo, SP</span>
+                          <p class="descricao">Este é o trecho curto exibido na busca.</p>
+                        </article>
+                        </body></html>
+                        """)));
+
+            stubFor(get(urlPathEqualTo("/vaga-de-999__DEV"))
+                    .willReturn(status(500)));
+
+            var jobs = detailProvider.extract();
+            assertEquals(1, jobs.size(), "Job should not be discarded when detail fails");
+
+            var job = jobs.get(0);
+            assertTrue(job.description().contains("trecho curto"),
+                    "Should fall back to the card snippet, got: " + job.description());
+            assertEquals("true", job.metadata().get("detailFailed"),
+                    "detailFailed metadata should be true when detail fetch fails");
+        }
+
+        @Test
+        @DisplayName("extract should parse companyWebsite from card or detail HTML")
+        void extract_whenCompanyLinkPresent_shouldSetCompanyWebsiteMetadata() {
+            var detailProvider = buildDetailProvider();
+
+            stubFor(get(urlPathEqualTo("/vagas-de-emprego-desenvolvedor.aspx"))
+                    .willReturn(ok("""
+                        <html><body>
+                        <article class="js_rowCard">
+                          <h2><a href="/vaga-de-777__DEV" title="Desenvolvedor Java">Desenvolvedor Java</a></h2>
+                          <span class="company"><a href="https://techcorp.com.br">TechCorp</a></span>
+                          <p class="descricao">Breve resumo na busca</p>
+                        </article>
+                        </body></html>
+                        """)));
+
+            stubFor(get(urlPathEqualTo("/vaga-de-777__DEV"))
+                    .willReturn(ok("<html><body><div data-testid=\"job-description\"><p>Detalhe completo.</p></div></body></html>")));
+
+            var jobs = detailProvider.extract();
+            assertEquals(1, jobs.size());
+
+            var job = jobs.get(0);
+            assertEquals("https://techcorp.com.br", job.metadata().get("companyWebsite"),
+                    "companyWebsite should be parsed from the card company link");
+        }
+    }
+
+    private InfoJobsProvider buildDetailProvider() {
+        var permissiveRateLimiter = new com.juanperuzzo.job_hunter.infrastructure.scraper.ratelimit.TokenBucketRateLimiter(1000, 100, null);
+        return new InfoJobsProvider(
+                baseUrl, 5, List.of("desenvolvedor"), 1, retry,
+                2, 5, permissiveRateLimiter);
     }
 }
