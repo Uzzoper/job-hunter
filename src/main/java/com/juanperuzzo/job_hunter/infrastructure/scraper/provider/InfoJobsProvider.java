@@ -27,6 +27,7 @@ public class InfoJobsProvider implements ExtractionStrategy {
 
     private static final int DEFAULT_DETAIL_CONCURRENCY = 2;
     private static final int DEFAULT_DETAIL_TIMEOUT_SECONDS = 5;
+    private static final int DEFAULT_MAX_DETAIL_FETCH = 20;
     private static final String DETAIL_RATE_LIMIT_KEY = "infojobs-detail";
 
     private final String providerId;
@@ -38,6 +39,7 @@ public class InfoJobsProvider implements ExtractionStrategy {
     private final int detailConcurrency;
     private final int detailTimeoutSeconds;
     private final RateLimiter rateLimiter;
+    private final int maxDetailFetch;
 
     public InfoJobsProvider(
             String baseUrl,
@@ -59,6 +61,21 @@ public class InfoJobsProvider implements ExtractionStrategy {
             int detailConcurrency,
             int detailTimeoutSeconds,
             RateLimiter rateLimiter) {
+        this(baseUrl, timeoutSeconds, keywords, maxPages, retry,
+                detailConcurrency, detailTimeoutSeconds, rateLimiter,
+                DEFAULT_MAX_DETAIL_FETCH);
+    }
+
+    public InfoJobsProvider(
+            String baseUrl,
+            int timeoutSeconds,
+            List<String> keywords,
+            int maxPages,
+            ExponentialBackoffRetry retry,
+            int detailConcurrency,
+            int detailTimeoutSeconds,
+            RateLimiter rateLimiter,
+            int maxDetailFetch) {
         this.providerId = "infojobs";
         this.baseUrl = removeTrailingSlash(baseUrl);
         this.timeoutSeconds = timeoutSeconds;
@@ -68,6 +85,7 @@ public class InfoJobsProvider implements ExtractionStrategy {
         this.detailConcurrency = detailConcurrency;
         this.detailTimeoutSeconds = detailTimeoutSeconds;
         this.rateLimiter = rateLimiter;
+        this.maxDetailFetch = maxDetailFetch;
     }
 
     @Override
@@ -113,10 +131,31 @@ public class InfoJobsProvider implements ExtractionStrategy {
      * {@code Semaphore}), rate-limited per domain, with retry. On any failure the
      * card snippet is kept and {@code metadata.detailFailed=true} is set — per-card
      * failure is never allowed to discard the job or abort the batch.
+     *
+     * <p>At most {@code maxDetailFetch} jobs are enriched; the rest keep their card
+     * snippet with {@code metadata.detailFailed=true} to bound aggregate fetch volume.
      */
     private List<RawJob> enrichWithDetails(List<RawJob> jobs) {
         if (jobs.isEmpty() || detailConcurrency <= 0) {
             return jobs;
+        }
+
+        var toEnrich = jobs.subList(0, Math.min(jobs.size(), maxDetailFetch));
+        var remaining = jobs.subList(Math.min(jobs.size(), maxDetailFetch), jobs.size());
+
+        var enriched = enrichBatch(toEnrich);
+
+        var results = new ArrayList<RawJob>(jobs.size());
+        results.addAll(enriched);
+        for (var job : remaining) {
+            results.add(markDetailFailed(job));
+        }
+        return results;
+    }
+
+    private List<RawJob> enrichBatch(List<RawJob> jobs) {
+        if (jobs.isEmpty()) {
+            return List.of();
         }
 
         var semaphore = new Semaphore(detailConcurrency);
