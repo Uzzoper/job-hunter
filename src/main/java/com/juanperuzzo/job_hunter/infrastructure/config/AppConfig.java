@@ -126,6 +126,16 @@ public class AppConfig {
         return new TokenBucketRateLimiter(permitsPerSecond, 1, java.util.Map.of());
     }
 
+    /**
+     * Dedicated rate limiter for InfoJobs detail-page fetching (1 req/s, burst 1).
+     * Replaces the per-call {@code new TokenBucketRateLimiter(1.0, 1, null)} that
+     * previously created a new limiter on every provider instantiation.
+     */
+    @Bean
+    public RateLimiter infojobsRateLimiter() {
+        return new TokenBucketRateLimiter(1.0, 1, java.util.Map.of());
+    }
+
     @Bean
     public CompanySiteEnricher companySiteEnricher(
             RestClient scraperRestClient,
@@ -215,10 +225,12 @@ public class AppConfig {
             @Value("${scraper.infojobs.detail-concurrency:2}") int detailConcurrency,
             @Value("${scraper.infojobs.detail-timeout-seconds:5}") int detailTimeoutSeconds,
             @Value("${scraper.infojobs.max-detail-fetch:20}") int maxDetailFetch,
-            ExponentialBackoffRetry exponentialBackoffRetry) {
+            ExponentialBackoffRetry exponentialBackoffRetry,
+            RestClient scraperRestClient,
+            RateLimiter infojobsRateLimiter) {
         return new InfoJobsProvider(baseUrl, timeoutSeconds, keywords, maxPages, exponentialBackoffRetry,
                 detailConcurrency, detailTimeoutSeconds,
-                new com.juanperuzzo.job_hunter.infrastructure.scraper.ratelimit.TokenBucketRateLimiter(1.0, 1, null),
+                scraperRestClient, infojobsRateLimiter,
                 maxDetailFetch);
     }
 
@@ -300,7 +312,7 @@ public class AppConfig {
     public CompanyEnrichmentService companyEnrichmentService(
             JobRepository jobRepository,
             CompanySiteEnricher companySiteEnricher,
-            @Value("${enricher.batch-max-limit:200}") int maxLimit) {
+            @Value("${scraper.enricher.batch-max-limit:200}") int maxLimit) {
         return new CompanyEnrichmentService(jobRepository, companySiteEnricher, maxLimit);
     }
 

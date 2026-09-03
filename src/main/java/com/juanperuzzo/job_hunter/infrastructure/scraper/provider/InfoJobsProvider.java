@@ -4,7 +4,6 @@ import com.juanperuzzo.job_hunter.application.port.out.RawJob;
 import com.juanperuzzo.job_hunter.domain.exception.ScraperException;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.parser.JsonLdParser;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.ratelimit.RateLimiter;
-import com.juanperuzzo.job_hunter.infrastructure.scraper.ratelimit.TokenBucketRateLimiter;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.retry.ExponentialBackoffRetry;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.strategy.ExtractionStrategy;
 import org.jsoup.nodes.Document;
@@ -40,17 +39,7 @@ public class InfoJobsProvider implements ExtractionStrategy {
     private final int detailTimeoutSeconds;
     private final RateLimiter rateLimiter;
     private final int maxDetailFetch;
-
-    public InfoJobsProvider(
-            String baseUrl,
-            int timeoutSeconds,
-            List<String> keywords,
-            int maxPages,
-            ExponentialBackoffRetry retry) {
-        this(baseUrl, timeoutSeconds, keywords, maxPages, retry,
-                DEFAULT_DETAIL_CONCURRENCY, DEFAULT_DETAIL_TIMEOUT_SECONDS,
-                new TokenBucketRateLimiter(1.0, 1, null));
-    }
+    private final org.springframework.web.client.RestClient sharedRestClient;
 
     public InfoJobsProvider(
             String baseUrl,
@@ -58,11 +47,11 @@ public class InfoJobsProvider implements ExtractionStrategy {
             List<String> keywords,
             int maxPages,
             ExponentialBackoffRetry retry,
-            int detailConcurrency,
-            int detailTimeoutSeconds,
+            org.springframework.web.client.RestClient sharedRestClient,
             RateLimiter rateLimiter) {
         this(baseUrl, timeoutSeconds, keywords, maxPages, retry,
-                detailConcurrency, detailTimeoutSeconds, rateLimiter,
+                DEFAULT_DETAIL_CONCURRENCY, DEFAULT_DETAIL_TIMEOUT_SECONDS,
+                sharedRestClient, rateLimiter,
                 DEFAULT_MAX_DETAIL_FETCH);
     }
 
@@ -74,6 +63,23 @@ public class InfoJobsProvider implements ExtractionStrategy {
             ExponentialBackoffRetry retry,
             int detailConcurrency,
             int detailTimeoutSeconds,
+            org.springframework.web.client.RestClient sharedRestClient,
+            RateLimiter rateLimiter) {
+        this(baseUrl, timeoutSeconds, keywords, maxPages, retry,
+                detailConcurrency, detailTimeoutSeconds,
+                sharedRestClient, rateLimiter,
+                DEFAULT_MAX_DETAIL_FETCH);
+    }
+
+    public InfoJobsProvider(
+            String baseUrl,
+            int timeoutSeconds,
+            List<String> keywords,
+            int maxPages,
+            ExponentialBackoffRetry retry,
+            int detailConcurrency,
+            int detailTimeoutSeconds,
+            org.springframework.web.client.RestClient sharedRestClient,
             RateLimiter rateLimiter,
             int maxDetailFetch) {
         this.providerId = "infojobs";
@@ -86,6 +92,7 @@ public class InfoJobsProvider implements ExtractionStrategy {
         this.detailTimeoutSeconds = detailTimeoutSeconds;
         this.rateLimiter = rateLimiter;
         this.maxDetailFetch = maxDetailFetch;
+        this.sharedRestClient = sharedRestClient;
     }
 
     @Override
@@ -102,7 +109,7 @@ public class InfoJobsProvider implements ExtractionStrategy {
                 var uri = buildSearchUri(keyword, page);
                 try {
                     var jobs = retry.execute(() -> {
-                        var html = fetchHtml(uri, timeoutSeconds);
+                        var html = fetchHtml(uri);
                         if (isBotChallenge(html)) {
                             throw new ScraperException("InfoJobs returned a bot challenge page");
                         }
@@ -133,7 +140,8 @@ public class InfoJobsProvider implements ExtractionStrategy {
      * failure is never allowed to discard the job or abort the batch.
      *
      * <p>At most {@code maxDetailFetch} jobs are enriched; the rest keep their card
-     * snippet with {@code metadata.detailFailed=true} to bound aggregate fetch volume.
+     * snippet with {@code metadata.detailSkipped=true} (not {@code detailFailed})
+     * to bound aggregate fetch volume — an untried job is not a failure.
      */
     private List<RawJob> enrichWithDetails(List<RawJob> jobs) {
         if (jobs.isEmpty() || detailConcurrency <= 0) {
@@ -148,7 +156,7 @@ public class InfoJobsProvider implements ExtractionStrategy {
         var results = new ArrayList<RawJob>(jobs.size());
         results.addAll(enriched);
         for (var job : remaining) {
-            results.add(markDetailFailed(job));
+            results.add(markDetailSkipped(job));
         }
         return results;
     }
@@ -201,7 +209,7 @@ public class InfoJobsProvider implements ExtractionStrategy {
     private String fetchDetailHtml(URI uri) {
         rateLimiter.acquire(DETAIL_RATE_LIMIT_KEY);
         return retry.execute(() -> {
-            var html = fetchHtml(uri, detailTimeoutSeconds);
+            var html = fetchHtml(uri);
             if (isBotChallenge(html)) {
                 throw new ScraperException("InfoJobs detail returned a bot challenge page");
             }
@@ -310,16 +318,8 @@ public class InfoJobsProvider implements ExtractionStrategy {
         return null;
     }
 
-    private String fetchHtml(URI uri, int timeoutSeconds) {
-        var requestFactory = new org.springframework.http.client.SimpleClientHttpRequestFactory();
-        requestFactory.setConnectTimeout(timeoutSeconds * 1000);
-        requestFactory.setReadTimeout(timeoutSeconds * 1000);
-
-        var client = org.springframework.web.client.RestClient.builder()
-                .requestFactory(requestFactory)
-                .defaultHeader("User-Agent", "JobHunter/1.0")
-                .build();
-        var bytes = client.get()
+    private String fetchHtml(URI uri) {
+        var bytes = sharedRestClient.get()
                 .uri(uri)
                 .retrieve()
                 .body(byte[].class);
@@ -423,6 +423,15 @@ public class InfoJobsProvider implements ExtractionStrategy {
     private static RawJob markDetailFailed(RawJob job) {
         var metadata = new HashMap<>(job.metadata());
         metadata.put("detailFailed", "true");
+        return new RawJob(
+                job.title(), job.company(), job.url(), job.description(),
+                job.rawDate(), job.location(), job.workModel(), job.source(), metadata);
+    }
+
+    /** Mark a job whose detail page was never attempted (beyond the cap) as skipped, not failed. */
+    private static RawJob markDetailSkipped(RawJob job) {
+        var metadata = new HashMap<>(job.metadata());
+        metadata.put("detailSkipped", "true");
         return new RawJob(
                 job.title(), job.company(), job.url(), job.description(),
                 job.rawDate(), job.location(), job.workModel(), job.source(), metadata);

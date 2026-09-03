@@ -24,12 +24,16 @@ class InfoJobsProviderTest {
     private String baseUrl;
     private InfoJobsProvider provider;
     private ExponentialBackoffRetry retry;
+    private com.juanperuzzo.job_hunter.infrastructure.scraper.ratelimit.RateLimiter noopRateLimiter;
 
     @BeforeEach
     void setUp(WireMockRuntimeInfo wmRuntimeInfo) {
         baseUrl = wmRuntimeInfo.getHttpBaseUrl();
         retry = new ExponentialBackoffRetry(2, Duration.ofMillis(1), Duration.ofMillis(10), Duration.ofMillis(2));
-        provider = new InfoJobsProvider(baseUrl, 5, List.of("desenvolvedor"), 1, retry);
+        noopRateLimiter = new com.juanperuzzo.job_hunter.infrastructure.scraper.ratelimit.TokenBucketRateLimiter(1000, 100, null);
+        var sharedRestClient = org.springframework.web.client.RestClient.builder().baseUrl(baseUrl).build();
+        provider = new InfoJobsProvider(baseUrl, 5, List.of("desenvolvedor"), 1, retry,
+                sharedRestClient, noopRateLimiter);
     }
 
     @Nested
@@ -135,8 +139,8 @@ class InfoJobsProviderTest {
     class DetailEnrichmentCap {
 
         @Test
-        @DisplayName("enrich when jobs exceed cap should enrich only first N and mark rest detailFailed")
-        void enrich_whenJobsExceedCap_shouldEnrichOnlyFirstNAndMarkRestDetailFailed() {
+        @DisplayName("enrich when jobs exceed cap should enrich only first N and mark rest detailSkipped (not failed)")
+        void enrich_whenJobsExceedCap_shouldEnrichOnlyFirstNAndMarkRestDetailSkipped() {
             var capProvider = buildCappedProvider(2);
 
             stubFor(get(urlPathEqualTo("/vagas-de-emprego-desenvolvedor.aspx"))
@@ -184,22 +188,25 @@ class InfoJobsProviderTest {
                     "Exactly 2 jobs should be enriched with detail, got descriptions: "
                             + jobs.stream().map(RawJob::description).toList());
 
-            // The remaining 2 jobs keep card snippet and have detailFailed=true
-            var failed = jobs.stream()
-                    .filter(j -> "true".equals(j.metadata().get("detailFailed")))
+            // The remaining 2 jobs keep card snippet and have detailSkipped=true (NOT detailFailed)
+            var skipped = jobs.stream()
+                    .filter(j -> "true".equals(j.metadata().get("detailSkipped")))
                     .toList();
-            assertEquals(2, failed.size(), "Exactly 2 jobs should have detailFailed=true");
-            for (var job : failed) {
+            assertEquals(2, skipped.size(), "Exactly 2 jobs should have detailSkipped=true");
+            for (var job : skipped) {
                 assertTrue(job.description().startsWith("card"),
-                        "Failed jobs should keep card snippet, got: " + job.description());
+                        "Skipped jobs should keep card snippet, got: " + job.description());
+                assertTrue(!job.metadata().containsKey("detailFailed"),
+                        "Untried (capped) jobs must NOT be flagged detailFailed");
             }
         }
 
         private InfoJobsProvider buildCappedProvider(int maxDetailFetch) {
             var permissiveRateLimiter = new com.juanperuzzo.job_hunter.infrastructure.scraper.ratelimit.TokenBucketRateLimiter(1000, 100, null);
+            var sharedRestClient = org.springframework.web.client.RestClient.builder().baseUrl(baseUrl).build();
             return new InfoJobsProvider(
                     baseUrl, 5, List.of("desenvolvedor"), 1, retry,
-                    2, 5, permissiveRateLimiter, maxDetailFetch);
+                    2, 5, sharedRestClient, permissiveRateLimiter, maxDetailFetch);
         }
     }
 
@@ -361,8 +368,9 @@ class InfoJobsProviderTest {
 
     private InfoJobsProvider buildDetailProvider() {
         var permissiveRateLimiter = new com.juanperuzzo.job_hunter.infrastructure.scraper.ratelimit.TokenBucketRateLimiter(1000, 100, null);
+        var sharedRestClient = org.springframework.web.client.RestClient.builder().baseUrl(baseUrl).build();
         return new InfoJobsProvider(
                 baseUrl, 5, List.of("desenvolvedor"), 1, retry,
-                2, 5, permissiveRateLimiter);
+                2, 5, sharedRestClient, permissiveRateLimiter);
     }
 }
