@@ -18,4 +18,14 @@ public interface JobRepository {
     List<Job> findAllByContactEmailIsNull();
 
     Optional<Job> findById(Long id);
+
+    /**
+     * Find jobs that still need company-site enrichment: no contact email yet but a
+     * company website is present, ordered by {@code id} ascending and bounded by
+     * {@code limit}. Used by {@code CompanyEnrichmentService}.
+     *
+     * @param limit maximum number of candidates to return
+     * @return candidate jobs needing enrichment
+     */
+    List<Job> findJobsNeedingEnrichment(int limit);
 }

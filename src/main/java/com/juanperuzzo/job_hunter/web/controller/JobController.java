@@ -2,6 +2,7 @@ package com.juanperuzzo.job_hunter.web.controller;
 
 import com.juanperuzzo.job_hunter.application.port.in.AnalyzeJobUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.ApproveDraftUseCase;
+import com.juanperuzzo.job_hunter.application.port.in.CompanyEnrichmentUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.FetchJobsUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.FetchSourceJobsUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.GenerateEmailUseCase;
@@ -15,6 +16,7 @@ import com.juanperuzzo.job_hunter.domain.model.Job;
 import com.juanperuzzo.job_hunter.domain.model.JobAnalysis;
 import com.juanperuzzo.job_hunter.application.port.in.CurrentUserProvider;
 import com.juanperuzzo.job_hunter.web.dto.EmailDraftResponse;
+import com.juanperuzzo.job_hunter.web.dto.EnrichmentResultResponse;
 import com.juanperuzzo.job_hunter.web.dto.FetchResultResponse;
 import com.juanperuzzo.job_hunter.web.dto.JobResponse;
 import org.springframework.http.HttpHeaders;
@@ -39,6 +41,7 @@ public class JobController {
     private final ApproveDraftUseCase approveDraftUseCase;
     private final SendEmailUseCase sendEmailUseCase;
     private final TailorResumeUseCase tailorResumeUseCase;
+    private final CompanyEnrichmentUseCase companyEnrichmentUseCase;
     private final CurrentUserProvider currentUserService;
 
     public JobController(
@@ -52,6 +55,7 @@ public class JobController {
             ApproveDraftUseCase approveDraftUseCase,
             SendEmailUseCase sendEmailUseCase,
             TailorResumeUseCase tailorResumeUseCase,
+            CompanyEnrichmentUseCase companyEnrichmentUseCase,
             CurrentUserProvider currentUserService) {
         this.fetchJobsUseCase = fetchJobsUseCase;
         this.fetchSourceJobsUseCase = fetchSourceJobsUseCase;
@@ -63,6 +67,7 @@ public class JobController {
         this.approveDraftUseCase = approveDraftUseCase;
         this.sendEmailUseCase = sendEmailUseCase;
         this.tailorResumeUseCase = tailorResumeUseCase;
+        this.companyEnrichmentUseCase = companyEnrichmentUseCase;
         this.currentUserService = currentUserService;
     }
 
@@ -135,6 +140,13 @@ public class JobController {
     public ResponseEntity<FetchResultResponse> fetchLinkedInJobs() {
         var result = fetchSourceJobsUseCase.fetchAndSave("linkedin");
         return ResponseEntity.ok(FetchResultResponse.from(result));
+    }
+
+    @PostMapping("/enrich-emails")
+    public ResponseEntity<EnrichmentResultResponse> enrichEmails(
+            @RequestParam(defaultValue = "${enricher.batch-default-limit:50}") int limit) {
+        var result = companyEnrichmentUseCase.enrichMissingEmails(limit);
+        return ResponseEntity.ok(EnrichmentResultResponse.from(result));
     }
 
     @PostMapping("/{id}/email/approve")

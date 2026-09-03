@@ -12,6 +12,7 @@ import com.juanperuzzo.job_hunter.application.port.out.PdfRendererPort;
 import com.juanperuzzo.job_hunter.application.port.out.ScraperPort;
 import com.juanperuzzo.job_hunter.application.port.out.SourceFetchPort;
 import com.juanperuzzo.job_hunter.application.service.AiAnalysisService;
+import com.juanperuzzo.job_hunter.application.service.CompanyEnrichmentService;
 import com.juanperuzzo.job_hunter.application.service.EmailGenerationService;
 import com.juanperuzzo.job_hunter.application.service.EmailSendingService;
 import com.juanperuzzo.job_hunter.application.service.FetchJobsService;
@@ -243,9 +244,10 @@ public class AppConfig {
     @Bean
     @Primary
     public ProviderBasedScraperAdapter providerBasedScraperAdapter(
-            ProviderRegistry providerRegistry,
-            CompanySiteEnricher companySiteEnricher) {
-        return new ProviderBasedScraperAdapter(providerRegistry, companySiteEnricher);
+            ProviderRegistry providerRegistry) {
+        // Enricher intentionally NOT wired here: fetch hot path makes zero company-site
+        // HTTP (async-company-enrichment spec). Enrichment runs via CompanyEnrichmentService.
+        return new ProviderBasedScraperAdapter(providerRegistry);
     }
 
     @Bean
@@ -284,8 +286,16 @@ public class AppConfig {
     }
 
     @Bean
-    public FetchSourceJobsService fetchSourceJobsService(SourceFetchPort sourceFetchPort, JobRepository jobRepository, @Qualifier("linkedinNormalizerPort") NormalizerPort normalizerPort, CompanySiteEnricher companySiteEnricher) {
-        return new FetchSourceJobsService(sourceFetchPort, jobRepository, normalizerPort, companySiteEnricher);
+    public FetchSourceJobsService fetchSourceJobsService(SourceFetchPort sourceFetchPort, JobRepository jobRepository, @Qualifier("linkedinNormalizerPort") NormalizerPort normalizerPort) {
+        return new FetchSourceJobsService(sourceFetchPort, jobRepository, normalizerPort);
+    }
+
+    @Bean
+    public CompanyEnrichmentService companyEnrichmentService(
+            JobRepository jobRepository,
+            CompanySiteEnricher companySiteEnricher,
+            @Value("${enricher.batch-max-limit:200}") int maxLimit) {
+        return new CompanyEnrichmentService(jobRepository, companySiteEnricher, maxLimit);
     }
 
     @Bean

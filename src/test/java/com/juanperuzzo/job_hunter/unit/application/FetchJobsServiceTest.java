@@ -20,6 +20,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -120,6 +121,34 @@ class FetchJobsServiceTest {
             verify(jobRepository, never()).save(any());
             assertEquals(0, result.totalFetched());
             assertEquals(0, result.totalSaved());
+        }
+    }
+
+    @Nested
+    @DisplayName("Async enrichment contract: fetch must not enrich")
+    class NoEnrichmentContractTests {
+
+        @Test
+        @DisplayName("fetchAndSave should not call CompanySiteEnrichment and return FetchResult unchanged")
+        void fetchAndSave_shouldNotEnrichAndReturnFast() {
+            var jobWithWebsite = new Job(null, "Java Dev", "Acme", "https://example.com/job/1",
+                    "Description", LocalDate.now(), "gupy", null, "https://acme.com");
+
+            when(scraperPort.fetch()).thenReturn(new ScraperResult(
+                    List.of(jobWithWebsite),
+                    List.of(new ProviderFetchStats("gupy", 1, 1, 0, 0, null))));
+            when(jobRepository.existsByUrl(any())).thenReturn(false);
+
+            var result = fetchJobsService.fetchAndSave();
+
+            // FetchResult shape unchanged: totalFetched/totalSaved/totalWithEmail/perProvider.
+            assertEquals(1, result.totalFetched());
+            assertEquals(1, result.totalSaved());
+            assertEquals(0, result.totalWithEmail());
+            assertEquals(1, result.perProvider().size());
+
+            // The persisted job must not have been enriched (no company-site contribution).
+            verify(jobRepository).save(argThat(j -> j.contactEmail() == null));
         }
     }
 

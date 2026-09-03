@@ -90,6 +90,9 @@ scraper:
     per-domain-permits-per-second: 1
     cache-ttl-hours: 24
     contact-paths: /contato,/contact,/trabalhe-conosco,/carreiras
+    # async-company-enrichment spec: batch enrichment endpoint bounds (jobs per run).
+    batch-default-limit: 50
+    batch-max-limit: 200
   linkedin:
     enabled: true
     mode: service          # "service" (Playwright) | "jsoup" (current, fallback)
