@@ -7,10 +7,8 @@
     "regex": [
       { "pattern": "sk-or-v1-[A-Za-z0-9_-]{40,60}", "category": "OPENROUTER_KEY" },
       { "pattern": "(ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{36,40}", "category": "GITHUB_TOKEN" },
-      { "pattern": "jdbc:postgresql://[^\\s]+:[0-9]+/[^\\s]+", "category": "DB_URL" },
-      { "pattern": "(?i)(password|senha|api[-_]?key|secret)[:=]\\s*\\S{8,}", "category": "CREDENTIAL" },
-      { "pattern": "(?i)(JWT_SECRET|DB_USER|DB_PASSWORD|OPENROUTER_API_KEY)\\s*[=:]\\s*\\S+", "category": "ENV_SECRET" }
+      { "pattern": "(?i)(JWT_SECRET|OPENROUTER_API_KEY|HERMES_API_KEY)\\s*[=:]\\s*\\S+", "category": "ENV_SECRET" }
     ],
-    "builtin": ["email", "ipv4", "uuid"]
+    "builtin": []
   }
 }
