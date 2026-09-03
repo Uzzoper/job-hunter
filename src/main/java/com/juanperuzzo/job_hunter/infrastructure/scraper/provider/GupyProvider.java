@@ -58,8 +58,12 @@ public class GupyProvider implements ExtractionStrategy {
     @Override
     public List<RawJob> extract() {
         var uniqueJobs = new HashMap<String, RawJob>();
+        var authFailed = false;
 
         for (var keyword : keywords) {
+            if (authFailed) {
+                break;
+            }
             try {
                 var path = "/api/v1/jobs?jobName=" + urlEncode(keyword) + "&limit=" + limit;
                 var jobs = retry.execute(() -> apiStrategy.extractWithPath(path));
@@ -70,13 +74,27 @@ public class GupyProvider implements ExtractionStrategy {
 
                 log.debug("{}: fetched {} jobs for keyword '{}'", providerId, jobs.size(), keyword);
             } catch (Exception e) {
-                log.error("{}: failed to fetch keyword '{}': {}", providerId, keyword, e.getMessage());
+                if (isAuthFailure(e)) {
+                    log.warn("{}: auth failure (401/403) on keyword '{}', skipping remaining keywords",
+                            providerId, keyword);
+                    authFailed = true;
+                } else {
+                    log.error("{}: failed to fetch keyword '{}': {}", providerId, keyword, e.getMessage());
+                }
             }
         }
 
         var result = List.copyOf(uniqueJobs.values());
         log.info("{}: total unique jobs fetched: {}", providerId, result.size());
         return result;
+    }
+
+    private static boolean isAuthFailure(Exception e) {
+        var message = e.getMessage();
+        if (message == null) {
+            return false;
+        }
+        return message.contains("401") || message.contains("403") || message.contains("Unauthorized");
     }
 
     private RawJob mapNode(JsonNode node) {
