@@ -28,15 +28,22 @@ public class ProviderBasedScraperAdapter implements ScraperPort {
     /**
      * LinkedIn (Playwright microservice mode) regularly exceeds the uniform 60s budget
      * (~25 jobs via the detail-enrichment loop), so it gets an extended per-provider timeout.
+     * InfoJobs also fetches detail pages for many jobs sequentially, requiring 120s.
      */
     private static final Duration LINKEDIN_PROVIDER_TIMEOUT = Duration.ofSeconds(180);
 
+    private static final Duration INFOJOBS_PROVIDER_TIMEOUT = Duration.ofSeconds(120);
+
     /**
-     * Resolves the fetch timeout budget for a given provider id. gupy/infojobs keep the
-     * default 60s; linkedin (service/Playwright mode) gets the extended 180s budget.
+     * Resolves the fetch timeout budget for a given provider id. gupy keeps the
+     * default 60s; linkedin gets 180s; infojobs gets 120s.
      */
     public static Duration timeoutFor(String providerId) {
-        return "linkedin".equals(providerId) ? LINKEDIN_PROVIDER_TIMEOUT : DEFAULT_PROVIDER_TIMEOUT;
+        return switch (providerId) {
+            case "linkedin" -> LINKEDIN_PROVIDER_TIMEOUT;
+            case "infojobs" -> INFOJOBS_PROVIDER_TIMEOUT;
+            default -> DEFAULT_PROVIDER_TIMEOUT;
+        };
     }
 
     private record ProviderResult(List<Job> jobs, ProviderFetchStats stats) {}
