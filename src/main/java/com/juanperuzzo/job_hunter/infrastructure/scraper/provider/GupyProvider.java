@@ -2,11 +2,13 @@ package com.juanperuzzo.job_hunter.infrastructure.scraper.provider;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.juanperuzzo.job_hunter.application.port.out.RawJob;
+import com.juanperuzzo.job_hunter.infrastructure.scraper.normalizer.UrlNormalizer;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.retry.ExponentialBackoffRetry;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.strategy.ExtractionStrategy;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.strategy.RestApiStrategy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.web.client.RestClientResponseException;
 
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
@@ -89,12 +91,21 @@ public class GupyProvider implements ExtractionStrategy {
         return result;
     }
 
+    /**
+     * Detect an authentication failure (HTTP 401/403) by inspecting the actual HTTP
+     * status of any {@link RestClientResponseException} in the exception cause chain,
+     * rather than matching on a fragile substring of the exception message.
+     */
     private static boolean isAuthFailure(Exception e) {
-        var message = e.getMessage();
-        if (message == null) {
-            return false;
+        for (var current = (Throwable) e; current != null; current = current.getCause()) {
+            if (current instanceof RestClientResponseException rce) {
+                int code = rce.getStatusCode().value();
+                if (code == 401 || code == 403) {
+                    return true;
+                }
+            }
         }
-        return message.contains("401") || message.contains("403") || message.contains("Unauthorized");
+        return false;
     }
 
     private RawJob mapNode(JsonNode node) {
@@ -120,7 +131,7 @@ public class GupyProvider implements ExtractionStrategy {
         var metadata = new HashMap<String, String>();
         var careerPageUrl = node.path("careerPageUrl").asText("");
         if (!careerPageUrl.isBlank()) {
-            metadata.put("companyWebsite", normalizeUrl(careerPageUrl));
+            metadata.put("companyWebsite", UrlNormalizer.noTrailingSlash(careerPageUrl));
         }
 
         return new RawJob(
@@ -133,13 +144,6 @@ public class GupyProvider implements ExtractionStrategy {
                 workModel,
                 "gupy",
                 metadata);
-    }
-
-    /** Normalize an absolute company URL to a canonical form (no trailing slash). */
-    private static String normalizeUrl(String url) {
-        if (url == null || url.isBlank()) return null;
-        var trimmed = url.trim();
-        return trimmed.endsWith("/") ? trimmed.substring(0, trimmed.length() - 1) : trimmed;
     }
 
     private static String getJobUrl(JsonNode node) {

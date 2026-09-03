@@ -6,7 +6,6 @@ import com.juanperuzzo.job_hunter.application.port.out.RawJob;
 import com.juanperuzzo.job_hunter.domain.exception.ScraperException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.http.HttpStatusCode;
 import org.springframework.web.client.RestClient;
 
 import java.util.ArrayList;
@@ -54,12 +53,14 @@ public class RestApiStrategy implements ExtractionStrategy {
 
     public List<RawJob> extractWithPath(String path) {
         try {
+            // No custom onStatus handler: RestClient's default error handling throws a
+            // RestClientResponseException (e.g. HttpClientErrorException) carrying the HTTP
+            // status. The catch below wraps it preserving the cause so callers can inspect
+            // getStatusCode() (e.g. GupyProvider's 401/403 auth fast-path) instead of
+            // relying on message substrings.
             var response = restClient.get()
                     .uri(path)
                     .retrieve()
-                    .onStatus(HttpStatusCode::isError, (req, res) -> {
-                        throw new ScraperException(providerId + " endpoint returned status " + res.getStatusCode());
-                    })
                     .body(String.class);
 
             if (response == null || response.isBlank()) {

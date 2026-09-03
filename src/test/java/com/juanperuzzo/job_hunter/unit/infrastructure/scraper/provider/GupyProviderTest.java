@@ -151,6 +151,33 @@ class GupyProviderTest {
             assertEquals(1, jobs.size(), "should return partial results from keyword before 401");
             assertEquals("Dev Java", jobs.get(0).title());
         }
+
+        @Test
+        @DisplayName("extract should detect 401 by HTTP status and make a single attempt (no message matching, no retry)")
+        void extract_when401_shouldDetectByStatusAndRetryOnlyOnce() {
+            stubFor(get(urlPathEqualTo("/api/v1/jobs"))
+                    .withQueryParam("jobName", equalTo("dev"))
+                    .willReturn(okJson("""
+                        {"data": [{"name": "Dev Java", "jobUrl": "https://a.com/1", "publishedDate": "2026-07-01"}]}
+                        """)));
+            // Second keyword returns 401 — detection must come from the HTTP status, not the message
+            stubFor(get(urlPathEqualTo("/api/v1/jobs"))
+                    .withQueryParam("jobName", equalTo("java"))
+                    .willReturn(unauthorized().withHeader("Content-Type", "application/json")
+                            .withBody("{\"error\": \"Unauthorized\"}")));
+
+            var provider = new GupyProvider("gupy", apiStrategy, retry, List.of("dev", "java"), 20);
+
+            var jobs = provider.extract();
+
+            // Partial results: the keyword before the 401 is returned
+            assertEquals(1, jobs.size());
+            assertEquals("Dev Java", jobs.get(0).title());
+
+            // The 401 keyword must have been attempted exactly once (fail-fast, no retry)
+            verify(1, getRequestedFor(urlPathEqualTo("/api/v1/jobs"))
+                    .withQueryParam("jobName", equalTo("java")));
+        }
     }
 
     @Nested
