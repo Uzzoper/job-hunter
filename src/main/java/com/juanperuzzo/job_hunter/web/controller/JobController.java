@@ -156,7 +156,7 @@ public class JobController {
 
     @PostMapping("/enrich-emails")
     public ResponseEntity<EnrichmentResultResponse> enrichEmails(
-            @RequestParam(defaultValue = "${enricher.batch-default-limit:50}") int limit) {
+            @RequestParam(defaultValue = "${scraper.enricher.batch-default-limit:50}") int limit) {
         var result = companyEnrichmentUseCase.enrichMissingEmails(limit);
         return ResponseEntity.ok(EnrichmentResultResponse.from(result));
     }
