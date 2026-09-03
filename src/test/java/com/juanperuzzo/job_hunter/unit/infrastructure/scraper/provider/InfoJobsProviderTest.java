@@ -339,6 +339,46 @@ class InfoJobsProviderTest {
         }
 
         @Test
+        @DisplayName("detail fetch should honor the dedicated short detail timeout while search uses the (longer) shared client")
+        void extract_whenDetailSlowerThanDetailTimeout_shouldTimeoutDetailButKeepSearch() {
+            // Shared search client has no timeout; the detail client is built with a 1s read
+            // timeout (scraper.infojobs.detail-timeout-seconds). Search is fast; detail times out.
+            var noRetry = new ExponentialBackoffRetry(1, Duration.ofMillis(1), Duration.ofMillis(1), Duration.ofMillis(1));
+            var permissiveRateLimiter = new com.juanperuzzo.job_hunter.infrastructure.scraper.ratelimit.TokenBucketRateLimiter(1000, 100, null);
+            var sharedRestClient = org.springframework.web.client.RestClient.builder().baseUrl(baseUrl).build();
+            var shortDetailTimeoutProvider = new InfoJobsProvider(
+                    baseUrl, 5, List.of("desenvolvedor"), 1, noRetry,
+                    2, 1 /* detail-timeout-seconds = 1s */, sharedRestClient, permissiveRateLimiter);
+
+            // Search page: fast (well within both timeouts) → 1 job found
+            stubFor(get(urlPathEqualTo("/vagas-de-emprego-desenvolvedor.aspx"))
+                    .willReturn(ok("""
+                        <html><body>
+                        <article class="js_rowCard">
+                          <h2><a href="/vaga-de-timeout__DEV" title="Desenvolvedor Java">Desenvolvedor Java</a></h2>
+                          <span class="company">TechCo</span>
+                          <span class="localizacao">São Paulo, SP</span>
+                          <p class="descricao">Trecho curto da busca.</p>
+                        </article>
+                        </body></html>
+                        """).withFixedDelay(100)));
+
+            // Detail page: slower than the 1s detail timeout → detail fetch must time out
+            stubFor(get(urlPathEqualTo("/vaga-de-timeout__DEV"))
+                    .willReturn(ok("<html><body><div data-testid=\"job-description\"><p>Detalhe.</p></div></body></html>")
+                            .withFixedDelay(2_000)));
+
+            var jobs = shortDetailTimeoutProvider.extract();
+
+            assertEquals(1, jobs.size(), "Search should still return the job");
+            var job = jobs.get(0);
+            assertTrue(job.description().contains("Trecho curto da busca"),
+                    "Detail timed out → should fall back to card snippet, got: " + job.description());
+            assertEquals("true", job.metadata().get("detailFailed"),
+                    "Detail timeout should mark detailFailed (detail honors its own short timeout)");
+        }
+
+        @Test
         @DisplayName("extract should parse companyWebsite from card or detail HTML")
         void extract_whenCompanyLinkPresent_shouldSetCompanyWebsiteMetadata() {
             var detailProvider = buildDetailProvider();

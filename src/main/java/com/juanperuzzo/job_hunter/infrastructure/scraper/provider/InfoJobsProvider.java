@@ -2,6 +2,7 @@ package com.juanperuzzo.job_hunter.infrastructure.scraper.provider;
 
 import com.juanperuzzo.job_hunter.application.port.out.RawJob;
 import com.juanperuzzo.job_hunter.domain.exception.ScraperException;
+import com.juanperuzzo.job_hunter.infrastructure.scraper.normalizer.UrlNormalizer;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.parser.JsonLdParser;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.ratelimit.RateLimiter;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.retry.ExponentialBackoffRetry;
@@ -36,10 +37,10 @@ public class InfoJobsProvider implements ExtractionStrategy {
     private final int maxPages;
     private final ExponentialBackoffRetry retry;
     private final int detailConcurrency;
-    private final int detailTimeoutSeconds;
     private final RateLimiter rateLimiter;
     private final int maxDetailFetch;
     private final org.springframework.web.client.RestClient sharedRestClient;
+    private final org.springframework.web.client.RestClient detailRestClient;
 
     public InfoJobsProvider(
             String baseUrl,
@@ -51,7 +52,8 @@ public class InfoJobsProvider implements ExtractionStrategy {
             RateLimiter rateLimiter) {
         this(baseUrl, timeoutSeconds, keywords, maxPages, retry,
                 DEFAULT_DETAIL_CONCURRENCY, DEFAULT_DETAIL_TIMEOUT_SECONDS,
-                sharedRestClient, rateLimiter,
+                sharedRestClient, buildDetailRestClient(DEFAULT_DETAIL_TIMEOUT_SECONDS),
+                rateLimiter,
                 DEFAULT_MAX_DETAIL_FETCH);
     }
 
@@ -67,7 +69,8 @@ public class InfoJobsProvider implements ExtractionStrategy {
             RateLimiter rateLimiter) {
         this(baseUrl, timeoutSeconds, keywords, maxPages, retry,
                 detailConcurrency, detailTimeoutSeconds,
-                sharedRestClient, rateLimiter,
+                sharedRestClient, buildDetailRestClient(detailTimeoutSeconds),
+                rateLimiter,
                 DEFAULT_MAX_DETAIL_FETCH);
     }
 
@@ -82,17 +85,35 @@ public class InfoJobsProvider implements ExtractionStrategy {
             org.springframework.web.client.RestClient sharedRestClient,
             RateLimiter rateLimiter,
             int maxDetailFetch) {
+        this(baseUrl, timeoutSeconds, keywords, maxPages, retry,
+                detailConcurrency, detailTimeoutSeconds,
+                sharedRestClient, buildDetailRestClient(detailTimeoutSeconds),
+                rateLimiter, maxDetailFetch);
+    }
+
+    public InfoJobsProvider(
+            String baseUrl,
+            int timeoutSeconds,
+            List<String> keywords,
+            int maxPages,
+            ExponentialBackoffRetry retry,
+            int detailConcurrency,
+            int detailTimeoutSeconds,
+            org.springframework.web.client.RestClient sharedRestClient,
+            org.springframework.web.client.RestClient detailRestClient,
+            RateLimiter rateLimiter,
+            int maxDetailFetch) {
         this.providerId = "infojobs";
-        this.baseUrl = removeTrailingSlash(baseUrl);
+        this.baseUrl = UrlNormalizer.noTrailingSlash(baseUrl);
         this.timeoutSeconds = timeoutSeconds;
         this.keywords = keywords;
         this.maxPages = maxPages;
         this.retry = retry;
         this.detailConcurrency = detailConcurrency;
-        this.detailTimeoutSeconds = detailTimeoutSeconds;
         this.rateLimiter = rateLimiter;
         this.maxDetailFetch = maxDetailFetch;
         this.sharedRestClient = sharedRestClient;
+        this.detailRestClient = detailRestClient;
     }
 
     @Override
@@ -209,7 +230,7 @@ public class InfoJobsProvider implements ExtractionStrategy {
     private String fetchDetailHtml(URI uri) {
         rateLimiter.acquire(DETAIL_RATE_LIMIT_KEY);
         return retry.execute(() -> {
-            var html = fetchHtml(uri);
+            var html = fetchHtmlWithClient(uri, detailRestClient);
             if (isBotChallenge(html)) {
                 throw new ScraperException("InfoJobs detail returned a bot challenge page");
             }
@@ -312,18 +333,33 @@ public class InfoJobsProvider implements ExtractionStrategy {
                 if (href.isBlank() || href.contains("/vagas") || href.contains("/vaga-de")) {
                     continue;
                 }
-                return normalizeUrl(href);
+                return UrlNormalizer.noTrailingSlash(href);
             }
         }
         return null;
     }
 
     private String fetchHtml(URI uri) {
-        var bytes = sharedRestClient.get()
+        return fetchHtmlWithClient(uri, sharedRestClient);
+    }
+
+    /** Fetch raw HTML with a specific REST client (search pages use the shared client; details the dedicated one). */
+    private String fetchHtmlWithClient(URI uri, org.springframework.web.client.RestClient client) {
+        var bytes = client.get()
                 .uri(uri)
                 .retrieve()
                 .body(byte[].class);
         return bytes == null ? "" : new String(bytes, java.nio.charset.StandardCharsets.UTF_8);
+    }
+
+    /** Standalone RestClient honoring {@code detail-timeout-seconds} (used when no explicit detail bean is injected). */
+    private static org.springframework.web.client.RestClient buildDetailRestClient(int timeoutSeconds) {
+        var requestFactory = new org.springframework.http.client.SimpleClientHttpRequestFactory();
+        requestFactory.setConnectTimeout(timeoutSeconds * 1000);
+        requestFactory.setReadTimeout(timeoutSeconds * 1000);
+        return org.springframework.web.client.RestClient.builder()
+                .requestFactory(requestFactory)
+                .build();
     }
 
     private URI buildSearchUri(String keyword, int page) {
@@ -509,14 +545,7 @@ public class InfoJobsProvider implements ExtractionStrategy {
     private static String absoluteUrl(Element element, String baseUrl) {
         var abs = element.absUrl("href");
         if (abs.isBlank()) return null;
-        return normalizeUrl(abs);
-    }
-
-    /** Normalize an absolute company URL to a canonical form (no trailing slash). */
-    private static String normalizeUrl(String url) {
-        if (url == null || url.isBlank()) return null;
-        var trimmed = url.trim();
-        return trimmed.endsWith("/") ? trimmed.substring(0, trimmed.length() - 1) : trimmed;
+        return UrlNormalizer.noTrailingSlash(abs);
     }
 
     private static Optional<Element> first(Element root, String selector) {
@@ -539,9 +568,5 @@ public class InfoJobsProvider implements ExtractionStrategy {
         var normalized = java.text.Normalizer.normalize(cleaned, java.text.Normalizer.Form.NFD)
                 .replaceAll("\\p{M}", "");
         return normalized.replaceAll("\\bjr\\b", "junior");
-    }
-
-    private static String removeTrailingSlash(String value) {
-        return value.endsWith("/") ? value.substring(0, value.length() - 1) : value;
     }
 }
