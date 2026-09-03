@@ -332,6 +332,44 @@ class JobControllerTest {
     }
 
     @Test
+    @DisplayName("fetchGupyJobs should return 200 with FetchResult for the gupy source")
+    void fetchGupyJobs_whenValidRequest_shouldReturnSavedJobCount() throws Exception {
+        authenticateAs(1L);
+
+        var result = new FetchResult(
+                2, 2, 1,
+                List.of(new ProviderFetchStats("gupy", 2, 2, 1, 0, null)));
+        when(fetchSourceJobsUseCase.fetchAndSave("gupy")).thenReturn(result);
+
+        mockMvc.perform(post("/api/jobs/fetch/gupy"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalFetched").value(2))
+                .andExpect(jsonPath("$.totalSaved").value(2))
+                .andExpect(jsonPath("$.perProvider[0].source").value("gupy"));
+
+        verify(fetchSourceJobsUseCase).fetchAndSave("gupy");
+    }
+
+    @Test
+    @DisplayName("fetchInfoJobs should return 200 with FetchResult for the infojobs source")
+    void fetchInfoJobs_whenValidRequest_shouldReturnSavedJobCount() throws Exception {
+        authenticateAs(1L);
+
+        var result = new FetchResult(
+                3, 1, 0,
+                List.of(new ProviderFetchStats("infojobs", 3, 1, 0, 1, null)));
+        when(fetchSourceJobsUseCase.fetchAndSave("infojobs")).thenReturn(result);
+
+        mockMvc.perform(post("/api/jobs/fetch/infojobs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalFetched").value(3))
+                .andExpect(jsonPath("$.totalSaved").value(1))
+                .andExpect(jsonPath("$.perProvider[0].source").value("infojobs"));
+
+        verify(fetchSourceJobsUseCase).fetchAndSave("infojobs");
+    }
+
+    @Test
     @DisplayName("analyzeJob should return 200 with analysis when successful")
     void analyzeJob_whenSuccessful_shouldReturn200() throws Exception {
         authenticateAs(1L);

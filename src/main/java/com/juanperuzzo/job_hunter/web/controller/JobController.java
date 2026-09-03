@@ -142,6 +142,18 @@ public class JobController {
         return ResponseEntity.ok(FetchResultResponse.from(result));
     }
 
+    @PostMapping("/fetch/gupy")
+    public ResponseEntity<FetchResultResponse> fetchGupyJobs() {
+        var result = fetchSourceJobsUseCase.fetchAndSave("gupy");
+        return ResponseEntity.ok(FetchResultResponse.from(result));
+    }
+
+    @PostMapping("/fetch/infojobs")
+    public ResponseEntity<FetchResultResponse> fetchInfoJobs() {
+        var result = fetchSourceJobsUseCase.fetchAndSave("infojobs");
+        return ResponseEntity.ok(FetchResultResponse.from(result));
+    }
+
     @PostMapping("/enrich-emails")
     public ResponseEntity<EnrichmentResultResponse> enrichEmails(
             @RequestParam(defaultValue = "${enricher.batch-default-limit:50}") int limit) {
