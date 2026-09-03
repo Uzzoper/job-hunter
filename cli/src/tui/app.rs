@@ -343,34 +343,32 @@ impl App {
                     .as_ref()
                     .is_some_and(|h| h.is_finished())
             });
-            if fetch_done {
-                if let Some(screen) = &mut self.job_list_screen {
-                    if let Some(handle) = screen.fetch_handle.take() {
-                        let outcome = {
-                            let slot = screen.fetch_outcome.lock().await;
-                            slot.clone()
-                        };
-                        match outcome {
-                            Some(Ok(())) => {
-                                // Fetch completed — reload list (same path as 'r').
-                                let _ = screen.fetch_jobs().await;
-                                screen.show_toast("Fetch completed".to_string());
-                            }
-                            Some(Err(reason)) => {
-                                screen.show_toast(format!("Fetch failed: {reason}"));
-                            }
-                            None => {
-                                // Task finished without recording an outcome.
-                                let _ = handle.await;
-                            }
+            if fetch_done && let Some(screen) = &mut self.job_list_screen {
+                if let Some(handle) = screen.fetch_handle.take() {
+                    let outcome = {
+                        let slot = screen.fetch_outcome.lock().await;
+                        slot.clone()
+                    };
+                    match outcome {
+                        Some(Ok(())) => {
+                            // Fetch completed — reload list (same path as 'r').
+                            let _ = screen.fetch_jobs().await;
+                            screen.show_toast("Fetch completed".to_string());
+                        }
+                        Some(Err(reason)) => {
+                            screen.show_toast(format!("Fetch failed: {reason}"));
+                        }
+                        None => {
+                            // Task finished without recording an outcome.
+                            let _ = handle.await;
                         }
                     }
-                    screen.fetch_in_progress = false;
-                    screen.fetch_started_at = None;
-                    screen.fetch_outcome = Arc::new(Mutex::new(None));
-                    // Redraw so the toast is visible immediately.
-                    terminal.draw(|frame| self.render(frame))?;
                 }
+                screen.fetch_in_progress = false;
+                screen.fetch_started_at = None;
+                screen.fetch_outcome = Arc::new(Mutex::new(None));
+                // Redraw so the toast is visible immediately.
+                terminal.draw(|frame| self.render(frame))?;
                 // Fall through to the normal poll loop — no `continue`.
             }
 
