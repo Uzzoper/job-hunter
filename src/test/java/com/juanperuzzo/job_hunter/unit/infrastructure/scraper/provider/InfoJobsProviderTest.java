@@ -2,6 +2,7 @@ package com.juanperuzzo.job_hunter.unit.infrastructure.scraper.provider;
 
 import com.github.tomakehurst.wiremock.junit5.WireMockExtension;
 import com.github.tomakehurst.wiremock.junit5.WireMockRuntimeInfo;
+import com.juanperuzzo.job_hunter.application.port.out.RawJob;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.provider.InfoJobsProvider;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.retry.ExponentialBackoffRetry;
 import org.junit.jupiter.api.BeforeEach;
@@ -126,6 +127,79 @@ class InfoJobsProviderTest {
 
             var jobs = provider.extract();
             assertTrue(jobs.isEmpty());
+        }
+    }
+
+    @Nested
+    @DisplayName("Scenario 19: detail enrichment cap")
+    class DetailEnrichmentCap {
+
+        @Test
+        @DisplayName("enrich when jobs exceed cap should enrich only first N and mark rest detailFailed")
+        void enrich_whenJobsExceedCap_shouldEnrichOnlyFirstNAndMarkRestDetailFailed() {
+            var capProvider = buildCappedProvider(2);
+
+            stubFor(get(urlPathEqualTo("/vagas-de-emprego-desenvolvedor.aspx"))
+                    .willReturn(ok("""
+                        <html><body>
+                        <article class="js_rowCard">
+                          <h2><a href="/vaga-de-1__DEV" title="Vaga 1">Vaga 1</a></h2>
+                          <span class="company">A</span>
+                          <p class="descricao">card1</p>
+                        </article>
+                        <article class="js_rowCard">
+                          <h2><a href="/vaga-de-2__DEV" title="Vaga 2">Vaga 2</a></h2>
+                          <span class="company">B</span>
+                          <p class="descricao">card2</p>
+                        </article>
+                        <article class="js_rowCard">
+                          <h2><a href="/vaga-de-3__DEV" title="Vaga 3">Vaga 3</a></h2>
+                          <span class="company">C</span>
+                          <p class="descricao">card3</p>
+                        </article>
+                        <article class="js_rowCard">
+                          <h2><a href="/vaga-de-4__DEV" title="Vaga 4">Vaga 4</a></h2>
+                          <span class="company">D</span>
+                          <p class="descricao">card4</p>
+                        </article>
+                        </body></html>
+                        """)));
+
+            // Stub detail pages for ALL jobs so the test verifies the cap regardless of
+            // collection ordering — if all four had detail available, success means only
+            // N were fetched (the rest were never fetched and thus marked detailFailed).
+            for (int i = 1; i <= 4; i++) {
+                stubFor(get(urlPathEqualTo("/vaga-de-" + i + "__DEV"))
+                        .willReturn(ok("<html><body><div data-testid=\"job-description\"><p>detail" + i + "</p></div></body></html>")));
+            }
+
+            var jobs = capProvider.extract();
+            assertEquals(4, jobs.size(), "All 4 jobs should be returned");
+
+            // Exactly maxDetailFetch (2) jobs should be enriched with detail descriptions
+            var enriched = jobs.stream()
+                    .filter(j -> j.description().startsWith("detail"))
+                    .toList();
+            assertEquals(2, enriched.size(),
+                    "Exactly 2 jobs should be enriched with detail, got descriptions: "
+                            + jobs.stream().map(RawJob::description).toList());
+
+            // The remaining 2 jobs keep card snippet and have detailFailed=true
+            var failed = jobs.stream()
+                    .filter(j -> "true".equals(j.metadata().get("detailFailed")))
+                    .toList();
+            assertEquals(2, failed.size(), "Exactly 2 jobs should have detailFailed=true");
+            for (var job : failed) {
+                assertTrue(job.description().startsWith("card"),
+                        "Failed jobs should keep card snippet, got: " + job.description());
+            }
+        }
+
+        private InfoJobsProvider buildCappedProvider(int maxDetailFetch) {
+            var permissiveRateLimiter = new com.juanperuzzo.job_hunter.infrastructure.scraper.ratelimit.TokenBucketRateLimiter(1000, 100, null);
+            return new InfoJobsProvider(
+                    baseUrl, 5, List.of("desenvolvedor"), 1, retry,
+                    2, 5, permissiveRateLimiter, maxDetailFetch);
         }
     }
 

@@ -82,6 +82,7 @@ scraper:
     timeout-seconds: 10
     detail-concurrency: 2
     detail-timeout-seconds: 5
+    max-detail-fetch: 20
   enricher:
     enabled: true
     timeout-seconds: 5
