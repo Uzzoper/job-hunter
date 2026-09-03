@@ -52,7 +52,7 @@ class FetchJobsServiceTest {
 
             when(scraperPort.fetch()).thenReturn(new ScraperResult(
                     List.of(newJob, existingJob),
-                    List.of(new ProviderFetchStats("gupy", 2, 0, 0, 0, null))));
+                    List.of(new ProviderFetchStats("gupy", 2, 0, 0, 0, 0, null))));
             when(jobRepository.existsByUrl("https://example.com/job/1")).thenReturn(false);
             when(jobRepository.existsByUrl("https://example.com/job/2")).thenReturn(true);
 
@@ -77,7 +77,7 @@ class FetchJobsServiceTest {
 
             when(scraperPort.fetch()).thenReturn(new ScraperResult(
                     List.of(existingJob),
-                    List.of(new ProviderFetchStats("gupy", 1, 0, 0, 0, null))));
+                    List.of(new ProviderFetchStats("gupy", 1, 0, 0, 0, 0, null))));
             when(jobRepository.existsByUrl("https://example.com/job/1")).thenReturn(true);
 
             var result = fetchJobsService.fetchAndSave();
@@ -136,7 +136,7 @@ class FetchJobsServiceTest {
 
             when(scraperPort.fetch()).thenReturn(new ScraperResult(
                     List.of(jobWithWebsite),
-                    List.of(new ProviderFetchStats("gupy", 1, 1, 0, 0, null))));
+                    List.of(new ProviderFetchStats("gupy", 1, 1, 0, 0, 0, null))));
             when(jobRepository.existsByUrl(any())).thenReturn(false);
 
             var result = fetchJobsService.fetchAndSave();
@@ -166,7 +166,7 @@ class FetchJobsServiceTest {
 
             when(scraperPort.fetch()).thenReturn(new ScraperResult(
                     List.of(jobWithEmail, jobWithoutEmail),
-                    List.of(new ProviderFetchStats("gupy", 2, 0, 0, 0, null))));
+                    List.of(new ProviderFetchStats("gupy", 2, 0, 0, 0, 0, null))));
             when(jobRepository.existsByUrl(any())).thenReturn(false);
 
             var result = fetchJobsService.fetchAndSave();

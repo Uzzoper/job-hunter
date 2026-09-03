@@ -223,28 +223,31 @@ class ProviderBasedScraperAdapterTest {
     class FetchStats {
 
         @Test
-        @DisplayName("fetch should report fetched and detailFailedCount per provider")
+        @DisplayName("fetch should report fetched, detailFailedCount and detailSkippedCount per provider")
         void fetch_whenMixedProviders_shouldReturnPerProviderStats() {
             registry.register(createStub("p1",
-                            rawWithMetadata("Dev1", "https://a.com/1", null),
-                            rawWithMetadata("Dev2", "https://a.com/2", "true")),
-                    null, noopRateLimiter, createNormalizer(List.of("dev1", "dev2")));
-            registry.register(createStub("p2", raw("Dev3", "https://a.com/3")),
-                    null, noopRateLimiter, createNormalizer(List.of("dev3")));
+                            rawWithMetadata("Dev1", "https://a.com/1", "detailFailed", null),
+                            rawWithMetadata("Dev2", "https://a.com/2", "detailFailed", "true"),
+                            rawWithMetadata("Dev3", "https://a.com/3", "detailSkipped", "true")),
+                    null, noopRateLimiter, createNormalizer(List.of("dev1", "dev2", "dev3")));
+            registry.register(createStub("p2", raw("Dev4", "https://a.com/4")),
+                    null, noopRateLimiter, createNormalizer(List.of("dev4")));
 
             adapter = new ProviderBasedScraperAdapter(registry);
             var result = adapter.fetch();
 
             var p1 = result.perProvider().stream()
                     .filter(s -> s.source().equals("p1")).findFirst().orElseThrow();
-            assertEquals(2, p1.fetched());
+            assertEquals(3, p1.fetched());
             assertEquals(1, p1.detailFailedCount());
+            assertEquals(1, p1.detailSkippedCount());
             assertNull(p1.error());
 
             var p2 = result.perProvider().stream()
                     .filter(s -> s.source().equals("p2")).findFirst().orElseThrow();
             assertEquals(1, p2.fetched());
             assertEquals(0, p2.detailFailedCount());
+            assertEquals(0, p2.detailSkippedCount());
         }
 
         @Test
@@ -264,13 +267,13 @@ class ProviderBasedScraperAdapterTest {
     }
 
     private static RawJob raw(String title, String url) {
-        return rawWithMetadata(title, url, null);
+        return rawWithMetadata(title, url, "detailFailed", null);
     }
 
-    private static RawJob rawWithMetadata(String title, String url, String detailFailed) {
+    private static RawJob rawWithMetadata(String title, String url, String key, String value) {
         var metadata = new java.util.HashMap<String, String>();
-        if (detailFailed != null) {
-            metadata.put("detailFailed", detailFailed);
+        if (value != null) {
+            metadata.put(key, value);
         }
         return new RawJob(title, "Co", url, "desc", "2026-07-01", null, null, "test", metadata);
     }

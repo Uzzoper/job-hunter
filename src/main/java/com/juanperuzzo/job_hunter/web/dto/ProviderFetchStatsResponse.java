@@ -11,6 +11,7 @@ public record ProviderFetchStatsResponse(
         int saved,
         int withEmail,
         int detailFailedCount,
+        int detailSkippedCount,
         String error
 ) {
     public static ProviderFetchStatsResponse from(ProviderFetchStats stats) {
@@ -20,6 +21,7 @@ public record ProviderFetchStatsResponse(
                 stats.saved(),
                 stats.withEmail(),
                 stats.detailFailedCount(),
+                stats.detailSkippedCount(),
                 stats.error());
     }
 }

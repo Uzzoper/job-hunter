@@ -278,8 +278,8 @@ class JobControllerTest {
 
         var result = new FetchResult(
                 3, 2, 1,
-                List.of(new ProviderFetchStats("gupy", 2, 1, 1, 0, null),
-                        new ProviderFetchStats("infojobs", 1, 1, 0, 0, null)));
+                List.of(new ProviderFetchStats("gupy", 2, 1, 1, 0, 0, null),
+                        new ProviderFetchStats("infojobs", 1, 1, 0, 0, 0, null)));
         when(fetchJobsUseCase.fetchAndSave()).thenReturn(result);
 
         mockMvc.perform(post("/api/jobs/fetch"))
@@ -302,7 +302,7 @@ class JobControllerTest {
 
         var result = new FetchResult(
                 1, 1, 0,
-                List.of(new ProviderFetchStats("linkedin", 1, 1, 0, 0, null)));
+                List.of(new ProviderFetchStats("linkedin", 1, 1, 0, 0, 0, null)));
         when(fetchSourceJobsUseCase.fetchAndSave("linkedin")).thenReturn(result);
 
         mockMvc.perform(post("/api/jobs/fetch/linkedin"))
@@ -338,7 +338,7 @@ class JobControllerTest {
 
         var result = new FetchResult(
                 2, 2, 1,
-                List.of(new ProviderFetchStats("gupy", 2, 2, 1, 0, null)));
+                List.of(new ProviderFetchStats("gupy", 2, 2, 1, 0, 0, null)));
         when(fetchSourceJobsUseCase.fetchAndSave("gupy")).thenReturn(result);
 
         mockMvc.perform(post("/api/jobs/fetch/gupy"))
@@ -357,7 +357,7 @@ class JobControllerTest {
 
         var result = new FetchResult(
                 3, 1, 0,
-                List.of(new ProviderFetchStats("infojobs", 3, 1, 0, 1, null)));
+                List.of(new ProviderFetchStats("infojobs", 3, 1, 0, 1, 0, null)));
         when(fetchSourceJobsUseCase.fetchAndSave("infojobs")).thenReturn(result);
 
         mockMvc.perform(post("/api/jobs/fetch/infojobs"))

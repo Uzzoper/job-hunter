@@ -77,7 +77,7 @@ public class ProviderBasedScraperAdapter implements ScraperPort {
                                             providerId, timeout.toSeconds(),
                                             cause.getClass().getSimpleName(), cause.getMessage(), cause);
                                     return new ProviderResult(List.of(),
-                                            new ProviderFetchStats(providerId, 0, 0, 0, 0,
+                                            new ProviderFetchStats(providerId, 0, 0, 0, 0, 0,
                                                     truncate(errorMessage(cause))));
                                 });
                     })
@@ -103,6 +103,9 @@ public class ProviderBasedScraperAdapter implements ScraperPort {
         var detailFailedCount = (int) rawJobs.stream()
                 .filter(raw -> "true".equals(raw.metadata().get("detailFailed")))
                 .count();
+        var detailSkippedCount = (int) rawJobs.stream()
+                .filter(raw -> "true".equals(raw.metadata().get("detailSkipped")))
+                .count();
 
         var providerJobs = new ArrayList<Job>();
         if (entry.normalizer() != null) {
@@ -121,7 +124,7 @@ public class ProviderBasedScraperAdapter implements ScraperPort {
 
         log.info("{}: fetched {} raw jobs, normalized {}", providerId, rawJobs.size(), providerJobs.size());
         return new ProviderResult(providerJobs,
-                new ProviderFetchStats(providerId, rawJobs.size(), 0, 0, detailFailedCount, null));
+                new ProviderFetchStats(providerId, rawJobs.size(), 0, 0, detailFailedCount, detailSkippedCount, null));
     }
 
     private static String truncate(String message) {
