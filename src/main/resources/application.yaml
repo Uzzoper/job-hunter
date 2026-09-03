@@ -66,6 +66,7 @@ scraper:
     default-permits-per-second: 5
     default-burst: 3
   rest-client:
+    # sources the shared scraperRestClient read/connect timeout (also used for InfoJobs search pages)
     timeout-seconds: 10
     max-connections: 20
   normalizer:
@@ -81,6 +82,8 @@ scraper:
     max-pages: 3
     timeout-seconds: 10
     detail-concurrency: 2
+    # Honored by the dedicated infojobsDetailRestClient bean (5s) for InfoJobs detail-page
+    # fetches; search pages keep the shared 10s scraper.rest-client.timeout-seconds.
     detail-timeout-seconds: 5
     max-detail-fetch: 20
   enricher:
