@@ -12,7 +12,8 @@ public record Job(
         String description,
         LocalDate postedAt,
         String source,
-        String contactEmail
+        String contactEmail,
+        String companyWebsite
 ) {
     private static final int EXPIRATION_DAYS = 30;
 
@@ -23,7 +24,11 @@ public record Job(
     }
 
     public Job(Long id, String title, String company, String url, String description, LocalDate postedAt, String source) {
-        this(id, title, company, url, description, postedAt, source, null);
+        this(id, title, company, url, description, postedAt, source, null, null);
+    }
+
+    public Job(Long id, String title, String company, String url, String description, LocalDate postedAt, String source, String contactEmail) {
+        this(id, title, company, url, description, postedAt, source, contactEmail, null);
     }
 
     @Override
@@ -40,5 +45,10 @@ public record Job(
 
     public boolean isExpired() {
         return ChronoUnit.DAYS.between(postedAt, LocalDate.now()) > EXPIRATION_DAYS;
+    }
+
+    /** Return a copy of this job with a new {@code contactEmail}, preserving all other fields. */
+    public Job withContactEmail(String newContactEmail) {
+        return new Job(id, title, company, url, description, postedAt, source, newContactEmail, companyWebsite);
     }
 }

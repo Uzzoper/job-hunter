@@ -2,12 +2,16 @@ package com.juanperuzzo.job_hunter.unit.web;
 
 import com.juanperuzzo.job_hunter.application.port.in.AnalyzeJobUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.ApproveDraftUseCase;
+import com.juanperuzzo.job_hunter.application.port.in.CompanyEnrichmentUseCase;
+import com.juanperuzzo.job_hunter.application.port.in.EnrichmentResult;
 import com.juanperuzzo.job_hunter.application.port.in.FetchJobsUseCase;
+import com.juanperuzzo.job_hunter.application.port.in.FetchResult;
 import com.juanperuzzo.job_hunter.application.port.in.FetchSourceJobsUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.GenerateEmailUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.GetEmailDraftUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.GetJobUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.ListJobsUseCase;
+import com.juanperuzzo.job_hunter.application.port.in.ProviderFetchStats;
 import com.juanperuzzo.job_hunter.application.port.in.SendEmailUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.TailorResumeUseCase;
 import com.juanperuzzo.job_hunter.application.port.out.TokenProvider;
@@ -93,6 +97,9 @@ class JobControllerTest {
 
     @MockitoBean
     private TailorResumeUseCase tailorResumeUseCase;
+
+    @MockitoBean
+    private CompanyEnrichmentUseCase companyEnrichmentUseCase;
 
     @MockitoBean
     private TokenProvider tokenProvider;
@@ -265,25 +272,44 @@ class JobControllerTest {
     }
 
     @Test
-    @DisplayName("fetchJobs should return 200 when fetch completes successfully")
+    @DisplayName("fetchJobs should return 200 with FetchResult stats")
     void fetchJobs_whenSuccessful_shouldReturn200() throws Exception {
         authenticateAs(1L);
 
+        var result = new FetchResult(
+                3, 2, 1,
+                List.of(new ProviderFetchStats("gupy", 2, 1, 1, 0, 0, null),
+                        new ProviderFetchStats("infojobs", 1, 1, 0, 0, 0, null)));
+        when(fetchJobsUseCase.fetchAndSave()).thenReturn(result);
+
         mockMvc.perform(post("/api/jobs/fetch"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.message").value("Fetch completed successfully"));
+                .andExpect(jsonPath("$.totalFetched").value(3))
+                .andExpect(jsonPath("$.totalSaved").value(2))
+                .andExpect(jsonPath("$.totalWithEmail").value(1))
+                .andExpect(jsonPath("$.perProvider.length()").value(2))
+                .andExpect(jsonPath("$.perProvider[0].source").value("gupy"))
+                .andExpect(jsonPath("$.perProvider[0].fetched").value(2))
+                .andExpect(jsonPath("$.perProvider[1].source").value("infojobs"));
 
         verify(fetchJobsUseCase).fetchAndSave();
     }
 
     @Test
-    @DisplayName("fetchLinkedInJobs should return 200 when fetch completes successfully")
+    @DisplayName("fetchLinkedInJobs should return 200 with FetchResult for the single source")
     void fetchLinkedInJobs_whenValidRequest_shouldReturnSavedJobCount() throws Exception {
         authenticateAs(1L);
 
+        var result = new FetchResult(
+                1, 1, 0,
+                List.of(new ProviderFetchStats("linkedin", 1, 1, 0, 0, 0, null)));
+        when(fetchSourceJobsUseCase.fetchAndSave("linkedin")).thenReturn(result);
+
         mockMvc.perform(post("/api/jobs/fetch/linkedin"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.message").value("LinkedIn fetch completed successfully"));
+                .andExpect(jsonPath("$.totalFetched").value(1))
+                .andExpect(jsonPath("$.totalSaved").value(1))
+                .andExpect(jsonPath("$.perProvider[0].source").value("linkedin"));
 
         verify(fetchSourceJobsUseCase).fetchAndSave("linkedin");
     }
@@ -303,6 +329,44 @@ class JobControllerTest {
                 .andExpect(jsonPath("$.message").value("An unexpected error occurred"));
 
         verify(fetchSourceJobsUseCase).fetchAndSave("linkedin");
+    }
+
+    @Test
+    @DisplayName("fetchGupyJobs should return 200 with FetchResult for the gupy source")
+    void fetchGupyJobs_whenValidRequest_shouldReturnSavedJobCount() throws Exception {
+        authenticateAs(1L);
+
+        var result = new FetchResult(
+                2, 2, 1,
+                List.of(new ProviderFetchStats("gupy", 2, 2, 1, 0, 0, null)));
+        when(fetchSourceJobsUseCase.fetchAndSave("gupy")).thenReturn(result);
+
+        mockMvc.perform(post("/api/jobs/fetch/gupy"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalFetched").value(2))
+                .andExpect(jsonPath("$.totalSaved").value(2))
+                .andExpect(jsonPath("$.perProvider[0].source").value("gupy"));
+
+        verify(fetchSourceJobsUseCase).fetchAndSave("gupy");
+    }
+
+    @Test
+    @DisplayName("fetchInfoJobs should return 200 with FetchResult for the infojobs source")
+    void fetchInfoJobs_whenValidRequest_shouldReturnSavedJobCount() throws Exception {
+        authenticateAs(1L);
+
+        var result = new FetchResult(
+                3, 1, 0,
+                List.of(new ProviderFetchStats("infojobs", 3, 1, 0, 1, 0, null)));
+        when(fetchSourceJobsUseCase.fetchAndSave("infojobs")).thenReturn(result);
+
+        mockMvc.perform(post("/api/jobs/fetch/infojobs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalFetched").value(3))
+                .andExpect(jsonPath("$.totalSaved").value(1))
+                .andExpect(jsonPath("$.perProvider[0].source").value("infojobs"));
+
+        verify(fetchSourceJobsUseCase).fetchAndSave("infojobs");
     }
 
     @Test
@@ -415,6 +479,39 @@ class JobControllerTest {
                         .value("Job must be analyzed before tailoring the resume"));
 
         verify(tailorResumeUseCase).tailorResume(1L, JOB_ID);
+    }
+
+    @Test
+    @DisplayName("enrichEmails should return 200 with EnrichmentResult stats")
+    void enrichEmails_whenSuccessful_shouldReturn200() throws Exception {
+        authenticateAs(1L);
+
+        var result = new EnrichmentResult(10, 8, 1, 1);
+        when(companyEnrichmentUseCase.enrichMissingEmails(50)).thenReturn(result);
+
+        mockMvc.perform(post("/api/jobs/enrich-emails").param("limit", "50"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.checked").value(10))
+                .andExpect(jsonPath("$.enriched").value(8))
+                .andExpect(jsonPath("$.skippedPortal").value(1))
+                .andExpect(jsonPath("$.failed").value(1));
+
+        verify(companyEnrichmentUseCase).enrichMissingEmails(50);
+    }
+
+    @Test
+    @DisplayName("enrichEmails should default limit to 50 when param omitted")
+    void enrichEmails_whenNoLimit_shouldUseDefault() throws Exception {
+        authenticateAs(1L);
+
+        var result = new EnrichmentResult(0, 0, 0, 0);
+        when(companyEnrichmentUseCase.enrichMissingEmails(50)).thenReturn(result);
+
+        mockMvc.perform(post("/api/jobs/enrich-emails"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.checked").value(0));
+
+        verify(companyEnrichmentUseCase).enrichMissingEmails(50);
     }
 
     private void authenticateAs(Long userId) {

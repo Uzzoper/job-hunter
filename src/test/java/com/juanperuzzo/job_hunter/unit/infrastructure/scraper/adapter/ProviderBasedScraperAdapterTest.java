@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.util.List;
@@ -51,7 +52,7 @@ class ProviderBasedScraperAdapterTest {
                     null, noopRateLimiter, createNormalizer(List.of("dev2")));
 
             adapter = new ProviderBasedScraperAdapter(registry);
-            var jobs = adapter.fetch();
+            var jobs = adapter.fetch().jobs();
 
             assertEquals(2, jobs.size());
         }
@@ -65,7 +66,7 @@ class ProviderBasedScraperAdapterTest {
                     null, noopRateLimiter, createNormalizer(List.of("dev1")));
 
             adapter = new ProviderBasedScraperAdapter(registry);
-            var jobs = adapter.fetch();
+            var jobs = adapter.fetch().jobs();
 
             assertEquals(1, jobs.size());
         }
@@ -74,7 +75,8 @@ class ProviderBasedScraperAdapterTest {
         @DisplayName("fetch should return empty when no providers registered")
         void fetch_whenNoProviders_shouldReturnEmpty() {
             adapter = new ProviderBasedScraperAdapter(registry);
-            assertTrue(adapter.fetch().isEmpty());
+            assertTrue(adapter.fetch().jobs().isEmpty());
+            assertTrue(adapter.fetch().perProvider().isEmpty());
         }
     }
 
@@ -94,9 +96,15 @@ class ProviderBasedScraperAdapterTest {
                     null, noopRateLimiter, createNormalizer(List.of("dev")));
 
             adapter = new ProviderBasedScraperAdapter(registry);
-            var jobs = adapter.fetch();
+            var result = adapter.fetch();
 
-            assertEquals(1, jobs.size());
+            assertEquals(1, result.jobs().size());
+
+            var failing = result.perProvider().stream()
+                    .filter(s -> s.source().equals("failing")).findFirst().orElseThrow();
+            assertEquals(0, failing.fetched());
+            assertNotNull(failing.error());
+            assertEquals("fail", failing.error());
         }
 
         @Test
@@ -113,9 +121,11 @@ class ProviderBasedScraperAdapterTest {
             }, null, noopRateLimiter, createNormalizer(List.of()));
 
             adapter = new ProviderBasedScraperAdapter(registry);
-            var jobs = adapter.fetch();
+            var result = adapter.fetch();
 
-            assertTrue(jobs.isEmpty());
+            assertTrue(result.jobs().isEmpty());
+            assertEquals(2, result.perProvider().size());
+            assertTrue(result.perProvider().stream().allMatch(s -> s.error() != null));
         }
 
         @Test
@@ -129,14 +139,143 @@ class ProviderBasedScraperAdapterTest {
                             List.of(), List.of(), 90, FIXED_CLOCK));
 
             adapter = new ProviderBasedScraperAdapter(registry);
-            var jobs = adapter.fetch();
+            var jobs = adapter.fetch().jobs();
 
             assertEquals(1, jobs.size());
+        }
+
+        @Test
+        @DisplayName("fetch should fall back to exception class name in error field when message is null")
+        void fetch_whenProviderFailsWithNullMessage_shouldUseClassNameAsError() {
+            registry.register(new ExtractionStrategy() {
+                @Override public String providerId() { return "silent"; }
+                @Override public List<RawJob> extract() { throw new IllegalStateException(); }
+            }, null, noopRateLimiter, createNormalizer(List.of()));
+
+            adapter = new ProviderBasedScraperAdapter(registry);
+            var result = adapter.fetch();
+
+            var stats = result.perProvider().stream()
+                    .filter(s -> s.source().equals("silent")).findFirst().orElseThrow();
+            assertNotNull(stats.error());
+            assertEquals("java.lang.IllegalStateException", stats.error());
+        }
+    }
+
+    @Nested
+    @DisplayName("Scenario: per-provider timeout budget")
+    class TimeoutBudget {
+
+        @Test
+        @DisplayName("timeoutFor should give linkedin 180s, infojobs 120s, and others the default 60s")
+        void timeoutFor_whenProvider_shouldReturnPerProviderBudget() {
+            assertEquals(Duration.ofSeconds(180), ProviderBasedScraperAdapter.timeoutFor("linkedin"));
+            assertEquals(Duration.ofSeconds(120), ProviderBasedScraperAdapter.timeoutFor("infojobs"));
+            assertEquals(Duration.ofSeconds(60), ProviderBasedScraperAdapter.timeoutFor("gupy"));
+            assertEquals(Duration.ofSeconds(60), ProviderBasedScraperAdapter.timeoutFor("unknown"));
+        }
+    }
+
+    @Nested
+    @DisplayName("Scenario: parallel provider execution")
+    class ParallelExecution {
+
+        @Test
+        @DisplayName("fetch should run providers in parallel so slow one does not block fast one")
+        void fetch_whenOneProviderSlow_shouldNotBlockOthers() {
+            // Slow provider: sleeps 2s
+            registry.register(new ExtractionStrategy() {
+                @Override public String providerId() { return "slow"; }
+                @Override public List<RawJob> extract() {
+                    try { Thread.sleep(2000); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); }
+                    return List.of(raw("SlowDev", "https://slow.com/1"));
+                }
+            }, null, noopRateLimiter, createNormalizer(List.of("slow")));
+
+            // Second provider: also sleeps 2s — sequential sum would be ~4s, parallel max ~2s
+            registry.register(new ExtractionStrategy() {
+                @Override public String providerId() { return "other"; }
+                @Override public List<RawJob> extract() {
+                    try { Thread.sleep(2000); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); }
+                    return List.of(raw("OtherDev", "https://other.com/1"));
+                }
+            }, null, noopRateLimiter, createNormalizer(List.of("other")));
+
+            adapter = new ProviderBasedScraperAdapter(registry);
+
+            var start = System.currentTimeMillis();
+            var result = adapter.fetch();
+            var elapsed = System.currentTimeMillis() - start;
+
+            // Both providers should be represented in perProvider stats
+            assertEquals(2, result.perProvider().size());
+            assertTrue(result.perProvider().stream().anyMatch(s -> s.source().equals("slow")));
+            assertTrue(result.perProvider().stream().anyMatch(s -> s.source().equals("other")));
+
+            // Sequential sum ≈ 4s; parallel max ≈ 2s. Assert < 2.5s to prove parallelism.
+            assertTrue(elapsed < 2500,
+                    "parallel fetch should take ~2s (max), not ~4s (sum); actual=" + elapsed + "ms");
+        }
+    }
+
+    @Nested
+    @DisplayName("Scenario 17: per-provider fetch statistics")
+    class FetchStats {
+
+        @Test
+        @DisplayName("fetch should report fetched, detailFailedCount and detailSkippedCount per provider")
+        void fetch_whenMixedProviders_shouldReturnPerProviderStats() {
+            registry.register(createStub("p1",
+                            rawWithMetadata("Dev1", "https://a.com/1", "detailFailed", null),
+                            rawWithMetadata("Dev2", "https://a.com/2", "detailFailed", "true"),
+                            rawWithMetadata("Dev3", "https://a.com/3", "detailSkipped", "true")),
+                    null, noopRateLimiter, createNormalizer(List.of("dev1", "dev2", "dev3")));
+            registry.register(createStub("p2", raw("Dev4", "https://a.com/4")),
+                    null, noopRateLimiter, createNormalizer(List.of("dev4")));
+
+            adapter = new ProviderBasedScraperAdapter(registry);
+            var result = adapter.fetch();
+
+            var p1 = result.perProvider().stream()
+                    .filter(s -> s.source().equals("p1")).findFirst().orElseThrow();
+            assertEquals(3, p1.fetched());
+            assertEquals(1, p1.detailFailedCount());
+            assertEquals(1, p1.detailSkippedCount());
+            assertNull(p1.error());
+
+            var p2 = result.perProvider().stream()
+                    .filter(s -> s.source().equals("p2")).findFirst().orElseThrow();
+            assertEquals(1, p2.fetched());
+            assertEquals(0, p2.detailFailedCount());
+            assertEquals(0, p2.detailSkippedCount());
+        }
+
+        @Test
+        @DisplayName("fetch should NOT call the company site enricher in the hot path")
+        void fetch_whenJobsHaveCompanyWebsite_shouldNotCallEnricher() {
+            registry.register(createStub("p1", raw("Dev1", "https://a.com/1")),
+                    null, noopRateLimiter, createNormalizer(List.of("dev1")));
+
+            adapter = new ProviderBasedScraperAdapter(registry);
+            var jobs = adapter.fetch().jobs();
+
+            // The enricher is intentionally not wired into the adapter's fetch path;
+            // enrichment runs out-of-band via CompanyEnrichmentService.
+            assertEquals(1, jobs.size());
+            assertNull(jobs.get(0).contactEmail());
         }
     }
 
     private static RawJob raw(String title, String url) {
-        return new RawJob(title, "Co", url, "desc", "2026-07-01", null, null, "test", null);
+        return rawWithMetadata(title, url, "detailFailed", null);
+    }
+
+    private static RawJob rawWithMetadata(String title, String url, String key, String value) {
+        var metadata = new java.util.HashMap<String, String>();
+        if (value != null) {
+            metadata.put(key, value);
+        }
+        return new RawJob(title, "Co", url, "desc", "2026-07-01", null, null, "test", metadata);
     }
 
     private static ExtractionStrategy createStub(String id, RawJob... jobs) {

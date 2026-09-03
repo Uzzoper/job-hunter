@@ -2,11 +2,13 @@ package com.juanperuzzo.job_hunter.infrastructure.scraper.provider;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.juanperuzzo.job_hunter.application.port.out.RawJob;
+import com.juanperuzzo.job_hunter.infrastructure.scraper.normalizer.UrlNormalizer;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.retry.ExponentialBackoffRetry;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.strategy.ExtractionStrategy;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.strategy.RestApiStrategy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.web.client.RestClientResponseException;
 
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
@@ -58,8 +60,12 @@ public class GupyProvider implements ExtractionStrategy {
     @Override
     public List<RawJob> extract() {
         var uniqueJobs = new HashMap<String, RawJob>();
+        var authFailed = false;
 
         for (var keyword : keywords) {
+            if (authFailed) {
+                break;
+            }
             try {
                 var path = "/api/v1/jobs?jobName=" + urlEncode(keyword) + "&limit=" + limit;
                 var jobs = retry.execute(() -> apiStrategy.extractWithPath(path));
@@ -70,13 +76,36 @@ public class GupyProvider implements ExtractionStrategy {
 
                 log.debug("{}: fetched {} jobs for keyword '{}'", providerId, jobs.size(), keyword);
             } catch (Exception e) {
-                log.error("{}: failed to fetch keyword '{}': {}", providerId, keyword, e.getMessage());
+                if (isAuthFailure(e)) {
+                    log.warn("{}: auth failure (401/403) on keyword '{}', skipping remaining keywords",
+                            providerId, keyword);
+                    authFailed = true;
+                } else {
+                    log.error("{}: failed to fetch keyword '{}': {}", providerId, keyword, e.getMessage());
+                }
             }
         }
 
         var result = List.copyOf(uniqueJobs.values());
         log.info("{}: total unique jobs fetched: {}", providerId, result.size());
         return result;
+    }
+
+    /**
+     * Detect an authentication failure (HTTP 401/403) by inspecting the actual HTTP
+     * status of any {@link RestClientResponseException} in the exception cause chain,
+     * rather than matching on a fragile substring of the exception message.
+     */
+    private static boolean isAuthFailure(Exception e) {
+        for (var current = (Throwable) e; current != null; current = current.getCause()) {
+            if (current instanceof RestClientResponseException rce) {
+                int code = rce.getStatusCode().value();
+                if (code == 401 || code == 403) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     private RawJob mapNode(JsonNode node) {
@@ -98,6 +127,13 @@ public class GupyProvider implements ExtractionStrategy {
         var workModel = isRemote ? "Remoto" : null;
         var company = node.path("careerPageName").asText(null);
 
+        // Scenario 10: persist careerPageUrl as companyWebsite even when jobUrl exists.
+        var metadata = new HashMap<String, String>();
+        var careerPageUrl = node.path("careerPageUrl").asText("");
+        if (!careerPageUrl.isBlank()) {
+            metadata.put("companyWebsite", UrlNormalizer.noTrailingSlash(careerPageUrl));
+        }
+
         return new RawJob(
                 title,
                 company,
@@ -107,7 +143,7 @@ public class GupyProvider implements ExtractionStrategy {
                 locationStr,
                 workModel,
                 "gupy",
-                null);
+                metadata);
     }
 
     private static String getJobUrl(JsonNode node) {

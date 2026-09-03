@@ -2,6 +2,7 @@ package com.juanperuzzo.job_hunter.infrastructure.persistence;
 
 import com.juanperuzzo.job_hunter.application.port.out.JobRepository;
 import com.juanperuzzo.job_hunter.domain.model.Job;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
@@ -54,6 +55,14 @@ public class JobPersistenceAdapter implements JobRepository {
         return jpaRepository.findById(id).map(this::toDomain);
     }
 
+    @Override
+    public List<Job> findJobsNeedingEnrichment(int limit) {
+        int size = Math.max(limit, 1);
+        return jpaRepository.findJobsNeedingEnrichment(PageRequest.of(0, size)).stream()
+                .map(this::toDomain)
+                .toList();
+    }
+
     private JobEntity toEntity(Job job) {
         return new JobEntity(
                 job.id(),
@@ -63,7 +72,8 @@ public class JobPersistenceAdapter implements JobRepository {
                 job.description(),
                 job.postedAt(),
                 job.source(),
-                job.contactEmail()
+                job.contactEmail(),
+                job.companyWebsite()
         );
     }
 
@@ -76,7 +86,8 @@ public class JobPersistenceAdapter implements JobRepository {
                 entity.getDescription(),
                 entity.getPostedAt(),
                 entity.getSource(),
-                entity.getContactEmail()
+                entity.getContactEmail(),
+                entity.getCompanyWebsite()
         );
     }
 }
