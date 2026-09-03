@@ -115,6 +115,45 @@ class GupyProviderTest {
     }
 
     @Nested
+    @DisplayName("Scenario 4: auth failure fast-path")
+    class AuthFailure {
+
+        @Test
+        @DisplayName("extract should skip remaining keywords on 401 and return partial results")
+        void extract_whenFirstKeywordReturns401_shouldSkipRemainingKeywordsAndReturnPartial() {
+            // First keyword returns 200 with one job
+            stubFor(get(urlPathEqualTo("/api/v1/jobs"))
+                    .withQueryParam("jobName", equalTo("dev"))
+                    .willReturn(okJson("""
+                        {"data": [{"name": "Dev Java", "jobUrl": "https://a.com/1", "publishedDate": "2026-07-01"}]}
+                        """)));
+            // Second keyword returns 401
+            stubFor(get(urlPathEqualTo("/api/v1/jobs"))
+                    .withQueryParam("jobName", equalTo("java"))
+                    .willReturn(unauthorized().withHeader("Content-Type", "application/json")
+                            .withBody("{\"error\": \"Unauthorized\"}")));
+            // Third keyword should never be called
+            stubFor(get(urlPathEqualTo("/api/v1/jobs"))
+                    .withQueryParam("jobName", equalTo("python"))
+                    .willReturn(okJson("""
+                        {"data": [{"name": "Python Dev", "jobUrl": "https://a.com/3", "publishedDate": "2026-07-01"}]}
+                        """)));
+
+            var multiKeyRetry = new ExponentialBackoffRetry(2, Duration.ofMillis(1), Duration.ofMillis(10), Duration.ofMillis(2));
+            var multiKeyStrategy = new RestApiStrategy("gupy", baseUrl, 5, "data", GupyProviderTest::mapNode);
+            var multiKeyProvider = new GupyProvider("gupy", multiKeyStrategy, multiKeyRetry,
+                    List.of("dev", "java", "python"), 20);
+
+            var jobs = multiKeyProvider.extract();
+
+            // First keyword succeeded → 1 job returned; second keyword hit 401 → loop broke;
+            // third keyword was never attempted.
+            assertEquals(1, jobs.size(), "should return partial results from keyword before 401");
+            assertEquals("Dev Java", jobs.get(0).title());
+        }
+    }
+
+    @Nested
     @DisplayName("Scenario 3: edge cases")
     class EdgeCases {
 
