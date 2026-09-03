@@ -15,6 +15,7 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.util.List;
@@ -143,6 +144,37 @@ class ProviderBasedScraperAdapterTest {
             var jobs = adapter.fetch().jobs();
 
             assertEquals(1, jobs.size());
+        }
+
+        @Test
+        @DisplayName("fetch should fall back to exception class name in error field when message is null")
+        void fetch_whenProviderFailsWithNullMessage_shouldUseClassNameAsError() {
+            registry.register(new ExtractionStrategy() {
+                @Override public String providerId() { return "silent"; }
+                @Override public List<RawJob> extract() { throw new IllegalStateException(); }
+            }, null, noopRateLimiter, createNormalizer(List.of()));
+
+            adapter = new ProviderBasedScraperAdapter(registry);
+            var result = adapter.fetch();
+
+            var stats = result.perProvider().stream()
+                    .filter(s -> s.source().equals("silent")).findFirst().orElseThrow();
+            assertNotNull(stats.error());
+            assertEquals("java.lang.IllegalStateException", stats.error());
+        }
+    }
+
+    @Nested
+    @DisplayName("Scenario: per-provider timeout budget")
+    class TimeoutBudget {
+
+        @Test
+        @DisplayName("timeoutFor should give linkedin the extended budget and others the default")
+        void timeoutFor_whenProvider_shouldReturnPerProviderBudget() {
+            assertEquals(Duration.ofSeconds(180), ProviderBasedScraperAdapter.timeoutFor("linkedin"));
+            assertEquals(Duration.ofSeconds(60), ProviderBasedScraperAdapter.timeoutFor("gupy"));
+            assertEquals(Duration.ofSeconds(60), ProviderBasedScraperAdapter.timeoutFor("infojobs"));
+            assertEquals(Duration.ofSeconds(60), ProviderBasedScraperAdapter.timeoutFor("unknown"));
         }
     }
 

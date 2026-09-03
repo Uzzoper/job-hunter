@@ -9,6 +9,7 @@ import com.juanperuzzo.job_hunter.infrastructure.scraper.provider.ProviderRegist
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -22,7 +23,21 @@ public class ProviderBasedScraperAdapter implements ScraperPort {
 
     private static final int ERROR_MESSAGE_MAX_LENGTH = 300;
 
-    private static final int PROVIDER_TIMEOUT_SECONDS = 60;
+    private static final Duration DEFAULT_PROVIDER_TIMEOUT = Duration.ofSeconds(60);
+
+    /**
+     * LinkedIn (Playwright microservice mode) regularly exceeds the uniform 60s budget
+     * (~25 jobs via the detail-enrichment loop), so it gets an extended per-provider timeout.
+     */
+    private static final Duration LINKEDIN_PROVIDER_TIMEOUT = Duration.ofSeconds(180);
+
+    /**
+     * Resolves the fetch timeout budget for a given provider id. gupy/infojobs keep the
+     * default 60s; linkedin (service/Playwright mode) gets the extended 180s budget.
+     */
+    public static Duration timeoutFor(String providerId) {
+        return "linkedin".equals(providerId) ? LINKEDIN_PROVIDER_TIMEOUT : DEFAULT_PROVIDER_TIMEOUT;
+    }
 
     private record ProviderResult(List<Job> jobs, ProviderFetchStats stats) {}
 
@@ -59,15 +74,21 @@ public class ProviderBasedScraperAdapter implements ScraperPort {
 
         try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
             var futures = providers.stream()
-                    .map(entry -> CompletableFuture.supplyAsync(() -> fetchProvider(entry), executor)
-                            .orTimeout(PROVIDER_TIMEOUT_SECONDS, TimeUnit.SECONDS)
-                            .exceptionally(ex -> {
-                                var providerId = entry.strategy().providerId();
-                                var cause = ex.getCause() != null ? ex.getCause() : ex;
-                                log.error("{}: provider timed out or failed: {}", providerId, cause.getMessage());
-                                return new ProviderResult(List.of(),
-                                        new ProviderFetchStats(providerId, 0, 0, 0, 0, truncate(cause.getMessage())));
-                            }))
+                    .map(entry -> {
+                        var providerId = entry.strategy().providerId();
+                        var timeout = timeoutFor(providerId);
+                        return CompletableFuture.supplyAsync(() -> fetchProvider(entry), executor)
+                                .orTimeout(timeout.toSeconds(), TimeUnit.SECONDS)
+                                .exceptionally(ex -> {
+                                    var cause = ex.getCause() != null ? ex.getCause() : ex;
+                                    log.warn("{}: provider fetch failed (timeout={}s): {}: {}",
+                                            providerId, timeout.toSeconds(),
+                                            cause.getClass().getSimpleName(), cause.getMessage(), cause);
+                                    return new ProviderResult(List.of(),
+                                            new ProviderFetchStats(providerId, 0, 0, 0, 0,
+                                                    truncate(errorMessage(cause))));
+                                });
+                    })
                     .toList();
 
             for (var future : futures) {
@@ -118,5 +139,17 @@ public class ProviderBasedScraperAdapter implements ScraperPort {
         return message.length() <= ERROR_MESSAGE_MAX_LENGTH
                 ? message
                 : message.substring(0, ERROR_MESSAGE_MAX_LENGTH);
+    }
+
+    /**
+     * Produces a non-null, truncated error message for {@code ProviderFetchStats.error}.
+     * Falls back to the exception class name when the message is null.
+     */
+    private static String errorMessage(Throwable throwable) {
+        var message = throwable.getMessage();
+        if (message == null || message.isBlank()) {
+            return throwable.getClass().getName();
+        }
+        return message;
     }
 }
