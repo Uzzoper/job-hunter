@@ -46,4 +46,9 @@ public record Job(
     public boolean isExpired() {
         return ChronoUnit.DAYS.between(postedAt, LocalDate.now()) > EXPIRATION_DAYS;
     }
+
+    /** Return a copy of this job with a new {@code contactEmail}, preserving all other fields. */
+    public Job withContactEmail(String newContactEmail) {
+        return new Job(id, title, company, url, description, postedAt, source, newContactEmail, companyWebsite);
+    }
 }

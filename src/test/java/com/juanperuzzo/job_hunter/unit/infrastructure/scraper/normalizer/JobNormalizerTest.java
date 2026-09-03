@@ -468,6 +468,65 @@ class JobNormalizerTest {
     }
 
     @Nested
+    @DisplayName("decodeEntities")
+    class DecodeEntities {
+
+        @Test
+        @DisplayName("should decode &amp; to &")
+        void shouldDecodeAmp() {
+            assertEquals("AT&T", JobNormalizer.decodeEntities("AT&amp;T"));
+        }
+
+        @Test
+        @DisplayName("should decode &lt;, &gt;, &quot;, &#39;, &nbsp; and numeric entities")
+        void shouldDecodeCommonEntities() {
+            assertEquals("a<b>c\"d'e f@x", JobNormalizer.decodeEntities(
+                    "a&lt;b&gt;c&quot;d&#39;e&nbsp;f&#64;x"));
+        }
+
+        @Test
+        @DisplayName("should return empty for null input")
+        void shouldReturnEmptyForNull() {
+            assertEquals("", JobNormalizer.decodeEntities(null));
+        }
+    }
+
+    @Nested
+    @DisplayName("normalize - company website normalization")
+    class CompanyWebsiteNormalization {
+
+        @BeforeEach
+        void setUp() {
+            normalizer = new JobNormalizer(dateParser, List.of("desenvolvedor"),
+                    List.of(), List.of(), 90, FIXED_CLOCK);
+        }
+
+        @Test
+        @DisplayName("should strip a single trailing slash from companyWebsite")
+        void shouldStripTrailingSlashFromCompanyWebsite() {
+            var raw = new RawJob(
+                    "Desenvolvedor Java", "Company", "https://example.com/job",
+                    "Description", "2026-07-01", null, null, "test",
+                    java.util.Map.of("companyWebsite", "https://techcorp.com.br/"));
+            var job = normalizer.normalize(raw);
+            assertNotNull(job);
+            assertEquals("https://techcorp.com.br", job.companyWebsite());
+        }
+
+        @Test
+        @DisplayName("should preserve a companyWebsite with no trailing slash")
+        void shouldPreserveCompanyWebsiteWithoutTrailingSlash() {
+            var raw = new RawJob(
+                    "Desenvolvedor Java", "Company", "https://example.com/job",
+                    "Description", "2026-07-01", null, null, "test",
+                    java.util.Map.of("companyWebsite", "https://techcorp.com.br"));
+            var job = normalizer.normalize(raw);
+            assertNotNull(job);
+            assertEquals("https://techcorp.com.br", job.companyWebsite());
+        }
+    }
+
+    @Nested
     @DisplayName("normalize - email enrichment extraction (P0)")
     class EmailEnrichmentExtraction {
 

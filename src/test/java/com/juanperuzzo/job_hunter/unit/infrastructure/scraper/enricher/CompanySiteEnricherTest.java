@@ -178,6 +178,24 @@ class CompanySiteEnricherTest {
         }
 
         @Test
+        @DisplayName("enrich should join contact paths on the origin, not the companyWebsite sub-path")
+        void enrich_whenWebsiteHasSubPath_shouldJoinContactPathOnOrigin() {
+            stubFor(get(urlPathEqualTo("/robots.txt")).willReturn(status(404)));
+            stubFor(get(urlPathEqualTo("/")).willReturn(ok("<html><body>Sem e-mail aqui</body></html>")));
+            stubFor(get(urlPathEqualTo("/contato"))
+                    .willReturn(ok("<html><body>rh [at] techcorp.com.br</body></html>")));
+
+            // companyWebsite has a sub-path (/careers) — the /contato fallback must be
+            // fetched from the origin (baseUrl), not baseUrl/careers/contato.
+            var enriched = enricher.enrich(job(null, baseUrl + "/careers"));
+
+            assertEquals("rh@techcorp.com.br", enriched.contactEmail());
+            verify(1, getRequestedFor(urlPathEqualTo("/")));
+            verify(1, getRequestedFor(urlPathEqualTo("/contato")));
+            verify(0, getRequestedFor(urlPathEqualTo("/careers/contato")));
+        }
+
+        @Test
         @DisplayName("enrich should return the job unchanged when no page yields an email")
         void enrich_whenNoEmailAnywhere_shouldReturnUnchanged() {
             stubFor(get(urlPathEqualTo("/robots.txt")).willReturn(status(404)));

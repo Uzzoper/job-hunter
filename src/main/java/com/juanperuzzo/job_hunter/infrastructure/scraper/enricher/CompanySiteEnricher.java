@@ -1,11 +1,12 @@
 package com.juanperuzzo.job_hunter.infrastructure.scraper.enricher;
 
 import com.juanperuzzo.job_hunter.application.port.out.CompanySiteEnrichmentPort;
+import com.juanperuzzo.job_hunter.domain.PortalDomains;
 import com.juanperuzzo.job_hunter.domain.model.Job;
-import com.juanperuzzo.job_hunter.infrastructure.scraper.normalizer.JobNormalizer;
+import com.juanperuzzo.job_hunter.infrastructure.scraper.normalizer.EmailExtractor;
+import com.juanperuzzo.job_hunter.infrastructure.scraper.normalizer.UrlNormalizer;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.ratelimit.RateLimiter;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.retry.ExponentialBackoffRetry;
-import org.jsoup.Jsoup;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.client.RestClient;
@@ -20,48 +21,25 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Semaphore;
 import java.util.function.Supplier;
-import java.util.regex.Pattern;
 
 /**
  * Enriches a {@link Job} with a contact email crawled from its company website,
  * following the email-enrichment spec P2 (Scenarios 12-16).
  * <p>
  * Policy: only runs when {@code contactEmail == null && companyWebsite != null};
- * crawls the homepage then at most one contact path
+ * crawls the origin then at most one contact path
  * ({@code /contato}, {@code /contact}, {@code /trabalhe-conosco}, {@code /carreiras}),
  * respecting {@code robots.txt}, rate-limited to {@code <=1 req/s per domain} via the
  * injected {@link RateLimiter} and bounded to {@code concurrency} simultaneous fetches
  * via a {@link Semaphore}. Results are cached per domain for 24h
  * (positive and negative entries). Failures are non-fatal: the job is returned unchanged.
+ * <p>
+ * Email extraction is delegated to the shared {@link EmailExtractor}; host/origin logic
+ * matches the shared {@link PortalDomains} and {@link UrlNormalizer} constants.
  */
 public class CompanySiteEnricher implements CompanySiteEnrichmentPort {
 
     private static final Logger log = LoggerFactory.getLogger(CompanySiteEnricher.class);
-
-    private static final Pattern EMAIL_PATTERN = Pattern.compile(
-            "[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}");
-
-    private static final List<Pattern> EXCLUDED_EMAIL_PATTERNS = List.of(
-            Pattern.compile("^noreply@", Pattern.CASE_INSENSITIVE),
-            Pattern.compile("^donotreply@", Pattern.CASE_INSENSITIVE),
-            Pattern.compile("^no-reply@", Pattern.CASE_INSENSITIVE),
-            Pattern.compile("^apply@", Pattern.CASE_INSENSITIVE));
-
-    private static final List<String> PORTAL_DOMAIN_SUFFIXES = List.of(
-            "gupy.io", "gupy.com.br", "infojobs.com.br");
-
-    private static final List<String> PLACEHOLDER_DOMAINS = List.of(
-            "example.com", "exemplo.com", "test.com", "domain.com",
-            "yourdomain.com", "seuemail.com");
-
-    private static final Pattern OBFUSCATED_AT_BRACKET = Pattern.compile("\\s*\\[at\\]\\s*", Pattern.CASE_INSENSITIVE);
-    private static final Pattern OBFUSCATED_AT_PARENTHESES = Pattern.compile("\\s*\\(at\\)\\s*", Pattern.CASE_INSENSITIVE);
-    private static final Pattern OBFUSCATED_AT_WORD = Pattern.compile("\\s+at\\s+", Pattern.CASE_INSENSITIVE);
-    private static final Pattern OBFUSCATED_DOT_BRACKET = Pattern.compile("\\s*\\[dot\\]\\s*", Pattern.CASE_INSENSITIVE);
-    private static final Pattern OBFUSCATED_DOT_PARENTHESES = Pattern.compile("\\s*\\(dot\\)\\s*", Pattern.CASE_INSENSITIVE);
-    private static final Pattern OBFUSCATED_ARROBA_BRACKET = Pattern.compile("\\s*\\[arroba\\]\\s*", Pattern.CASE_INSENSITIVE);
-    private static final Pattern OBFUSCATED_ARROBA_PARENTHESES = Pattern.compile("\\s*\\(arroba\\)\\s*", Pattern.CASE_INSENSITIVE);
-    private static final Pattern ZERO_WIDTH_CHARS = Pattern.compile("[\\u200B\\u200C\\u200D\\uFEFF]");
 
     private static final String USER_AGENT = "JobHunter/1.0";
 
@@ -118,7 +96,7 @@ public class CompanySiteEnricher implements CompanySiteEnrichmentPort {
         // Hotfix: skip job-portal domains that are not corporate sites.
         // Crawling these wastes ~5s per job (2 pages × 3 retries × backoff) and blocks
         // the synchronous fetch endpoint for hundreds of Gupy/InfoJobs listings.
-        if (isPortalDomain(domain)) {
+        if (PortalDomains.isPortal(domain)) {
             log.debug("company site enrichment skipped for {}: portal domain {}", job.url(), domain);
             return job;
         }
@@ -150,6 +128,11 @@ public class CompanySiteEnricher implements CompanySiteEnrichmentPort {
      * Crawl the homepage and (if needed) the first 200 contact path, returning the first
      * email found, or {@code null}. Conservative: robots.txt is checked per page, the
      * per-domain rate limiter is honored, and a semaphore bounds HTTP concurrency.
+     *
+     * <p>The homepage is fetched from {@code origin} and each contact path is joined
+     * onto the {@code origin} (scheme + host + port), never onto the full
+     * companyWebsite URL — otherwise a site hosted under a sub-path (e.g.
+     * {@code example.com/careers}) would fetch {@code example.com/careers/contato}.
      */
     private String crawl(String domain, String origin, String baseUrl) throws InterruptedException {
         var robots = withRateLimit(domain, () -> fetchRobots(origin));
@@ -171,7 +154,7 @@ public class CompanySiteEnricher implements CompanySiteEnrichmentPort {
             try {
                 rateLimiter.acquire(domain);
                 pagesFetched++;
-                var pageUrl = path.isEmpty() ? baseUrl : baseUrl + path;
+                var pageUrl = path.isEmpty() ? origin : origin + path;
                 var email = fetchAndExtract(pageUrl);
                 if (email != null) {
                     return email;
@@ -202,9 +185,7 @@ public class CompanySiteEnricher implements CompanySiteEnrichmentPort {
             log.warn("company site crawl failed for {}: {}", url, e.getMessage());
             return null;
         }
-    }
-
-    private String fetchBody(String url) {
+    }    private String fetchBody(String url) {
         var body = restClient.get()
                 .uri(url)
                 .header("User-Agent", USER_AGENT)
@@ -261,100 +242,20 @@ public class CompanySiteEnricher implements CompanySiteEnrichmentPort {
     }
 
     /**
-     * Extract a contact email from raw HTML using the same priority as the normalizer:
-     * {@code a[href^=mailto:]} first, then a regex over the de-obfuscated plain text,
-     * with the same filters (noreply/apply + placeholder domains).
+     * Extract a contact email from raw HTML using the shared {@link EmailExtractor}
+     * priority: {@code a[href^=mailto:]} first, then a regex over the de-obfuscated
+     * plain text, with the same filters (noreply/apply + placeholder domains).
      */
     private String extractFromHtml(String html) {
-        if (html == null || html.isBlank()) {
-            return null;
-        }
-        var mailto = extractMailto(html);
-        if (mailto != null) {
-            return mailto;
-        }
-        return extractFirstEmail(deobfuscate(toPlainText(html)));
-    }
-
-    private static String extractMailto(String html) {
-        if (html == null || html.isBlank()) {
-            return null;
-        }
-        var doc = Jsoup.parse(html);
-        for (var anchor : doc.select("a[href^=mailto:]")) {
-            var href = anchor.attr("href");
-            if (href == null || href.isBlank()) {
-                continue;
-            }
-            var email = href.substring("mailto:".length()).trim();
-            if (email.isEmpty()) {
-                continue;
-            }
-            var queryIndex = email.indexOf('?');
-            if (queryIndex >= 0) {
-                email = email.substring(0, queryIndex).trim();
-            }
-            if (isContactEmail(email)) {
-                return email;
-            }
-        }
-        return null;
-    }
-
-    private static String toPlainText(String html) {
-        if (html == null || html.isBlank()) {
-            return "";
-        }
-        return Jsoup.parse(JobNormalizer.decodeEntities(html)).text();
-    }
-
-    private static String deobfuscate(String text) {
-        if (text == null || text.isBlank()) {
-            return "";
-        }
-        var result = OBFUSCATED_AT_BRACKET.matcher(text).replaceAll("@");
-        result = OBFUSCATED_AT_PARENTHESES.matcher(result).replaceAll("@");
-        result = OBFUSCATED_AT_WORD.matcher(result).replaceAll("@");
-        result = OBFUSCATED_DOT_BRACKET.matcher(result).replaceAll(".");
-        result = OBFUSCATED_DOT_PARENTHESES.matcher(result).replaceAll(".");
-        result = OBFUSCATED_ARROBA_BRACKET.matcher(result).replaceAll("@");
-        result = OBFUSCATED_ARROBA_PARENTHESES.matcher(result).replaceAll("@");
-        return ZERO_WIDTH_CHARS.matcher(result).replaceAll("");
-    }
-
-    private static String extractFirstEmail(String text) {
-        if (text == null || text.isBlank()) {
-            return null;
-        }
-        var matcher = EMAIL_PATTERN.matcher(text);
-        while (matcher.find()) {
-            var email = matcher.group();
-            if (isContactEmail(email)) {
-                return email;
-            }
-        }
-        return null;
-    }
-
-    private static boolean isContactEmail(String email) {
-        if (EXCLUDED_EMAIL_PATTERNS.stream().anyMatch(p -> p.matcher(email).find())) {
-            return false;
-        }
-        var domain = email.substring(email.indexOf('@') + 1).toLowerCase(Locale.ROOT);
-        return !PLACEHOLDER_DOMAINS.contains(domain);
+        return EmailExtractor.extractFromHtml(html);
     }
 
     private Job withEmail(Job job, String email) {
-        return new Job(job.id(), job.title(), job.company(), job.url(), job.description(),
-                job.postedAt(), job.source(), email, job.companyWebsite());
+        return job.withContactEmail(email);
     }
 
     private boolean isExpired(Instant fetchedAt) {
         return Instant.now().isAfter(fetchedAt.plus(cacheTtl));
-    }
-
-    private static boolean isPortalDomain(String domain) {
-        return PORTAL_DOMAIN_SUFFIXES.stream().anyMatch(domain::endsWith);
     }
 
     private static String host(String url) {

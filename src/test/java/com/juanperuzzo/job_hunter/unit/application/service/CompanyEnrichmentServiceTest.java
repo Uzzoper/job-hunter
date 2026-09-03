@@ -60,8 +60,7 @@ class CompanyEnrichmentServiceTest {
             // Enricher applies the email to the representative job only (single crawl).
             when(enricher.enrich(any(Job.class))).thenAnswer(inv -> {
                 var job = inv.getArgument(0, Job.class);
-                return new Job(job.id(), job.title(), job.company(), job.url(), job.description(),
-                        job.postedAt(), job.source(), "rh@acme.com", job.companyWebsite());
+                return job.withContactEmail("rh@acme.com");
             });
 
             var result = service.enrichMissingEmails(50);
@@ -113,14 +112,13 @@ class CompanyEnrichmentServiceTest {
 
             when(jobRepository.findJobsNeedingEnrichment(50)).thenReturn(List.of(jA, jB));
 
-            // Domain A returns unchanged (failure), domain B enriches.
+            // Domain A throws (crawl failure), domain B enriches.
             when(enricher.enrich(any(Job.class))).thenAnswer(inv -> {
                 var job = inv.getArgument(0, Job.class);
                 if (job.companyWebsite() != null && job.companyWebsite().contains("fail.com")) {
-                    return job; // enriched but unchanged => represents no email found / failure
+                    throw new RuntimeException("crawl failed");
                 }
-                return new Job(job.id(), job.title(), job.company(), job.url(), job.description(),
-                        job.postedAt(), job.source(), "rh@good.com", job.companyWebsite());
+                return job.withContactEmail("rh@good.com");
             });
 
             var result = service.enrichMissingEmails(50);
@@ -129,6 +127,32 @@ class CompanyEnrichmentServiceTest {
             assertEquals(1, result.enriched());
             assertEquals(0, result.skippedPortal());
             assertEquals(1, result.failed());
+        }
+
+        @Test
+        @DisplayName("enrichMissingEmails should NOT count a no-email domain as failed")
+        void enrich_whenNoEmailFound_shouldNotCountAsFailed() {
+            var jA = job(1L, "https://noemail.com/");
+            var jB = job(2L, "https://good.com/");
+
+            when(jobRepository.findJobsNeedingEnrichment(50)).thenReturn(List.of(jA, jB));
+
+            // Domain A enriches to no email (crawl succeeded but nothing found),
+            // domain B enriches.
+            when(enricher.enrich(any(Job.class))).thenAnswer(inv -> {
+                var job = inv.getArgument(0, Job.class);
+                if (job.companyWebsite() != null && job.companyWebsite().contains("noemail.com")) {
+                    return job; // unchanged => no email found, NOT a failure
+                }
+                return job.withContactEmail("rh@good.com");
+            });
+
+            var result = service.enrichMissingEmails(50);
+
+            assertEquals(2, result.checked());
+            assertEquals(1, result.enriched());
+            assertEquals(0, result.skippedPortal());
+            assertEquals(0, result.failed());
         }
     }
 

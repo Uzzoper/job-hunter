@@ -4,6 +4,7 @@ import com.juanperuzzo.job_hunter.application.port.in.CompanyEnrichmentUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.EnrichmentResult;
 import com.juanperuzzo.job_hunter.application.port.out.CompanySiteEnrichmentPort;
 import com.juanperuzzo.job_hunter.application.port.out.JobRepository;
+import com.juanperuzzo.job_hunter.domain.PortalDomains;
 import com.juanperuzzo.job_hunter.domain.model.Job;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -23,13 +24,14 @@ import java.util.Map;
  * <p>
  * Runs outside the synchronous {@code POST /api/jobs/fetch} hot path and never throws:
  * per-domain failures are counted and the batch continues.
+ * <p>
+ * The {@code failed} counter tracks only genuine failures — exceptions during crawl,
+ * persistence save failures, and robots-denials. A domain that was crawled successfully
+ * but yielded no email is {@code not} a failure (it is simply unenriched).
  */
 public class CompanyEnrichmentService implements CompanyEnrichmentUseCase {
 
     private static final Logger log = LoggerFactory.getLogger(CompanyEnrichmentService.class);
-
-    private static final List<String> PORTAL_DOMAIN_SUFFIXES = List.of(
-            "gupy.io", "gupy.com.br", "infojobs.com.br");
 
     private static final int DEFAULT_MAX_LIMIT = 200;
 
@@ -68,7 +70,7 @@ public class CompanyEnrichmentService implements CompanyEnrichmentUseCase {
         for (var job : candidates) {
             var host = host(job.companyWebsite());
             if (host == null) {
-                failed++;
+                // No resolvable domain — cannot crawl; not a "failure" in the strict sense.
                 continue;
             }
             byDomain.computeIfAbsent(host, k -> new ArrayList<>()).add(job);
@@ -78,7 +80,7 @@ public class CompanyEnrichmentService implements CompanyEnrichmentUseCase {
             var domain = entry.getKey();
             var domainJobs = entry.getValue();
 
-            if (isPortalDomain(domain)) {
+            if (PortalDomains.isPortal(domain)) {
                 skippedPortal += domainJobs.size();
                 continue;
             }
@@ -93,14 +95,13 @@ public class CompanyEnrichmentService implements CompanyEnrichmentUseCase {
                 }
 
                 if (email == null) {
-                    // No email found for this domain — count as failed (unchanged).
-                    failed += domainJobs.size();
+                    // Crawled successfully but no email found — Unenriched, not failed.
                     continue;
                 }
 
                 for (var job : domainJobs) {
                     try {
-                        jobRepository.save(withEmail(job, email));
+                        jobRepository.save(job.withContactEmail(email));
                         enriched++;
                     } catch (Exception e) {
                         log.warn("failed to save enrichment for job {}: {}", job.url(), e.getMessage());
@@ -114,15 +115,6 @@ public class CompanyEnrichmentService implements CompanyEnrichmentUseCase {
         }
 
         return new EnrichmentResult(checked, enriched, skippedPortal, failed);
-    }
-
-    private static Job withEmail(Job job, String email) {
-        return new Job(job.id(), job.title(), job.company(), job.url(), job.description(),
-                job.postedAt(), job.source(), email, job.companyWebsite());
-    }
-
-    private static boolean isPortalDomain(String domain) {
-        return PORTAL_DOMAIN_SUFFIXES.stream().anyMatch(domain::endsWith);
     }
 
     private static String host(String url) {
