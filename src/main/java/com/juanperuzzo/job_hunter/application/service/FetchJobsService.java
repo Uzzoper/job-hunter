@@ -55,7 +55,7 @@ public class FetchJobsService implements FetchJobsUseCase, ListJobsUseCase, GetJ
             totalWithEmail += withEmail;
             perProvider.add(new ProviderFetchStats(
                     stats.source(), stats.fetched(), saved, withEmail,
-                    stats.detailFailedCount(), stats.error()));
+                    stats.detailFailedCount(), stats.detailSkippedCount(), stats.error()));
         }
 
         return new FetchResult(totalFetched, totalSaved, totalWithEmail, perProvider);

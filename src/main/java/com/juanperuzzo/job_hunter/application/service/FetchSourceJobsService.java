@@ -38,6 +38,7 @@ public class FetchSourceJobsService implements FetchSourceJobsUseCase {
         int saved = 0;
         int withEmail = 0;
         int detailFailedCount = 0;
+        int detailSkippedCount = 0;
         String error = null;
 
         try {
@@ -47,6 +48,9 @@ public class FetchSourceJobsService implements FetchSourceJobsUseCase {
             for (var raw : rawJobs) {
                 if ("true".equals(raw.metadata().get("detailFailed"))) {
                     detailFailedCount++;
+                }
+                if ("true".equals(raw.metadata().get("detailSkipped"))) {
+                    detailSkippedCount++;
                 }
                 try {
                     var job = normalizer.normalize(raw);
@@ -71,7 +75,7 @@ public class FetchSourceJobsService implements FetchSourceJobsUseCase {
         }
 
         var perProvider = List.of(new ProviderFetchStats(
-                sourceId, fetched, saved, withEmail, detailFailedCount, error));
+                sourceId, fetched, saved, withEmail, detailFailedCount, detailSkippedCount, error));
         log.info("{}: completed - {} saved, {} with email", sourceId, saved, withEmail);
         return new FetchResult(fetched, saved, withEmail, perProvider);
     }
