@@ -40,7 +40,7 @@ class FetchSourceJobsServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new FetchSourceJobsService(sourceFetchPort, jobRepository, normalizer, null);
+        service = new FetchSourceJobsService(sourceFetchPort, jobRepository, normalizer);
     }
 
     @Nested

@@ -1,7 +1,6 @@
 package com.juanperuzzo.job_hunter.infrastructure.scraper.adapter;
 
 import com.juanperuzzo.job_hunter.application.port.in.ProviderFetchStats;
-import com.juanperuzzo.job_hunter.application.port.out.CompanySiteEnrichmentPort;
 import com.juanperuzzo.job_hunter.application.port.out.ScraperPort;
 import com.juanperuzzo.job_hunter.application.port.out.ScraperResult;
 import com.juanperuzzo.job_hunter.domain.model.Job;
@@ -50,22 +49,8 @@ public class ProviderBasedScraperAdapter implements ScraperPort {
 
     private final ProviderRegistry registry;
 
-    /**
-     * Kept for backward compatibility with existing call sites/tests. The company-site
-     * enricher no longer runs inside the synchronous fetch hot path (async-company-enrichment
-     * spec); the argument is ignored. Enrichment now runs out-of-band via
-     * {@code CompanyEnrichmentService}.
-     */
-    @SuppressWarnings("unused")
-    private final CompanySiteEnrichmentPort enricher;
-
     public ProviderBasedScraperAdapter(ProviderRegistry registry) {
-        this(registry, null);
-    }
-
-    public ProviderBasedScraperAdapter(ProviderRegistry registry, CompanySiteEnrichmentPort enricher) {
         this.registry = registry;
-        this.enricher = enricher;
     }
 
     @Override

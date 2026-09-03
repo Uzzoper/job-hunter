@@ -1,8 +1,6 @@
 package com.juanperuzzo.job_hunter.unit.infrastructure.scraper.adapter;
 
-import com.juanperuzzo.job_hunter.application.port.out.CompanySiteEnrichmentPort;
 import com.juanperuzzo.job_hunter.application.port.out.RawJob;
-import com.juanperuzzo.job_hunter.domain.model.Job;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.adapter.ProviderBasedScraperAdapter;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.normalizer.DateParser;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.normalizer.JobNormalizer;
@@ -255,16 +253,11 @@ class ProviderBasedScraperAdapterTest {
             registry.register(createStub("p1", raw("Dev1", "https://a.com/1")),
                     null, noopRateLimiter, createNormalizer(List.of("dev1")));
 
-            var enricher = new CompanySiteEnrichmentPort() {
-                @Override
-                public Job enrich(Job job) {
-                    throw new AssertionError("enricher must not be called from fetch hot path");
-                }
-            };
-            adapter = new ProviderBasedScraperAdapter(registry, enricher);
+            adapter = new ProviderBasedScraperAdapter(registry);
             var jobs = adapter.fetch().jobs();
 
-            // No exception thrown => enricher was never invoked from fetch().
+            // The enricher is intentionally not wired into the adapter's fetch path;
+            // enrichment runs out-of-band via CompanyEnrichmentService.
             assertEquals(1, jobs.size());
             assertNull(jobs.get(0).contactEmail());
         }

@@ -3,7 +3,6 @@ package com.juanperuzzo.job_hunter.application.service;
 import com.juanperuzzo.job_hunter.application.port.in.FetchResult;
 import com.juanperuzzo.job_hunter.application.port.in.FetchSourceJobsUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.ProviderFetchStats;
-import com.juanperuzzo.job_hunter.application.port.out.CompanySiteEnrichmentPort;
 import com.juanperuzzo.job_hunter.application.port.out.JobRepository;
 import com.juanperuzzo.job_hunter.application.port.out.NormalizerPort;
 import com.juanperuzzo.job_hunter.application.port.out.SourceFetchPort;
@@ -29,20 +28,6 @@ public class FetchSourceJobsService implements FetchSourceJobsUseCase {
         this.sourceFetchPort = sourceFetchPort;
         this.jobRepository = jobRepository;
         this.normalizer = normalizer;
-    }
-
-    /**
-     * Kept for backward compatibility: the company-site enricher no longer runs in this
-     * fetch path (async-company-enrichment spec). Enrichment now runs out-of-band via
-     * {@code CompanyEnrichmentService}. The enricher argument is ignored.
-     */
-    @Deprecated
-    public FetchSourceJobsService(
-            SourceFetchPort sourceFetchPort,
-            JobRepository jobRepository,
-            NormalizerPort normalizer,
-            CompanySiteEnrichmentPort enricher) {
-        this(sourceFetchPort, jobRepository, normalizer);
     }
 
     @Override
