@@ -116,6 +116,24 @@ public class AppConfig {
     }
 
     /**
+     * Dedicated {@link RestClient} for InfoJobs detail-page fetches, honoring
+     * {@code scraper.infojobs.detail-timeout-seconds} (default 5s). Search-page
+     * fetches keep using the shared {@code scraperRestClient} (10s) so a slow detail
+     * page never starves search; detail fetches bound to the shorter, dedicated timeout.
+     */
+    @Bean
+    public RestClient infojobsDetailRestClient(
+            @Value("${scraper.infojobs.detail-timeout-seconds:5}") int detailTimeoutSeconds) {
+        var requestFactory = new SimpleClientHttpRequestFactory();
+        requestFactory.setConnectTimeout(detailTimeoutSeconds * 1000);
+        requestFactory.setReadTimeout(detailTimeoutSeconds * 1000);
+        return RestClient.builder()
+                .requestFactory(requestFactory)
+                .defaultHeader("User-Agent", "JobHunter/1.0")
+                .build();
+    }
+
+    /**
      * Per-domain rate limiter for the company-site enricher (1 req/s per domain,
      * burst 1) — email-enrichment spec Scenario 14. Distinct from the provider-wide
      * {@link RateLimiter} bean so enricher throttling never interferes with provider calls.
@@ -227,10 +245,11 @@ public class AppConfig {
             @Value("${scraper.infojobs.max-detail-fetch:20}") int maxDetailFetch,
             ExponentialBackoffRetry exponentialBackoffRetry,
             RestClient scraperRestClient,
+            @Qualifier("infojobsDetailRestClient") RestClient infojobsDetailRestClient,
             RateLimiter infojobsRateLimiter) {
         return new InfoJobsProvider(baseUrl, timeoutSeconds, keywords, maxPages, exponentialBackoffRetry,
                 detailConcurrency, detailTimeoutSeconds,
-                scraperRestClient, infojobsRateLimiter,
+                scraperRestClient, infojobsDetailRestClient, infojobsRateLimiter,
                 maxDetailFetch);
     }
 
