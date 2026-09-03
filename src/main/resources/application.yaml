@@ -112,6 +112,7 @@ scraper:
     max-jobs: 25
     timeout-seconds: 30
     detail-fetch-delay-millis: 500
+    base-job-url: https://www.linkedin.com/jobs/view/
 
 auto-send:
   enabled: false

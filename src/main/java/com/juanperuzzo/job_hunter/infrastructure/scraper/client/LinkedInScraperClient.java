@@ -25,7 +25,7 @@ public class LinkedInScraperClient implements ExtractionStrategy {
     private static final String PROVIDER_ID = "linkedin";
     private static final String SEARCH_PATH = "/api/jobs";
     private static final String DETAIL_PATH_PREFIX = "/api/jobs/";
-    private static final String BASE_JOB_URL = "https://www.linkedin.com/jobs/view/";
+    private static final String DEFAULT_BASE_JOB_URL = "https://www.linkedin.com/jobs/view/";
 
     private final RestClient restClient;
     private final ObjectMapper objectMapper;
@@ -194,7 +194,7 @@ public class LinkedInScraperClient implements ExtractionStrategy {
             return null;
         }
 
-        var url = BASE_JOB_URL + id;
+        var url = baseJobUrl() + id;
 
         var metadata = new HashMap<String, String>();
         metadata.put("jobId", id);
@@ -272,6 +272,11 @@ public class LinkedInScraperClient implements ExtractionStrategy {
         if (url == null || url.isBlank()) return null;
         var trimmed = url.trim();
         return trimmed.endsWith("/") ? trimmed.substring(0, trimmed.length() - 1) : trimmed;
+    }
+
+    private String baseJobUrl() {
+        var configured = properties.baseJobUrl();
+        return configured == null || configured.isBlank() ? DEFAULT_BASE_JOB_URL : configured;
     }
 
     private void handleErrorResponse(int statusCode, byte[] body) {
