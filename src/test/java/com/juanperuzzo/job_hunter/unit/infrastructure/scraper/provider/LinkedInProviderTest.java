@@ -291,6 +291,85 @@ class LinkedInProviderTest {
     }
 
     @Nested
+    @DisplayName("Scenario 11: companyWebsite from detail page")
+    class CompanyWebsite {
+
+        @Test
+        @DisplayName("extract should set companyWebsite metadata from detail org link")
+        void extract_whenCompanyLinkPresent_shouldSetCompanyWebsite() {
+            stubFor(get(urlPathEqualTo("/jobs/search"))
+                    .withQueryParam("keywords", equalTo("desenvolvedor"))
+                    .willReturn(ok(loadFixture("search-page.html"))));
+
+            stubFor(get(urlPathEqualTo("/jobs/view/desenvolvedor-java-123"))
+                    .willReturn(ok("""
+                        <html><body>
+                        <div class="job-view-layout jobs-details">
+                          <a class="topcard__org-name-link" href="https://techcorp.com.br">TechCorp</a>
+                          <div class="show-more-less-html__markup"><p>Detalhe full.</p></div>
+                        </div>
+                        </body></html>
+                        """)));
+
+            stubFor(get(urlPathEqualTo("/jobs/view/desenvolvedor-python-456"))
+                    .willReturn(ok(loadFixture("detail-page-2.html"))));
+
+            stubFor(get(urlPathEqualTo("/jobs/view/estagio-frontend-789"))
+                    .willReturn(ok("<html><body><div class=\"show-more-less-html__markup\"><p>Detalhes do estágio.</p></div></body></html>")));
+
+            var jobs = provider.extract();
+
+            var javaJob = jobs.stream()
+                    .filter(j -> j.title().contains("Java"))
+                    .findFirst()
+                    .orElseThrow();
+            assertEquals("https://techcorp.com.br", javaJob.metadata().get("companyWebsite"),
+                    "companyWebsite should be parsed from a.topcard__org-name-link");
+
+            // Cards without a company link keep companyWebsite null
+            var pythonJob = jobs.stream()
+                    .filter(j -> j.title().contains("Python"))
+                    .findFirst()
+                    .orElseThrow();
+            assertNull(pythonJob.metadata().get("companyWebsite"),
+                    "companyWebsite stays null when no org link present");
+        }
+
+        @Test
+        @DisplayName("extract should set companyWebsite from detail org link with data-tracking-control-name")
+        void extract_whenDetailOrgNameControlLinkPresent_shouldSetCompanyWebsite() {
+            stubFor(get(urlPathEqualTo("/jobs/search"))
+                    .withQueryParam("keywords", equalTo("desenvolvedor"))
+                    .willReturn(ok(loadFixture("search-page.html"))));
+
+            stubFor(get(urlPathEqualTo("/jobs/view/desenvolvedor-java-123"))
+                    .willReturn(ok("""
+                        <html><body>
+                        <div class="job-view-layout jobs-details">
+                          <a href="https://dataco.com.br" data-tracking-control-name="public_jobs_topcard-org-name">DataCo</a>
+                          <div class="show-more-less-html__markup"><p>Detalhe full.</p></div>
+                        </div>
+                        </body></html>
+                        """)));
+
+            stubFor(get(urlPathEqualTo("/jobs/view/desenvolvedor-python-456"))
+                    .willReturn(ok(loadFixture("detail-page-2.html"))));
+
+            stubFor(get(urlPathEqualTo("/jobs/view/estagio-frontend-789"))
+                    .willReturn(ok("<html><body><div class=\"show-more-less-html__markup\"><p>Outro.</p></div></body></html>")));
+
+            var jobs = provider.extract();
+
+            var javaJob = jobs.stream()
+                    .filter(j -> j.title().contains("Java"))
+                    .findFirst()
+                    .orElseThrow();
+            assertEquals("https://dataco.com.br", javaJob.metadata().get("companyWebsite"),
+                    "companyWebsite should be parsed from a[data-tracking-control-name=public_jobs_topcard-org-name]");
+        }
+    }
+
+    @Nested
     @DisplayName("Scenario 10: location / seniority filtering via config")
     class LocationSeniorityFiltering {
 

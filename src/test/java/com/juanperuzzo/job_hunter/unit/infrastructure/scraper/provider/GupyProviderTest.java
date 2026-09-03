@@ -115,8 +115,103 @@ class GupyProviderTest {
     }
 
     @Nested
+    @DisplayName("Scenario 4: auth failure fast-path")
+    class AuthFailure {
+
+        @Test
+        @DisplayName("extract should skip remaining keywords on 401 and return partial results")
+        void extract_whenFirstKeywordReturns401_shouldSkipRemainingKeywordsAndReturnPartial() {
+            // First keyword returns 200 with one job
+            stubFor(get(urlPathEqualTo("/api/v1/jobs"))
+                    .withQueryParam("jobName", equalTo("dev"))
+                    .willReturn(okJson("""
+                        {"data": [{"name": "Dev Java", "jobUrl": "https://a.com/1", "publishedDate": "2026-07-01"}]}
+                        """)));
+            // Second keyword returns 401
+            stubFor(get(urlPathEqualTo("/api/v1/jobs"))
+                    .withQueryParam("jobName", equalTo("java"))
+                    .willReturn(unauthorized().withHeader("Content-Type", "application/json")
+                            .withBody("{\"error\": \"Unauthorized\"}")));
+            // Third keyword should never be called
+            stubFor(get(urlPathEqualTo("/api/v1/jobs"))
+                    .withQueryParam("jobName", equalTo("python"))
+                    .willReturn(okJson("""
+                        {"data": [{"name": "Python Dev", "jobUrl": "https://a.com/3", "publishedDate": "2026-07-01"}]}
+                        """)));
+
+            var multiKeyRetry = new ExponentialBackoffRetry(2, Duration.ofMillis(1), Duration.ofMillis(10), Duration.ofMillis(2));
+            var multiKeyStrategy = new RestApiStrategy("gupy", baseUrl, 5, "data", GupyProviderTest::mapNode);
+            var multiKeyProvider = new GupyProvider("gupy", multiKeyStrategy, multiKeyRetry,
+                    List.of("dev", "java", "python"), 20);
+
+            var jobs = multiKeyProvider.extract();
+
+            // First keyword succeeded → 1 job returned; second keyword hit 401 → loop broke;
+            // third keyword was never attempted.
+            assertEquals(1, jobs.size(), "should return partial results from keyword before 401");
+            assertEquals("Dev Java", jobs.get(0).title());
+        }
+
+        @Test
+        @DisplayName("extract should detect 401 by HTTP status and make a single attempt (no message matching, no retry)")
+        void extract_when401_shouldDetectByStatusAndRetryOnlyOnce() {
+            stubFor(get(urlPathEqualTo("/api/v1/jobs"))
+                    .withQueryParam("jobName", equalTo("dev"))
+                    .willReturn(okJson("""
+                        {"data": [{"name": "Dev Java", "jobUrl": "https://a.com/1", "publishedDate": "2026-07-01"}]}
+                        """)));
+            // Second keyword returns 401 — detection must come from the HTTP status, not the message
+            stubFor(get(urlPathEqualTo("/api/v1/jobs"))
+                    .withQueryParam("jobName", equalTo("java"))
+                    .willReturn(unauthorized().withHeader("Content-Type", "application/json")
+                            .withBody("{\"error\": \"Unauthorized\"}")));
+
+            var provider = new GupyProvider("gupy", apiStrategy, retry, List.of("dev", "java"), 20);
+
+            var jobs = provider.extract();
+
+            // Partial results: the keyword before the 401 is returned
+            assertEquals(1, jobs.size());
+            assertEquals("Dev Java", jobs.get(0).title());
+
+            // The 401 keyword must have been attempted exactly once (fail-fast, no retry)
+            verify(1, getRequestedFor(urlPathEqualTo("/api/v1/jobs"))
+                    .withQueryParam("jobName", equalTo("java")));
+        }
+    }
+
+    @Nested
     @DisplayName("Scenario 3: edge cases")
     class EdgeCases {
+
+        @Test
+        @DisplayName("extract_whenCareerPageUrlPresent_shouldSetCompanyWebsite - Scenario 10")
+        void extract_whenCareerPageUrlPresent_shouldSetCompanyWebsite() {
+            // Use the provider's real mapper (first constructor wires GupyProvider.mapNode)
+            var realMapperProvider = new GupyProvider(baseUrl, 5, List.of("desenvolvedor"), 20, retry);
+
+            stubFor(get(urlPathEqualTo("/api/v1/jobs"))
+                    .withQueryParam("jobName", equalTo("desenvolvedor"))
+                    .withQueryParam("limit", equalTo("20"))
+                    .willReturn(okJson("""
+                        {"data": [{
+                          "name": "Dev Java",
+                          "careerPageName": "TechCo",
+                          "jobUrl": "https://techco.gupy.io/jobs/123",
+                          "careerPageUrl": "https://techco.gupy.io",
+                          "publishedDate": "2026-07-01",
+                          "description": "Vaga"
+                        }]}
+                        """)));
+
+            var jobs = realMapperProvider.extract();
+            assertEquals(1, jobs.size());
+
+            var job = jobs.get(0);
+            assertEquals("https://techco.gupy.io/jobs/123", job.url(), "jobUrl should still win for url");
+            assertEquals("https://techco.gupy.io", job.metadata().get("companyWebsite"),
+                    "careerPageUrl should be stored as companyWebsite even when jobUrl exists");
+        }
 
         @Test
         @DisplayName("extract should skip entries with blank URL")

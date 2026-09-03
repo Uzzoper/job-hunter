@@ -17,7 +17,10 @@ import java.util.regex.Pattern;
  * Centralized normalizer that transforms a {@link RawJob} into a domain {@link Job}.
  * <p>
  * Pipeline: clean → normalize → parseDate → matchKeywords → isExcluded →
- * matchLocation → filterByAge → decode → mapToJob.
+ * matchLocation → filterByAge → decode → extract (mailto → deobfuscate → regex) → mapToJob.
+ * <p>
+ * Email extraction is delegated to the shared {@link EmailExtractor}; company-website
+ * normalization uses the shared {@link UrlNormalizer}.
  */
 public class JobNormalizer implements NormalizerPort {
 
@@ -27,19 +30,6 @@ public class JobNormalizer implements NormalizerPort {
             "home office", "remoto", "todo brasil", "teletrabalho", "remote");
 
     private static final Pattern CONSECUTIVE_WHITESPACE = Pattern.compile("\\s+");
-
-    private static final Pattern EMAIL_PATTERN = Pattern.compile(
-            "[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}");
-
-    private static final List<Pattern> EXCLUDED_EMAIL_PATTERNS = List.of(
-            Pattern.compile("^noreply@", Pattern.CASE_INSENSITIVE),
-            Pattern.compile("^donotreply@", Pattern.CASE_INSENSITIVE),
-            Pattern.compile("^no-reply@", Pattern.CASE_INSENSITIVE),
-            Pattern.compile("^apply@", Pattern.CASE_INSENSITIVE));
-
-    private static final List<String> PLACEHOLDER_DOMAINS = List.of(
-            "example.com", "exemplo.com", "test.com", "domain.com",
-            "yourdomain.com", "seuemail.com");
 
     private final DateParser dateParser;
     private final List<String> keywords;
@@ -104,9 +94,11 @@ public class JobNormalizer implements NormalizerPort {
 
         var company = raw.company() != null ? cleanText(raw.company()) : "";
         var description = raw.description() != null ? decodeEntities(raw.description()) : "";
-        var contactEmail = extractContactEmail(raw.title(), raw.description());
+        var contactEmail = EmailExtractor.extract(raw.title(), raw.description());
+        var companyWebsite = normalizeCompanyWebsite(raw.metadata().get("companyWebsite"));
 
-        return new Job(null, cleanText(raw.title()), company, raw.url(), description, postedDate, raw.source(), contactEmail);
+        return new Job(null, cleanText(raw.title()), company, raw.url(), description, postedDate, raw.source(),
+                contactEmail, companyWebsite);
     }
 
     public List<Job> normalizeAll(List<RawJob> rawJobs) {
@@ -154,41 +146,18 @@ public class JobNormalizer implements NormalizerPort {
                 .replace("&quot;", "\"")
                 .replace("&#39;", "'")
                 .replace("&nbsp;", " ")
+                .replace("&#64;", "@")
+                .replace("&#x40;", "@")
                 .replaceAll("&[a-zA-Z]+;", "?");
     }
 
     /**
-     * Extract a contact email from title or description.
-     * Checks title first, then description.
-     * Returns null if no valid email is found.
+     * Copy the provider-supplied company website into the domain model, normalizing
+     * away a trailing slash. Returns null for absent or blank metadata.
      */
-    static String extractContactEmail(String title, String description) {
-        var candidate = extractFirstEmail(title);
-        if (candidate == null && description != null) {
-            candidate = extractFirstEmail(description);
-        }
-        return candidate;
-    }
-
-    private static String extractFirstEmail(String text) {
-        if (text == null || text.isBlank()) return null;
-
-        var matcher = EMAIL_PATTERN.matcher(text);
-        while (matcher.find()) {
-            var email = matcher.group();
-            if (isContactEmail(email)) {
-                return email;
-            }
-        }
-        return null;
-    }
-
-    private static boolean isContactEmail(String email) {
-        if (EXCLUDED_EMAIL_PATTERNS.stream().anyMatch(p -> p.matcher(email).find())) {
-            return false;
-        }
-        var domain = email.substring(email.indexOf('@') + 1).toLowerCase();
-        return !PLACEHOLDER_DOMAINS.contains(domain);
+    private static String normalizeCompanyWebsite(String website) {
+        if (website == null) return null;
+        return UrlNormalizer.noTrailingSlash(website);
     }
 
     private boolean matchesKeywords(String normalizedTitle, String normalizedDescription) {

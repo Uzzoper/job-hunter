@@ -3,6 +3,7 @@ package com.juanperuzzo.job_hunter.infrastructure.scraper.provider;
 import com.juanperuzzo.job_hunter.application.port.out.RawJob;
 import com.juanperuzzo.job_hunter.domain.exception.ScraperException;
 import com.juanperuzzo.job_hunter.infrastructure.config.LinkedInScraperProperties;
+import com.juanperuzzo.job_hunter.infrastructure.scraper.normalizer.UrlNormalizer;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.retry.ExponentialBackoffRetry;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.retry.RetryStrategy;
 import org.jsoup.Jsoup;
@@ -66,7 +67,7 @@ public class LinkedInProvider implements com.juanperuzzo.job_hunter.infrastructu
             List<String> workType,
             String timeRange,
             int maxJobs) {
-        this.baseUrl = removeTrailingSlash(baseUrl);
+        this.baseUrl = UrlNormalizer.noTrailingSlash(baseUrl);
         this.timeoutSeconds = timeoutSeconds;
         this.keywords = keywords;
         this.maxPages = maxPages;
@@ -83,7 +84,7 @@ public class LinkedInProvider implements com.juanperuzzo.job_hunter.infrastructu
     public LinkedInProvider(
             LinkedInScraperProperties properties,
             ExponentialBackoffRetry retry) {
-        this.baseUrl = removeTrailingSlash(properties.baseUrl());
+        this.baseUrl = UrlNormalizer.noTrailingSlash(properties.baseUrl());
         this.timeoutSeconds = properties.timeoutSeconds();
         this.keywords = properties.keywords();
         this.maxPages = properties.maxPages();
@@ -394,6 +395,7 @@ public class LinkedInProvider implements com.juanperuzzo.job_hunter.infrastructu
         var description = extractDescriptionFromDetail(document);
         var seniority = extractSeniorityFromDetail(document);
         var workType = extractWorkTypeFromDetail(document);
+        var companyWebsite = extractCompanyWebsiteFromDetail(document);
 
         var metadata = new HashMap<>(job.metadata());
         if (!seniority.isEmpty()) {
@@ -401,6 +403,9 @@ public class LinkedInProvider implements com.juanperuzzo.job_hunter.infrastructu
         }
         if (!workType.isEmpty()) {
             metadata.put("workType", workType);
+        }
+        if (companyWebsite != null) {
+            metadata.put("companyWebsite", companyWebsite);
         }
         if (!location.isBlank()) {
             metadata.put("locationFilter", location);
@@ -423,6 +428,28 @@ public class LinkedInProvider implements com.juanperuzzo.job_hunter.infrastructu
                 job.source(),
                 metadata
         );
+    }
+
+    /**
+     * Scenario 11: parse the company website from a job detail page org link.
+     * Returns null when no org link is present.
+     */
+    private String extractCompanyWebsiteFromDetail(Document document) {
+        var orgLink = document.selectFirst("a.topcard__org-name-link, a[data-tracking-control-name=public_jobs_topcard-org-name]");
+        if (orgLink != null) {
+            var url = orgLink.absUrl("href");
+            if (!url.isBlank()) {
+                return normalizeCompanyWebsite(url);
+            }
+        }
+        return null;
+    }
+
+    /** Normalize a company website URL to a canonical form (no trailing slash). */
+    private static String normalizeCompanyWebsite(String url) {
+        if (url == null || url.isBlank()) return null;
+        var trimmed = url.trim();
+        return trimmed.endsWith("/") ? trimmed.substring(0, trimmed.length() - 1) : trimmed;
     }
 
     private String extractDescriptionFromDetail(Document document) {
@@ -486,9 +513,5 @@ public class LinkedInProvider implements com.juanperuzzo.job_hunter.infrastructu
         var normalized = java.text.Normalizer.normalize(cleaned, java.text.Normalizer.Form.NFD)
                 .replaceAll("\\p{M}", "");
         return normalized;
-    }
-
-    private static String removeTrailingSlash(String value) {
-        return value.endsWith("/") ? value.substring(0, value.length() - 1) : value;
     }
 }
