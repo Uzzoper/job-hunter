@@ -147,6 +147,48 @@ class ProviderBasedScraperAdapterTest {
     }
 
     @Nested
+    @DisplayName("Scenario: parallel provider execution")
+    class ParallelExecution {
+
+        @Test
+        @DisplayName("fetch should run providers in parallel so slow one does not block fast one")
+        void fetch_whenOneProviderSlow_shouldNotBlockOthers() {
+            // Slow provider: sleeps 2s
+            registry.register(new ExtractionStrategy() {
+                @Override public String providerId() { return "slow"; }
+                @Override public List<RawJob> extract() {
+                    try { Thread.sleep(2000); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); }
+                    return List.of(raw("SlowDev", "https://slow.com/1"));
+                }
+            }, null, noopRateLimiter, createNormalizer(List.of("slow")));
+
+            // Second provider: also sleeps 2s — sequential sum would be ~4s, parallel max ~2s
+            registry.register(new ExtractionStrategy() {
+                @Override public String providerId() { return "other"; }
+                @Override public List<RawJob> extract() {
+                    try { Thread.sleep(2000); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); }
+                    return List.of(raw("OtherDev", "https://other.com/1"));
+                }
+            }, null, noopRateLimiter, createNormalizer(List.of("other")));
+
+            adapter = new ProviderBasedScraperAdapter(registry);
+
+            var start = System.currentTimeMillis();
+            var result = adapter.fetch();
+            var elapsed = System.currentTimeMillis() - start;
+
+            // Both providers should be represented in perProvider stats
+            assertEquals(2, result.perProvider().size());
+            assertTrue(result.perProvider().stream().anyMatch(s -> s.source().equals("slow")));
+            assertTrue(result.perProvider().stream().anyMatch(s -> s.source().equals("other")));
+
+            // Sequential sum ≈ 4s; parallel max ≈ 2s. Assert < 2.5s to prove parallelism.
+            assertTrue(elapsed < 2500,
+                    "parallel fetch should take ~2s (max), not ~4s (sum); actual=" + elapsed + "ms");
+        }
+    }
+
+    @Nested
     @DisplayName("Scenario 17: per-provider fetch statistics")
     class FetchStats {
 
