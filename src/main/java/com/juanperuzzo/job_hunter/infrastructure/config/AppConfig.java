@@ -212,8 +212,14 @@ public class AppConfig {
             @Value("${scraper.infojobs.timeout-seconds}") int timeoutSeconds,
             @Value("#{'${scraper.infojobs.keywords}'.split(',')}") List<String> keywords,
             @Value("${scraper.infojobs.max-pages}") int maxPages,
+            @Value("${scraper.infojobs.detail-concurrency:2}") int detailConcurrency,
+            @Value("${scraper.infojobs.detail-timeout-seconds:5}") int detailTimeoutSeconds,
+            @Value("${scraper.infojobs.max-detail-fetch:20}") int maxDetailFetch,
             ExponentialBackoffRetry exponentialBackoffRetry) {
-        return new InfoJobsProvider(baseUrl, timeoutSeconds, keywords, maxPages, exponentialBackoffRetry);
+        return new InfoJobsProvider(baseUrl, timeoutSeconds, keywords, maxPages, exponentialBackoffRetry,
+                detailConcurrency, detailTimeoutSeconds,
+                new com.juanperuzzo.job_hunter.infrastructure.scraper.ratelimit.TokenBucketRateLimiter(1.0, 1, null),
+                maxDetailFetch);
     }
 
     @Bean
