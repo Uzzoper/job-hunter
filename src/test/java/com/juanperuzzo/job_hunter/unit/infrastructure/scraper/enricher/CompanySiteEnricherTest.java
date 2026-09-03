@@ -89,6 +89,63 @@ class CompanySiteEnricherTest {
     }
 
     @Nested
+    @DisplayName("Skip portal domains (hotfix: avoid crawling job-portal hosts)")
+    class SkipPortalDomains {
+
+        @Test
+        @DisplayName("enrich should skip a companyWebsite on *.gupy.io without any HTTP call")
+        void enrich_whenCompanyWebsiteIsGupyIo_shouldSkipWithoutHttpCall() {
+            var job = job(null, "https://empresa.gupy.io/vagas/12345");
+
+            var enriched = enricher.enrich(job);
+
+            assertSame(job, enriched);
+            assertNull(enriched.contactEmail());
+            verify(0, getRequestedFor(urlPathEqualTo("/")));
+            verify(0, getRequestedFor(urlPathEqualTo("/robots.txt")));
+        }
+
+        @Test
+        @DisplayName("enrich should skip a companyWebsite on *.infojobs.com.br")
+        void enrich_whenCompanyWebsiteIsInfoJobs_shouldSkipWithoutHttpCall() {
+            var job = job(null, "https://empresa.infojobs.com.br/vaga/123");
+
+            var enriched = enricher.enrich(job);
+
+            assertSame(job, enriched);
+            assertNull(enriched.contactEmail());
+            verify(0, getRequestedFor(urlPathEqualTo("/")));
+        }
+
+        @Test
+        @DisplayName("enrich should skip a companyWebsite on *.gupy.com.br")
+        void enrich_whenCompanyWebsiteIsGupyComBr_shouldSkipWithoutHttpCall() {
+            var job = job(null, "https://empresa.gupy.com.br/vagas/123");
+
+            var enriched = enricher.enrich(job);
+
+            assertSame(job, enriched);
+            assertNull(enriched.contactEmail());
+            verify(0, getRequestedFor(urlPathEqualTo("/")));
+        }
+
+        @Test
+        @DisplayName("enrich should NOT skip a real corporate domain")
+        void enrich_whenCompanyWebsiteIsCorporateDomain_shouldProceedWithCrawl() {
+            stubFor(get(urlPathEqualTo("/robots.txt")).willReturn(status(404)));
+            stubFor(get(urlPathEqualTo("/"))
+                    .willReturn(ok("<html><body><a href=\"mailto:rh@techcorp.com.br\">RH</a></body></html>")));
+
+            var job = job(null, baseUrl);
+
+            var enriched = enricher.enrich(job);
+
+            assertEquals("rh@techcorp.com.br", enriched.contactEmail());
+            verify(1, getRequestedFor(urlPathEqualTo("/")));
+        }
+    }
+
+    @Nested
     @DisplayName("Scenario 13: crawl homepage then contact path")
     class Crawl {
 

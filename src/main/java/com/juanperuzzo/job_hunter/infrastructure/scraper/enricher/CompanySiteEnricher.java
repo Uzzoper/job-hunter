@@ -47,6 +47,9 @@ public class CompanySiteEnricher implements CompanySiteEnrichmentPort {
             Pattern.compile("^no-reply@", Pattern.CASE_INSENSITIVE),
             Pattern.compile("^apply@", Pattern.CASE_INSENSITIVE));
 
+    private static final List<String> PORTAL_DOMAIN_SUFFIXES = List.of(
+            "gupy.io", "gupy.com.br", "infojobs.com.br");
+
     private static final List<String> PLACEHOLDER_DOMAINS = List.of(
             "example.com", "exemplo.com", "test.com", "domain.com",
             "yourdomain.com", "seuemail.com");
@@ -109,6 +112,14 @@ public class CompanySiteEnricher implements CompanySiteEnrichmentPort {
         var origin = origin(job.companyWebsite());
         if (domain == null || origin == null) {
             log.debug("company site enrichment skipped for {}: invalid website {}", job.url(), job.companyWebsite());
+            return job;
+        }
+
+        // Hotfix: skip job-portal domains that are not corporate sites.
+        // Crawling these wastes ~5s per job (2 pages × 3 retries × backoff) and blocks
+        // the synchronous fetch endpoint for hundreds of Gupy/InfoJobs listings.
+        if (isPortalDomain(domain)) {
+            log.debug("company site enrichment skipped for {}: portal domain {}", job.url(), domain);
             return job;
         }
 
@@ -340,6 +351,10 @@ public class CompanySiteEnricher implements CompanySiteEnrichmentPort {
 
     private boolean isExpired(Instant fetchedAt) {
         return Instant.now().isAfter(fetchedAt.plus(cacheTtl));
+    }
+
+    private static boolean isPortalDomain(String domain) {
+        return PORTAL_DOMAIN_SUFFIXES.stream().anyMatch(domain::endsWith);
     }
 
     private static String host(String url) {
