@@ -21,24 +21,28 @@ public class FetchSourceJobsService implements FetchSourceJobsUseCase {
     private final SourceFetchPort sourceFetchPort;
     private final JobRepository jobRepository;
     private final NormalizerPort normalizer;
-    private final CompanySiteEnrichmentPort enricher;
 
     public FetchSourceJobsService(
             SourceFetchPort sourceFetchPort,
             JobRepository jobRepository,
             NormalizerPort normalizer) {
-        this(sourceFetchPort, jobRepository, normalizer, null);
+        this.sourceFetchPort = sourceFetchPort;
+        this.jobRepository = jobRepository;
+        this.normalizer = normalizer;
     }
 
+    /**
+     * Kept for backward compatibility: the company-site enricher no longer runs in this
+     * fetch path (async-company-enrichment spec). Enrichment now runs out-of-band via
+     * {@code CompanyEnrichmentService}. The enricher argument is ignored.
+     */
+    @Deprecated
     public FetchSourceJobsService(
             SourceFetchPort sourceFetchPort,
             JobRepository jobRepository,
             NormalizerPort normalizer,
             CompanySiteEnrichmentPort enricher) {
-        this.sourceFetchPort = sourceFetchPort;
-        this.jobRepository = jobRepository;
-        this.normalizer = normalizer;
-        this.enricher = enricher;
+        this(sourceFetchPort, jobRepository, normalizer);
     }
 
     @Override
@@ -62,10 +66,8 @@ public class FetchSourceJobsService implements FetchSourceJobsUseCase {
                 try {
                     var job = normalizer.normalize(raw);
                     if (job != null) {
-                        // Enrichment happens after normalization, before dedup/save.
-                        if (enricher != null) {
-                            job = enricher.enrich(job);
-                        }
+                        // NOTE (async-company-enrichment): enrichment is intentionally removed
+                        // from this hot path; it runs out-of-band via CompanyEnrichmentService.
                         if (!jobRepository.existsByUrl(job.url())) {
                             jobRepository.save(job);
                             saved++;

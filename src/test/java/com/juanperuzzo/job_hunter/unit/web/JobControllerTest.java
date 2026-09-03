@@ -2,6 +2,8 @@ package com.juanperuzzo.job_hunter.unit.web;
 
 import com.juanperuzzo.job_hunter.application.port.in.AnalyzeJobUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.ApproveDraftUseCase;
+import com.juanperuzzo.job_hunter.application.port.in.CompanyEnrichmentUseCase;
+import com.juanperuzzo.job_hunter.application.port.in.EnrichmentResult;
 import com.juanperuzzo.job_hunter.application.port.in.FetchJobsUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.FetchResult;
 import com.juanperuzzo.job_hunter.application.port.in.FetchSourceJobsUseCase;
@@ -95,6 +97,9 @@ class JobControllerTest {
 
     @MockitoBean
     private TailorResumeUseCase tailorResumeUseCase;
+
+    @MockitoBean
+    private CompanyEnrichmentUseCase companyEnrichmentUseCase;
 
     @MockitoBean
     private TokenProvider tokenProvider;
@@ -436,6 +441,39 @@ class JobControllerTest {
                         .value("Job must be analyzed before tailoring the resume"));
 
         verify(tailorResumeUseCase).tailorResume(1L, JOB_ID);
+    }
+
+    @Test
+    @DisplayName("enrichEmails should return 200 with EnrichmentResult stats")
+    void enrichEmails_whenSuccessful_shouldReturn200() throws Exception {
+        authenticateAs(1L);
+
+        var result = new EnrichmentResult(10, 8, 1, 1);
+        when(companyEnrichmentUseCase.enrichMissingEmails(50)).thenReturn(result);
+
+        mockMvc.perform(post("/api/jobs/enrich-emails").param("limit", "50"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.checked").value(10))
+                .andExpect(jsonPath("$.enriched").value(8))
+                .andExpect(jsonPath("$.skippedPortal").value(1))
+                .andExpect(jsonPath("$.failed").value(1));
+
+        verify(companyEnrichmentUseCase).enrichMissingEmails(50);
+    }
+
+    @Test
+    @DisplayName("enrichEmails should default limit to 50 when param omitted")
+    void enrichEmails_whenNoLimit_shouldUseDefault() throws Exception {
+        authenticateAs(1L);
+
+        var result = new EnrichmentResult(0, 0, 0, 0);
+        when(companyEnrichmentUseCase.enrichMissingEmails(50)).thenReturn(result);
+
+        mockMvc.perform(post("/api/jobs/enrich-emails"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.checked").value(0));
+
+        verify(companyEnrichmentUseCase).enrichMissingEmails(50);
     }
 
     private void authenticateAs(Long userId) {

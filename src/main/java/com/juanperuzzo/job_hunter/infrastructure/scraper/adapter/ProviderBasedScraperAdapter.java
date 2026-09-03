@@ -20,6 +20,14 @@ public class ProviderBasedScraperAdapter implements ScraperPort {
     private static final int ERROR_MESSAGE_MAX_LENGTH = 300;
 
     private final ProviderRegistry registry;
+
+    /**
+     * Kept for backward compatibility with existing call sites/tests. The company-site
+     * enricher no longer runs inside the synchronous fetch hot path (async-company-enrichment
+     * spec); the argument is ignored. Enrichment now runs out-of-band via
+     * {@code CompanyEnrichmentService}.
+     */
+    @SuppressWarnings("unused")
     private final CompanySiteEnrichmentPort enricher;
 
     public ProviderBasedScraperAdapter(ProviderRegistry registry) {
@@ -57,10 +65,9 @@ public class ProviderBasedScraperAdapter implements ScraperPort {
                         try {
                             var job = normalizer.normalize(raw);
                             if (job != null) {
-                                // Enrichment happens after normalization, before dedup/save.
-                                if (enricher != null) {
-                                    job = enricher.enrich(job);
-                                }
+                                // NOTE (async-company-enrichment): enrichment is intentionally
+                                // removed from this hot path to avoid blocking fetch on company-site
+                                // crawls. It now runs out-of-band via CompanyEnrichmentService.
                                 allJobs.putIfAbsent(job.url(), job);
                             }
                         } catch (Exception e) {

@@ -1,5 +1,6 @@
 package com.juanperuzzo.job_hunter.unit.infrastructure.scraper.adapter;
 
+import com.juanperuzzo.job_hunter.application.port.out.CompanySiteEnrichmentPort;
 import com.juanperuzzo.job_hunter.application.port.out.RawJob;
 import com.juanperuzzo.job_hunter.domain.model.Job;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.adapter.ProviderBasedScraperAdapter;
@@ -175,22 +176,23 @@ class ProviderBasedScraperAdapterTest {
         }
 
         @Test
-        @DisplayName("fetch should enrich jobs through the company site enricher before dedup")
-        void fetch_whenEnricherPresent_shouldApplyEnrichment() {
+        @DisplayName("fetch should NOT call the company site enricher in the hot path")
+        void fetch_whenJobsHaveCompanyWebsite_shouldNotCallEnricher() {
             registry.register(createStub("p1", raw("Dev1", "https://a.com/1")),
                     null, noopRateLimiter, createNormalizer(List.of("dev1")));
 
-            adapter = new ProviderBasedScraperAdapter(registry, job -> {
-                if (job.contactEmail() == null) {
-                    return new Job(job.id(), job.title(), job.company(), job.url(), job.description(),
-                            job.postedAt(), job.source(), "enriched@company.com", job.companyWebsite());
+            var enricher = new CompanySiteEnrichmentPort() {
+                @Override
+                public Job enrich(Job job) {
+                    throw new AssertionError("enricher must not be called from fetch hot path");
                 }
-                return job;
-            });
+            };
+            adapter = new ProviderBasedScraperAdapter(registry, enricher);
             var jobs = adapter.fetch().jobs();
 
+            // No exception thrown => enricher was never invoked from fetch().
             assertEquals(1, jobs.size());
-            assertEquals("enriched@company.com", jobs.get(0).contactEmail());
+            assertNull(jobs.get(0).contactEmail());
         }
     }
 
