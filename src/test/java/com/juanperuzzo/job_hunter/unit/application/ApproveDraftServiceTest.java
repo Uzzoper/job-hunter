@@ -5,6 +5,7 @@ import com.juanperuzzo.job_hunter.application.service.ApproveDraftService;
 import com.juanperuzzo.job_hunter.domain.exception.DraftAlreadyApprovedException;
 import com.juanperuzzo.job_hunter.domain.exception.EmailAlreadySentException;
 import com.juanperuzzo.job_hunter.domain.exception.JobNotFoundException;
+import com.juanperuzzo.job_hunter.domain.exception.RefusedDraftException;
 import com.juanperuzzo.job_hunter.domain.model.EmailDraft;
 import com.juanperuzzo.job_hunter.domain.model.EmailStatus;
 import org.junit.jupiter.api.DisplayName;
@@ -75,6 +76,18 @@ class ApproveDraftServiceTest {
         when(emailDraftRepository.findByJobIdAndUserId(JOB_ID, USER_ID)).thenReturn(Optional.empty());
 
         assertThrows(JobNotFoundException.class, () -> approveDraftService.approve(USER_ID, JOB_ID));
+        verify(emailDraftRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("should throw RefusedDraftException when draft is REJECTED")
+    void approve_whenRejected_shouldThrowRefused() {
+        var refused = new EmailDraft(DRAFT_ID, JOB_ID, USER_ID, "", "NO_APPLY: non-tech role",
+                EmailStatus.REJECTED, LocalDateTime.now());
+
+        when(emailDraftRepository.findByJobIdAndUserId(JOB_ID, USER_ID)).thenReturn(Optional.of(refused));
+
+        assertThrows(RefusedDraftException.class, () -> approveDraftService.approve(USER_ID, JOB_ID));
         verify(emailDraftRepository, never()).save(any());
     }
 }

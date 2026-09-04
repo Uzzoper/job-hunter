@@ -351,12 +351,41 @@ impl App {
                     };
                     match outcome {
                         Some(Ok(())) => {
-                            // Fetch completed — reload list (same path as 'r').
-                            let _ = screen.fetch_jobs().await;
-                            screen.show_toast("Fetch completed".to_string());
+                            // Fetch succeeded — reload list (same path as 'r')
+                            // and compute job-count delta for the FR-7 toast.
+                            let pre_count = screen.jobs.len();
+                            match screen.fetch_jobs().await {
+                                Ok(()) => {
+                                    let post_count = screen.jobs.len();
+                                    let delta =
+                                        post_count as isize - pre_count as isize;
+                                    let msg = match delta {
+                                        d if d > 0 => {
+                                            format!(
+                                                "Fetch completed — {post_count} jobs (+{d})"
+                                            )
+                                        }
+                                        d if d < 0 => {
+                                            format!(
+                                                "Fetch completed — {post_count} jobs ({d})"
+                                            )
+                                        }
+                                        _ => {
+                                            format!("Fetch completed — {post_count} jobs")
+                                        }
+                                    };
+                                    screen.show_toast(msg);
+                                }
+                                Err(e) => {
+                                    // Spec :345 — reload failed: warn, not silent success.
+                                    screen.show_error_toast(format!(
+                                        "Fetch completed but failed to reload: {e}"
+                                    ));
+                                }
+                            }
                         }
                         Some(Err(reason)) => {
-                            screen.show_toast(format!("Fetch failed: {reason}"));
+                            screen.show_error_toast(format!("Fetch failed: {reason}"));
                         }
                         None => {
                             // Task finished without recording an outcome.

@@ -25,6 +25,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 
 
@@ -344,6 +345,173 @@ class EmailGenerationServiceTest {
         @DisplayName("generate should throw NullPointerException when jobId is null")
         void generate_whenJobIdIsNull_shouldThrowNullPointerException() {
             assertThrows(NullPointerException.class, () -> emailGenerationService.generate(1L, null));
+        }
+    }
+
+    @Nested
+    @DisplayName("Scenario 7: AI refusal (NO_APPLY prefix)")
+    class NoApplyRefusalTests {
+
+        @Test
+        @DisplayName("generate should return REJECTED draft when AI responds NO_APPLY and persist it")
+        void generate_whenNoFit_shouldReturnRejectedDraft() {
+            String aiResponse = "NO_APPLY: non-tech role, customer service via WhatsApp";
+
+            when(aiPort.complete(any())).thenReturn(aiResponse);
+            when(emailDraftRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            UserProfile validProfile = new UserProfile(null, 1L,
+                "Experienced Java developer with Spring Boot expertise.",
+                List.of("Java", "Spring Boot", "PostgreSQL"),
+                CompanyTone.FORMAL,
+                List.of(), null, null, null, null, null);
+            when(userProfileRepository.findByUserId(any())).thenReturn(Optional.of(validProfile));
+
+            Long jobId = 7L;
+            Job job = new Job(jobId, "Customer Service", "CompanyZ",
+                    "https://example.com/job/7", "Description", LocalDate.now(), "test");
+            JobAnalysis analysis = new JobAnalysis(null, null, null, 10,
+                    List.of(),
+                    List.of("Java", "Spring Boot"),
+                    CompanyTone.FORMAL,
+                    "Customer service role, non-tech");
+
+            when(jobRepository.findById(jobId)).thenReturn(Optional.of(job));
+            when(jobAnalysisRepository.findByJobIdAndUserId(jobId, 1L)).thenReturn(Optional.of(analysis));
+
+            EmailDraft draft = emailGenerationService.generate(1L, jobId);
+
+            assertNotNull(draft);
+            assertEquals(EmailStatus.REJECTED, draft.status());
+            // Spec: subject stores "" and body stores the full NO_APPLY reason (auditable, no fake subject)
+            assertEquals("", draft.subject());
+            assertEquals(aiResponse, draft.body());
+            verify(aiPort).complete(any());
+            verify(emailDraftRepository).save(draft);
+        }
+
+        @Test
+        @DisplayName("generate should return REJECTED when NO_APPLY prefix has leading whitespace (via trim)")
+        void generate_whenNoApplyPrefixWithLeadingWhitespace_shouldReturnRejectedStatus() {
+            when(aiPort.complete(any())).thenReturn("  NO_APPLY: stack entirely outside candidate");
+            when(emailDraftRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            UserProfile validProfile = new UserProfile(null, 1L,
+                "Experienced Java developer with Spring Boot expertise.",
+                List.of("Java", "Spring Boot", "PostgreSQL"),
+                CompanyTone.FORMAL,
+                List.of(), null, null, null, null, null);
+            when(userProfileRepository.findByUserId(any())).thenReturn(Optional.of(validProfile));
+
+            Long jobId = 8L;
+            Job job = new Job(jobId, "Fullstack", "CompanyW",
+                    "https://example.com/job/8", "Description", LocalDate.now(), "test");
+            JobAnalysis analysis = new JobAnalysis(null, null, null, 15,
+                    List.of(), List.of("Java"),
+                    CompanyTone.FORMAL,
+                    "Fullstack role");
+
+            when(jobRepository.findById(jobId)).thenReturn(Optional.of(job));
+            when(jobAnalysisRepository.findByJobIdAndUserId(jobId, 1L)).thenReturn(Optional.of(analysis));
+
+            EmailDraft draft = emailGenerationService.generate(1L, jobId);
+
+            assertEquals(EmailStatus.REJECTED, draft.status());
+        }
+
+        @Test
+        @DisplayName("generate should keep PENDING for fallback feedback text without a NO_APPLY prefix (documents current flawed behavior)")
+        void generate_whenFeedbackWithoutNoApplyPrefix_shouldRemainPending() {
+            when(aiPort.complete(any())).thenReturn("Juan, essa vaga não tem nada a ver com o seu perfil.");
+            when(emailDraftRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            UserProfile validProfile = new UserProfile(null, 1L,
+                "Experienced Java developer with Spring Boot expertise.",
+                List.of("Java", "Spring Boot"),
+                CompanyTone.FORMAL,
+                List.of(), null, null, null, null, null);
+            when(userProfileRepository.findByUserId(any())).thenReturn(Optional.of(validProfile));
+
+            Long jobId = 9L;
+            Job job = new Job(jobId, "Analista de Fidelização", "CompanyV",
+                    "https://example.com/job/9", "Description", LocalDate.now(), "test");
+            JobAnalysis analysis = new JobAnalysis(null, null, null, 20,
+                    List.of(), List.of(),
+                    CompanyTone.STARTUP,
+                    "Analyst role, non-tech");
+
+            when(jobRepository.findById(jobId)).thenReturn(Optional.of(job));
+            when(jobAnalysisRepository.findByJobIdAndUserId(jobId, 1L)).thenReturn(Optional.of(analysis));
+
+            EmailDraft draft = emailGenerationService.generate(1L, jobId);
+
+            assertEquals(EmailStatus.PENDING, draft.status());
+        }
+    }
+
+    @Nested
+    @DisplayName("Scenario 8: idempotency by (jobId, recipientEmail)")
+    class IdempotencyTests {
+
+        private static final String DPO_EMAIL = "dpo@mtp.com.br";
+        private static final String HR_EMAIL = "rh@mtp.com.br";
+
+        @Test
+        @DisplayName("generate should return the existing SENT draft and persist nothing when the pair already sent")
+        void generate_whenSameJobAndEmailAlreadySent_shouldReturnExistingSent() {
+            Long jobId = 10L;
+            Job job = new Job(jobId, "Developer", "MTP",
+                    "https://example.com/job/10", "Description", LocalDate.now(), "test", DPO_EMAIL);
+            JobAnalysis analysis = new JobAnalysis(null, null, null, 10,
+                    List.of(), List.of("Java"),
+                    CompanyTone.FORMAL,
+                    "Developer role");
+            UserProfile profile = new UserProfile(null, 1L,
+                    "Experienced Java developer.", List.of("Java"), CompanyTone.FORMAL, List.of(),
+                    null, null, null, null, null);
+
+            var existingSent = new EmailDraft(100L, jobId, 1L, "Subject", "Body",
+                    EmailStatus.SENT, LocalDateTime.now(), LocalDateTime.now());
+
+            when(jobRepository.findById(jobId)).thenReturn(Optional.of(job));
+            when(jobAnalysisRepository.findByJobIdAndUserId(jobId, 1L)).thenReturn(Optional.of(analysis));
+            when(userProfileRepository.findByUserId(any())).thenReturn(Optional.of(profile));
+            when(emailDraftRepository.findSentByJobIdAndRecipientEmail(jobId, DPO_EMAIL))
+                    .thenReturn(Optional.of(existingSent));
+
+            EmailDraft result = emailGenerationService.generate(1L, jobId);
+
+            assertEquals(existingSent.id(), result.id());
+            assertEquals(EmailStatus.SENT, result.status());
+            verify(aiPort, never()).complete(any());
+            verify(templateEmailService, never()).generate(any());
+            verify(emailDraftRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("generate should proceed normally to PENDING when no SENT pair exists for the contact email")
+        void generate_whenDifferentEmailForSameJob_shouldGenerateNormally() {
+            Long jobId = 11L;
+            Job job = new Job(jobId, "Developer", "MTP",
+                    "https://example.com/job/11", "Description", LocalDate.now(), "test", HR_EMAIL);
+            JobAnalysis analysis = new JobAnalysis(null, null, null, 10,
+                    List.of(), List.of("Java"),
+                    CompanyTone.FORMAL,
+                    "Developer role");
+            UserProfile profile = new UserProfile(null, 1L,
+                    "Experienced Java developer.", List.of("Java"), CompanyTone.FORMAL, List.of(),
+                    null, null, null, null, null);
+
+            when(jobRepository.findById(jobId)).thenReturn(Optional.of(job));
+            when(jobAnalysisRepository.findByJobIdAndUserId(jobId, 1L)).thenReturn(Optional.of(analysis));
+            when(userProfileRepository.findByUserId(any())).thenReturn(Optional.of(profile));
+            when(emailDraftRepository.findSentByJobIdAndRecipientEmail(jobId, HR_EMAIL)).thenReturn(Optional.empty());
+            when(aiPort.complete(any())).thenReturn("Subject: Application\n\nBody text.");
+            when(emailDraftRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+            EmailDraft draft = emailGenerationService.generate(1L, jobId);
+
+            assertNotNull(draft);
+            assertEquals(EmailStatus.PENDING, draft.status());
+            verify(aiPort).complete(any());
+            verify(emailDraftRepository).save(any());
         }
     }
 }

@@ -13,6 +13,7 @@ public class JsonLdParser {
 
     private static final Logger log = LoggerFactory.getLogger(JsonLdParser.class);
     private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final String TELECOMMUTE = "TELECOMMUTE";
 
     public record JsonLdJobPosting(
             String title,
@@ -73,7 +74,7 @@ public class JsonLdParser {
         var company = node.path("hiringOrganization").path("name").asText(null);
         var location = node.path("jobLocation").path("address").path("addressLocality").asText(null);
         var workModelRaw = node.path("jobLocationType").asText(null);
-        var workModel = "TELECOMMUTE".equalsIgnoreCase(workModelRaw) ? "Remoto" : workModelRaw;
+        var workModel = TELECOMMUTE.equalsIgnoreCase(workModelRaw) ? "Remoto" : workModelRaw;
 
         return new JsonLdJobPosting(
                 node.path("title").asText(null),

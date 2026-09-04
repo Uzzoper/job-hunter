@@ -31,6 +31,12 @@ public class EmailDraftPersistenceAdapter implements EmailDraftRepository {
     }
 
     @Override
+    public Optional<EmailDraft> findSentByJobIdAndRecipientEmail(Long jobId, String recipientEmail) {
+        return jpaRepository.findByJobIdAndRecipientEmailAndStatusIn(jobId, recipientEmail, List.of(EmailStatus.SENT.name()))
+                .map(this::toDomain);
+    }
+
+    @Override
     public Optional<EmailDraft> findByJobIdAndUserId(Long jobId, Long userId) {
         return jpaRepository.findByJobIdAndUserId(jobId, userId).map(this::toDomain);
     }
@@ -69,6 +75,7 @@ public class EmailDraftPersistenceAdapter implements EmailDraftRepository {
         );
         entity.setGeneratedAt(draft.generatedAt());
         entity.setSentAt(draft.sentAt());
+        entity.setRecipientEmail(draft.recipientEmail());
         return entity;
     }
 
@@ -81,7 +88,8 @@ public class EmailDraftPersistenceAdapter implements EmailDraftRepository {
                 entity.getBody(),
                 EmailStatus.valueOf(entity.getStatus()),
                 entity.getGeneratedAt(),
-                entity.getSentAt()
+                entity.getSentAt(),
+                entity.getRecipientEmail()
         );
     }
 }

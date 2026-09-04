@@ -10,10 +10,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 @SpringBootApplication
 public class JobHunterApplication {
 
-	private static final String DEFAULT_DB_URL = "jdbc:sqlite:./data/jobhunter.db";
-
 	public static void main(String[] args) {
-		ensureSqliteDirectoryExists(System.getenv().getOrDefault("DB_URL", DEFAULT_DB_URL));
 		SpringApplication.run(JobHunterApplication.class, args);
 	}
 
@@ -27,7 +24,7 @@ public class JobHunterApplication {
 	 * @throws IllegalStateException if the directory cannot be created, so startup
 	 *                               fails fast instead of surfacing an opaque SQLite error later
 	 */
-	static void ensureSqliteDirectoryExists(String dbUrl) {
+	public static void ensureSqliteDirectoryExists(String dbUrl) {
 		if (dbUrl == null || !dbUrl.startsWith("jdbc:sqlite:")) {
 			return;
 		}

@@ -1,0 +1,15 @@
+-- V3: Document REJECTED as a legal value for email_drafts.status
+--
+-- email_drafts.status is a free-form VARCHAR(20) with no CHECK constraint
+-- (SQLite does not enforce enum values at the DDL level). Java maps the column
+-- via EmailStatus.valueOf(), so this migration is purely a documentation/
+-- future-guarantee change: it records REJECTED as an accepted, terminal status
+-- produced by the NO_APPLY refusal contract (issue #28).
+--
+-- Legal lifecycle values:
+--   PENDING  -> APPROVED -> SENT   (sendable lifecycle, unchanged)
+--   REJECTED                        (terminal unless regenerated into PENDING)
+--
+-- No backfill is needed: existing rows only ever hold PENDING/APPROVED/SENT.
+--
+-- Next free version is V4 for any future schema change.

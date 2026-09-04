@@ -112,6 +112,20 @@ class AutoSendEligibilityServiceTest {
 
             assertTrue(result.isEmpty());
         }
+
+        @Test
+        @DisplayName("should never select a REJECTED draft, returning empty when only rejected drafts exist")
+        void nextEligibleDraft_whenAllRejected_shouldReturnEmpty() {
+            // REJECTED is excluded implicitly via the inclusion list: the full-auto
+            // eligibility query for PENDING returns nothing because rejected drafts
+            // are not part of the eligible status set.
+            when(emailDraftRepository.findAllByStatusIn(List.of(EmailStatus.PENDING))).thenReturn(List.of());
+
+            var result = fullAuto.nextEligibleDraft();
+
+            assertTrue(result.isEmpty());
+            verify(jobRepository, never()).findById(any());
+        }
     }
 
     @Nested

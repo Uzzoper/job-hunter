@@ -43,7 +43,8 @@ class LinkedInScraperClientTest {
                 List.of("remote"),
                 "past_week",
                 1,
-                500
+                500,
+                "https://www.linkedin.com/jobs/view/"
         );
         client = new LinkedInScraperClient(properties);
     }
