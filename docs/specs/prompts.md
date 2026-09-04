@@ -125,6 +125,7 @@ MANDATORY RULES:
 8. End with the exact signature block from the example (name, phone, portfolio, GitHub)
 9. Include the phrase "Segue meu currículo em anexo" before the signature
 10. Positioning: write as a professional developer who delivers working software — never use trainee phrasing ("em formação", "aprendendo", "buscando oportunidade", "venho me especializando"); education appears at most once as plain fact, never as the opening; close with a confident call to action, never with "fico à disposição"
+11. If the vacancy clearly has no fit with the candidate (non-tech role, stack entirely outside the candidate's, or level far below), DO NOT write an email. Respond with exactly one line: NO_APPLY: [one-line reason in English]. No subject, no body, no signature. (see `email-no-apply-refusal.md`)
 
 Tone guide:
 - formal:  respectful language, formal verbs, "Prezados"

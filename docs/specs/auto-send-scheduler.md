@@ -41,7 +41,7 @@
 - **THEN** never selected by this scheduler, in either mode — reserved for the future form-filling agent
 
 ### Scenario 6: nothing eligible
-- **GIVEN** no draft matches the criteria
+- **GIVEN** no draft matches the criteria (including the case where only `REJECTED` drafts exist — see `email-no-apply-refusal.md`)
 - **WHEN** a tick runs
 - **THEN** does nothing, no error, no log noise beyond debug level
 
