@@ -153,6 +153,7 @@ public class EmailGenerationService implements GenerateEmailUseCase, GetEmailDra
             8. End with the exact signature block (name, phone, portfolio, GitHub)
             9. Include the phrase "Segue meu currículo em anexo" before the signature
             10. Positioning: write as a professional developer who delivers working software — never use trainee phrasing ("em formação", "aprendendo", "buscando oportunidade", "venho me especializando"); education appears at most once as plain fact, never as the opening; close with a confident call to action, never with "fico à disposição"
+            11. If the vacancy clearly has no fit with the candidate (non-tech role, stack entirely outside the candidate's, or level far below), DO NOT write an email. Respond with exactly one line: NO_APPLY: [one-line reason in English]. No subject, no body, no signature
 
             Tone guide:
             - formal: respectful, "Prezados"
@@ -175,16 +176,31 @@ public class EmailGenerationService implements GenerateEmailUseCase, GetEmailDra
                 matchedSkills, missingSkills, analysis.summary());
     }
 
+    /**
+     * Parses the raw AI response into an {@code EmailDraft}.
+     * <p>
+     * If the trimmed response starts with the refusal prefix {@code NO_APPLY:}
+     * (case-sensitive), no subject/body parsing happens: the draft is persisted as
+     * {@code REJECTED} with an empty subject and the full trimmed response as body,
+     * keeping the refusal reason auditable and never producing a fake sendable subject.
+     * Otherwise it follows the {@code Subject: } split logic and produces a {@code PENDING} draft.
+     */
     private EmailDraft parseEmailDraft(Long id, Long jobId, Long userId, String aiResponse) {
+        String response = aiResponse.trim();
+
+        if (response.startsWith("NO_APPLY:")) {
+            return new EmailDraft(id, jobId, userId, "", response, EmailStatus.REJECTED, LocalDateTime.now());
+        }
+
         String subject;
         String body;
 
-        int subjectEnd = aiResponse.indexOf('\n');
+        int subjectEnd = response.indexOf('\n');
         if (subjectEnd > 0) {
-            subject = aiResponse.substring(0, subjectEnd).trim();
-            body = aiResponse.substring(subjectEnd).trim();
+            subject = response.substring(0, subjectEnd).trim();
+            body = response.substring(subjectEnd).trim();
         } else {
-            subject = aiResponse.trim();
+            subject = response.trim();
             body = "";
         }
 
