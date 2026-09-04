@@ -57,6 +57,7 @@
 - `EmailDraft` is saved with `userId`, `jobId`, and `status = PENDING` — or `REJECTED` when the AI returns the `NO_APPLY:` refusal (see `email-no-apply-refusal.md`)
 - Per-user uniqueness: one draft per `(job_id, user_id)` enforced at database level (see `email-no-apply-refusal.md` for the reconciled migration numbering — the earlier `V3` mention here predates the actual `V3__add_rejected_to_email_status.sql`)
 - When `matchScore >= minMatchScore`, a fixed template replaces the AI call entirely (saves AI credits, deterministic output)
+- Idempotency check on create (see `email-idempotency.md`): if a `SENT` draft already exists for `(jobId, job.contactEmail)`, generation is skipped and the existing `SENT` is returned (`DEBUG` log); new drafts snapshot `recipientEmail = job.contactEmail()`
 - The threshold is configured via `email.standard-template.min-match-score` (default: 60)
 
 ---
@@ -69,7 +70,7 @@ public interface GenerateEmailUseCase {
     EmailDraft generate(Long userId, Long jobId);
 }
 
-// Result (persisted)
+// Result (persisted — recipientEmail snapshot, see email-idempotency.md)
 public record EmailDraft(
     Long id,
     Long jobId,
@@ -78,7 +79,8 @@ public record EmailDraft(
     String body,
     EmailStatus status,
     LocalDateTime generatedAt,
-    LocalDateTime sentAt
+    LocalDateTime sentAt,
+    String recipientEmail // nullable snapshot of Job.contactEmail
 ) {}
 
 public enum EmailStatus { PENDING, APPROVED, SENT, REJECTED }

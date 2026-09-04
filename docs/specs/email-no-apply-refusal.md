@@ -116,7 +116,7 @@ public class RefusedDraftException extends RuntimeException {
 
 - Light subject-keyword validation (`"não tem nada a ver"`, `"não tem fit"`) in `AutoSendEligibilityService` or `HermesBotEmailSender` — fuzzy, language-fragile, and diverges from `hermes-agent-integration.md` ("no free-form content enforcement"). Strict `NO_APPLY:` prefix only in v1.
 - Contact blocklist (`dpo@`, `privacy@`, `legal@`) and per-domain rate limiting — separate issues (#27 family).
-- Idempotency by `(job_id, contact_email)` — issue #27, independent, implemented separately.
+- Idempotency by `(job_id, recipient_email)` — implemented in `email-idempotency.md` (interplay: a prior `SENT` for the pair wins over `REJECTED → PENDING` regeneration — no resurrection of an already-sent pair).
 - Platform form-filling agent — unchanged.
 
 ---
