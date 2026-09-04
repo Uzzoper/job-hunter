@@ -13,10 +13,14 @@ import com.juanperuzzo.job_hunter.domain.exception.RefusedDraftException;
 import com.juanperuzzo.job_hunter.domain.exception.UserNotFoundException;
 import com.juanperuzzo.job_hunter.domain.model.EmailDraft;
 import com.juanperuzzo.job_hunter.domain.model.EmailStatus;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.time.LocalDateTime;
 
 public class EmailSendingService implements SendEmailUseCase {
+
+    private static final Logger log = LoggerFactory.getLogger(EmailSendingService.class);
 
     private final EmailDraftRepository emailDraftRepository;
     private final JobRepository jobRepository;
@@ -51,6 +55,15 @@ public class EmailSendingService implements SendEmailUseCase {
             throw new MissingRecipientException("Job " + jobId + " (" + job.url() + ") has no contact email");
         }
 
+        // Race double-check: another draft may have already delivered to this recipient
+        // for the same vacancy between generation and this send. A conflicting SENT row
+        // for (jobId, contactEmail) that is a different draft blocks the send.
+        var alreadySent = emailDraftRepository.findSentByJobIdAndRecipientEmail(jobId, contactEmail);
+        if (alreadySent.isPresent() && !alreadySent.get().id().equals(draft.id())) {
+            log.debug("Skipping send, already sent to {} for job {}", contactEmail, jobId);
+            throw new EmailAlreadySentException("Email already sent for job " + jobId + " to " + contactEmail);
+        }
+
         var user = userRepository.findById(userId)
                 .orElseThrow(() -> new UserNotFoundException("User not found: " + userId));
 
@@ -66,7 +79,7 @@ public class EmailSendingService implements SendEmailUseCase {
         var sentDraft = new EmailDraft(
                 draft.id(), draft.jobId(), draft.userId(),
                 draft.subject(), draft.body(),
-                EmailStatus.SENT, draft.generatedAt(), LocalDateTime.now()
+                EmailStatus.SENT, draft.generatedAt(), LocalDateTime.now(), contactEmail
         );
 
         return emailDraftRepository.save(sentDraft);
