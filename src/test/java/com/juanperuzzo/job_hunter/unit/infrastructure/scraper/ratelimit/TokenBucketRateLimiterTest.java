@@ -41,7 +41,7 @@ class TokenBucketRateLimiterTest {
     @Test
     @DisplayName("concurrent access should not deadlock")
     void concurrentAccess_shouldNotDeadlock() throws InterruptedException {
-        var limiter = new TokenBucketRateLimiter(100, 10, Map.of());
+        var limiter = new TokenBucketRateLimiter(0, 10, Map.of());
         var successCount = new AtomicInteger(0);
         var threads = new Thread[5];
 
