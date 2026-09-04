@@ -52,10 +52,10 @@
 - **AND** throws if the draft is already `SENT` or already `APPROVED`
 
 ### Scenario 8: send fails mid-tick
-- **GIVEN** `SendEmailUseCase.send()` throws
+- **GIVEN** `SendEmailUseCase.send()` throws (delivery failure, or the idempotency double-check `EmailAlreadySentException` — see `email-idempotency.md`)
 - **WHEN** a tick runs
 - **THEN** the exception is caught and logged, the tick ends quietly
-- **AND** the draft is untouched (stays `PENDING`/`APPROVED`) — retried next tick
+- **AND** the draft is untouched (stays `PENDING`/`APPROVED`) — retried next tick (except an idempotent pair, which is terminally `SENT` elsewhere and never becomes sendable)
 
 ### Scenario 9: daily cap reached
 - **GIVEN** `DailyCap` (`auto-send.daily-cap: 50`) has been reached for the current user
