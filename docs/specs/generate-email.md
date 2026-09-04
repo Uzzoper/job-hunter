@@ -54,8 +54,8 @@
 - Maximum 3-5 paragraphs in the `body`
 - The `subject` is extracted from the first line of the AI response (prefix `"Subject: "`)
 - The `body` is the remainder of the response after removing the subject line
-- `EmailDraft` is saved with `userId`, `jobId`, and `status = PENDING`
-- Per-user uniqueness: one draft per `(job_id, user_id)` enforced at database level (V3 migration)
+- `EmailDraft` is saved with `userId`, `jobId`, and `status = PENDING` — or `REJECTED` when the AI returns the `NO_APPLY:` refusal (see `email-no-apply-refusal.md`)
+- Per-user uniqueness: one draft per `(job_id, user_id)` enforced at database level (see `email-no-apply-refusal.md` for the reconciled migration numbering — the earlier `V3` mention here predates the actual `V3__add_rejected_to_email_status.sql`)
 - When `matchScore >= minMatchScore`, a fixed template replaces the AI call entirely (saves AI credits, deterministic output)
 - The threshold is configured via `email.standard-template.min-match-score` (default: 60)
 
@@ -81,7 +81,7 @@ public record EmailDraft(
     LocalDateTime sentAt
 ) {}
 
-public enum EmailStatus { PENDING, APPROVED, SENT }
+public enum EmailStatus { PENDING, APPROVED, SENT, REJECTED }
 ```
 
 ---
@@ -103,7 +103,7 @@ public enum EmailStatus { PENDING, APPROVED, SENT }
 
 - Sending the email (only generates and persists the draft)
 - Loading analysis from the database (`JobController` responsibility)
-- Validating AI output against business rules (trusts prompt + model)
+- Validating AI output against business rules is covered by `email-no-apply-refusal.md` (strict `NO_APPLY:` prefix → `REJECTED`); no fuzzy validation
 
 ---
 

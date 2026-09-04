@@ -38,7 +38,7 @@
 
 ## Business rules
 
-- Only a draft with `status == PENDING` may be sent; `send()` is not idempotent by design (see Scenario 2)
+- Only a draft with `status == PENDING` (full-auto) or `APPROVED` (review-gate) may be sent; `REJECTED` drafts (see `email-no-apply-refusal.md`) throw `RefusedDraftException` (422) before any send attempt; `send()` is not idempotent by design (see Scenario 2)
 - On success, `status` and `sentAt` are updated in the same persistence call (no partial state)
 - No automatic/scheduled triggering here — this spec only covers an explicit, user- or scheduler-initiated single send (e.g. `POST /api/jobs/{id}/email/send`, `jh-cli email send <job-id>`, or one call from `auto-send-scheduler.md`)
 
