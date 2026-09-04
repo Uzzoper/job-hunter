@@ -12,6 +12,7 @@ import com.juanperuzzo.job_hunter.domain.exception.DraftAlreadyApprovedException
 import com.juanperuzzo.job_hunter.domain.exception.EmailAlreadySentException;
 import com.juanperuzzo.job_hunter.domain.exception.EmailDeliveryException;
 import com.juanperuzzo.job_hunter.domain.exception.MissingRecipientException;
+import com.juanperuzzo.job_hunter.domain.exception.RefusedDraftException;
 import com.juanperuzzo.job_hunter.domain.exception.InvalidResumeTextException;
 import com.juanperuzzo.job_hunter.domain.exception.ResumeRenderingException;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -108,6 +109,11 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(EmailAlreadySentException.class)
     public ResponseEntity<Map<String, Object>> handleEmailAlreadySent(EmailAlreadySentException ex) {
         return buildResponse(HttpStatus.CONFLICT, ex.getMessage());
+    }
+
+    @ExceptionHandler(RefusedDraftException.class)
+    public ResponseEntity<Map<String, Object>> handleRefusedDraft(RefusedDraftException ex) {
+        return buildResponse(HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage());
     }
 
     @ExceptionHandler(MissingRecipientException.class)
