@@ -8,6 +8,7 @@ import com.juanperuzzo.job_hunter.application.service.EmailSendingService;
 import com.juanperuzzo.job_hunter.domain.exception.EmailAlreadySentException;
 import com.juanperuzzo.job_hunter.domain.exception.EmailDeliveryException;
 import com.juanperuzzo.job_hunter.domain.exception.MissingRecipientException;
+import com.juanperuzzo.job_hunter.domain.exception.RefusedDraftException;
 import com.juanperuzzo.job_hunter.domain.model.EmailDraft;
 import com.juanperuzzo.job_hunter.domain.model.EmailStatus;
 import com.juanperuzzo.job_hunter.domain.model.Job;
@@ -136,6 +137,19 @@ class EmailSendingServiceTest {
 
         var thrown = assertThrows(EmailDeliveryException.class, () -> emailSendingService.send(USER_ID, JOB_ID));
         assertSame(deliveryException, thrown);
+        verify(emailDraftRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("should throw RefusedDraftException on REJECTED draft and never call the sender")
+    void send_whenRejected_shouldThrowAndNeverCallSender() {
+        var refused = new EmailDraft(DRAFT_ID, JOB_ID, USER_ID, "", "NO_APPLY: non-tech role",
+                EmailStatus.REJECTED, LocalDateTime.now());
+
+        when(emailDraftRepository.findByJobIdAndUserId(JOB_ID, USER_ID)).thenReturn(Optional.of(refused));
+
+        assertThrows(RefusedDraftException.class, () -> emailSendingService.send(USER_ID, JOB_ID));
+        verify(emailSenderPort, never()).send(any(), any(), any(), any());
         verify(emailDraftRepository, never()).save(any());
     }
 }
