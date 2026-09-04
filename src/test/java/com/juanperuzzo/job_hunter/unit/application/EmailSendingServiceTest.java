@@ -152,4 +152,21 @@ class EmailSendingServiceTest {
         verify(emailSenderPort, never()).send(any(), any(), any(), any());
         verify(emailDraftRepository, never()).save(any());
     }
+
+    @Test
+    @DisplayName("should throw EmailAlreadySentException when another draft already SENT for the same (jobId, recipient)")
+    void send_whenPairAlreadySent_shouldThrowAlreadySentAndNeverCallSender() {
+        var pending = new EmailDraft(DRAFT_ID, JOB_ID, USER_ID, "Subject", "Body", EmailStatus.PENDING, LocalDateTime.now());
+        var job = new Job(JOB_ID, "Dev", "Company", "https://job", "Desc", LocalDate.now(), "source", CONTACT_EMAIL);
+        // A different draft already delivered to the same recipient for the same vacancy
+        var alreadySent = new EmailDraft(99L, JOB_ID, 7L, "Subject", "Body", EmailStatus.SENT, LocalDateTime.now(), LocalDateTime.now());
+
+        when(emailDraftRepository.findByJobIdAndUserId(JOB_ID, USER_ID)).thenReturn(Optional.of(pending));
+        when(jobRepository.findById(JOB_ID)).thenReturn(Optional.of(job));
+        when(emailDraftRepository.findSentByJobIdAndRecipientEmail(JOB_ID, CONTACT_EMAIL)).thenReturn(Optional.of(alreadySent));
+
+        assertThrows(EmailAlreadySentException.class, () -> emailSendingService.send(USER_ID, JOB_ID));
+        verify(emailSenderPort, never()).send(any(), any(), any(), any());
+        verify(emailDraftRepository, never()).save(any());
+    }
 }

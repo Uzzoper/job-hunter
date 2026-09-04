@@ -25,6 +25,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 
 
@@ -442,6 +443,75 @@ class EmailGenerationServiceTest {
             EmailDraft draft = emailGenerationService.generate(1L, jobId);
 
             assertEquals(EmailStatus.PENDING, draft.status());
+        }
+    }
+
+    @Nested
+    @DisplayName("Scenario 8: idempotency by (jobId, recipientEmail)")
+    class IdempotencyTests {
+
+        private static final String DPO_EMAIL = "dpo@mtp.com.br";
+        private static final String HR_EMAIL = "rh@mtp.com.br";
+
+        @Test
+        @DisplayName("generate should return the existing SENT draft and persist nothing when the pair already sent")
+        void generate_whenSameJobAndEmailAlreadySent_shouldReturnExistingSent() {
+            Long jobId = 10L;
+            Job job = new Job(jobId, "Developer", "MTP",
+                    "https://example.com/job/10", "Description", LocalDate.now(), "test", DPO_EMAIL);
+            JobAnalysis analysis = new JobAnalysis(null, null, null, 10,
+                    List.of(), List.of("Java"),
+                    CompanyTone.FORMAL,
+                    "Developer role");
+            UserProfile profile = new UserProfile(null, 1L,
+                    "Experienced Java developer.", List.of("Java"), CompanyTone.FORMAL, List.of(),
+                    null, null, null, null, null);
+
+            var existingSent = new EmailDraft(100L, jobId, 1L, "Subject", "Body",
+                    EmailStatus.SENT, LocalDateTime.now(), LocalDateTime.now());
+
+            when(jobRepository.findById(jobId)).thenReturn(Optional.of(job));
+            when(jobAnalysisRepository.findByJobIdAndUserId(jobId, 1L)).thenReturn(Optional.of(analysis));
+            when(userProfileRepository.findByUserId(any())).thenReturn(Optional.of(profile));
+            when(emailDraftRepository.findSentByJobIdAndRecipientEmail(jobId, DPO_EMAIL))
+                    .thenReturn(Optional.of(existingSent));
+
+            EmailDraft result = emailGenerationService.generate(1L, jobId);
+
+            assertEquals(existingSent.id(), result.id());
+            assertEquals(EmailStatus.SENT, result.status());
+            verify(aiPort, never()).complete(any());
+            verify(templateEmailService, never()).generate(any());
+            verify(emailDraftRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("generate should proceed normally to PENDING when no SENT pair exists for the contact email")
+        void generate_whenDifferentEmailForSameJob_shouldGenerateNormally() {
+            Long jobId = 11L;
+            Job job = new Job(jobId, "Developer", "MTP",
+                    "https://example.com/job/11", "Description", LocalDate.now(), "test", HR_EMAIL);
+            JobAnalysis analysis = new JobAnalysis(null, null, null, 10,
+                    List.of(), List.of("Java"),
+                    CompanyTone.FORMAL,
+                    "Developer role");
+            UserProfile profile = new UserProfile(null, 1L,
+                    "Experienced Java developer.", List.of("Java"), CompanyTone.FORMAL, List.of(),
+                    null, null, null, null, null);
+
+            when(jobRepository.findById(jobId)).thenReturn(Optional.of(job));
+            when(jobAnalysisRepository.findByJobIdAndUserId(jobId, 1L)).thenReturn(Optional.of(analysis));
+            when(userProfileRepository.findByUserId(any())).thenReturn(Optional.of(profile));
+            when(emailDraftRepository.findSentByJobIdAndRecipientEmail(jobId, HR_EMAIL)).thenReturn(Optional.empty());
+            when(aiPort.complete(any())).thenReturn("Subject: Application\n\nBody text.");
+            when(emailDraftRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+            EmailDraft draft = emailGenerationService.generate(1L, jobId);
+
+            assertNotNull(draft);
+            assertEquals(EmailStatus.PENDING, draft.status());
+            verify(aiPort).complete(any());
+            verify(emailDraftRepository).save(any());
         }
     }
 }
