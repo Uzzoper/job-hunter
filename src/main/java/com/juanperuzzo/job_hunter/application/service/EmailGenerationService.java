@@ -15,6 +15,8 @@ import com.juanperuzzo.job_hunter.domain.model.EmailStatus;
 import com.juanperuzzo.job_hunter.domain.model.Job;
 import com.juanperuzzo.job_hunter.domain.model.JobAnalysis;
 import com.juanperuzzo.job_hunter.domain.model.UserProfile;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.time.LocalDateTime;
 import java.util.Objects;
@@ -22,6 +24,7 @@ import java.util.stream.Collectors;
 
 public class EmailGenerationService implements GenerateEmailUseCase, GetEmailDraftUseCase {
 
+    private static final Logger log = LoggerFactory.getLogger(EmailGenerationService.class);
     private static final int MAX_RESUME_CHARS = 1000;
 
     private final AiPort aiPort;
@@ -60,6 +63,14 @@ public class EmailGenerationService implements GenerateEmailUseCase, GetEmailDra
         UserProfile profile = userProfileRepository.findByUserId(userId)
                 .orElseThrow(() -> new AiException("User profile not found for userId: " + userId));
 
+        if (job.contactEmail() != null) {
+            var alreadySent = emailDraftRepository.findSentByJobIdAndRecipientEmail(job.id(), job.contactEmail());
+            if (alreadySent.isPresent()) {
+                log.debug("Skipping generation, already sent to {} for job {}", alreadySent.get().recipientEmail(), job.id());
+                return alreadySent.get();
+            }
+        }
+
         if (analysis.matchScore() >= minMatchScore) {
             return generateFromTemplate(job, userId);
         }
@@ -70,7 +81,7 @@ public class EmailGenerationService implements GenerateEmailUseCase, GetEmailDra
             var existingId = emailDraftRepository.findByJobIdAndUserId(job.id(), userId)
                     .map(EmailDraft::id)
                     .orElse(null);
-            EmailDraft draft = parseEmailDraft(existingId, job.id(), userId, response);
+            EmailDraft draft = parseEmailDraft(existingId, job.id(), userId, response, job.contactEmail());
             return emailDraftRepository.save(draft);
         } catch (AiException e) {
             throw e;
@@ -85,7 +96,7 @@ public class EmailGenerationService implements GenerateEmailUseCase, GetEmailDra
                 .map(EmailDraft::id)
                 .orElse(null);
         var draft = new EmailDraft(existingId, job.id(), userId, template.subject(), template.body(),
-                EmailStatus.PENDING, LocalDateTime.now());
+                EmailStatus.PENDING, LocalDateTime.now(), null, job.contactEmail());
         return emailDraftRepository.save(draft);
     }
 
@@ -185,11 +196,11 @@ public class EmailGenerationService implements GenerateEmailUseCase, GetEmailDra
      * keeping the refusal reason auditable and never producing a fake sendable subject.
      * Otherwise it follows the {@code Subject: } split logic and produces a {@code PENDING} draft.
      */
-    private EmailDraft parseEmailDraft(Long id, Long jobId, Long userId, String aiResponse) {
+    private EmailDraft parseEmailDraft(Long id, Long jobId, Long userId, String aiResponse, String recipientEmail) {
         String response = aiResponse.trim();
 
         if (response.startsWith("NO_APPLY:")) {
-            return new EmailDraft(id, jobId, userId, "", response, EmailStatus.REJECTED, LocalDateTime.now());
+            return new EmailDraft(id, jobId, userId, "", response, EmailStatus.REJECTED, LocalDateTime.now(), null, recipientEmail);
         }
 
         String subject;
@@ -208,6 +219,6 @@ public class EmailGenerationService implements GenerateEmailUseCase, GetEmailDra
             subject = "Subject: " + subject;
         }
 
-        return new EmailDraft(id, jobId, userId, subject, body, EmailStatus.PENDING, LocalDateTime.now());
+        return new EmailDraft(id, jobId, userId, subject, body, EmailStatus.PENDING, LocalDateTime.now(), null, recipientEmail);
     }
 }
