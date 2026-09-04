@@ -39,6 +39,9 @@ public class EmailDraftEntity {
     @Column(name = "sent_at")
     private LocalDateTime sentAt;
 
+    @Column(name = "recipient_email")
+    private String recipientEmail;
+
     public EmailDraftEntity() {
     }
 
@@ -113,5 +116,13 @@ public class EmailDraftEntity {
 
     public void setSentAt(LocalDateTime sentAt) {
         this.sentAt = sentAt;
+    }
+
+    public String getRecipientEmail() {
+        return recipientEmail;
+    }
+
+    public void setRecipientEmail(String recipientEmail) {
+        this.recipientEmail = recipientEmail;
     }
 }

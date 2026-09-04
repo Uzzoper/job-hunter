@@ -34,11 +34,17 @@
 - **THEN** throws `EmailDeliveryException`
 - **AND** the draft is left as `PENDING` (safe to retry — never marked `SENT` on failure)
 
+### Scenario 5: recipient pair already sent (idempotency double-check)
+- **GIVEN** a sendable draft (`PENDING`/`APPROVED`) for `(jobId, userId)` whose job's live `contactEmail` matches a *different* draft already `SENT` for the same `(jobId, contactEmail)` (see `email-idempotency.md`)
+- **WHEN** `send(userId, jobId)` is called
+- **THEN** throws `EmailAlreadySentException` (409 — idempotent signal, same as Scenario 2)
+- **AND** `EmailSenderPort.send` is never called, the current draft is untouched
+
 ---
 
 ## Business rules
 
-- Only a draft with `status == PENDING` may be sent; `send()` is not idempotent by design (see Scenario 2)
+- Only a draft with `status == PENDING` (full-auto) or `APPROVED` (review-gate) may be sent; `REJECTED` drafts (see `email-no-apply-refusal.md`) throw `RefusedDraftException` (422) before any send attempt; duplicate delivery for an already-sent `(job_id, recipient_email)` pair throws `EmailAlreadySentException` (see Scenario 5 and `email-idempotency.md`)
 - On success, `status` and `sentAt` are updated in the same persistence call (no partial state)
 - No automatic/scheduled triggering here — this spec only covers an explicit, user- or scheduler-initiated single send (e.g. `POST /api/jobs/{id}/email/send`, `jh-cli email send <job-id>`, or one call from `auto-send-scheduler.md`)
 

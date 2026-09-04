@@ -291,6 +291,11 @@ impl JobListScreen {
         self.toast = Some(Toast::new(message));
     }
 
+    /// Show an error/warning toast notification (longer duration, styled differently).
+    pub(crate) fn show_error_toast(&mut self, message: String) {
+        self.toast = Some(Toast::error(message));
+    }
+
     /// Open the selected job URL in the system browser
     pub fn open_selected_job_url(&mut self) {
         if let Some(job) = self.selected_job() {
@@ -366,11 +371,31 @@ impl JobListScreen {
         match result {
             Ok(_) => {
                 // Same list-reload path as the 'r' refresh key.
-                let _ = self.fetch_jobs().await;
-                self.show_toast("Fetch completed".to_string());
+                let pre_count = self.jobs.len();
+                match self.fetch_jobs().await {
+                    Ok(()) => {
+                        let post_count = self.jobs.len();
+                        let delta = post_count as isize - pre_count as isize;
+                        let msg = match delta {
+                            d if d > 0 => {
+                                format!("Fetch completed — {post_count} jobs (+{d})")
+                            }
+                            d if d < 0 => {
+                                format!("Fetch completed — {post_count} jobs ({d})")
+                            }
+                            _ => format!("Fetch completed — {post_count} jobs"),
+                        };
+                        self.show_toast(msg);
+                    }
+                    Err(e) => {
+                        self.show_error_toast(format!(
+                            "Fetch completed but failed to reload: {e}"
+                        ));
+                    }
+                }
             }
             Err(e) => {
-                self.show_toast(format!("Fetch failed: {}", e));
+                self.show_error_toast(format!("Fetch failed: {e}"));
             }
         }
 
@@ -629,14 +654,20 @@ impl JobListScreen {
                 height: 3,
             };
 
+            let border_style = if toast.is_error {
+                theme.style_bad()
+            } else {
+                theme.style_good()
+            };
+
             let toast_widget = Paragraph::new(Text::styled(
                 format!(" {} ", toast.message),
-                theme.style_good(),
+                border_style,
             ))
             .block(
                 Block::default()
                     .borders(Borders::ALL)
-                    .border_style(theme.style_good()),
+                    .border_style(border_style),
             )
             .alignment(Alignment::Center);
 
@@ -1957,7 +1988,9 @@ mod tests {
 
         assert!(!screen.fetch_in_progress);
         assert!(screen.toast.is_some());
-        assert_eq!(screen.toast.as_ref().unwrap().message, "Fetch completed");
+        // Mock GET /api/jobs returns [], so post_count=0, delta=0
+        assert_eq!(screen.toast.as_ref().unwrap().message, "Fetch completed — 0 jobs");
+        assert!(!screen.toast.as_ref().unwrap().is_error);
     }
 
     #[tokio::test]
@@ -1985,7 +2018,68 @@ mod tests {
 
         assert!(!screen.fetch_in_progress);
         assert!(screen.toast.is_some());
+        assert!(screen.toast.as_ref().unwrap().is_error);
         assert!(screen.toast.as_ref().unwrap().message.starts_with("Fetch failed"));
+    }
+
+    #[tokio::test]
+    async fn run_fetch_success_with_positive_delta_shows_count_and_delta() {
+        let server = MockServer::start();
+
+        server.mock(|when, then| {
+            when.method(Method::POST).path("/api/jobs/fetch");
+            then.status(200)
+                .header("content-type", "application/json")
+                .json_body(json!({ "message": "Fetch completed: 15 jobs saved" }));
+        });
+        server.mock(|when, then| {
+            when.method(Method::GET).path("/api/jobs");
+            then.status(200)
+                .header("content-type", "application/json")
+                .json_body(json!([
+                    { "id": 1, "title": "Job 1", "company": "A", "url": "https://a.com",
+                      "description": "desc", "postedAt": "2026-07-14", "source": "gupy" },
+                    { "id": 2, "title": "Job 2", "company": "B", "url": "https://b.com",
+                      "description": "desc", "postedAt": "2026-07-14", "source": "gupy" },
+                    { "id": 3, "title": "Job 3", "company": "C", "url": "https://c.com",
+                      "description": "desc", "postedAt": "2026-07-14", "source": "gupy" }
+                ]));
+        });
+
+        let api_client = Arc::new(Mutex::new(ApiClient::new(&server.url("/"))));
+        let cache = Arc::new(Mutex::new(CacheManager::new_in_memory(24).expect("cache")));
+        let mut screen = JobListScreen::new(api_client, cache);
+        // Pre-populate 1 job so delta = 3 - 1 = +2
+        screen.set_jobs(vec![JobResponse {
+            id: 100,
+            title: "Old Job".into(),
+            company: "Old".into(),
+            url: "https://old.com".into(),
+            description: "old".into(),
+            posted_at: NaiveDate::from_ymd_opt(2026, 7, 10).unwrap(),
+            source: "gupy".into(),
+            contact_email: None,
+        }]);
+
+        screen.start_fetch();
+        screen.run_fetch().await;
+
+        assert!(!screen.fetch_in_progress);
+        assert!(screen.toast.is_some());
+        assert_eq!(
+            screen.toast.as_ref().unwrap().message,
+            "Fetch completed — 3 jobs (+2)"
+        );
+        assert!(!screen.toast.as_ref().unwrap().is_error);
+    }
+
+    #[test]
+    fn show_error_toast_sets_is_error_flag() {
+        let mut screen = create_test_screen();
+        screen.show_error_toast("something went wrong".to_string());
+        assert!(screen.toast.is_some());
+        assert!(screen.toast.as_ref().unwrap().is_error);
+        assert_eq!(screen.toast.as_ref().unwrap().message, "something went wrong");
     }
 
     #[test]

@@ -8,6 +8,7 @@ import com.juanperuzzo.job_hunter.application.service.EmailSendingService;
 import com.juanperuzzo.job_hunter.domain.exception.EmailAlreadySentException;
 import com.juanperuzzo.job_hunter.domain.exception.EmailDeliveryException;
 import com.juanperuzzo.job_hunter.domain.exception.MissingRecipientException;
+import com.juanperuzzo.job_hunter.domain.exception.RefusedDraftException;
 import com.juanperuzzo.job_hunter.domain.model.EmailDraft;
 import com.juanperuzzo.job_hunter.domain.model.EmailStatus;
 import com.juanperuzzo.job_hunter.domain.model.Job;
@@ -136,6 +137,36 @@ class EmailSendingServiceTest {
 
         var thrown = assertThrows(EmailDeliveryException.class, () -> emailSendingService.send(USER_ID, JOB_ID));
         assertSame(deliveryException, thrown);
+        verify(emailDraftRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("should throw RefusedDraftException on REJECTED draft and never call the sender")
+    void send_whenRejected_shouldThrowAndNeverCallSender() {
+        var refused = new EmailDraft(DRAFT_ID, JOB_ID, USER_ID, "", "NO_APPLY: non-tech role",
+                EmailStatus.REJECTED, LocalDateTime.now());
+
+        when(emailDraftRepository.findByJobIdAndUserId(JOB_ID, USER_ID)).thenReturn(Optional.of(refused));
+
+        assertThrows(RefusedDraftException.class, () -> emailSendingService.send(USER_ID, JOB_ID));
+        verify(emailSenderPort, never()).send(any(), any(), any(), any());
+        verify(emailDraftRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("should throw EmailAlreadySentException when another draft already SENT for the same (jobId, recipient)")
+    void send_whenPairAlreadySent_shouldThrowAlreadySentAndNeverCallSender() {
+        var pending = new EmailDraft(DRAFT_ID, JOB_ID, USER_ID, "Subject", "Body", EmailStatus.PENDING, LocalDateTime.now());
+        var job = new Job(JOB_ID, "Dev", "Company", "https://job", "Desc", LocalDate.now(), "source", CONTACT_EMAIL);
+        // A different draft already delivered to the same recipient for the same vacancy
+        var alreadySent = new EmailDraft(99L, JOB_ID, 7L, "Subject", "Body", EmailStatus.SENT, LocalDateTime.now(), LocalDateTime.now());
+
+        when(emailDraftRepository.findByJobIdAndUserId(JOB_ID, USER_ID)).thenReturn(Optional.of(pending));
+        when(jobRepository.findById(JOB_ID)).thenReturn(Optional.of(job));
+        when(emailDraftRepository.findSentByJobIdAndRecipientEmail(JOB_ID, CONTACT_EMAIL)).thenReturn(Optional.of(alreadySent));
+
+        assertThrows(EmailAlreadySentException.class, () -> emailSendingService.send(USER_ID, JOB_ID));
+        verify(emailSenderPort, never()).send(any(), any(), any(), any());
         verify(emailDraftRepository, never()).save(any());
     }
 }

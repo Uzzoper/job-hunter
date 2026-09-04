@@ -55,7 +55,10 @@ for the database; Docker Compose keeps only the LinkedIn scraper container.
   replaced by a single `V1__baseline_schema.sql` in SQLite dialect carrying the final schema
   (`jobs`, `email_drafts`, `users`, `user_profiles`, `job_analyses`, `user_projects`, contact
   fields, `source`, `sent_at`). Consolidation is safe per AGENTS.md — these migrations only ever
-  ran on local machines. Future schema changes are new `V2+` files in SQLite dialect.
+  ran on local machines. Future schema changes are new `V2+` files in SQLite dialect
+  (`V2` indexes, `V3` documents the `REJECTED` status value, `V4` adds `recipient_email`
+  plus the partial unique index `WHERE status = 'SENT'` for idempotency — see
+  `email-idempotency.md`; partial indexes require SQLite ≥ 3.8).
 - **Rule 3 — one entity mapping.** `String[]` list fields (`UserProfileEntity.skills`,
   `JobAnalysisEntity.matchedSkills/missingSkills`) drop `columnDefinition = "TEXT[]"` and use a
   shared JPA `AttributeConverter` serializing to/from JSON text. No dialect branching anywhere.

@@ -20,5 +20,6 @@ public record LinkedInScraperProperties(
     List<String> workType,
     String timeRange,
     int maxPages,
-    long detailFetchDelayMillis
+    long detailFetchDelayMillis,
+    String baseJobUrl
 ) {}
