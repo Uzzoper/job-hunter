@@ -130,6 +130,15 @@ hermes:
   model: default
   timeout-seconds: 120
 
+bot:
+  memory:
+    # Directory where the Hermes jobhunter-bot profile stores memory files.
+    # ${user.home} resolves via the system user.home; the backend and the bot
+    # run as the same OS user so local java.nio.file.Files access is safe.
+    dir: ${user.home}/.hermes/profiles/jobhunter-bot
+    memory-file: memories/MEMORY.md
+    user-file: memories/USER.md
+
 app:
   cors:
     allowed-origins: "http://localhost:3000,http://localhost:4200"

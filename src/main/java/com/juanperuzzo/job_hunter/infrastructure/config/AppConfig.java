@@ -21,6 +21,8 @@ import com.juanperuzzo.job_hunter.application.service.ResumeTailoringService;
 import com.juanperuzzo.job_hunter.infrastructure.ai.HermesAgentClient;
 import com.juanperuzzo.job_hunter.infrastructure.ai.OllamaClient;
 import com.juanperuzzo.job_hunter.infrastructure.ai.OpenRouterClient;
+import com.juanperuzzo.job_hunter.infrastructure.botmemory.FileSystemBotMemoryAdapter;
+import com.juanperuzzo.job_hunter.infrastructure.botmemory.BotMemoryStartupSync;
 import com.juanperuzzo.job_hunter.infrastructure.email.HermesBotEmailSender;
 import com.juanperuzzo.job_hunter.infrastructure.pdf.ResumePdfRenderer;
 import com.juanperuzzo.job_hunter.infrastructure.scheduler.AutoSendScheduler;
@@ -29,6 +31,8 @@ import com.juanperuzzo.job_hunter.application.port.out.TokenProvider;
 import com.juanperuzzo.job_hunter.application.port.out.UserRepository;
 import com.juanperuzzo.job_hunter.application.port.out.JobAnalysisRepository;
 import com.juanperuzzo.job_hunter.application.port.out.UserProfileRepository;
+import com.juanperuzzo.job_hunter.application.port.out.BotMemoryPort;
+import com.juanperuzzo.job_hunter.application.service.BotMemorySyncService;
 import com.juanperuzzo.job_hunter.application.service.ApproveDraftService;
 import com.juanperuzzo.job_hunter.application.service.AuthService;
 import com.juanperuzzo.job_hunter.application.service.AutoSendEligibilityService;
@@ -57,6 +61,7 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
 import java.util.regex.Pattern;
+import java.nio.file.Path;
 
 import com.juanperuzzo.job_hunter.infrastructure.scraper.adapter.ProviderBasedScraperAdapter;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.enricher.CompanySiteEnricher;
@@ -452,5 +457,32 @@ public class AppConfig {
     @Bean
     public ApproveDraftService approveDraftService(EmailDraftRepository emailDraftRepository) {
         return new ApproveDraftService(emailDraftRepository);
+    }
+
+    @Bean
+    public BotMemoryPort botMemoryPort() {
+        return new FileSystemBotMemoryAdapter();
+    }
+
+    @Bean
+    public BotMemorySyncService botMemorySyncService(
+            BotMemoryPort botMemoryPort,
+            UserProfileRepository userProfileRepository,
+            @Value("${bot.memory.dir}") String memoryDir,
+            @Value("${bot.memory.memory-file:memories/MEMORY.md}") String memoryFileName,
+            @Value("${bot.memory.user-file:memories/USER.md}") String userFileName) {
+        return new BotMemorySyncService(
+                botMemoryPort,
+                userProfileRepository,
+                Path.of(memoryDir),
+                memoryFileName,
+                userFileName);
+    }
+
+    @Bean
+    public BotMemoryStartupSync botMemoryStartupSync(
+            BotMemorySyncService botMemorySyncService,
+            @Value("${bot.memory.dir}") String memoryDir) {
+        return new BotMemoryStartupSync(botMemorySyncService, Path.of(memoryDir));
     }
 }
