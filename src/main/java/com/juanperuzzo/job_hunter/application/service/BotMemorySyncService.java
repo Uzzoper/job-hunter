@@ -207,7 +207,6 @@ public class BotMemorySyncService {
             log.info("Merged bot memory preferences into profile for user {}", userId);
         }
     }
-}
 
 // ── Private helpers ───────────────────────────────────────────────
 
@@ -229,3 +228,4 @@ public class BotMemorySyncService {
                 p.skills(), p.tone(), p.projects(),
                 phone, contactEmail, portfolioUrl, githubUrl, linkedinUrl);
     }
+}
