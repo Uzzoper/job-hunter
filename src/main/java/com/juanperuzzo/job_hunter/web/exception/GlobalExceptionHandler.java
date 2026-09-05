@@ -15,6 +15,7 @@ import com.juanperuzzo.job_hunter.domain.exception.MissingRecipientException;
 import com.juanperuzzo.job_hunter.domain.exception.RefusedDraftException;
 import com.juanperuzzo.job_hunter.domain.exception.InvalidResumeTextException;
 import com.juanperuzzo.job_hunter.domain.exception.ResumeRenderingException;
+import com.juanperuzzo.job_hunter.domain.exception.BotMemorySyncException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -133,6 +134,11 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(ResumeRenderingException.class)
     public ResponseEntity<Map<String, Object>> handleResumeRenderingError(ResumeRenderingException ex) {
+        return buildResponse(HttpStatus.INTERNAL_SERVER_ERROR, ex.getMessage());
+    }
+
+    @ExceptionHandler(BotMemorySyncException.class)
+    public ResponseEntity<Map<String, Object>> handleBotMemorySyncError(BotMemorySyncException ex) {
         return buildResponse(HttpStatus.INTERNAL_SERVER_ERROR, ex.getMessage());
     }
 
