@@ -93,7 +93,7 @@ com.juanperuzzo.job_hunter
 │   │       ├── JobRepository.java
 │   │       ├── NormalizerPort.java
 │   │       ├── PasswordHasher.java
-│   │       ├── ScraperPort.java                         (legacy — see ADR)
+│   │       ├── ScraperPort.java
 │   │       ├── SourceFetchPort.java
 │   │       ├── TokenProvider.java
 │   │       ├── UserProfileRepository.java
