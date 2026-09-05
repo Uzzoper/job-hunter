@@ -312,5 +312,48 @@ class CliSmokeTests(unittest.TestCase):
         self.assertIsNone(args["company"])
 
 
+# ---------------------------------------------------------------------------
+# STOP_WORDS filter
+# ---------------------------------------------------------------------------
+
+class StopWordsFilterTests(unittest.TestCase):
+    """Generic short tokens must not surface as tech signals."""
+
+    def test_go_not_treated_as_tech(self):
+        result = scraper.scrape_from_html("<html><body><p>We go to work every day.</p></body></html>", url="https://example.com")
+        if result.get("signals"):
+            self.assertNotIn("go", [s.lower() for s in result["signals"]])
+
+    def test_golang_still_detected(self):
+        result = scraper.scrape_from_html("<html><body><p>Our stack includes Golang for backend services.</p></body></html>", url="https://example.com")
+        self.assertIn("golang", [s.lower() for s in result.get("signals", [])])
+
+
+# ---------------------------------------------------------------------------
+# Word boundaries
+# ---------------------------------------------------------------------------
+
+class WordBoundaryTests(unittest.TestCase):
+    """Substrings of longer tech names must not double-report."""
+
+    def test_java_in_javascript_not_doubled(self):
+        result = scraper.scrape_from_html("<html><body><p>We use JavaScript.</p></body></html>", url="https://example.com")
+        signals_lower = [s.lower() for s in result.get("signals", [])]
+        self.assertIn("javascript", signals_lower)
+        self.assertNotIn("java", signals_lower)
+
+
+# ---------------------------------------------------------------------------
+# Web-search fallback
+# ---------------------------------------------------------------------------
+
+class GoogleFallbackTests(unittest.TestCase):
+    """fetch() with a company hint always returns a string."""
+
+    def test_fetch_fallback_returns_string(self):
+        result = scraper.fetch("https://totally-fake-domain-12345.example", company="Acme Corp")
+        self.assertIsInstance(result, str)
+
+
 if __name__ == "__main__":
     unittest.main()
