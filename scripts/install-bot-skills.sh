@@ -18,9 +18,11 @@ set -euo pipefail
 HERMES_BASE="${HERMES_BASE:-$HOME/.hermes}"
 BOT_PROFILE="${HERMES_BASE}/profiles/jobhunter-bot"
 SKILLS_DEST="${BOT_PROFILE}/skills"
+SKILL_NAME="company-scraper"
+SKILL_DEST="${SKILLS_DEST}/${SKILL_NAME}"
 MEMORY_DIR="${BOT_PROFILE}/memails"
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-SKILL_SRC="${REPO_ROOT}/skills/company-scraper"
+SKILL_SRC="${REPO_ROOT}/skills/${SKILL_NAME}"
 
 # ---------------------------------------------------------------------------
 # Preflight
@@ -41,9 +43,9 @@ fi
 # ---------------------------------------------------------------------------
 
 echo "Creating directories ..."
-mkdir -p "${SKILLS_DEST}"
+mkdir -p "${SKILL_DEST}"
 mkdir -p "${MEMORY_DIR}"
-echo "  Skills dir:  ${SKILLS_DEST}"
+echo "  Skills dir:  ${SKILL_DEST}"
 echo "  Memory dir:  ${MEMORY_DIR}"
 echo ""
 
@@ -52,11 +54,11 @@ echo ""
 # ---------------------------------------------------------------------------
 
 echo "Copying skill files ..."
-cp "${SKILL_SRC}/SKILL.md" "${SKILLS_DEST}/SKILL.md"
-cp "${SKILL_SRC}/scraper.py" "${SKILLS_DEST}/scraper.py"
-chmod +x "${SKILLS_DEST}/scraper.py"
-echo "  SKILL.md   -> ${SKILLS_DEST}/SKILL.md"
-echo "  scraper.py -> ${SKILLS_DEST}/scraper.py (chmod +x)"
+cp "${SKILL_SRC}/SKILL.md" "${SKILL_DEST}/SKILL.md"
+cp "${SKILL_SRC}/scraper.py" "${SKILL_DEST}/scraper.py"
+chmod +x "${SKILL_DEST}/scraper.py"
+echo "  SKILL.md   -> ${SKILL_DEST}/SKILL.md"
+echo "  scraper.py -> ${SKILL_DEST}/scraper.py (chmod +x)"
 echo ""
 
 # ---------------------------------------------------------------------------
@@ -66,13 +68,13 @@ echo ""
 echo "=== Verification ==="
 echo ""
 echo "Installed files:"
-ls -la "${SKILLS_DEST}/"
+ls -la "${SKILL_DEST}/"
 echo ""
 
 # Quick syntax check on the script
 if command -v python3 &>/dev/null; then
     echo "Python syntax check:"
-    python3 -m py_compile "${SKILLS_DEST}/scraper.py" && echo "  scraper.py: OK" || echo "  scraper.py: SYNTAX ERROR"
+    python3 -m py_compile "${SKILL_DEST}/scraper.py" && echo "  scraper.py: OK" || echo "  scraper.py: SYNTAX ERROR"
 else
     echo "  python3 not found — skipping syntax check"
 fi
@@ -83,5 +85,5 @@ ls -la "${MEMORY_DIR}/" 2>/dev/null || echo "  (empty)"
 echo ""
 
 echo "=== Done ==="
-echo "Skill installed at: ${SKILLS_DEST}/company-scraper/ (flat layout)"
+echo "Skill installed at: ${SKILL_DEST}/ (per-skill layout)"
 echo "Memory files will be written to: ${MEMORY_DIR}/"
