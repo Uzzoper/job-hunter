@@ -490,7 +490,7 @@ def extract_culture(text: str) -> Optional[str]:
     found: List[str] = []
     for match in _CULTURE_PATTERN.findall(text):
         label = match.lower()
-        canonical = CULTURE_KEYWORDS.get(label, CULTURE_KEYWORDS.get(label, label))
+        canonical = CULTURE_KEYWORDS.get(label, label)
         if canonical not in found:
             found.append(canonical)
     return ", ".join(found) if found else None
