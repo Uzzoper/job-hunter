@@ -153,7 +153,8 @@ public class BotMemorySyncService {
             return;
         }
         var memoryFile = memoryDir.resolve(memoryFileName);
-        String section = "\n§\n" + text.strip() + "\n";
+        String safeText = text.replace("\u00A7", "\u00B7");
+        String section = "\n\u00A7\n" + safeText.strip() + "\n";
         botMemoryPort.appendSection(memoryFile, section);
         log.info("Wrote memory entry for user {} to {}", userId, memoryFile);
     }
