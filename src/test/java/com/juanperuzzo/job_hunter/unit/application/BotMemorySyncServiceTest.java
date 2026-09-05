@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
@@ -26,6 +27,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import org.mockito.ArgumentCaptor;
 
 @ExtendWith(MockitoExtension.class)
 @DisplayName("BotMemorySyncService tests")
@@ -118,6 +120,29 @@ class BotMemorySyncServiceTest {
         service.writeMemoryEntry(1L, "Draft rejected: too generic for Company Z");
 
         verify(botMemoryPort).appendSection(eq(memoryFile), contains("Draft rejected"));
+    }
+
+    @Test
+    @DisplayName("writeMemoryEntry when text contains § delimiter should escape it so re-parsing stays intact")
+    void writeMemoryEntry_whenTextContainsDelimiter_shouldNotBreakParse() {
+        Path memoryFile = tempDir.resolve("memories/MEMORY.md");
+        ArgumentCaptor<String> payloadCaptor = ArgumentCaptor.forClass(String.class);
+
+        service.writeMemoryEntry(1L, "Draft rejected § due to delimiter § in reason");
+
+        verify(botMemoryPort).appendSection(eq(memoryFile), payloadCaptor.capture());
+        String payload = payloadCaptor.getValue();
+
+        // Escaped with middle dot
+        assertTrue(payload.contains("\u00B7"));
+        // No raw § inside the section body (only the leading delimiter)
+        assertFalse(payload.contains("§ due to"));
+
+        // Re-parsing yields exactly one intact section with the escaped body
+        var prefs = service.parseMemoryContent(payload);
+        assertEquals(1, prefs.rawSections().size());
+        assertEquals("Draft rejected \u00B7 due to delimiter \u00B7 in reason",
+                prefs.rawSections().get(0));
     }
 
     // ── Missing file ──────────────────────────────────────────────────
