@@ -368,14 +368,46 @@ class CompanyPageParser(HTMLParser):
 # Core functions
 # ---------------------------------------------------------------------------
 
-def fetch(url: str, timeout: int = DEFAULT_TIMEOUT) -> str:
+def _web_search(query: str, max_results: int = 5) -> Optional[str]:
+    """Best-effort web search via DuckDuckGo HTML endpoint (stdlib only).
+
+    Returns space-joined result snippets or None on any failure.
+    Used as a fallback content source when a company website fetch fails.
+    """
+    ddg_url = "https://html.duckduckgo.com/html/"
+    req = urllib.request.Request(
+        ddg_url,
+        headers={'User-Agent': USER_AGENT, 'Accept': 'text/html,application/xhtml+xml'},
+        method='POST',
+        data=urllib.parse.urlencode({'q': query}).encode('utf-8'),
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            html = resp.read(2 * 1024 * 1024).decode('utf-8', errors='replace')
+        snippets = []
+        for match in re.finditer(r'<a[^>]*class="result__snippet"[^>]*>(.*?)</a>', html, re.IGNORECASE | re.DOTALL):
+            snippet = re.sub(r'<[^>]+>', '', match.group(1)).strip()
+            if snippet:
+                snippets.append(snippet)
+        return ' '.join(snippets[:max_results]) if snippets else None
+    except Exception:
+        return None
+
+
+def fetch(url: str, timeout: int = DEFAULT_TIMEOUT, company: Optional[str] = None) -> str:
     """Fetch a URL and return the response body as a string.
 
     Returns a JSON error string (not raises) on HTTP/connection errors
-    so the caller can always parse JSON output.
+    so the caller can always parse JSON output. When a company name is
+    given, a web-search snippet is used as fallback content.
     """
     if _is_portal_domain(url):
         return json.dumps({"error": "portal_domain_skipped", "url": url})
+
+    if company:
+        web_snippet = _web_search(f"{company} tecnologias stack site:{url}")
+        if web_snippet:
+            return f'<html><body><p>{web_snippet}</p></body></html>'
 
     req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
     try:
@@ -706,7 +738,7 @@ def scrape(url: str, company: Optional[str] = None,
     second source and merged in; if its fetch fails, the primary result is
     returned unchanged.
     """
-    html = fetch(url)
+    html = fetch(url, company=company)
     if not html or html.startswith('{"error"'):
         try:
             return json.loads(html)
