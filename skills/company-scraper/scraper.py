@@ -77,12 +77,12 @@ PORTAL_DOMAINS = [
 # Tech keywords to scan for in page content
 TECH_KEYWORDS = [
     # Languages
-    "java", "python", "javascript", "typescript", "go", "golang", "rust",
-    "c#", "c\\+\\+", "ruby", "php", "swift", "kotlin", "scala", "dart",
+    "java", "python", "javascript", "typescript", "golang", "rust",
+    "c#", "c++", "ruby", "php", "swift", "kotlin", "scala", "dart",
     # Frameworks
     "spring boot", "spring", "django", "flask", "fastapi", "rails",
-    "react", "next\\.js", "nextjs", "vue", "nuxt", "angular", "svelte",
-    "node\\.?js", "express", "nest\\.?js",
+    "react", "next.js", "nextjs", "vue", "nuxt", "angular", "svelte",
+    "node.js", "nodejs", "express", "nest.js", "nestjs",
     "react native", "flutter",
     # Databases
     "postgresql", "postgres", "mysql", "mongodb", "redis", "elasticsearch",
@@ -95,8 +95,27 @@ TECH_KEYWORDS = [
     "spark", "kafka", "airflow", "dbt",
 ]
 
-# Compiled tech regex (case-insensitive)
-_TECH_PATTERNS = [(kw, re.compile(kw, re.IGNORECASE)) for kw in TECH_KEYWORDS]
+# Stop words excluded from tech-signal matching to avoid false positives
+# on generic short tokens (e.g. prose containing "go", "web", "app").
+STOP_WORDS = frozenset({
+    'go', 'or', 'and', 'the', 'for', 'with', 'from', 'this', 'that', 'are',
+    'was', 'were', 'been', 'have', 'has', 'had', 'but', 'not', 'you', 'all',
+    'can', 'her', 'his', 'its', 'our', 'out', 'day', 'get', 'got', 'how',
+    'man', 'new', 'now', 'old', 'see', 'way', 'who', 'did', 'oil', 'gas',
+    'set', 'run', 'use', 'used', 'one', 'two', 'six', 'ten', 'top', 'net',
+    'app', 'web', 'api', 'sdk', 'cpu', 'gpu', 'ram', 'ssd', 'hdd', 'usb',
+    'lte', 'gsm', 'gprs', 'nfc', 'iot', 'sms', 'wap', 'lan', 'wan',
+    'sql',
+})
+
+
+def _match_tech(text: str, keyword: str) -> bool:
+    """Match a tech keyword with word boundaries (lookarounds).
+
+    Uses (?<!\\w)/(?!\\w) instead of \\b so symbols like C#, C++ and
+    multi-word stacks (Spring Boot) match correctly.
+    """
+    return bool(re.search(r'(?<!\w)' + re.escape(keyword) + r'(?!\w)', text, re.IGNORECASE))
 
 # ---------------------------------------------------------------------------
 # #36: Culture / workplace / benefits keywords (Portuguese)
@@ -337,11 +356,11 @@ class CompanyPageParser(HTMLParser):
         """Scan accumulated body text for technology keywords."""
         body = " ".join(self._body_text_parts)
         found: List[str] = []
-        for keyword, pattern in _TECH_PATTERNS:
-            if pattern.search(body) and keyword not in found:
-                # Normalize display: unescape regex escapes for display
-                display = keyword.replace("\\", "")
-                found.append(display)
+        for keyword in TECH_KEYWORDS:
+            if _match_tech(body, keyword) and keyword not in found:
+                if keyword in STOP_WORDS:
+                    continue
+                found.append(keyword)
         return found
 
 
