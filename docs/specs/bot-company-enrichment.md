@@ -163,6 +163,82 @@ This would allow `CompanyEnrichmentService` to check `memails/<domain>.json` bef
 
 ---
 
+## Extension: enriched business signals (issue #36)
+
+> **Type:** Python extractors + CLI flag + tests + docs (no Java code)
+> **Corresponding issue:** #36
+> **Depends on:** the base skill from #32 (same file layout, stdlib-only policy)
+> **Tests:** `skills/company-scraper/scraper_test.py` (plain unittest, pytest-compatible, RED→GREEN)
+
+### Goal
+
+Extend the company-scraper skill with semantic business signals that help the bot (and the future Java enrichment path) build a richer company profile before drafting application emails: workplace culture, product/offering, team size, funding stage, and recent news.
+
+### New extractors (`skills/company-scraper/scraper.py`)
+
+| Function | Returns | Portuguese patterns |
+|---|---|---|
+| `extract_culture(text)` | comma-separated string or `None` | `remoto`, `híbrido`, `presencial`, `home office`, `clean code`, `TDD`, `metodologias ágeis`, `vale refeição`/`vale alimentação`, `plano de saúde`, ... |
+| `extract_products(text)` | first product phrase or `None` | `plataforma de X`, `soluções em X`, `oferecemos X`, `nossos produtos (de/em) X` |
+| `extract_team_size(text)` | `"50-200"` style string or `None` | `50-200 funcionários/colaboradores`, `mais de N pessoas`, `time de N pessoas` |
+| `extract_funding(text)` | stage string or `None` | `Seed`, `Série A/B/C`, `Series A/B/C`, `Bootstrapped`, `aporte`, `captação` |
+| `extract_recent_news(text)` | semicolon-joined snippets or `None` | `captação`, `aquisição`, `lançamento`, `expansão` + year `2025`/`2026` |
+
+### New flow (secondary LinkedIn source)
+
+- CLI gains `--linkedin-url <url>`: fetch the LinkedIn company page as a secondary source.
+- `merge_short_from_linkedin()` fills gaps from the primary URL only (company name, description, tech signals); it never overrides primary values.
+- If the LinkedIn fetch fails (portal guard, timeout, 403), the primary result is returned unchanged and `linkedinUrl` still holds the argument value. The accept-at-minimum behavior required by #36.
+
+### Output schema additions
+
+```json
+{
+  "...": "existing #32 fields",
+  "culture": "<comma-separated culture/benefit signals or null>",
+  "products": "<first product phrase or null>",
+  "teamSize": "<'50-200' | '100+' | '25' | null>",
+  "funding": "<Seed | Série A/B/C | Series A/B/C | Bootstrapped | Aporte | Captação | null>",
+  "recentNews": "<semicolon-joined snippets or null>",
+  "linkedinUrl": "<linkedin URL argument or null>"
+}
+```
+
+### Test plan (TDD)
+
+`skills/company-scraper/scraper_test.py` (plain `unittest`, pytest-compatible, inline HTML fixtures):
+
+- `ExtractCultureTests` — multiple signals comma-joined, single signal, none → `None`
+- `ExtractProductsTests` — all four BR patterns, none → `None`
+- `ExtractTeamSizeTests` — range, `mais de N`, `time de N`, `colaboradores` variant, none
+- `ExtractFundingTests` — Seed, `Série/Series` variants, Bootstrapped, Aporte, Captação, none
+- `ExtractRecentNewsTests` — keyword + year combos, semicolon joining, no-year → `None`
+- `ScrapeOutputSchemaTests` — `scrape_from_html()` output contains all #36 fields; `linkedinUrl` null when not provided
+- `CliSmokeTests` — usage message on no-URL, `parse_args()` handles `--linkedin-url`
+
+### Business rules (additions)
+
+1. **Stdlib only preserved** — new extractors use `re` only; no new imports beyond the standard library.
+2. **First-match semantics** — `extract_products` returns the first match in document order (matching the #36 wording "first product match").
+3. **Recency filter** — a news keyword only counts when the snippet contains 2025 or 2026; no year → `None`.
+4. **LinkedIn merge is best-effort** — fetch failures never abort the primary result.
+5. **No Java in #36** — extractors run on the bot side (Python); Java integration remains a follow-up.
+
+### Acceptance criteria mapping (#36)
+
+| Criterion | Delivered by |
+|---|---|
+| `extract_culture` → comma-separated string or null | `scraper.py` + `ExtractCultureTests` |
+| `extract_products` → first product match or null | `scraper.py` + `ExtractProductsTests` |
+| `extract_team_size` → `"50-200"` style or null | `scraper.py` + `ExtractTeamSizeTests` |
+| `extract_funding` → stage or null | `scraper.py` + `ExtractFundingTests` |
+| `extract_recent_news` → semicolon-joined or null | `scraper.py` + `ExtractRecentNewsTests` |
+| `--linkedin-url` CLI arg | `parse_args` + `merge_short_from_linkedin` + `CliSmokeTests` |
+| All new fields in output JSON | `scrape_from_html` output schema + `ScrapeOutputSchemaTests` |
+| `scraper_test.py` with fixtures + CLI smoke test | `scraper_test.py` (33 tests) |
+
+---
+
 ## Memory sync convention
 
 ```
@@ -170,7 +246,7 @@ This would allow `CompanyEnrichmentService` to check `memails/<domain>.json` bef
 ```
 
 - `<domain>` = lowercase hostname (e.g. `acme.com.br`, `empresa.com`)
-- File content = full output JSON from `scraper.py` (with optional `_cached_at` timestamp added by bot)
+- File content = full output JSON from `scraper.py` (with optional `_cached_at` timestamp added by bot; includes all #36 fields)
 - Bot-side logic: check if file exists and is < 24h old before re-fetching
 - Java-side (future): `BotMemoryPort.readDomainMemory(domain)` would check this path
 
