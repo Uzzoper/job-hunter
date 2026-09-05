@@ -12,6 +12,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.BiFunction;
 import java.util.regex.Pattern;
 
 /**
@@ -37,19 +38,23 @@ public class BotMemorySyncService {
     private static final Pattern KEY_VALUE_LINE = Pattern.compile("^([^:]{1,80}):\\s*(.+)$");
 
     /**
-     * Generic mapping from BotPreferences key (lowercase) to UserProfile field name.
-     * Keys not in this map are ignored during merge (raw data stays in BotPreferences).
+     * Generic mapping from BotPreferences key (already lowercase) to a copy-function
+     * that returns the profile with the field filled when it is currently blank,
+     * or the same profile instance when the field is already set (fill-if-empty).
+     * <p>
+     * New fields are added by editing <em>only</em> this map — no switch or
+     * if-chain in {@link #mergeIntoProfile}.
      */
-    private static final Map<String, String> KEY_TO_PROFILE_FIELD = Map.of(
-            "contactemail", "contactEmail",
-            "email", "contactEmail",
-            "phone", "phone",
-            "portfolio", "portfolioUrl",
-            "portfoliourl", "portfolioUrl",
-            "github", "githubUrl",
-            "githuburl", "githubUrl",
-            "linkedin", "linkedinUrl",
-            "linkedinurl", "linkedinUrl"
+    private static final Map<String, BiFunction<UserProfile, String, UserProfile>> FIELD_SETTERS = Map.of(
+            "phone",        (p, v) -> isBlank(p.phone())        ? copy(p, v, p.contactEmail(),  p.portfolioUrl(), p.githubUrl(),  p.linkedinUrl()) : p,
+            "contactemail", (p, v) -> isBlank(p.contactEmail())  ? copy(p, p.phone(),            v,                p.portfolioUrl(), p.githubUrl(), p.linkedinUrl()) : p,
+            "email",        (p, v) -> isBlank(p.contactEmail())  ? copy(p, p.phone(),            v,                p.portfolioUrl(), p.githubUrl(), p.linkedinUrl()) : p,
+            "portfolio",    (p, v) -> isBlank(p.portfolioUrl())  ? copy(p, p.phone(),            p.contactEmail(), v,                p.githubUrl(), p.linkedinUrl()) : p,
+            "portfoliourl", (p, v) -> isBlank(p.portfolioUrl())  ? copy(p, p.phone(),            p.contactEmail(), v,                p.githubUrl(), p.linkedinUrl()) : p,
+            "github",       (p, v) -> isBlank(p.githubUrl())    ? copy(p, p.phone(),            p.contactEmail(), p.portfolioUrl(), v,             p.linkedinUrl()) : p,
+            "githuburl",    (p, v) -> isBlank(p.githubUrl())    ? copy(p, p.phone(),            p.contactEmail(), p.portfolioUrl(), v,             p.linkedinUrl()) : p,
+            "linkedin",     (p, v) -> isBlank(p.linkedinUrl())  ? copy(p, p.phone(),            p.contactEmail(), p.portfolioUrl(), p.githubUrl(), v)               : p,
+            "linkedinurl",  (p, v) -> isBlank(p.linkedinUrl())  ? copy(p, p.phone(),            p.contactEmail(), p.portfolioUrl(), p.githubUrl(), v)               : p
     );
 
     private final BotMemoryPort botMemoryPort;
@@ -170,8 +175,10 @@ public class BotMemorySyncService {
 
     /**
      * Merges parsed preferences into the user's profile using fill-if-empty rules.
-     * Only keys present in {@link #KEY_TO_PROFILE_FIELD} are considered; unmapped
-     * keys are silently skipped.
+     * Only keys present in {@link #FIELD_SETTERS} are considered; unmapped keys are
+     * silently skipped. Change detection uses object identity: unchanged fields leave
+     * the profile instance unmodified, so a final {@code !=} check avoids an
+     * unnecessary save.
      */
     private void mergeIntoProfile(Long userId, BotPreferences prefs) {
         var existing = userProfileRepository.findByUserId(userId);
@@ -181,65 +188,43 @@ public class BotMemorySyncService {
         }
 
         var profile = existing.get();
-        String phone = profile.phone();
-        String contactEmail = profile.contactEmail();
-        String portfolioUrl = profile.portfolioUrl();
-        String githubUrl = profile.githubUrl();
-        String linkedinUrl = profile.linkedinUrl();
-
-        boolean changed = false;
+        var updated = profile;
 
         for (var entry : prefs.keyValues().entrySet()) {
-            String field = KEY_TO_PROFILE_FIELD.get(entry.getKey().toLowerCase());
-            if (field == null) {
-                continue;
-            }
             String value = entry.getValue();
             if (value == null || value.isBlank()) {
                 continue;
             }
-
-            switch (field) {
-                case "phone" -> {
-                    if (phone == null || phone.isBlank()) {
-                        phone = value;
-                        changed = true;
-                    }
-                }
-                case "contactEmail" -> {
-                    if (contactEmail == null || contactEmail.isBlank()) {
-                        contactEmail = value;
-                        changed = true;
-                    }
-                }
-                case "portfolioUrl" -> {
-                    if (portfolioUrl == null || portfolioUrl.isBlank()) {
-                        portfolioUrl = value;
-                        changed = true;
-                    }
-                }
-                case "githubUrl" -> {
-                    if (githubUrl == null || githubUrl.isBlank()) {
-                        githubUrl = value;
-                        changed = true;
-                    }
-                }
-                case "linkedinUrl" -> {
-                    if (linkedinUrl == null || linkedinUrl.isBlank()) {
-                        linkedinUrl = value;
-                        changed = true;
-                    }
-                }
+            var setter = FIELD_SETTERS.get(entry.getKey().toLowerCase());
+            if (setter != null) {
+                updated = setter.apply(updated, value);
             }
         }
 
-        if (changed) {
-            var updated = new UserProfile(
-                    profile.id(), profile.userId(), profile.resumeText(),
-                    profile.skills(), profile.tone(), profile.projects(),
-                    phone, contactEmail, portfolioUrl, githubUrl, linkedinUrl);
+        if (updated != profile) {
             userProfileRepository.save(updated);
             log.info("Merged bot memory preferences into profile for user {}", userId);
         }
     }
 }
+
+// ── Private helpers ───────────────────────────────────────────────
+
+    private static boolean isBlank(String s) {
+        return s == null || s.isBlank();
+    }
+
+    /**
+     * Creates a copy of {@code p} with the five contact fields replaced.
+     * Used as the inner body of every {@link #FIELD_SETTERS} lambda so that
+     * adding a new field means adding only one map entry.
+     */
+    private static UserProfile copy(UserProfile p,
+                                    String phone, String contactEmail,
+                                    String portfolioUrl, String githubUrl,
+                                    String linkedinUrl) {
+        return new UserProfile(
+                p.id(), p.userId(), p.resumeText(),
+                p.skills(), p.tone(), p.projects(),
+                phone, contactEmail, portfolioUrl, githubUrl, linkedinUrl);
+    }
