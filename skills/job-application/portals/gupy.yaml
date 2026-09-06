@@ -4,6 +4,9 @@
 
 portal: gupy
 
+# Optional CDP endpoint for browser recovery (issue #39); --cdp-url flag wins.
+cdp_url: "http://localhost:9222"
+
 # Optional form URL builder; {job_id} is replaced with the URL slug.
 form_url_pattern: "https://jobs.gupy.io/jobs/{job_id}"
 

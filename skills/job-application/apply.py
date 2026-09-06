@@ -1,28 +1,32 @@
 #!/usr/bin/env python3
 """
-apply.py — structured job-portal application planner for the Hermes bot (issue #37).
+apply.py — structured job-portal application planner for the Hermes bot (issues #37, #38, #39).
 
 Plans a Gupy application as an ordered ACTION PLAN (JSON) that the bot executes
-through its browser tool. This script NEVER touches a browser: it validates
-inputs, enforces guardrails (#27 idempotency, #28 refusal), and emits steps
-with CSS selectors loaded from portals/<portal>.yaml.
+through its browser tool. This script validates inputs, enforces guardrails
+(#27 idempotency, #28 refusal), checks/recovers the browser session (#39),
+and emits steps with CSS selectors loaded from portals/<portal>.yaml.
 
-Stdlib only: argparse, json, re, urllib.parse, pathlib. No pip dependencies.
-Portal YAML files stay flat (`key: value` / dotted keys), so a small built-in
-subset parser is used instead of a yaml library.
+Stdlib only: argparse, json, os, re, subprocess, time, urllib, pathlib.
+No pip dependencies.
 
 Usage:
     python3 apply.py --job-url <url> --profile <profile.json> --portal gupy \\
         [--memory-dir <dir>] [--dry-run] [--confirmed] [--record-applied]
+    python3 apply.py --check-browser [--cdp-url <url>] [--user-data-dir <dir>]
 
-Output: JSON to stdout (action plan or {"error": <code>, "detail": ...}).
+Output: JSON to stdout (action plan, browser status, or {"error": <code>, "detail": ...}).
 """
 
 import argparse
 import json
+import os
 import re
+import subprocess
 import sys
+import time
 import urllib.parse
+import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -42,8 +46,112 @@ SCREENSHOTS_SUBDIR = "screenshots"
 APPLIED_STATUS = "applied"
 REFUSAL_MARKER = "NO_APPLY"
 
+# Issue #39 — browser recovery defaults.
+DEFAULT_CDP_URL = "http://localhost:9222"
+DEFAULT_USER_DATA_DIR = "~/.chromium-profile-cdp"
+CDP_RECHECK_DELAY = 3  # seconds to wait after starting Chromium before re-checking CDP
+
 # Gupy job URLs look like https://<portal>.gupy.io/jobs/<id-slug>
 JOB_SLUG_RE = re.compile(r"/jobs/([^/?#]+)")
+
+
+# ---------------------------------------------------------------------------
+# Issue #39 — Browser recovery: check / start / orchestrate
+# ---------------------------------------------------------------------------
+
+def check_cdp(cdp_url: str = DEFAULT_CDP_URL, timeout: int = 2) -> bool:
+    """Check whether the Chrome DevTools Protocol endpoint is reachable.
+
+    Performs a lightweight GET to ``<cdp_url>/json/version``. Returns True
+    when the endpoint responds (HTTP 200), False on any connection/timeout
+    error.
+    """
+    try:
+        resp = urllib.request.urlopen(
+            cdp_url.rstrip("/") + "/json/version", timeout=timeout
+        )
+        return resp.status == 200
+    except Exception:
+        return False
+
+
+def start_chromium(user_data_dir: str,
+                   remote_debugging_port: int = 9222) -> subprocess.Popen:
+    """Launch Chromium with a persistent profile and remote debugging.
+
+    The *user_data_dir* is expanded (``~`` → home) and created if it does
+    not exist. The process runs detached (stdout/stderr discarded).
+
+    Returns the ``subprocess.Popen`` handle so the caller can track it if
+    needed.
+    """
+    expanded = os.path.expanduser(user_data_dir)
+    os.makedirs(expanded, exist_ok=True)
+    return subprocess.Popen(
+        [
+            "chromium",
+            f"--remote-debugging-port={remote_debugging_port}",
+            f"--user-data-dir={expanded}",
+            "--no-first-run",
+        ],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+
+
+# PT-BR user-facing message (issue #39 — user-facing strings in Portuguese).
+_BROWSER_RECOVERY_LOGIN_MSG = (
+    "Navegador indisponível, iniciando o Chromium. "
+    "Faça login no Gupy e confirme."
+)
+
+
+def ensure_browser(
+    cdp_url: str = DEFAULT_CDP_URL,
+    user_data_dir: str = DEFAULT_USER_DATA_DIR,
+    remote_debugging_port: int = 9222,
+    startup_delay: float = CDP_RECHECK_DELAY,
+    timeout: int = 2,
+) -> Dict[str, Any]:
+    """Orchestrate browser health: check → start → wait → re-check.
+
+    Returns a status dict with a ``"status"`` key:
+
+    * ``"ready"``              — CDP was reachable immediately.
+    * ``"needs_login"``        — CDP was down, Chromium was started, CDP is
+                                 now reachable but the session is fresh; the
+                                 user must log in.  (Exit code 0 — not an error.)
+    * ``"browser_unavailable"`` — Chromium failed to start or CDP is still
+                                  unreachable after the startup delay.
+                                  (Exit code 1 — real error.)
+    """
+    # 1. Check if CDP is already reachable.
+    if check_cdp(cdp_url, timeout=timeout):
+        return {"status": "ready"}
+
+    # 2. CDP not reachable — launch Chromium.
+    try:
+        start_chromium(user_data_dir, remote_debugging_port)
+    except Exception as exc:
+        return {
+            "status": "browser_unavailable",
+            "detail": f"Chromium failed to start: {exc}",
+        }
+
+    # 3. Wait for Chromium to boot and open its debugging port.
+    time.sleep(startup_delay)
+
+    # 4. Re-check CDP.
+    if check_cdp(cdp_url, timeout=timeout):
+        return {
+            "status": "needs_login",
+            "detail": _BROWSER_RECOVERY_LOGIN_MSG,
+        }
+
+    return {
+        "status": "browser_unavailable",
+        "detail": "Chromium started but CDP is still unreachable",
+    }
 
 # ---------------------------------------------------------------------------
 # Flat-YAML mini-parser (subset used by portal files, no external deps)
@@ -399,6 +507,13 @@ def parse_args(argv: Optional[List[str]]):
     # visited history and the current URL; apply.py never tracks state.
     parser.add_argument("--visited-urls", help="comma-separated list of previously visited URLs")
     parser.add_argument("--current-url", help="the URL the browser is currently on")
+    # Issue #39 — browser recovery.
+    parser.add_argument("--check-browser", action="store_true",
+                        help="print browser status as JSON and exit")
+    parser.add_argument("--cdp-url", default=None,
+                        help=f"CDP endpoint URL (default: {DEFAULT_CDP_URL})")
+    parser.add_argument("--user-data-dir", default=None,
+                        help=f"Chromium user data dir (default: {DEFAULT_USER_DATA_DIR})")
     return parser.parse_args(argv)
 
 
@@ -410,6 +525,14 @@ def run(argv: Optional[List[str]] = None) -> int:
         # argparse already wrote the flag error to stderr; keep stdout JSON-only.
         print(json.dumps(build_error("usage", "invalid arguments")))
         return 2
+
+    # Issue #39 — --check-browser: standalone mode, no action plan needed.
+    if args.check_browser:
+        cdp_url = args.cdp_url or DEFAULT_CDP_URL
+        user_data_dir = args.user_data_dir or DEFAULT_USER_DATA_DIR
+        status = ensure_browser(cdp_url=cdp_url, user_data_dir=user_data_dir)
+        print(json.dumps(status, ensure_ascii=False))
+        return 0 if status["status"] != "browser_unavailable" else 1
 
     memory_dir = Path(args.memory_dir) if args.memory_dir else DEFAULT_MEMORY_DIR
 
@@ -460,6 +583,31 @@ def run(argv: Optional[List[str]] = None) -> int:
             memory_dir=memory_dir,
         )))
         return 1
+
+    # Issue #39 — browser recovery runs BEFORE navigation guard (#38). When the
+    # CDP endpoint is unreachable we start Chromium and hand the session back to
+    # the human for login. --dry-run never touches the browser.
+    if not args.dry_run:
+        cdp_url = args.cdp_url or portal_cfg.get("cdp_url") or DEFAULT_CDP_URL
+        user_data_dir = args.user_data_dir or DEFAULT_USER_DATA_DIR
+        status = ensure_browser(cdp_url=cdp_url, user_data_dir=user_data_dir)
+        if status["status"] == "needs_login":
+            # Not an error: the browser session is fresh and the user must log
+            # in. Exit code 0 and a recognisable status so the bot can ask the
+            # human to authenticate and then retry.
+            print(json.dumps({
+                "ok": True,
+                "status": status["status"],
+                "detail": status["detail"],
+            }, ensure_ascii=False))
+            return 0
+        if status["status"] == "browser_unavailable":
+            print(json.dumps(build_error(
+                "browser_unavailable",
+                status.get("detail", "Chromium is not running and could not be started"),
+                memory_dir=memory_dir,
+            )))
+            return 1
 
     # Issue #38 navigation auth/loop guard. When the bot is being redirected to
     # a login page or is stuck re-visiting the same URL, stop early and hand the
