@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """
-apply.py — structured job-portal application planner for the Hermes bot (issues #37, #38, #39).
+apply.py — structured job-portal application planner for the Hermes bot (issues #37, #38, #39, #41).
 
 Plans a Gupy application as an ordered ACTION PLAN (JSON) that the bot executes
 through its browser tool. This script validates inputs, enforces guardrails
 (#27 idempotency, #28 refusal), checks/recovers the browser session (#39),
-and emits steps with CSS selectors loaded from portals/<portal>.yaml.
+detects an expired session before any fill (#41), and emits steps with CSS
+selectors loaded from portals/<portal>.yaml.
 
 Stdlib only: argparse, json, os, re, subprocess, time, urllib, pathlib.
 No pip dependencies.
@@ -13,6 +14,7 @@ No pip dependencies.
 Usage:
     python3 apply.py --job-url <url> --profile <profile.json> --portal gupy \\
         [--memory-dir <dir>] [--dry-run] [--confirmed] [--record-applied]
+        [--skip-session-check]
     python3 apply.py --check-browser [--cdp-url <url>] [--user-data-dir <dir>]
 
 Output: JSON to stdout (action plan, browser status, or {"error": <code>, "detail": ...}).
@@ -31,7 +33,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from navigation import MAX_VISITS, guard_from_cli  # issue #38 auth/loop guard
+from navigation import MAX_VISITS, SESSION_EXPIRED_DETAIL, guard_from_cli, verify_session  # issues #38, #41
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -387,10 +389,59 @@ def write_applied_record(memory_dir: Path, job_id: str, profile: Dict[str, Any],
 
 def build_action_plan(profile: Dict[str, Any], portal_cfg: Dict[str, Any],
                       job_id: str, job_url: str, confirmed: bool,
-                      memory_dir: Path, dry_run: bool) -> Dict[str, Any]:
-    """Emit the ordered action plan steps (fill/upload/screenshot/checkpoint/submit)."""
+                      memory_dir: Path, dry_run: bool,
+                      session_check_enabled: bool = True,
+                      session_expired: bool = False,
+                      login_url: Optional[str] = None) -> Dict[str, Any]:
+    """Emit the ordered action plan steps (session check / fill / upload / screenshot / checkpoint / submit).
+
+    Issue #41 — the session expiry gate: when ``session_check_enabled`` the
+    plan starts with a ``verify_session`` step.  When ``session_expired`` the
+    plan stops at a confirm_checkpoint carrying the PT-BR login prompt — the
+    bot must NOT fill or submit anything; the human has to authenticate first.
+    """
     steps: List[Dict[str, Any]] = []
     step_no = 0
+    shot_path = str(Path(memory_dir) / SCREENSHOTS_SUBDIR / f"{job_id}.png")
+
+    # Session expiry gate (#41): verify the session before ANY fill/upload.
+    if session_check_enabled or session_expired:
+        step_no += 1
+        steps.append({
+            "step": step_no,
+            "type": "verify_session",
+            "action": "verify_session",
+            "url": job_url,
+            "expect": "not_auth_page",
+            "on_expired": "ask_login_and_confirm",
+        })
+
+    # Expired session: never fill/submit. Stop and ask the human to log in.
+    if session_expired:
+        step_no += 1
+        steps.append({
+            "step": step_no,
+            "type": "confirm_checkpoint",
+            "note": SESSION_EXPIRED_DETAIL,
+            "login_url": login_url or job_url,
+            "screenshot_path": shot_path,
+        })
+        plan: Dict[str, Any] = {
+            "ok": True,
+            "portal": portal_cfg.get("portal"),
+            "jobId": job_id,
+            "jobUrl": job_url,
+            "confirmed": confirmed,
+            "confirmationRequired": True,
+            "dryRun": dry_run,
+            "sessionCheck": session_check_enabled,
+            "sessionExpired": True,
+            "steps": steps,
+        }
+        pattern = portal_cfg.get("form_url_pattern")
+        if pattern:
+            plan["form_url"] = str(pattern).format(job_id=job_id)
+        return plan
 
     for field in portal_fields(portal_cfg):
         ftype = field.get("type", "")
@@ -443,6 +494,8 @@ def build_action_plan(profile: Dict[str, Any], portal_cfg: Dict[str, Any],
         "confirmed": confirmed,
         "confirmationRequired": not confirmed,
         "dryRun": dry_run,
+        "sessionCheck": session_check_enabled,
+        "sessionExpired": False,
         "steps": steps,
     }
     pattern = portal_cfg.get("form_url_pattern")
@@ -514,6 +567,9 @@ def parse_args(argv: Optional[List[str]]):
                         help=f"CDP endpoint URL (default: {DEFAULT_CDP_URL})")
     parser.add_argument("--user-data-dir", default=None,
                         help=f"Chromium user data dir (default: {DEFAULT_USER_DATA_DIR})")
+    # Issue #41 — session expiry gate.
+    parser.add_argument("--skip-session-check", action="store_true",
+                        help="skip the session expiry check (also skipped on --dry-run)")
     return parser.parse_args(argv)
 
 
@@ -609,6 +665,32 @@ def run(argv: Optional[List[str]] = None) -> int:
             )))
             return 1
 
+    # Issue #41 — session expiry gate. When the browser is on a login/auth page
+    # (session expired), the bot must not fill anything: emit a plan that stops
+    # at the confirm checkpoint and ask the human to authenticate.  Skipped on
+    # --skip-session-check and --dry-run.  Runs BEFORE the #38 navigation guard
+    # so the login page is intercepted here instead of surfacing as auth_required.
+    session_check_enabled = not (args.skip_session_check or args.dry_run)
+    session_expired = False
+    session_login_url: Optional[str] = None
+    if session_check_enabled:
+        session_result = verify_session(
+            args.current_url, login_hint_url=args.job_url,
+        )
+        session_expired = session_result["session"] == "expired"
+        session_login_url = session_result.get("login_url")
+
+    if session_expired:
+        plan = build_action_plan(
+            profile, portal_cfg, job_id, args.job_url,
+            confirmed=args.confirmed, memory_dir=memory_dir, dry_run=args.dry_run,
+            session_check_enabled=True,
+            session_expired=True,
+            login_url=session_login_url,
+        )
+        print(json.dumps(plan, ensure_ascii=False, indent=2))
+        return 0
+
     # Issue #38 navigation auth/loop guard. When the bot is being redirected to
     # a login page or is stuck re-visiting the same URL, stop early and hand the
     # task back to the human with a direct link + screenshot hint. The guard is
@@ -643,6 +725,8 @@ def run(argv: Optional[List[str]] = None) -> int:
     plan = build_action_plan(
         profile, portal_cfg, job_id, args.job_url,
         confirmed=args.confirmed, memory_dir=memory_dir, dry_run=args.dry_run,
+        session_check_enabled=session_check_enabled,
+        session_expired=False,
     )
 
     # Record the application after a confirmed run, or on explicit
