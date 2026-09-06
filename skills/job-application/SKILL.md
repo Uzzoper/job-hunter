@@ -27,7 +27,7 @@ This is the **structured counterpart** to the free-form `job-portal-browser` nav
 ### When NOT to use
 
 - The application is sent **by email** — use the himalaya email tool / `company-scraper` skill instead.
-- The flow is unknown, multi-step/paginated, or needs login/session (v1 assumes logged-in). Use `job-portal-browser`.
+- The flow is unknown, multi-step/paginated, or needs login/session as the normal path (v1 assumes logged-in; if a login page appears mid-flow, the bot stops with `auth_required` and hands off to the human — it does **not** silently retry). Use `job-portal-browser` for unknown/free navigation.
 - The portal is **not** Gupy — `apply.py` errors cleanly (`unknown_portal`).
 - The paired draft is a `NO_APPLY` refusal — the bot must refuse to plan (guardrail #28).
 
@@ -42,6 +42,7 @@ This is the **structured counterpart** to the free-form `job-portal-browser` nav
 | portal | `--portal` | string | yes | `gupy` (v1 only; unknown values error cleanly) |
 | memory dir | `--memory-dir` | dir path | no | Base for idempotency records; default `~/.hermes/profiles/jobhunter-bot/memails` |
 | checkpoints | `--confirmed`, `--record-applied`, `--dry-run` | flags | no | See Confirmation protocol + Recording below |
+| auth/loop guard | `--current-url`, `--visited-urls` | string / comma-separated | no | Issue #38: current page + visited history so `apply.py` can detect auth/loop conditions (see Step 4) |
 
 Profile JSON:
 
@@ -68,6 +69,15 @@ Profile JSON:
 2. **Validate** — apply.py checks portal YAML, required profile fields, and the guardrails (#28 refusal, #27 idempotency). Any failure returns a JSON error.
 3. **Receive the action plan** — a JSON list of steps with CSS selectors (schema below).
 4. **Execute step by step** — the bot opens the form URL and performs each `fill` / `upload` step on the given selector, one at a time.
+
+   **Before every navigation, run the auth/loop guard (`navigation.py`, issue #38):**
+   - **Check auth first** — call `is_auth_url(current_url)`. If the current URL's path contains `/login`, `/auth`, `/signin`, or `/candidates/auth` (case-insensitive), the bot is being redirected to a login page and **must stop immediately** (`auth_required`).
+   - **Track visited URLs** — keep a list of every page visited during this application and pass it as `--visited-urls` (comma-separated) with the current page as `--current-url` on each re-invocation of `apply.py`.
+   - **Abort after 3 visits** — if the same (normalized) URL has been visited 3+ times, the bot is stuck in a navigation loop an **must abort** (`navigation_loop`).
+   - **Ask the human** — on either stop, output the JSON error (which carries `manual_url` — the direct link to the job where the user can finish by hand — and `screenshot_path` for debugging) and hand off to the user.
+
+   Both guards keep the planner **stateless**: visited history and the current URL are supplied by the bot as arguments each call; `navigation.py` never stores state itself.
+
 5. **Screenshot + pause** — at `screenshot`, the bot captures the filled form to the given path; at `confirm_checkpoint`, the bot stops and asks the user to confirm every value.
 6. **Submit (only after confirmation)** — the bot re-runs with `--confirmed` to obtain the `submit` step, OR the user confirms the checkpoint and the bot proceeds with the confirmed plan; the `submit` step is executed last.
 7. **Record** — after the browser submit, the bot calls `apply.py --record-applied` (or the confirmed run already recorded it) so future runs short-circuit with `already_applied`.
@@ -147,8 +157,10 @@ Records live at:
 | `refusal_draft_blocked` | Profile marks `no_apply` or cover text carries `NO_APPLY` (guardrail #28) | Stop — never send a refusal as an application |
 | `invalid_job_url` | No `/jobs/<slug>` segment derivable | Show detail |
 | `already_applied` | Record exists with `status: applied` (guardrail #27) | Stop — duplicate apply refused |
+| `auth_required` | Current URL is a login/auth/signin page (issue #38) | Stop immediately — ask the human; report `manual_url` + `screenshot_path` |
+| `navigation_loop` | Same URL visited 3+ times (issue #38) | Stop — ask the human; report `manual_url` + `screenshot_path` |
 
-Errors are always JSON: `{"error": <code>, "detail": <message>, "screenshot_path": <hint>}`. The `screenshot_path` hint tells the bot where to capture the current browser state on failure.
+Errors are always JSON: `{"error": <code>, "detail": <message>, "screenshot_path": <hint>}`. The `screenshot_path` hint tells the bot where to capture the current browser state on failure. Auth/loop errors additionally carry `manual_url` — the direct job link where the user can complete the application by hand.
 
 ---
 
@@ -157,6 +169,7 @@ Errors are always JSON: `{"error": <code>, "detail": <message>, "screenshot_path
 - **#27 idempotency** — never apply twice to the same job; memory record at `<memory-dir>/applications/<job_id>.json` gates re-applies.
 - **#28 refusal** — never plan/send an application from a `NO_APPLY` draft; profile flag or `NO_APPLY` marker in cover text blocks planning.
 - **#31 memory consultation** — records live under the bot memory convention so preferences/history are honoured before applying.
+- **#38 auth/loop guard** — never retry a login/auth redirect or a navigation loop; check `is_auth_url` before every navigation and abort after 3 visits, always handing a `manual_url` + `screenshot_path` back to the human.
 - **Explicit confirmation** — no `submit` step without `--confirmed`; the bot never submits without user confirmation.
 
 ---
@@ -164,8 +177,9 @@ Errors are always JSON: `{"error": <code>, "detail": <message>, "screenshot_path
 ## Non-goals
 
 - **Email sending** — applications are form-based here; email delivery stays with the himalaya tool.
-- **Login / sessions** — v1 assumes the bot is already logged into Gupy.
+- **Login / sessions** — v1 assumes the bot is already logged into Gupy; a login/auth redirect mid-flow stops cleanly (`auth_required`) and hands the job back to the human rather than trying to authenticate.
 - **CAPTCHA** — out of scope; if the portal presents one, the bot reports and stops.
+- **Persistence of visited-URL history** — navigation history is passed per-invocation by the bot (`--visited-urls`); the guard never stores state across calls or to disk.
 - **Multi-step / paginated forms** — v1 is a single flat form (fields defined in `portals/gupy.yaml`).
 - **Terminal / system operations** — out of scope for this skill.
 - **Other portals** — the YAML loader errors cleanly (`unknown_portal`) instead of guessing.
