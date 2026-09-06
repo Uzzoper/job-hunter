@@ -1,19 +1,24 @@
 #!/usr/bin/env python3
 """
-navigation.py — navigation auth/loop guard for the job-application skill (issue #38).
+navigation.py — navigation auth/loop guard (issue #38) + session expiry gate (issue #41)
+for the job-application skill.
 
-Pure stdlib-only helpers that let the bot/executor detect when it is stuck in a
-login/auth redirect loop during a Gupy application, and surface a clear,
-machine-readable error with a manual link + screenshot hint instead of silently
-retrying forever.
+Pure stdlib-only helpers that let the bot/executor:
+  * detect when it is stuck in a login/auth redirect loop during a Gupy
+    application, and surface a clear, machine-readable error with a manual link
+    + screenshot hint instead of silently retrying forever (#38); and
+  * detect an expired browser session (current URL is a login/auth page) before
+    filling any form field, so the bot stops and asks the human to authenticate
+    instead of wasting a fill on a redirected page (#41).
 
 Design: stateless. The bot passes visited-URL history and the current URL on each
 invocation; this module never touches a browser, a filesystem, or the network.
 
 Usage:
-    from navigation import is_auth_url, NavigationGuard
+    from navigation import is_auth_url, verify_session, NavigationGuard
     guard = NavigationGuard(job_url=JOB_URL, visited_urls=[...])
     result = guard.record(CURRENT_URL)
+    session = verify_session(CURRENT_URL, login_hint_url=JOB_URL)
 """
 
 import re
@@ -25,6 +30,9 @@ from typing import Dict, List, Optional
 # ---------------------------------------------------------------------------
 
 MAX_VISITS = 3
+
+# PT-BR user-facing message (issue #41 — user-facing strings in Portuguese).
+SESSION_EXPIRED_DETAIL = "Sessão expirada. Faça login no Gupy e digite confirmar."
 
 # Substrings that identify a login/auth/signin page. Only whole path segments
 # are matched (boundary-checked), so e.g. "/authentication-page" does not fire
@@ -61,6 +69,33 @@ def is_auth_url(url: Optional[str]) -> bool:
         if seg in _AUTH_SEGMENTS:
             return True
     return False
+
+
+# ---------------------------------------------------------------------------
+# Session expiry gate (issue #41)
+# ---------------------------------------------------------------------------
+
+def verify_session(current_url: Optional[str],
+                   login_hint_url: Optional[str] = None) -> Dict[str, str]:
+    """Report whether the current browser session is usable for applying.
+
+    A session counts as EXPIRED when the browser is on a login/auth/signin
+    page (detected by :func:`is_auth_url`).  The result is pure and stateless:
+
+    * active  — ``{"session": "active"}``
+    * expired — ``{"session": "expired", "detail": <pt-br>, "login_url": <url>}``
+
+    ``login_url`` is ``login_hint_url`` when provided (the caller usually
+    passes the job URL so the human has a direct link to return to), otherwise
+    it falls back to the current URL the bot found itself on.
+    """
+    if not is_auth_url(current_url):
+        return {"session": "active"}
+    return {
+        "session": "expired",
+        "detail": SESSION_EXPIRED_DETAIL,
+        "login_url": login_hint_url or current_url or "",
+    }
 
 
 def normalize_url(url: Optional[str]) -> Optional[str]:
