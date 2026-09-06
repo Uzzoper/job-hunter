@@ -11,12 +11,18 @@ Run:
     python3 -m pytest apply_test.py
 """
 
+import http.server
+import io
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import unittest
+import unittest.mock
+from contextlib import redirect_stdout
 from pathlib import Path
 
 # Allow direct import when running from the skill dir or the repo root.
@@ -38,6 +44,47 @@ VALID_PROFILE = {
 }
 
 
+class _MockCdpHandler(http.server.BaseHTTPRequestHandler):
+    """Minimal fake CDP endpoint: responds 200 to /json/version.
+
+    Lets CLI subprocess tests exercise the issue #39 browser-recovery path
+    without a real browser: ensure_browser() sees CDP as reachable and reports
+    status "ready", so the action plan is produced normally.
+    """
+
+    def do_GET(self):
+        if self.path == "/json/version":
+            body = json.dumps({"Browser": "Chrome/0.0.0.0 (mock CDP)"}).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        else:
+            self.send_response(404)
+            self.end_headers()
+
+    def log_message(self, *args):  # keep test output clean
+        pass
+
+
+def _start_mock_cdp():
+    """Start a mock CDP HTTP server on an ephemeral port; return (server, port)."""
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _MockCdpHandler)
+    port = server.server_address[1]
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    return server, port
+
+
+# Header/driver helper: the browser-recovery check in CLI subprocesses targets
+# this mock CDP endpoint so no real browser is ever launched during tests.
+MOCK_CDP_SERVER, MOCK_CDP_PORT = _start_mock_cdp()
+MOCK_CDP_URL = f"http://127.0.0.1:{MOCK_CDP_PORT}"
+# A port we can rely on being closed (reserved range; never bound by the server).
+CLOSED_CDP_URL = "http://localhost:19222"
+
+
 class RunResult:
     """Thin wrapper around a subprocess run (exit code + parsed JSON stdout)."""
 
@@ -54,8 +101,14 @@ def write_profile(memory_dir, profile=None):
     return str(path)
 
 
-def run_cli(memory_dir, profile_path, *args, portal=PORTAL, url=GUPY_URL):
-    """Run apply.py via subprocess with the given port flags and parse stdout."""
+def run_cli(memory_dir, profile_path, *args, portal=PORTAL, url=GUPY_URL,
+            cdp_url=MOCK_CDP_URL):
+    """Run apply.py via subprocess with the given port flags and parse stdout.
+
+    ``cdp_url`` defaults to the in-process mock CDP server so the issue #39
+    browser check reports "ready" and the action plan path is reached. Pass
+    ``cdp_url=None`` (or an explicit ``--cdp-url`` in *args) to override.
+    """
     cmd = [
         sys.executable, str(APPLY_PATH),
         "--job-url", url,
@@ -63,6 +116,8 @@ def run_cli(memory_dir, profile_path, *args, portal=PORTAL, url=GUPY_URL):
         "--memory-dir", str(memory_dir),
         "--profile", profile_path,
     ]
+    if cdp_url:
+        cmd += ["--cdp-url", cdp_url]
     cmd.extend(args)
     proc = subprocess.run(cmd, capture_output=True, text=True)
     try:
@@ -133,6 +188,7 @@ class YamlParserTests(unittest.TestCase):
             cfg.get("form_url_pattern"),
             "https://jobs.gupy.io/jobs/{job_id}",
         )
+        self.assertEqual(cfg.get("cdp_url"), "http://localhost:9222")
 
 
 # ---------------------------------------------------------------------------
@@ -463,6 +519,282 @@ class UsageTests(unittest.TestCase):
         self.assertFalse(args.dry_run)
         self.assertFalse(args.confirmed)
         self.assertFalse(args.record_applied)
+        self.assertIsNone(args.cdp_url)
+        self.assertIsNone(args.user_data_dir)
+        self.assertFalse(args.check_browser)
+
+
+# ---------------------------------------------------------------------------
+# Browser recovery (issue #39)
+# ---------------------------------------------------------------------------
+
+class CheckCdpTests(unittest.TestCase):
+    """check_cdp: CDP endpoint reachability."""
+
+    @unittest.mock.patch("urllib.request.urlopen")
+    def test_reachable_returns_true(self, mock_urlopen):
+        """CDP endpoint responds → check_cdp returns True."""
+        mock_urlopen.return_value = unittest.mock.MagicMock(status=200)
+        self.assertTrue(apply.check_cdp("http://localhost:9222"))
+
+    @unittest.mock.patch("urllib.request.urlopen")
+    def test_connection_refused_returns_false(self, mock_urlopen):
+        """CDP endpoint unreachable → check_cdp returns False."""
+        mock_urlopen.side_effect = ConnectionRefusedError("connection refused")
+        self.assertFalse(apply.check_cdp("http://localhost:9222"))
+
+    @unittest.mock.patch("urllib.request.urlopen")
+    def test_timeout_returns_false(self, mock_urlopen):
+        """CDP endpoint times out → check_cdp returns False."""
+        mock_urlopen.side_effect = TimeoutError("timed out")
+        self.assertFalse(apply.check_cdp("http://localhost:9222", timeout=5))
+
+    @unittest.mock.patch("urllib.request.urlopen")
+    def test_timeout_kwarg_forwarded(self, mock_urlopen):
+        """Timeout parameter is forwarded to urlopen."""
+        mock_urlopen.side_effect = OSError("fail")
+        apply.check_cdp("http://localhost:9222", timeout=7)
+        _, kwargs = mock_urlopen.call_args
+        self.assertEqual(kwargs.get("timeout"), 7)
+
+
+class StartChromiumTests(unittest.TestCase):
+    """start_chromium: launch command construction."""
+
+    @unittest.mock.patch("subprocess.Popen")
+    @unittest.mock.patch("os.makedirs")
+    def test_launches_chromium_with_correct_args(self, mock_makedirs, mock_popen):
+        """start_chromium calls subprocess.Popen with correct flags."""
+        mock_popen.return_value = unittest.mock.MagicMock()
+        apply.start_chromium("~/.chromium-profile-cdp")
+        cmd = mock_popen.call_args[0][0]
+        self.assertEqual(cmd[0], "chromium")
+        self.assertIn("--remote-debugging-port=9222", cmd)
+        self.assertIn("--no-first-run", cmd)
+        expanded = os.path.expanduser("~/.chromium-profile-cdp")
+        self.assertTrue(any(expanded in arg for arg in cmd))
+
+    @unittest.mock.patch("subprocess.Popen")
+    @unittest.mock.patch("os.makedirs")
+    def test_expands_user_data_dir(self, mock_makedirs, mock_popen):
+        """Tilde in user_data_dir is expanded."""
+        mock_popen.return_value = unittest.mock.MagicMock()
+        apply.start_chromium("~/my-profile")
+        expanded = os.path.expanduser("~/my-profile")
+        mock_makedirs.assert_called_once_with(expanded, exist_ok=True)
+
+    @unittest.mock.patch("subprocess.Popen")
+    @unittest.mock.patch("os.makedirs")
+    def test_custom_port(self, mock_makedirs, mock_popen):
+        """Custom remote_debugging_port is forwarded."""
+        mock_popen.return_value = unittest.mock.MagicMock()
+        apply.start_chromium("~/profile", remote_debugging_port=9333)
+        cmd = mock_popen.call_args[0][0]
+        self.assertIn("--remote-debugging-port=9333", cmd)
+
+
+class EnsureBrowserTests(unittest.TestCase):
+    """ensure_browser: orchestration logic."""
+
+    @unittest.mock.patch("urllib.request.urlopen")
+    def test_cdp_already_ready(self, mock_urlopen):
+        """CDP reachable on first check → status ready."""
+        mock_urlopen.return_value = unittest.mock.MagicMock(status=200)
+        result = apply.ensure_browser()
+        self.assertEqual(result["status"], "ready")
+
+    @unittest.mock.patch("time.sleep")
+    @unittest.mock.patch("subprocess.Popen")
+    @unittest.mock.patch("os.makedirs")
+    @unittest.mock.patch("urllib.request.urlopen")
+    def test_cdp_down_chromium_starts_needs_login(self, mock_urlopen, mock_makedirs, mock_popen, mock_sleep):
+        """CDP down + Chromium starts + re-check ok → needs_login."""
+        responses = [OSError("refused"), unittest.mock.MagicMock(status=200)]
+        mock_urlopen.side_effect = responses
+        mock_popen.return_value = unittest.mock.MagicMock()
+        result = apply.ensure_browser()
+        self.assertEqual(result["status"], "needs_login")
+        mock_popen.assert_called_once()
+        mock_sleep.assert_called_once_with(3)
+
+    @unittest.mock.patch("time.sleep")
+    @unittest.mock.patch("subprocess.Popen")
+    @unittest.mock.patch("os.makedirs")
+    @unittest.mock.patch("urllib.request.urlopen")
+    def test_chromium_fails_to_start(self, mock_urlopen, mock_makedirs, mock_popen, mock_sleep):
+        """Chromium fails to start → browser_unavailable."""
+        mock_urlopen.side_effect = OSError("refused")
+        mock_popen.side_effect = FileNotFoundError("chromium not found")
+        result = apply.ensure_browser()
+        self.assertEqual(result["status"], "browser_unavailable")
+        self.assertIn("detail", result)
+
+    @unittest.mock.patch("time.sleep")
+    @unittest.mock.patch("subprocess.Popen")
+    @unittest.mock.patch("os.makedirs")
+    @unittest.mock.patch("urllib.request.urlopen")
+    def test_chromium_starts_but_cdp_still_down(self, mock_urlopen, mock_makedirs, mock_popen, mock_sleep):
+        """Chromium started but CDP still unreachable → browser_unavailable."""
+        mock_urlopen.side_effect = OSError("refused")
+        mock_popen.return_value = unittest.mock.MagicMock()
+        result = apply.ensure_browser()
+        self.assertEqual(result["status"], "browser_unavailable")
+
+    @unittest.mock.patch("time.sleep")
+    @unittest.mock.patch("subprocess.Popen")
+    @unittest.mock.patch("os.makedirs")
+    @unittest.mock.patch("urllib.request.urlopen")
+    def test_needs_login_message_is_ptbr(self, mock_urlopen, mock_makedirs, mock_popen, mock_sleep):
+        """needs_login detail must be in PT-BR."""
+        responses = [OSError("refused"), unittest.mock.MagicMock(status=200)]
+        mock_urlopen.side_effect = responses
+        mock_popen.return_value = unittest.mock.MagicMock()
+        result = apply.ensure_browser()
+        self.assertIn("Navegador", result["detail"])
+        self.assertIn("Chromium", result["detail"])
+
+    @unittest.mock.patch("time.sleep")
+    @unittest.mock.patch("subprocess.Popen")
+    @unittest.mock.patch("os.makedirs")
+    @unittest.mock.patch("urllib.request.urlopen")
+    def test_ensure_browser_uses_custom_cdp_url(self, mock_urlopen, mock_makedirs, mock_popen, mock_sleep):
+        """Custom CDP URL is forwarded to check_cdp."""
+        mock_urlopen.return_value = unittest.mock.MagicMock(status=200)
+        result = apply.ensure_browser(cdp_url="http://10.0.0.1:9333")
+        self.assertEqual(result["status"], "ready")
+        call_url = mock_urlopen.call_args[0][0]
+        self.assertIn("10.0.0.1:9333", call_url)
+
+    @unittest.mock.patch("time.sleep")
+    @unittest.mock.patch("subprocess.Popen")
+    @unittest.mock.patch("os.makedirs")
+    @unittest.mock.patch("urllib.request.urlopen")
+    def test_ensure_browser_forwards_custom_port_to_start_chromium(self, mock_urlopen, mock_makedirs, mock_popen, mock_sleep):
+        """Custom remote_debugging_port is forwarded to start_chromium."""
+        responses = [OSError("refused"), unittest.mock.MagicMock(status=200)]
+        mock_urlopen.side_effect = responses
+        mock_popen.return_value = unittest.mock.MagicMock()
+        apply.ensure_browser(remote_debugging_port=9333)
+        cmd = mock_popen.call_args[0][0]
+        self.assertIn("--remote-debugging-port=9333", cmd)
+
+
+class CheckBrowserCliTests(unittest.TestCase):
+    """--check-browser flag: JSON output and exit codes."""
+
+    def _run_check_browser(self):
+        """Run apply.run(['--check-browser']) in-process; return (code, parsed JSON)."""
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            code = apply.run(["--check-browser", "--cdp-url", "http://127.0.0.1:9333"])
+        return code, json.loads(buf.getvalue())
+
+    @unittest.mock.patch("urllib.request.urlopen")
+    def test_ready_status_json(self, mock_urlopen):
+        """CDP reachable → --check-browser prints status ready with exit 0."""
+        mock_urlopen.return_value = unittest.mock.MagicMock(status=200)
+        code, data = self._run_check_browser()
+        self.assertEqual(code, 0)
+        self.assertEqual(data["status"], "ready")
+        self.assertNotIn("steps", data)
+
+    @unittest.mock.patch("time.sleep")
+    @unittest.mock.patch("subprocess.Popen")
+    @unittest.mock.patch("os.makedirs")
+    @unittest.mock.patch("urllib.request.urlopen")
+    def test_needs_login_status_json_exit_zero(self, mock_urlopen, mock_makedirs, mock_popen, mock_sleep):
+        """CDP down + Chromium starts → needs_login with exit code 0."""
+        mock_urlopen.side_effect = [OSError("refused"), unittest.mock.MagicMock(status=200)]
+        mock_popen.return_value = unittest.mock.MagicMock()
+        code, data = self._run_check_browser()
+        self.assertEqual(code, 0)
+        self.assertEqual(data["status"], "needs_login")
+
+    @unittest.mock.patch("os.makedirs")
+    @unittest.mock.patch("subprocess.Popen")
+    @unittest.mock.patch("urllib.request.urlopen")
+    def test_browser_unavailable_status_json_exit_one(self, mock_urlopen, mock_popen, mock_makedirs):
+        """Chromium fails to start → browser_unavailable with exit code 1."""
+        mock_urlopen.side_effect = OSError("refused")
+        mock_popen.side_effect = FileNotFoundError("chromium not found")
+        code, data = self._run_check_browser()
+        self.assertEqual(code, 1)
+        self.assertEqual(data["status"], "browser_unavailable")
+        self.assertIn("detail", data)
+
+    @unittest.mock.patch("urllib.request.urlopen")
+    def test_check_browser_output_is_json_not_plan(self, mock_urlopen):
+        """--check-browser output is a status JSON, never an action plan."""
+        mock_urlopen.return_value = unittest.mock.MagicMock(status=200)
+        code, data = self._run_check_browser()
+        self.assertNotIn("steps", data)
+        self.assertNotIn("portal", data)
+
+    @unittest.skipIf(shutil.which("chromium") is not None,
+                     "would launch a real Chromium browser")
+    def test_check_browser_closed_port_valid_json(self):
+        """CLI smoke: --check-browser against closed port returns valid JSON."""
+        proc = subprocess.run(
+            [sys.executable, str(APPLY_PATH), "--check-browser",
+             "--cdp-url", CLOSED_CDP_URL],
+            capture_output=True, text=True
+        )
+        data = json.loads(proc.stdout)
+        self.assertIn("status", data)
+        self.assertEqual(data["status"], "browser_unavailable")
+        self.assertEqual(proc.returncode, 1)
+
+
+class UserDataDirDefaultTests(unittest.TestCase):
+    """user-data-dir default expansion."""
+
+    def test_default_starts_with_tilde(self):
+        """DEFAULT_USER_DATA_DIR uses tilde for home expansion."""
+        self.assertTrue(apply.DEFAULT_USER_DATA_DIR.startswith("~"))
+
+    def test_default_expands_to_absolute_path(self):
+        """Expanding the default user-data-dir yields an absolute path."""
+        expanded = os.path.expanduser(apply.DEFAULT_USER_DATA_DIR)
+        self.assertTrue(os.path.isabs(expanded))
+        self.assertFalse(expanded.startswith("~"))
+
+    def test_default_contains_chromium_profile(self):
+        """Default user-data-dir references chromium-profile-cdp."""
+        self.assertIn("chromium-profile-cdp", apply.DEFAULT_USER_DATA_DIR)
+
+
+class DryRunSkipsBrowserCheckTests(unittest.TestCase):
+    """--dry-run must skip ensure_browser entirely."""
+
+    def test_dry_run_skips_browser_check(self):
+        """With --dry-run, no browser check occurs even on closed port."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            mem = Path(tmpdir)
+            profile_path = write_profile(mem)
+            result = run_cli(mem, profile_path, "--dry-run",
+                             "--cdp-url", CLOSED_CDP_URL)
+            self.assertEqual(result.code, 0)
+            self.assertTrue(result.data["ok"])
+            self.assertTrue(result.data["dryRun"])
+
+
+class CdpUrlFlagTests(unittest.TestCase):
+    """--cdp-url flag is accepted and forwarded."""
+
+    def test_parse_args_has_cdp_url(self):
+        """parse_args recognizes --cdp-url."""
+        args = apply.parse_args(["--cdp-url", "http://10.0.0.1:9222"])
+        self.assertEqual(args.cdp_url, "http://10.0.0.1:9222")
+
+    def test_parse_args_has_user_data_dir(self):
+        """parse_args recognizes --user-data-dir."""
+        args = apply.parse_args(["--user-data-dir", "/tmp/test-profile"])
+        self.assertEqual(args.user_data_dir, "/tmp/test-profile")
+
+    def test_parse_args_has_check_browser(self):
+        """parse_args recognizes --check-browser."""
+        args = apply.parse_args(["--check-browser"])
+        self.assertTrue(args.check_browser)
 
 
 if __name__ == "__main__":
