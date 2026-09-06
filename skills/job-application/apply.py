@@ -27,6 +27,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from navigation import MAX_VISITS, guard_from_cli  # issue #38 auth/loop guard
+
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
@@ -357,6 +359,28 @@ def build_error(code: str, detail: str, memory_dir: Optional[Path] = None,
     return err
 
 
+def _guard_detail(block: str, guard: Dict[str, Any]) -> str:
+    """Human-readable detail for auth_required / navigation_loop errors."""
+    manual = guard.get("manual_url")
+    if block == "auth_required":
+        return (
+            "the current URL is a login/auth/signin page; the bot cannot complete "
+            "the application without a session. Open the job manually and finish "
+            f"the application by hand: {manual}"
+        )
+    visits = guard.get("visits")
+    if visits is not None:
+        return (
+            f"the same page has been visited {visits} times (limit {MAX_VISITS}); "
+            "this looks like a navigation loop. Open the job manually and finish "
+            f"the application by hand: {manual}"
+        )
+    return (
+        "navigation loop detected: same page visited repeatedly. Open the job "
+        f"manually and finish the application by hand: {manual}"
+    )
+
+
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
@@ -371,6 +395,10 @@ def parse_args(argv: Optional[List[str]]):
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--confirmed", action="store_true")
     parser.add_argument("--record-applied", action="store_true")
+    # Issue #38 navigation auth/loop guard. Stateless: the bot/executor passes
+    # visited history and the current URL; apply.py never tracks state.
+    parser.add_argument("--visited-urls", help="comma-separated list of previously visited URLs")
+    parser.add_argument("--current-url", help="the URL the browser is currently on")
     return parser.parse_args(argv)
 
 
@@ -430,6 +458,26 @@ def run(argv: Optional[List[str]] = None) -> int:
             "invalid_job_url",
             f"could not derive a job id from url: {args.job_url}",
             memory_dir=memory_dir,
+        )))
+        return 1
+
+    # Issue #38 navigation auth/loop guard. When the bot is being redirected to
+    # a login page or is stuck re-visiting the same URL, stop early and hand the
+    # task back to the human with a direct link + screenshot hint. The guard is
+    # stateless: history is supplied via --visited-urls each invocation.
+    guard = guard_from_cli(args.job_url, args.current_url, args.visited_urls)
+    if guard.get("block") in ("auth_required", "navigation_loop"):
+        code = guard["block"]
+        detail = _guard_detail(code, guard)
+        # Prefer "auth_required" when both conditions apply, matching the
+        # acceptance criteria (3rd visit triggers navigation_loop/auth_required).
+        print(json.dumps(build_error(
+            code,
+            detail,
+            memory_dir=memory_dir,
+            job_id=job_id,
+            manual_url=guard.get("manual_url") or args.job_url,
+            visited_count=guard.get("visits"),
         )))
         return 1
 
