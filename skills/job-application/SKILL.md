@@ -43,6 +43,8 @@ This is the **structured counterpart** to the free-form `job-portal-browser` nav
 | memory dir | `--memory-dir` | dir path | no | Base for idempotency records; default `~/.hermes/profiles/jobhunter-bot/memails` |
 | checkpoints | `--confirmed`, `--record-applied`, `--dry-run` | flags | no | See Confirmation protocol + Recording below |
 | auth/loop guard | `--current-url`, `--visited-urls` | string / comma-separated | no | Issue #38: current page + visited history so `apply.py` can detect auth/loop conditions (see Step 4) |
+| browser recovery | `--cdp-url`, `--user-data-dir` | URL / dir path | no | Issue #39: CDP endpoint (default `http://localhost:9222`, also from `portals/gupy.yaml` `cdp_url` key) and persistent Chromium profile dir (default `~/.chromium-profile-cdp`) |
+| status check | `--check-browser` | flag | no | Issue #39: print browser status as JSON and exit — no action plan required |
 
 Profile JSON:
 
@@ -81,6 +83,65 @@ Profile JSON:
 5. **Screenshot + pause** — at `screenshot`, the bot captures the filled form to the given path; at `confirm_checkpoint`, the bot stops and asks the user to confirm every value.
 6. **Submit (only after confirmation)** — the bot re-runs with `--confirmed` to obtain the `submit` step, OR the user confirms the checkpoint and the bot proceeds with the confirmed plan; the `submit` step is executed last.
 7. **Record** — after the browser submit, the bot calls `apply.py --record-applied` (or the confirmed run already recorded it) so future runs short-circuit with `already_applied`.
+
+---
+
+## Browser recovery (issue #39)
+
+Before generating the action plan (skipped on `--dry-run`), `apply.py` makes sure
+the browser session is alive. The whole flow is stdlib-only (`urllib`,
+`subprocess`, `time`, `os`) and never needs a login secret: Chromium is launched
+with a persistent profile so its session survives restarts.
+
+### `ensure_browser()` flow
+
+```
+check_cdp(cdp_url) ─ reachable ──────────────► status "ready"          (exit 0)
+       │ down
+       ▼
+start_chromium(user_data_dir, port=9222)  ◄── launches `chromium --remote-debugging-port=9222 --user-data-dir=... --no-first-run`
+       │ fails to start
+       ▼
+wait 3s ─────────────► re-check CDP
+                              │ ok        ──► status "needs_login"     (exit 0 — human must log in)
+                              │ still down ─► status "browser_unavailable" (exit 1 — real error)
+```
+
+| Status | Meaning | Exit code | JSON |
+|---|---|---|---|
+| `ready` | CDP was reachable on the first check | 0 | `{"status": "ready"}` |
+| `needs_login` | CDP was down, Chromium started, CDP is up but the session is fresh — **the user must log in** | 0 (not an error) | `{"ok": true, "status": "needs_login", "detail": "Navegador indisponível, iniciando o Chromium. Faça login no Gupy e confirme."}` |
+| `browser_unavailable` | Chromium failed to start, or CDP is still unreachable after the wait | 1 (real error) | `{"error": "browser_unavailable", "detail": "<reason>", "screenshot_path": "..."}` |
+
+### What the bot must do
+
+1. Run `apply.py` (without `--dry-run`). If the plan comes back, CDP was reachable — proceed normally.
+2. If the output is `needs_login`, **stop and ask the human to log into Gupy in the launched Chromium window, then confirm**. Do **not** retry the action plan until the user confirms the login.
+3. If the output is `browser_unavailable`, report the failure and stop — do not keep retrying.
+
+### `--check-browser` flag
+
+Checks the browser state and exits without requiring `--job-url` / `--profile`
+and without emitting an action plan:
+
+```
+python3 skills/job-application/apply.py --check-browser [--cdp-url <url>] [--user-data-dir <dir>]
+```
+
+Output is a status JSON (`{"status": "ready" | "needs_login" | "browser_unavailable"}`)
+with exit code 0 for `ready`/`needs_login` and 1 for `browser_unavailable`.
+
+### Configuration
+
+| Setting | Default | Override |
+|---|---|---|
+| CDP endpoint | `http://localhost:9222` | `--cdp-url` flag, or `cdp_url:` key in `portals/gupy.yaml` |
+| Chromium user data dir | `~/.chromium-profile-cdp` (expanduser) | `--user-data-dir` flag |
+| Remote debugging port | `9222` | passed through to `start_chromium` |
+
+> The persistent `user-data-dir` is what preserves the login session across
+> restarts: after the first `needs_login` round-trip, the same profile is reused,
+> so subsequent runs should skip the manual login step.
 
 ---
 
@@ -159,6 +220,7 @@ Records live at:
 | `already_applied` | Record exists with `status: applied` (guardrail #27) | Stop — duplicate apply refused |
 | `auth_required` | Current URL is a login/auth/signin page (issue #38) | Stop immediately — ask the human; report `manual_url` + `screenshot_path` |
 | `navigation_loop` | Same URL visited 3+ times (issue #38) | Stop — ask the human; report `manual_url` + `screenshot_path` |
+| `browser_unavailable` | Chromium failed to start, or CDP still unreachable after recovery (issue #39) | Stop — real error; user cannot complete the application without a browser session. The *recovery* status `needs_login` is **not** an error (exit 0) |
 
 Errors are always JSON: `{"error": <code>, "detail": <message>, "screenshot_path": <hint>}`. The `screenshot_path` hint tells the bot where to capture the current browser state on failure. Auth/loop errors additionally carry `manual_url` — the direct job link where the user can complete the application by hand.
 
@@ -177,7 +239,7 @@ Errors are always JSON: `{"error": <code>, "detail": <message>, "screenshot_path
 ## Non-goals
 
 - **Email sending** — applications are form-based here; email delivery stays with the himalaya tool.
-- **Login / sessions** — v1 assumes the bot is already logged into Gupy; a login/auth redirect mid-flow stops cleanly (`auth_required`) and hands the job back to the human rather than trying to authenticate.
+- **Login / sessions** — the bot never authenticates by itself: issue #39 recovery starts Chromium and hands a fresh session back as `needs_login` (the user logs in manually once), and a login redirect mid-flow stops cleanly (`auth_required`) rather than retrying.
 - **CAPTCHA** — out of scope; if the portal presents one, the bot reports and stops.
 - **Persistence of visited-URL history** — navigation history is passed per-invocation by the bot (`--visited-urls`); the guard never stores state across calls or to disk.
 - **Multi-step / paginated forms** — v1 is a single flat form (fields defined in `portals/gupy.yaml`).
