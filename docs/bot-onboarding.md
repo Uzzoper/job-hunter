@@ -60,13 +60,22 @@ Then, inside `~/.hermes/profiles/jobhunter-bot/`:
   `API_SERVER_KEY=YOUR_HERMES_API_KEY`, `API_SERVER_PORT=9119`.
 - **Approvals off** in the profile `config.yaml`
   (`approvals.mode: off`) — an interactive prompt would stall requests.
+  Add it manually and verify:
+  ```yaml
+  approvals:
+    mode: off
+  ```
+  ```bash
+  grep -A1 '^approvals:' ~/.hermes/profiles/jobhunter-bot/config.yaml
+  ```
 - **Resume**: copy your CV into the profile and add the standing rule
   (see README "Resume attachment").
 
 ## 4. Run the gateway as a service
 
 ```bash
-jobhunter-bot gateway install && jobhunter-bot gateway start
+hermes gateway install --profile jobhunter-bot
+hermes gateway start --profile jobhunter-bot
 loginctl enable-linger        # keeps the unit alive without an active session
 journalctl --user -u hermes-gateway-jobhunter-bot -f
 ```
@@ -119,6 +128,53 @@ Expected layout afterwards:
 | `EMAIL_TOOL_MISSING` | himalaya missing/misconfigured for the profile |
 | Backend warns about memory dir | normal without a bot profile; set `bot.memory.dir` if custom |
 | Skill not found by the bot | re-run `scripts/install-bot-skills.sh`, check per-skill subdirs |
+
+## 8. CDP setup for automated Gupy applications (optional, advanced)
+
+Gupy requires authentication to submit applications. The bot uses Hermes'
+Browser Use, but you can improve the experience by sharing your local
+Chromium session via CDP (Chrome DevTools Protocol). Skip this section
+unless you use the `job-application` skill (#37) against Gupy.
+
+### Why CDP?
+
+- Bot logs into Gupy once via CDP.
+- All subsequent applications reuse your logged-in session.
+- No need to re-authenticate for each application.
+
+### Setup
+
+1. Install Chromium (if not present):
+   ```bash
+   sudo apt install chromium-browser
+   ```
+2. Start Chromium with remote debugging:
+   ```bash
+   chromium --remote-debugging-port=9222 --user-data-dir=~/.chromium-profile-cdp
+   ```
+3. Log into Gupy manually in this Chromium window (keep it open).
+4. Point Hermes at the CDP endpoint:
+   ```bash
+   hermes config set browser.cdp_url "http://localhost:9222" --profile jobhunter-bot
+   ```
+5. Restart the gateway to pick up the new config:
+   ```bash
+   hermes gateway restart --profile jobhunter-bot
+   ```
+6. Verify CDP is working:
+   ```bash
+   curl -s http://localhost:9222/json/list | python3 -m json.tool
+   ```
+   You should see the Gupy tab listed.
+
+### Troubleshooting CDP
+
+| Symptom | Solution |
+|---|---|
+| CDP returns connection refused | Kill existing Chromium, restart with `--remote-debugging-port=9222` |
+| "Opening in existing browser session" | Use a fresh `--user-data-dir` like `~/.chromium-profile-cdp` |
+| Browser tool ignores CDP | Verify `browser.cdp_url` in profile config, restart gateway |
+| Gupy shows login screen | Log into Gupy in the Chromium window, don't close it |
 
 ## References
 

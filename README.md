@@ -374,7 +374,8 @@ delivery from its own profile:
 Install the gateway as a systemd **user** service so it survives logout/reboot:
 
 ```bash
-jobhunter-bot gateway install && jobhunter-bot gateway start
+hermes gateway install --profile jobhunter-bot
+hermes gateway start --profile jobhunter-bot
 loginctl enable-linger        # keeps the unit alive without an active session
 journalctl --user -u hermes-gateway-jobhunter-bot -f
 ```
