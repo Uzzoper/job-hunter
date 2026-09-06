@@ -159,7 +159,7 @@ All tasks return a JSON object. `ok` is always present; `data` carries task-spec
 | JS never renders (selector not found) | Return `{"ok": false, "error": {"code": "render_timeout", "selector": "<sel>"}}` |
 | Apply already recorded for (job_id, contact_email) | Return `{"ok": false, "error": {"code": "already_applied"}}` — do NOT open the form (see Guardrails) |
 | Previous draft is a NO_APPLY/refusal | Return `{"ok": false, "error": {"code": "refusal_draft_blocked"}}` — do NOT send as an application |
-| Login/session required | Return `{"ok": false, "error": {"code": "auth_required"}}` |
+| Login/session required | Return `{"ok": false, "error": {"code": "auth_required", "url": "<the auth url>"}}` (see Auth page handling below) |
 | User asked to submit but confirmation not given | Return `{"ok": false, "error": {"code": "not_confirmed"}}` |
 
 ---
@@ -170,6 +170,7 @@ All tasks return a JSON object. `ok` is always present; `data` carries task-spec
 - **#28 never send a refusal** — if the paired analysis/generation produced a `NO_APPLY` / refusal draft (`email-no-apply-refusal.md`), that draft must **never** be submitted as an application through this skill. Stop with `refusal_draft_blocked`.
 - **#31 memory consultation** — before applying, consult bot memory for user preferences (e.g. do-not-apply list, salary/benefit preferences, location constraints). Respect any preferences found.
 - **Explicit confirmation** — the bot never clicks submit without an explicit, per-step, and final user confirmation. `confirmationRequired` must be honored.
+- **#40 never fill credentials on auth pages** — the moment `auth_guard.check_navigation()` flags an auth page (`auth_required`), the bot **stops immediately** and asks the user to log in manually at the returned URL. It must **never** fill email/password fields, even if the form labels are visible.
 - **Complement only** — if a primary scraper already returned this listing, the browser skill should not be used to re-scrape it.
 
 ---
@@ -202,5 +203,70 @@ The `(job_id, contact_email)` pair is the idempotency key for #27. This follows 
 - **Email sending is out of scope** — himalaya (configured on the bot profile) handles email delivery; this skill never sends mail.
 - **Terminal / system operations are out of scope** — installing browsers, managing systemd, or general shell tooling is a separate concern and not addressed here.
 - **Does not replace primary scrapers** — Gupy, InfoJobs, and LinkedIn remain the first-line sources; the browser is the fallback when they fail or the target is not covered.
-- **Session/login dependencies** — portals that require authentication will return `auth_required`; managing credentials is the user's responsibility.
+- **Session/login dependencies** — portals that require authentication stop with the `auth_required` error (see Auth page handling below); managing credentials is the user's responsibility.
 - **Page-structure fragility** — selectors rely on portal markup; a portal redesign may require the bot to adapt by inspecting the new DOM.
+
+---
+
+## Auth page handling (issue #40)
+
+During **free navigation** (any `apply` / `check_status` / `scrape_listings` step),
+the bot can be redirected to a login/signin/auth page — e.g. Gupy's
+`/candidates/auth/...`, or any portal's `/login`, `/signin`, `/auth` area.
+Handling is provided by the self-contained `auth_guard.py` module shipped with
+this skill (stdlib-only: `re`, `urllib.parse`, `typing` — no cross-skill imports).
+
+### Detection
+
+```python
+from auth_guard import check_navigation
+
+result = check_navigation(current_url, job_id=job_id)
+```
+
+`is_auth_url(url)` (also exposed by the module) matches **whole path segments**
+boundary-checked and case-insensitively, ignoring the query string and fragment:
+
+| URL | Detected? | Why |
+|---|---|---|
+| `https://portal.example.com/login` | ✅ | segment `login` |
+| `https://portal.example.com/signin` | ✅ | segment `signin` |
+| `https://jobs.gupy.io/candidates/auth/login` | ✅ | segment `auth` |
+| `https://portal.example.com/login?next=/jobs` | ✅ | path segment wins; query ignored |
+| `https://portal.example.com/jobs/123-login-dev` | ❌ | whole segment is `123-login-dev`, not `login` |
+| `https://portal.example.com/authentication-page` | ❌ | whole segment is `authentication-page`, not `auth` |
+| `https://portal.example.com/jobs?next=/login` | ❌ | query string ignored |
+
+### Stop protocol (NEVER-FILL RULE — core of #40)
+
+1. **Detect** — run `check_navigation(current_url)` before every navigation step.
+2. **Stop immediately** — if the result is `{"ok": false, "error": {"code": "auth_required", ...}}`, do **not** proceed, do **not** retry.
+3. **Never fill credentials** — the bot must **not** fill the email/password fields even if they are visible on the page. The payload contains no fill step and `NEVER_FILL_CREDENTIALS = True` in `auth_guard.py` is the standing rule.
+4. **Ask the user** — output the `auth_required` error (PT-BR `detail`, plus `url` — the direct auth page) and ask the user to **log in manually at that URL**.
+5. **Resume after login** — when the user confirms the manual login, restart the task from the original target URL; the persisted browser session is reused (see the #39 CDP optional setup below).
+
+```json
+{
+  "ok": false,
+  "error": {
+    "code": "auth_required",
+    "detail": "Página de autenticação detectada. O bot não preenche credenciais: faça login manualmente nesta página e confirme para continuar.",
+    "url": "https://jobs.gupy.io/candidates/auth/login",
+    "job_id": "<id when the caller supplied it>"
+  }
+}
+```
+
+> Same-page detection mirrors the semantics of the job-application skill's
+> `navigation.py` (issue #38): whole-segment, case-insensitive, query-ignored.
+> `auth_guard.py` is deliberately self-contained — each skill installs
+> standalone to `skills/<name>/`, so cross-skill imports would break at install
+> time.
+
+### Optional: persistent session via #39 CDP setup
+
+If the environment also runs the CDP/browser-recovery setup from issue #39
+(persistent Chromium `--user-data-dir`, default `~/.chromium-profile-cdp`), the
+manual login performed here survives restarts: **once** the user logs in, later
+runs on the same profile should reach the application form directly without
+another `auth_required` stop.
