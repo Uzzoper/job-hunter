@@ -42,7 +42,8 @@ This is the **structured counterpart** to the free-form `job-portal-browser` nav
 | portal | `--portal` | string | yes | `gupy` (v1 only; unknown values error cleanly) |
 | memory dir | `--memory-dir` | dir path | no | Base for idempotency records; default `~/.hermes/profiles/jobhunter-bot/memails` |
 | checkpoints | `--confirmed`, `--record-applied`, `--dry-run` | flags | no | See Confirmation protocol + Recording below |
-| auth/loop guard | `--current-url`, `--visited-urls` | string / comma-separated | no | Issue #38: current page + visited history so `apply.py` can detect auth/loop conditions (see Step 4) |
+| auth/loop guard | `--current-url`, `--visited-urls` | string / comma-separated | no | Issues #38 + #41: current page + visited history so `apply.py` can detect auth/loop conditions and an expired session (see Step 4) |
+| session expiry | `--skip-session-check` | flag | no | Issue #41: skip the session expiry gate (also skipped on `--dry-run`) |
 | browser recovery | `--cdp-url`, `--user-data-dir` | URL / dir path | no | Issue #39: CDP endpoint (default `http://localhost:9222`, also from `portals/gupy.yaml` `cdp_url` key) and persistent Chromium profile dir (default `~/.chromium-profile-cdp`) |
 | status check | `--check-browser` | flag | no | Issue #39: print browser status as JSON and exit — no action plan required |
 
@@ -70,9 +71,14 @@ Profile JSON:
    ```
 2. **Validate** — apply.py checks portal YAML, required profile fields, and the guardrails (#28 refusal, #27 idempotency). Any failure returns a JSON error.
 3. **Receive the action plan** — a JSON list of steps with CSS selectors (schema below).
-4. **Execute step by step** — the bot opens the form URL and performs each `fill` / `upload` step on the given selector, one at a time.
+4. **Execute step by step** — the bot opens the form URL and performs each `fill` / `upload` step on the given selector, one at a time. The plan begins with a `verify_session` step (issue #41): before any fill, navigate to the step's `url` and call `verify_session(current_url, login_hint_url=<job-url>)`.
 
-   **Before every navigation, run the auth/loop guard (`navigation.py`, issue #38):**
+   **Session expiry gate (issue #41):**
+   - **Verify the session first** — every plan starts with `{"type": "verify_session", "expect": "not_auth_page", "on_expired": "ask_login_and_confirm"}`. The bot executes it by checking `is_auth_url(current_url)` on the job page.
+   - **Stop on expiry** — if the result is `{"session": "expired"}` the bot must **not** fill anything: the plan only contains the `verify_session` step + a `confirm_checkpoint` whose note is `Sessão expirada. Faça login no Gupy e digite confirmar.` and whose `login_url` is the job link. Ask the human to log in, then re-run.
+   - **`--skip-session-check`** — removes the `verify_session` step (also removed on `--dry-run`); used when the bot already knows the session is alive.
+
+   **Before every navigation, also run the auth/loop guard (`navigation.py`, issue #38):**
    - **Check auth first** — call `is_auth_url(current_url)`. If the current URL's path contains `/login`, `/auth`, `/signin`, or `/candidates/auth` (case-insensitive), the bot is being redirected to a login page and **must stop immediately** (`auth_required`).
    - **Track visited URLs** — keep a list of every page visited during this application and pass it as `--visited-urls` (comma-separated) with the current page as `--current-url` on each re-invocation of `apply.py`.
    - **Abort after 3 visits** — if the same (normalized) URL has been visited 3+ times, the bot is stuck in a navigation loop an **must abort** (`navigation_loop`).
@@ -145,6 +151,42 @@ with exit code 0 for `ready`/`needs_login` and 1 for `browser_unavailable`.
 
 ---
 
+## Session expiry gate (issue #41)
+
+Even with a running browser, a Gupy session can expire (or the app can redirect
+to `/login`, `/auth`, `/signin` mid-flow). The bot must never fill a form on a
+login page. `navigation.py` provides the pure, stateless detector:
+
+```python
+from navigation import verify_session
+
+result = verify_session(current_url, login_hint_url=job_url)
+# {"session": "active"}                          → proceed normally
+# {"session": "expired", "detail": "Sessão expirada. Faça login no Gupy e digite confirmar.",
+#  "login_url": "<job-url or current-url>"}       → stop, ask the human to log in
+```
+
+### Verify-then-fill flow
+
+```
+apply.py  ──► plan[0] = verify_session  (expect "not_auth_page")
+   │
+   ├─ verify_session(current, job_url)["session"] == "active"  ──► continue with fill/upload steps
+   └─ session == "expired"  ──► plan stops at confirm_checkpoint:
+                                note  = "Sessão expirada. Faça login no Gupy e digite confirmar."
+                                login_url = <job-url>
+                                (no fill / upload / submit steps at all — exit 0)
+```
+
+### Integration with the other guards
+
+- **Order in `apply.py`:** browser recovery (#39) → **session expiry gate (#41)** → auth/loop guard (#38) → idempotency (#27) → action plan.
+- An expired session supersedes the old `auth_required` error for the default flow: a login page now yields the expired plan above (exit 0) instead of an error. The #38 `auth_required` error still fires when the session check is disabled (`--skip-session-check`).
+- Both `--skip-session-check` and `--dry-run` skip the gate (no `verify_session` step, `"sessionCheck": false` in the plan).
+- The `login_url` hint is the job URL (where the human returns after authenticating); when no hint is given it falls back to the current URL.
+
+---
+
 ## Action-plan JSON schema
 
 ```json
@@ -157,21 +199,49 @@ with exit code 0 for `ready`/`needs_login` and 1 for `browser_unavailable`.
   "confirmed": false,
   "confirmationRequired": true,
   "dryRun": false,
+  "sessionCheck": true,
+  "sessionExpired": false,
   "steps": [
-    {"step": 1, "type": "fill",   "field": "name",         "selector": "input[name='name']", "value": "Juan Antonio Peruzzo"},
-    {"step": 2, "type": "fill",   "field": "email",        "selector": "input[name='email']", "value": "juan@example.com"},
-    {"step": 3, "type": "fill",   "field": "phone",        "selector": "input[name='phone']", "value": "+55 42 99833-1363"},
-    {"step": 4, "type": "upload", "field": "cv_upload",    "selector": "input[type='file']", "value": "/home/juan/cv.pdf"},
-    {"step": 5, "type": "fill",   "field": "cover_letter", "selector": "textarea[name='coverLetter']", "value": "Olá! ..."},
-    {"step": 6, "type": "screenshot", "path": "<memory-dir>/screenshots/<id-slug>.png"},
-    {"step": 7, "type": "confirm_checkpoint", "screenshot_path": "<...png>",
+    {"step": 1, "type": "verify_session", "action": "verify_session", "url": "https://jobs.gupy.io/jobs/<id-slug>", "expect": "not_auth_page", "on_expired": "ask_login_and_confirm"},
+    {"step": 2, "type": "fill",   "field": "name",         "selector": "input[name='name']", "value": "Juan Antonio Peruzzo"},
+    {"step": 3, "type": "fill",   "field": "email",        "selector": "input[name='email']", "value": "juan@example.com"},
+    {"step": 4, "type": "fill",   "field": "phone",        "selector": "input[name='phone']", "value": "+55 42 99833-1363"},
+    {"step": 5, "type": "upload", "field": "cv_upload",    "selector": "input[type='file']", "value": "/home/juan/cv.pdf"},
+    {"step": 6, "type": "fill",   "field": "cover_letter", "selector": "textarea[name='coverLetter']", "value": "Olá! ..."},
+    {"step": 7, "type": "screenshot", "path": "<memory-dir>/screenshots/<id-slug>.png"},
+    {"step": 8, "type": "confirm_checkpoint", "screenshot_path": "<...png>",
      "note": "PAUSE - do not continue until the user confirms every value and the screenshot"},
-    {"step": 8, "type": "submit", "selector": "button[type='submit']"}
+    {"step": 9, "type": "submit", "selector": "button[type='submit']"}
   ]
 }
 ```
 
-Step types: `fill`, `upload`, `screenshot`, `confirm_checkpoint`, `submit`.
+Step types: `verify_session` (issue #41, always first unless `--skip-session-check`), `fill`, `upload`, `screenshot`, `confirm_checkpoint`, `submit`.
+
+### Expired-session plan (issue #41)
+
+When `verify_session` detects an expired session, `apply.py` returns exit 0 with a **short plan** — the bot must stop and ask the human to log in (never fill/submit):
+
+```json
+{
+  "ok": true,
+  "portal": "gupy",
+  "jobId": "<id-slug>",
+  "jobUrl": "https://jobs.gupy.io/jobs/<id-slug>",
+  "confirmed": false,
+  "confirmationRequired": true,
+  "dryRun": false,
+  "sessionCheck": true,
+  "sessionExpired": true,
+  "steps": [
+    {"step": 1, "type": "verify_session", "action": "verify_session", "url": "https://jobs.gupy.io/jobs/<id-slug>", "expect": "not_auth_page", "on_expired": "ask_login_and_confirm"},
+    {"step": 2, "type": "confirm_checkpoint",
+     "note": "Sessão expirada. Faça login no Gupy e digite confirmar.",
+     "login_url": "https://jobs.gupy.io/jobs/<id-slug>",
+     "screenshot_path": "<memory-dir>/screenshots/<id-slug>.png"}
+  ]
+}
+```
 
 ---
 
@@ -218,7 +288,7 @@ Records live at:
 | `refusal_draft_blocked` | Profile marks `no_apply` or cover text carries `NO_APPLY` (guardrail #28) | Stop — never send a refusal as an application |
 | `invalid_job_url` | No `/jobs/<slug>` segment derivable | Show detail |
 | `already_applied` | Record exists with `status: applied` (guardrail #27) | Stop — duplicate apply refused |
-| `auth_required` | Current URL is a login/auth/signin page (issue #38) | Stop immediately — ask the human; report `manual_url` + `screenshot_path` |
+| `auth_required` | Current URL is a login/auth/signin page while the session check is disabled (issue #38, reached with `--skip-session-check`) | Stop immediately — ask the human; report `manual_url` + `screenshot_path` |
 | `navigation_loop` | Same URL visited 3+ times (issue #38) | Stop — ask the human; report `manual_url` + `screenshot_path` |
 | `browser_unavailable` | Chromium failed to start, or CDP still unreachable after recovery (issue #39) | Stop — real error; user cannot complete the application without a browser session. The *recovery* status `needs_login` is **not** an error (exit 0) |
 
@@ -232,6 +302,7 @@ Errors are always JSON: `{"error": <code>, "detail": <message>, "screenshot_path
 - **#28 refusal** — never plan/send an application from a `NO_APPLY` draft; profile flag or `NO_APPLY` marker in cover text blocks planning.
 - **#31 memory consultation** — records live under the bot memory convention so preferences/history are honoured before applying.
 - **#38 auth/loop guard** — never retry a login/auth redirect or a navigation loop; check `is_auth_url` before every navigation and abort after 3 visits, always handing a `manual_url` + `screenshot_path` back to the human.
+- **#41 session expiry gate** — never fill a form on an expired session: the plan always opens with `verify_session`; an expired session stops at the login `confirm_checkpoint` (PT-BR note + `login_url`) with no fill/upload/submit steps. Supersedes #38 for the default flow.
 - **Explicit confirmation** — no `submit` step without `--confirmed`; the bot never submits without user confirmation.
 
 ---
@@ -239,7 +310,7 @@ Errors are always JSON: `{"error": <code>, "detail": <message>, "screenshot_path
 ## Non-goals
 
 - **Email sending** — applications are form-based here; email delivery stays with the himalaya tool.
-- **Login / sessions** — the bot never authenticates by itself: issue #39 recovery starts Chromium and hands a fresh session back as `needs_login` (the user logs in manually once), and a login redirect mid-flow stops cleanly (`auth_required`) rather than retrying.
+- **Login / sessions** — the bot never authenticates by itself: issue #39 recovery starts Chromium and hands a fresh session back as `needs_login` (the user logs in manually once), issue #41 detects an expired session before any fill and stops at a login `confirm_checkpoint`, and a login redirect mid-flow stops cleanly rather than retrying.
 - **CAPTCHA** — out of scope; if the portal presents one, the bot reports and stops.
 - **Persistence of visited-URL history** — navigation history is passed per-invocation by the bot (`--visited-urls`); the guard never stores state across calls or to disk.
 - **Multi-step / paginated forms** — v1 is a single flat form (fields defined in `portals/gupy.yaml`).
