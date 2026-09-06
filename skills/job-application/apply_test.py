@@ -394,6 +394,121 @@ class PlanContentTests(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
+# Session expiry gate (issue #41)
+# ---------------------------------------------------------------------------
+
+class SessionCheckTests(unittest.TestCase):
+    """verify_session step is emitted first; expired sessions stop at the login
+    confirm_checkpoint without any fill/upload/submit step."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.mem = Path(self.tmp.name)
+        self.profile_path = write_profile(self.mem)
+
+    def step_types(self, result):
+        return [s["type"] for s in result.data["steps"]]
+
+    def test_verify_session_step_is_first_in_plan(self):
+        result = run_cli(self.mem, self.profile_path)
+        self.assertEqual(result.code, 0)
+        first = result.data["steps"][0]
+        self.assertEqual(first["type"], "verify_session")
+        self.assertEqual(first["action"], "verify_session")
+        self.assertEqual(first["url"], GUPY_URL)
+        self.assertEqual(first["expect"], "not_auth_page")
+        self.assertEqual(first["on_expired"], "ask_login_and_confirm")
+        self.assertTrue(result.data["sessionCheck"])
+        self.assertFalse(result.data["sessionExpired"])
+
+    def test_active_session_still_emits_fill_steps(self):
+        result = run_cli(self.mem, self.profile_path)
+        types = self.step_types(result)
+        self.assertIn("fill", types)
+        self.assertIn("upload", types)
+        self.assertEqual(types[-1], "confirm_checkpoint")
+
+    def test_login_current_url_produces_expired_plan(self):
+        result = run_cli(self.mem, self.profile_path,
+                         "--current-url", "https://jobs.gupy.io/login")
+        self.assertEqual(result.code, 0)
+        self.assertTrue(result.data["ok"])
+        self.assertTrue(result.data["sessionExpired"])
+        self.assertTrue(result.data["confirmationRequired"])
+        types = self.step_types(result)
+        self.assertEqual(types, ["verify_session", "confirm_checkpoint"])
+
+    def test_expired_plan_has_ptbr_confirm_note(self):
+        result = run_cli(self.mem, self.profile_path,
+                         "--current-url", "https://jobs.gupy.io/login")
+        checkpoint = result.data["steps"][1]
+        self.assertIn("Sessão expirada", checkpoint["note"])
+        self.assertIn("Faça login no Gupy e digite confirmar", checkpoint["note"])
+
+    def test_expired_plan_carries_login_url(self):
+        result = run_cli(self.mem, self.profile_path,
+                         "--current-url", "https://jobs.gupy.io/login")
+        checkpoint = result.data["steps"][1]
+        self.assertEqual(checkpoint["login_url"], GUPY_URL)
+
+    def test_expired_plan_has_no_fill_upload_or_submit(self):
+        result = run_cli(self.mem, self.profile_path,
+                         "--current-url", "https://jobs.gupy.io/candidates/auth")
+        types = self.step_types(result)
+        for banned in ("fill", "upload", "submit", "screenshot"):
+            self.assertNotIn(banned, types)
+
+    def test_skip_session_check_omits_verify_step(self):
+        result = run_cli(self.mem, self.profile_path, "--skip-session-check")
+        self.assertEqual(result.code, 0)
+        self.assertFalse(result.data["sessionCheck"])
+        self.assertFalse(result.data["sessionExpired"])
+        types = self.step_types(result)
+        self.assertNotIn("verify_session", types)
+        self.assertIn("fill", types)
+
+    def test_skip_session_check_keeps_auth_guard(self):
+        # Skipping the session check must not disable the #38 auth/loop guard.
+        result = run_cli(self.mem, self.profile_path, "--skip-session-check",
+                         "--current-url", "https://jobs.gupy.io/login")
+        self.assertEqual(result.code, 1)
+        self.assertEqual(result.data["error"], "auth_required")
+
+    def test_dry_run_omits_session_check(self):
+        result = run_cli(self.mem, self.profile_path, "--dry-run")
+        self.assertEqual(result.code, 0)
+        self.assertFalse(result.data["sessionCheck"])
+        types = self.step_types(result)
+        self.assertNotIn("verify_session", types)
+        self.assertTrue(result.data["dryRun"])
+
+    def test_build_action_plan_expired_direct_call(self):
+        plan = apply.build_action_plan(
+            VALID_PROFILE, apply.load_portal("gupy"), JOB_ID, GUPY_URL,
+            confirmed=False, memory_dir=self.mem, dry_run=False,
+            session_check_enabled=True, session_expired=True,
+            login_url=GUPY_URL,
+        )
+        self.assertTrue(plan["sessionExpired"])
+        self.assertTrue(plan["sessionCheck"])
+        types = [s["type"] for s in plan["steps"]]
+        self.assertEqual(types, ["verify_session", "confirm_checkpoint"])
+        self.assertEqual(plan["steps"][1]["login_url"], GUPY_URL)
+
+    def test_build_action_plan_skip_direct_call(self):
+        plan = apply.build_action_plan(
+            VALID_PROFILE, apply.load_portal("gupy"), JOB_ID, GUPY_URL,
+            confirmed=True, memory_dir=self.mem, dry_run=False,
+            session_check_enabled=False,
+        )
+        self.assertFalse(plan["sessionCheck"])
+        types = [s["type"] for s in plan["steps"]]
+        self.assertNotIn("verify_session", types)
+        self.assertEqual(types[-1], "submit")
+
+
+# ---------------------------------------------------------------------------
 # Job-id derivation
 # ---------------------------------------------------------------------------
 
@@ -522,6 +637,7 @@ class UsageTests(unittest.TestCase):
         self.assertIsNone(args.cdp_url)
         self.assertIsNone(args.user_data_dir)
         self.assertFalse(args.check_browser)
+        self.assertFalse(args.skip_session_check)
 
 
 # ---------------------------------------------------------------------------
@@ -795,6 +911,11 @@ class CdpUrlFlagTests(unittest.TestCase):
         """parse_args recognizes --check-browser."""
         args = apply.parse_args(["--check-browser"])
         self.assertTrue(args.check_browser)
+
+    def test_parse_args_has_skip_session_check(self):
+        """parse_args recognizes --skip-session-check (issue #41)."""
+        args = apply.parse_args(["--skip-session-check"])
+        self.assertTrue(args.skip_session_check)
 
 
 if __name__ == "__main__":
