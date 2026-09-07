@@ -39,12 +39,24 @@ Export `HERMES_API_KEY=YOUR_HERMES_API_KEY` before running the backend.
 
 **Service token (optional — for bot API access, issue #47):** the bot
 authenticates to the Job Hunter API with a static token via the
-`X-Bot-Token` header, while CLI/webapp keep `Authorization: Bearer` (JWT
-login). Generate the secret once and set both sides to the SAME value:
+`X-Bot-Token` header, while CLI/webapp keep the usual JWT `Bearer` header
+(login). Generate the secret once and set both sides to the SAME value:
 `bot.service.api-key` here (env `BOT_SERVICE_API_KEY`) and later in the bot
 profile as `api-token.txt` (step 3 / step 5). `owner-user-id` must be a
 positive id (the `userId` from `POST /api/auth/login`) for the feature to
 engage; blank `api-key` keeps the old JWT-only behavior.
+
+**First-run bootstrap (bot self-guides, issue #46/#47):** when the bot reports
+`missing_api_token` it generates the secret, saves it to
+`~/.hermes/profiles/jobhunter-bot/api-token.txt`, and shows you the snippet
+above. Human steps (bounded to paste-secret + restart):
+
+- [ ] Copy `api-key` / `owner-user-id` from the bot's snippet into `bot.service.*` (or export `BOT_SERVICE_API_KEY` / `BOT_SERVICE_OWNER_USER_ID`).
+- [ ] Restart the backend.
+- [ ] Tell the bot "done" — its `X-Bot-Token` probe expects HTTP 200.
+- [ ] Afterwards the bot runs fully autonomously, including self-updating skills via `scripts/install-bot-skills.sh`.
+
+Bot-side procedure: `skills/job-application/SKILL.md` → "First-run bootstrap".
 
 ## 2. Verify backend-only mode (no bot required)
 
