@@ -42,6 +42,7 @@ This is the **structured counterpart** to the free-form `job-portal-browser` nav
 | portal | `--portal` | string | yes | `gupy` (v1 only; unknown values error cleanly) |
 | memory dir | `--memory-dir` | dir path | no | Base for idempotency records; default `~/.hermes/profiles/jobhunter-bot/memails` |
 | checkpoints | `--confirmed`, `--record-applied`, `--dry-run` | flags | no | See Confirmation protocol + Recording below |
+| auto apply | `--auto-apply` | flag | no | Issue #42: implies `--confirmed` (submit emitted), omits the `confirm_checkpoint`, keeps `screenshot` + record. NEVER bypasses idempotency (#27), refusal (#28), or the session gate (#41) |
 | auth/loop guard | `--current-url`, `--visited-urls` | string / comma-separated | no | Issues #38 + #41: current page + visited history so `apply.py` can detect auth/loop conditions and an expired session (see Step 4) |
 | session expiry | `--skip-session-check` | flag | no | Issue #41: skip the session expiry gate (also skipped on `--dry-run`) |
 | browser recovery | `--cdp-url`, `--user-data-dir` | URL / dir path | no | Issue #39: CDP endpoint (default `http://localhost:9222`, also from `portals/gupy.yaml` `cdp_url` key) and persistent Chromium profile dir (default `~/.chromium-profile-cdp`) |
@@ -71,7 +72,12 @@ Profile JSON:
    ```
 2. **Validate** — apply.py checks portal YAML, required profile fields, and the guardrails (#28 refusal, #27 idempotency). Any failure returns a JSON error.
 3. **Receive the action plan** — a JSON list of steps with CSS selectors (schema below).
-4. **Execute step by step** — the bot opens the form URL and performs each `fill` / `upload` step on the given selector, one at a time. The plan begins with a `verify_session` step (issue #41): before any fill, navigate to the step's `url` and call `verify_session(current_url, login_hint_url=<job-url>)`.
+4. **Execute step by step** — the bot opens the form URL and executes each step (below). The plan begins with a `verify_session` step (issue #41): before any fill, navigate to the step's `url` and call `verify_session(current_url, login_hint_url=<job-url>)`.
+
+   **The `fill_form` batch step (issue #42) — ONE browser call:**
+   - All non-submit fields are consolidated into a single `{"type": "fill_form", "action": "fill_form", "fields": [...]}` step preserving portal order (`name`, `email`, `phone`, `cv_upload`, `cover_letter`).
+   - The bot fills/attaches every field in `fields` in a **single browser call** (no page reload between fields). Each entry is `{name, selector, type, value}` where `type` is `fill` (text) or `upload` (file attachment).
+   - Do NOT split `fill_form` into per-field steps.
 
    **Session expiry gate (issue #41):**
    - **Verify the session first** — every plan starts with `{"type": "verify_session", "expect": "not_auth_page", "on_expired": "ask_login_and_confirm"}`. The bot executes it by checking `is_auth_url(current_url)` on the job page.
@@ -86,9 +92,9 @@ Profile JSON:
 
    Both guards keep the planner **stateless**: visited history and the current URL are supplied by the bot as arguments each call; `navigation.py` never stores state itself.
 
-5. **Screenshot + pause** — at `screenshot`, the bot captures the filled form to the given path; at `confirm_checkpoint`, the bot stops and asks the user to confirm every value.
-6. **Submit (only after confirmation)** — the bot re-runs with `--confirmed` to obtain the `submit` step, OR the user confirms the checkpoint and the bot proceeds with the confirmed plan; the `submit` step is executed last.
-7. **Record** — after the browser submit, the bot calls `apply.py --record-applied` (or the confirmed run already recorded it) so future runs short-circuit with `already_applied`.
+5. **Screenshot + pause (interactive mode)** — at `screenshot`, the bot captures the filled form to the given path; at `confirm_checkpoint`, the bot stops and asks the user to confirm every value. In `--auto-apply` mode the `confirm_checkpoint` is omitted — the user pre-authorized the run.
+6. **Submit (only after confirmation)** — the bot re-runs with `--confirmed` (or `--auto-apply`) to obtain the `submit` step, OR the user confirms the checkpoint and the bot proceeds with the confirmed plan; the `submit` step is executed last.
+7. **Record** — after the browser submit, the bot calls `apply.py --record-applied` (or the confirmed/`--auto-apply` run already recorded it) so future runs short-circuit with `already_applied`.
 
 ---
 
@@ -201,22 +207,52 @@ apply.py  ──► plan[0] = verify_session  (expect "not_auth_page")
   "dryRun": false,
   "sessionCheck": true,
   "sessionExpired": false,
+  "autoApply": false,
   "steps": [
     {"step": 1, "type": "verify_session", "action": "verify_session", "url": "https://jobs.gupy.io/jobs/<id-slug>", "expect": "not_auth_page", "on_expired": "ask_login_and_confirm"},
-    {"step": 2, "type": "fill",   "field": "name",         "selector": "input[name='name']", "value": "Juan Antonio Peruzzo"},
-    {"step": 3, "type": "fill",   "field": "email",        "selector": "input[name='email']", "value": "juan@example.com"},
-    {"step": 4, "type": "fill",   "field": "phone",        "selector": "input[name='phone']", "value": "+55 42 99833-1363"},
-    {"step": 5, "type": "upload", "field": "cv_upload",    "selector": "input[type='file']", "value": "/home/juan/cv.pdf"},
-    {"step": 6, "type": "fill",   "field": "cover_letter", "selector": "textarea[name='coverLetter']", "value": "Olá! ..."},
-    {"step": 7, "type": "screenshot", "path": "<memory-dir>/screenshots/<id-slug>.png"},
-    {"step": 8, "type": "confirm_checkpoint", "screenshot_path": "<...png>",
+    {"step": 2, "type": "fill_form", "action": "fill_form", "fields": [
+        {"name": "name",          "selector": "input[name='name']",          "type": "fill",   "value": "Juan Antonio Peruzzo"},
+        {"name": "email",         "selector": "input[name='email']",         "type": "fill",   "value": "juan@example.com"},
+        {"name": "phone",         "selector": "input[name='phone']",         "type": "fill",   "value": "+55 42 99833-1363"},
+        {"name": "cv_upload",     "selector": "input[type='file']",          "type": "upload", "value": "/home/juan/cv.pdf"},
+        {"name": "cover_letter",  "selector": "textarea[name='coverLetter']", "type": "fill",   "value": "Olá! ..."}
+    ]},
+    {"step": 3, "type": "screenshot", "path": "<memory-dir>/screenshots/<id-slug>.png"},
+    {"step": 4, "type": "confirm_checkpoint", "screenshot_path": "<...png>",
      "note": "PAUSE - do not continue until the user confirms every value and the screenshot"},
-    {"step": 9, "type": "submit", "selector": "button[type='submit']"}
+    {"step": 5, "type": "submit", "selector": "button[type='submit']"}
   ]
 }
 ```
 
-Step types: `verify_session` (issue #41, always first unless `--skip-session-check`), `fill`, `upload`, `screenshot`, `confirm_checkpoint`, `submit`.
+Step types: `verify_session` (issue #41, always first unless `--skip-session-check`), `fill_form` (issue #42 — single batch step for all non-submit fields; executor contract: **one browser call**), `screenshot`, `confirm_checkpoint`, `submit`.
+
+### `--auto-apply` plan (issue #42)
+
+`apply.py --auto-apply` produces a plan where:
+- `submit` is emitted (same gate as `--confirmed`; `"confirmed": true`, `"confirmationRequired": false`),
+- the `confirm_checkpoint` step is **omitted** (the user pre-authorized the run),
+- `screenshot` and the applied record (`plan["recorded"]`) are kept for the audit trail,
+- `"autoApply": true` is set on the plan.
+
+**Safety guarantees (non-negotiable, always evaluated before plan emission):**
+- **#27 idempotency** — an existing `already_applied` record still short-circuits with `{"error": "already_applied"}`.
+- **#28 refusal** — a `NO_APPLY` / refusal profile still blocks with `{"error": "refusal_draft_blocked"}`.
+- **#41 session gate** — an expired session still yields the short expired plan (verify + login checkpoint, no fill/submit). Auto-apply skips the *user confirmation of a healthy flow*, never the safety checks.
+
+```json
+{
+  "ok": true, "portal": "gupy", "jobId": "<id-slug>", "jobUrl": "<...>",
+  "confirmed": true, "confirmationRequired": false, "dryRun": false,
+  "sessionCheck": true, "sessionExpired": false, "autoApply": true,
+  "steps": [
+    {"step": 1, "type": "verify_session", "action": "verify_session", "url": "<job-url>", "expect": "not_auth_page", "on_expired": "ask_login_and_confirm"},
+    {"step": 2, "type": "fill_form", "action": "fill_form", "fields": [{"name": "name", "selector": "input[name='name']", "type": "fill", "value": "..."}, ...]},
+    {"step": 3, "type": "screenshot", "path": "<memory-dir>/screenshots/<id-slug>.png"},
+    {"step": 4, "type": "submit", "selector": "button[type='submit']"}
+  ]
+}
+```
 
 ### Expired-session plan (issue #41)
 
@@ -233,6 +269,7 @@ When `verify_session` detects an expired session, `apply.py` returns exit 0 with
   "dryRun": false,
   "sessionCheck": true,
   "sessionExpired": true,
+  "autoApply": false,
   "steps": [
     {"step": 1, "type": "verify_session", "action": "verify_session", "url": "https://jobs.gupy.io/jobs/<id-slug>", "expect": "not_auth_page", "on_expired": "ask_login_and_confirm"},
     {"step": 2, "type": "confirm_checkpoint",
@@ -247,9 +284,10 @@ When `verify_session` detects an expired session, `apply.py` returns exit 0 with
 
 ## Confirmation protocol
 
-- **Submit is never emitted without `--confirmed`.** An unconfirmed plan ends at `confirm_checkpoint` and sets `"confirmationRequired": true` — the bot MUST stop there and wait for explicit user confirmation.
-- Each form field is filled one at a time; after the screenshot the bot presents the captured form + all values to the user.
-- The bot **never** clicks submit without that explicit confirmations.
+- **Submit is never emitted without `--confirmed` or `--auto-apply`.** An unconfirmed plan ends at `confirm_checkpoint` and sets `"confirmationRequired": true` — the bot MUST stop there and wait for explicit user confirmation.
+- All form fields are filled in a single `fill_form` batch call; after the screenshot the bot presents the captured form + all values to the user.
+- The bot **never** clicks submit without that explicit confirmation.
+- `--auto-apply` is the **only** path that skips the `confirm_checkpoint` — it implies explicit pre-authorization and still keeps the screenshot + record. Interactive (`--confirmed`) plans keep the checkpoint.
 
 ---
 
@@ -274,7 +312,7 @@ Records live at:
 
 - The default `<memory-dir>` follows the bot memory convention `~/.hermes/profiles/jobhunter-bot/memails`.
 - Before planning, apply.py checks `<memory-dir>/applications/<job_id>.json`; a record with `status: "applied"` short-circuits with `{"error": "already_applied"}` — the bot must never apply twice to the same job.
-- Recording triggers: `--confirmed` (planner treats authorization as the commit point) or `--record-applied` (bot calls it **post-submit** after the real browser step succeeded). `--dry-run` never writes records.
+- Recording triggers: `--confirmed`, `--auto-apply` (planner treats authorization as the commit point) or `--record-applied` (bot calls it **post-submit** after the real browser step succeeded). `--dry-run` never writes records.
 
 ---
 
@@ -303,7 +341,8 @@ Errors are always JSON: `{"error": <code>, "detail": <message>, "screenshot_path
 - **#31 memory consultation** — records live under the bot memory convention so preferences/history are honoured before applying.
 - **#38 auth/loop guard** — never retry a login/auth redirect or a navigation loop; check `is_auth_url` before every navigation and abort after 3 visits, always handing a `manual_url` + `screenshot_path` back to the human.
 - **#41 session expiry gate** — never fill a form on an expired session: the plan always opens with `verify_session`; an expired session stops at the login `confirm_checkpoint` (PT-BR note + `login_url`) with no fill/upload/submit steps. Supersedes #38 for the default flow.
-- **Explicit confirmation** — no `submit` step without `--confirmed`; the bot never submits without user confirmation.
+- **#42 auto-apply / batch fill** — `--auto-apply` implies confirmation + skips the manual `confirm_checkpoint` but NEVER bypasses safety: idempotency (#27), refusal (#28), and the session gate (#41) still gate the plan. All form fields ship as one `fill_form` batch step (single executor browser call).
+- **Explicit confirmation** — no `submit` step without `--confirmed`; the bot never submits without user confirmation. `--auto-apply` (issue #42) IS that explicit pre-authorization — it implies `--confirmed` and skips only the manual `confirm_checkpoint`, never the safety gates.
 
 ---
 
