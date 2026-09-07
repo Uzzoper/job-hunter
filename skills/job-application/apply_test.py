@@ -783,7 +783,7 @@ class UsageTests(unittest.TestCase):
         args = apply.parse_args([])
         self.assertIsNone(args.job_url)
         self.assertIsNone(args.profile)
-        self.assertIsNone(args.portal)
+        self.assertEqual(args.portal, "gupy")  # issue #45: --portal defaults to gupy
         self.assertIsNone(args.memory_dir)
         self.assertFalse(args.dry_run)
         self.assertFalse(args.confirmed)
