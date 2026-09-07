@@ -138,6 +138,13 @@ bot:
     dir: ${user.home}/.hermes/profiles/jobhunter-bot
     memory-file: memories/MEMORY.md
     user-file: memories/USER.md
+  service:
+    # Static service token for self-hosted bot API access (issue #47).
+    # Blank api-key disables the feature; header X-Bot-Token must match exactly.
+    # No expiry — rotate the key and restart the backend to revoke.
+    api-key: ${BOT_SERVICE_API_KEY:}
+    # Existing user the bot acts as; must be a positive id for the feature to engage.
+    owner-user-id: ${BOT_SERVICE_OWNER_USER_ID:}
 
 app:
   cors:
