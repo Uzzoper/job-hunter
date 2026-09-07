@@ -5,7 +5,7 @@ job source for the Hermes bot).
 
 Covers:
   * resolve_token — precedence (flag > JOBHUNTER_API_TOKEN env > <profile>/api-token.txt),
-    file trimming, and the missing-token error dict with a PT-BR one-time login+save step.
+    file trimming, and the missing-token error dict with a PT-BR service-token setup step.
   * api_list_jobs — real query names on the wire (hasEmail / minScore), X-Bot-Token auth (issue #47),
     401 → {"error": "unauthorized"}.
   * api_trigger_fetch — POST /api/jobs/fetch[/<portal>] path building + 401 mapping.
