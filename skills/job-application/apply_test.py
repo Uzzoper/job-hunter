@@ -85,6 +85,55 @@ MOCK_CDP_URL = f"http://127.0.0.1:{MOCK_CDP_PORT}"
 CLOSED_CDP_URL = "http://localhost:19222"
 
 
+# ---------------------------------------------------------------------------
+# Mock CDP daemon (issue #44): /health reports cdp_connected, POST /jobs works.
+# Lets tests exercise the --daemon-url delegation path without a real daemon.
+# ---------------------------------------------------------------------------
+
+class _MockDaemonHandler(http.server.BaseHTTPRequestHandler):
+    """Tiny fake daemon: GET /health -> cdp_connected True; POST /jobs -> id."""
+
+    def do_GET(self):
+        if self.path == "/health":
+            self._json(200, {"cdp_connected": True, "queue_depth": 0})
+        else:
+            self._json(404, {"error": "not_found"})
+
+    def do_POST(self):
+        length = int(self.headers.get("Content-Length", 0) or 0)
+        if length:
+            self.rfile.read(length)
+        if self.path == "/jobs":
+            self._json(200, {"job_id": "job-99"})
+        else:
+            self._json(404, {"error": "not_found"})
+
+    def _json(self, status, obj):
+        body = json.dumps(obj).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, *args):  # keep the test output clean
+        pass
+
+
+def _start_mock_daemon():
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _MockDaemonHandler)
+    port = server.server_address[1]
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    return server, port
+
+
+MOCK_DAEMON_SERVER, MOCK_DAEMON_PORT = _start_mock_daemon()
+MOCK_DAEMON_URL = f"http://127.0.0.1:{MOCK_DAEMON_PORT}"
+CLOSED_DAEMON_URL = "http://localhost:19333"
+
+
+
 class RunResult:
     """Thin wrapper around a subprocess run (exit code + parsed JSON stdout)."""
 
@@ -506,6 +555,63 @@ class VerifyWithTests(unittest.TestCase):
     def test_parse_args_verify_with_ax(self):
         args = apply.parse_args(["--verify-with", "ax"])
         self.assertEqual(args.verify_with, "ax")
+
+
+# ---------------------------------------------------------------------------
+# --daemon-url (issue #44): delegate execution via POST /jobs when the daemon
+# /health reports cdp_connected; otherwise fall back to a direct plan.
+# ---------------------------------------------------------------------------
+
+class DaemonExecutionTests(unittest.TestCase):
+    """Issue #44 --daemon-url thin integration. Absent flag keeps the plan
+    unchanged; reachable+connected daemon adds "executor" metadata while still
+    printing the plan; unreachable daemon falls back with a warning field."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.mem = Path(self.tmp.name)
+        self.profile_path = write_profile(self.mem)
+
+    def test_no_daemon_url_keeps_plan_unchanged(self):
+        result = run_cli(self.mem, self.profile_path)
+        self.assertEqual(result.code, 0)
+        self.assertNotIn("executor", result.data)
+        self.assertNotIn("daemon_fallback", result.data)
+
+    def test_daemon_reachable_adds_executor_metadata(self):
+        result = run_cli(self.mem, self.profile_path,
+                         "--daemon-url", MOCK_DAEMON_URL)
+        self.assertEqual(result.code, 0)
+        self.assertEqual(result.data["executor"]["via"], "cdp-daemon")
+        self.assertEqual(result.data["executor"]["daemon_url"], MOCK_DAEMON_URL)
+        # the plan is still printed (the bot decides)
+        self.assertTrue(result.data["ok"])
+        self.assertIn("fill_form", [s["type"] for s in result.data["steps"]])
+
+    def test_daemon_submits_job_and_reports_id(self):
+        result = run_cli(self.mem, self.profile_path,
+                         "--daemon-url", MOCK_DAEMON_URL)
+        self.assertEqual(result.code, 0)
+        self.assertEqual(result.data["executor"]["job_id"], "job-99")
+
+    def test_daemon_unreachable_falls_back_with_warning(self):
+        result = run_cli(self.mem, self.profile_path,
+                         "--daemon-url", CLOSED_DAEMON_URL)
+        self.assertEqual(result.code, 0)
+        self.assertNotIn("executor", result.data)
+        self.assertIn("daemon_fallback", result.data)
+        self.assertEqual(result.data["daemon_fallback"]["reason"], "unreachable")
+        # direct plan still emitted (bot can still act)
+        self.assertTrue(result.data["ok"])
+
+    def test_parse_args_daemon_url_default_none(self):
+        args = apply.parse_args([])
+        self.assertIsNone(args.daemon_url)
+
+    def test_parse_args_daemon_url_parsed(self):
+        args = apply.parse_args(["--daemon-url", "http://localhost:19999"])
+        self.assertEqual(args.daemon_url, "http://localhost:19999")
 
 
 # ---------------------------------------------------------------------------
