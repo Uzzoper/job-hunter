@@ -1,20 +1,28 @@
 #!/usr/bin/env python3
 """
-apply.py — structured job-portal application planner for the Hermes bot (issues #37, #38, #39, #41, #42).
+apply.py — structured job-portal application planner for the Hermes bot (issues #37, #38, #39, #41, #42, #45).
 
-Plans a Gupy application as an ordered ACTION PLAN (JSON) that the bot executes
+Plans a portal application as an ordered ACTION PLAN (JSON) that the bot executes
 through its browser tool. This script validates inputs, enforces guardrails
 (#27 idempotency, #28 refusal), checks/recovers the browser session (#39),
 detects an expired session before any fill (#41), emits a single batch
-fill_form step (#42), and supports an --auto-apply mode that implies
+fill_form step (#42), supports an --auto-apply mode that implies
 confirmation, skips the manual confirm_checkpoint, and keeps the screenshot +
-record audit trail (#42).
+record audit trail (#42). Domain-specific portal helpers (#45) turn the portal
+YAML mapping into the flow steps (click_apply_button → fill_form →
+handle_cover_letter → submit with always-gated confirmation).
+
+# Issue #45 — domain-specific portal helpers: apply.py loads the per-portal
+# YAML mapping (portals/<portal>.yaml) AND the matching helper module
+# (helpers/<portal>.py) by name; unknown portals error cleanly (unknown_portal).
+# Supported portals: gupy, infojobs. LinkedIn is explicitly OUT of scope (manual
+# flow + the separate Node.js scraper microservice) — no linkedin helper/YAML.
 
 Stdlib only: argparse, json, os, re, subprocess, time, urllib, pathlib.
 No pip dependencies.
 
 Usage:
-    python3 apply.py --job-url <url> --profile <profile.json> --portal gupy \\
+    python3 apply.py --job-url <url> --profile <profile.json> [--portal gupy|infojobs] \\
         [--memory-dir <dir>] [--dry-run] [--confirmed] [--record-applied]
         [--skip-session-check] [--auto-apply]
     python3 apply.py --check-browser [--cdp-url <url>] [--user-data-dir <dir>]
@@ -23,6 +31,7 @@ Output: JSON to stdout (action plan, browser status, or {"error": <code>, "detai
 """
 
 import argparse
+import importlib
 import json
 import os
 import re
@@ -42,6 +51,7 @@ from navigation import MAX_VISITS, SESSION_EXPIRED_DETAIL, guard_from_cli, verif
 # ---------------------------------------------------------------------------
 
 DEFAULT_PORTALS_DIR = Path(__file__).resolve().parent / "portals"
+DEFAULT_HELPERS_DIR = Path(__file__).resolve().parent / "helpers"  # issue #45
 DEFAULT_MEMORY_DIR = (
     Path.home() / ".hermes" / "profiles" / "jobhunter-bot" / "memails"
 )
@@ -262,6 +272,31 @@ def load_portal(name: str, portals_dir: Optional[Path] = None) -> Optional[Dict[
     if not isinstance(cfg.get("fields"), dict) or cfg.get("portal") != name:
         return None
     return cfg
+
+
+# ---------------------------------------------------------------------------
+# Portal helper loading (issue #45)
+# ---------------------------------------------------------------------------
+
+def load_helper(name: str, helpers_dir: Optional[Path] = None):
+    """Lazily import helpers/<name>.py as a module, or None when unavailable.
+
+    Returns ``None`` when the helper module does not exist or cannot be loaded
+    (e.g. an unknown portal). Portal modules are loaded on demand via
+    importlib; importing this package never pulls in portal helpers.
+    """
+    name = (name or "").strip()
+    if not name:
+        return None
+    base = Path(helpers_dir) if helpers_dir else DEFAULT_HELPERS_DIR
+    path = base / f"{name}.py"
+    if not path.is_file():
+        return None
+    try:
+        return importlib.import_module(f"helpers.{name}")
+    except Exception:
+        return None
+
 
 
 def portal_fields(cfg: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -580,7 +615,10 @@ def parse_args(argv: Optional[List[str]]):
     parser = argparse.ArgumentParser(prog="apply.py", add_help=False)
     parser.add_argument("--job-url")
     parser.add_argument("--profile")
-    parser.add_argument("--portal")
+    # issue #45: --portal defaults to gupy (a free string so an unknown portal
+    # like "linkedin" trips our clean exit-1 unknown_portal error, not argparse
+    # choices which would exit 2 and break that contract).
+    parser.add_argument("--portal", default="gupy")
     parser.add_argument("--memory-dir")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--confirmed", action="store_true")
@@ -625,19 +663,20 @@ def run(argv: Optional[List[str]] = None) -> int:
 
     memory_dir = Path(args.memory_dir) if args.memory_dir else DEFAULT_MEMORY_DIR
 
-    if not args.job_url or not args.profile or not args.portal:
+    if not args.job_url or not args.profile:
         print(json.dumps(build_error(
             "usage",
-            "required arguments: --job-url, --profile <json>, --portal <name>",
+            "required arguments: --job-url, --profile <json>",
             memory_dir=memory_dir,
         )))
         return 2
 
     portal_cfg = load_portal(args.portal)
-    if portal_cfg is None:
+    helper_mod = load_helper(args.portal)
+    if portal_cfg is None or helper_mod is None:
         print(json.dumps(build_error(
             "unknown_portal",
-            f"portal '{args.portal}' is not supported (v1 supports: gupy)",
+            f"portal '{args.portal}' is not supported (v2 supports: gupy, infojobs)",
             memory_dir=memory_dir,
         )))
         return 1
