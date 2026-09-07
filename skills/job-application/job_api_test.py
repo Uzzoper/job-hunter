@@ -6,7 +6,7 @@ job source for the Hermes bot).
 Covers:
   * resolve_token — precedence (flag > JOBHUNTER_API_TOKEN env > <profile>/api-token.txt),
     file trimming, and the missing-token error dict with a PT-BR one-time login+save step.
-  * api_list_jobs — real query names on the wire (hasEmail / minScore), Bearer auth,
+  * api_list_jobs — real query names on the wire (hasEmail / minScore), X-Bot-Token auth (issue #47),
     401 → {"error": "unauthorized"}.
   * api_trigger_fetch — POST /api/jobs/fetch[/<portal>] path building + 401 mapping.
   * api_get_job — GET /api/jobs/{id} → JobResponse dict (url/title/company per the
@@ -44,6 +44,17 @@ def _json_response(payload):
     resp.status = 200
     resp.__enter__.return_value.read.return_value = json.dumps(payload).encode("utf-8")
     return resp
+
+
+def _request_header(req, name):
+    """Case-insensitive header lookup.
+
+    urllib normalizes header names in its internal Message (``X-Bot-Token``
+    becomes ``X-bot-token``); HTTP header names are case-insensitive on the
+    wire, so tests compare lowercased.
+    """
+    needle = name.lower()
+    return next((v for k, v in req.headers.items() if k.lower() == needle), None)
 
 
 def _http_error(code):
@@ -103,13 +114,14 @@ class ResolveTokenTests(unittest.TestCase):
             self.assertIsInstance(result, dict)
             self.assertEqual(result["error"], "missing_api_token")
 
-    def test_missing_token_detail_is_pt_br_with_login_step(self):
+    def test_missing_token_detail_is_pt_br_with_service_token_step(self):
         with unittest.mock.patch.dict(os.environ, {}, clear=True):
             result = job_api.resolve_token(None, profile_dir="/nonexistent-empty")
             detail = result.get("detail", "")
             self.assertTrue(detail)
             self.assertIn("Token", detail)
-            self.assertIn("login", detail.lower())
+            self.assertIn("BOT_SERVICE_API_KEY", detail)
+            self.assertIn("bot.service.api-key", detail)
             self.assertIn("JOBHUNTER_API_TOKEN", detail)
 
     def test_default_profile_dir_is_bot_profile(self):
@@ -126,15 +138,16 @@ class ResolveTokenTests(unittest.TestCase):
 # ---------------------------------------------------------------------------
 
 class ListJobsTests(unittest.TestCase):
-    """GET /api/jobs — real query names (hasEmail/minScore) + Bearer auth."""
+    """GET /api/jobs — real query names (hasEmail/minScore) + X-Bot-Token auth."""
 
     @unittest.mock.patch("urllib.request.urlopen")
-    def test_sends_bearer_auth_and_default_has_email_true(self, mock_urlopen):
+    def test_sends_bot_service_token_and_default_has_email_true(self, mock_urlopen):
         mock_urlopen.return_value = _json_response([{"id": 1, "title": "x"}])
         result = job_api.api_list_jobs("http://localhost:8080", "tok-123")
         req = mock_urlopen.call_args[0][0]
         self.assertEqual(req.get_method(), "GET")
-        self.assertEqual(req.get_header("Authorization"), "Bearer tok-123")
+        self.assertEqual(_request_header(req, "X-Bot-Token"), "tok-123")
+        self.assertIsNone(_request_header(req, "Authorization"))
         self.assertIn("api/jobs", req.full_url)
         self.assertIn("hasEmail=true", req.full_url)
         self.assertEqual(result, [{"id": 1, "title": "x"}])
@@ -191,7 +204,8 @@ class TriggerFetchTests(unittest.TestCase):
         result = job_api.api_trigger_fetch("http://localhost:8080", "t")
         req = mock_urlopen.call_args[0][0]
         self.assertEqual(req.get_method(), "POST")
-        self.assertEqual(req.get_header("Authorization"), "Bearer t")
+        self.assertEqual(_request_header(req, "X-Bot-Token"), "t")
+        self.assertIsNone(_request_header(req, "Authorization"))
         self.assertEqual(req.full_url, "http://localhost:8080/api/jobs/fetch")
         self.assertEqual(result["totalFetched"], 3)
 
