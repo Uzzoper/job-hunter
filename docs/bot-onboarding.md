@@ -46,6 +46,10 @@ profile as `api-token.txt` (step 3 / step 5). `owner-user-id` must be a
 positive id (the `userId` from `POST /api/auth/login`) for the feature to
 engage; blank `api-key` keeps the old JWT-only behavior.
 
+**Shortcut (recommended):** `bash scripts/setup-bot-access.sh --owner-id <id>`
+automates secret generation + profile save + backend exports + endpoint
+verification in one go (see its `--help`). Backend restart stays manual.
+
 **First-run bootstrap (bot self-guides, issue #46/#47):** when the bot reports
 `missing_api_token` it generates the secret, saves it to
 `~/.hermes/profiles/jobhunter-bot/api-token.txt`, and shows you the snippet
