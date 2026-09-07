@@ -3,10 +3,12 @@
 job_api.py — Job Hunter API client for the Hermes bot (issue #46).
 
 The Job Hunter REST API is the PRIMARY job source for applications. This module
-talks to the Spring Boot backend (JWT protected) using stdlib only (`urllib`,
-`json`, `os`, `pathlib`, `typing`). No credentials are ever stored in this
-repo: the long-lived API token is registered ONCE by the human and kept in bot
-memory (<profile>/api-token.txt or the JOBHUNTER_API_TOKEN env var).
+talks to the Spring Boot backend using stdlib only (`urllib`, `json`, `os`,
+`pathlib`, `typing`). The bot authenticates with the static service token
+(issue #47): no credentials are ever stored in this repo — the secret is
+generated ONCE by the human, configured on the backend as ``bot.service.api-key``
+(BOT_SERVICE_API_KEY), and the SAME value is kept in bot memory
+(<profile>/api-token.txt or the JOBHUNTER_API_TOKEN env var).
 
 Functions
 ---------
@@ -31,8 +33,9 @@ pick_jobs_for_apply(base_url, token, ...)
 
 Design notes
 ------------
-* Every request carries ``Authorization: Bearer <token>``. A 401 anywhere maps
-  to the machine-readable ``{"error": "unauthorized"}`` the bot can surface.
+* Every request carries ``X-Bot-Token: <token>`` (the service token is THE bot
+  auth method — no Bearer, no user login). A 401 anywhere maps to the
+  machine-readable ``{"error": "unauthorized"}`` the bot can surface.
 * All functions return either their payload type (str / list / dict) or an
   error dict with an ``"error"`` key — callers check ``isinstance(result, dict)
   and "error" in result``.
@@ -61,8 +64,10 @@ API_TOKEN_ENV = "JOBHUNTER_API_TOKEN"
 
 # PT-BR user-facing message (issue #46 — user-facing strings in Portuguese).
 _MISSING_TOKEN_DETAIL = (
-    "Token da API do Job Hunter não encontrado. Faça login uma vez "
-    "(POST /api/auth/login com email e senha) e salve o token retornado em "
+    "Token da API do Job Hunter não encontrado. Gere um segredo de serviço "
+    "uma vez (ex.: openssl rand -hex 24), configure-o no backend como "
+    "bot.service.api-key (variável BOT_SERVICE_API_KEY) com "
+    "bot.service.owner-user-id, e salve o MESMO valor em "
     "<profile-dir>/api-token.txt ou na variável de ambiente "
     "JOBHUNTER_API_TOKEN. Nenhuma credencial é armazenada no repositório."
 )
@@ -70,9 +75,11 @@ _MISSING_TOKEN_DETAIL = (
 
 def resolve_token(api_token: Optional[str] = None,
                   profile_dir: Optional[str] = None) -> Union[str, Dict[str, str]]:
-    """Resolve the Job Hunter API token (long-lived, registered once).
+    """Resolve the Job Hunter API service token (issue #47, registered once).
 
-    Precedence:
+    The backend derives authority from ``bot.service.api-key`` matching the
+    ``X-Bot-Token`` header exactly, and the same secret is stored here in bot
+    memory. Precedence:
         1. explicit *api_token* flag,
         2. ``JOBHUNTER_API_TOKEN`` environment variable,
         3. ``<profile_dir>/api-token.txt`` (default
@@ -106,7 +113,7 @@ def resolve_token(api_token: Optional[str] = None,
 
 def _request_json(method: str, url: str, token: str, timeout: int = 10,
                   data_bytes: Optional[bytes] = None) -> Any:
-    """Issues a JWT-authenticated HTTP request and returns the JSON payload.
+    """Issues a service-token-authenticated HTTP request (issue #47) and returns the JSON payload.
 
     Returns the parsed JSON on success (list for the list endpoint, dict for
     detail/fetch endpoints). Never raises for HTTP errors: it maps them to an
@@ -120,7 +127,7 @@ def _request_json(method: str, url: str, token: str, timeout: int = 10,
     ``api_error`` so the CLI can always print clean JSON.
     """
     headers = {
-        "Authorization": f"Bearer {token}",
+        "X-Bot-Token": token,
         "Accept": "application/json",
     }
     req = urllib.request.Request(url, data=data_bytes, headers=headers, method=method)
