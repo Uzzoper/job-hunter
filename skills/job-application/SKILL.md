@@ -1,13 +1,13 @@
-# Skill: Job Application (Gupy, structured)
+# Skill: Job Application (Gupy + InfoJobs, structured)
 
-> Hermes Agent skill for applying to Gupy job listings via a structured, planner-driven workflow.
-> Designed for the `jobhunter-bot` profile. v1 supports Gupy only.
+> Hermes Agent skill for applying to job listings via a structured, planner-driven workflow.
+> Designed for the `jobhunter-bot` profile. v2 supports Gupy + InfoJobs (issue #45).
 
 ---
 
 ## Purpose
 
-Plan a Gupy job application as an ordered, machine-readable **action plan** that the bot executes through its browser tool. The plan is produced by `apply.py` (stdlib-only Python), which validates inputs, enforces apply guardrails, and emits steps (fill / upload / screenshot / confirm_checkpoint / submit) with CSS selectors loaded from `portals/<portal>.yaml`.
+Plan a job application as an ordered, machine-readable **action plan** that the bot executes through its browser tool. The plan is produced by `apply.py` (stdlib-only Python), which validates inputs, enforces apply guardrails, and emits steps (fill / upload / screenshot / confirm_checkpoint / submit) with CSS selectors loaded from `portals/<portal>.yaml`. Domain-specific portal helpers in `helpers/<portal>.py` (issue #45) build the per-portal flow (`click_apply_button` → `fill_form` → `handle_cover_letter` → always-gated `submit`).
 
 This is the **structured counterpart** to the free-form `job-portal-browser` navigation skill:
 
@@ -20,15 +20,15 @@ This is the **structured counterpart** to the free-form `job-portal-browser` nav
 
 ## When to use
 
-- The portal is **Gupy** and the job URL follows `https://<portal>.gupy.io/jobs/<id-slug>`.
+- The portal is **Gupy** or **InfoJobs** and the job URL follows the portal's pattern (`https://<portal>.gupy.io/jobs/<id-slug>` or `https://www.infojobs.com.br/vaga/<id-slug>`).
 - The bot has structured application data (name, email, phone, resume path, cover text) from the app profile.
 - The user explicitly asked the bot to apply, and the confirmation protocol below can be honored.
 
 ### When NOT to use
 
 - The application is sent **by email** — use the himalaya email tool / `company-scraper` skill instead.
-- The flow is unknown, multi-step/paginated, or needs login/session as the normal path (v1 assumes logged-in; if a login page appears mid-flow, the bot stops with `auth_required` and hands off to the human — it does **not** silently retry). Use `job-portal-browser` for unknown/free navigation.
-- The portal is **not** Gupy — `apply.py` errors cleanly (`unknown_portal`).
+- The flow is unknown, multi-step/paginated, or needs login/session as the normal path (v2 assumes logged-in; if a login page appears mid-flow, the bot stops with `auth_required` and hands off to the human — it does **not** silently retry). Use `job-portal-browser` for unknown/free navigation.
+- The portal is **not** Gupy or InfoJobs — `apply.py` errors cleanly (`unknown_portal`). **LinkedIn is explicitly OUT of scope for automation**: LinkedIn applications are done **manually** by the human only; the separate LinkedIn scraper microservice (Node.js) only *reads* listings and never submits applications. There is deliberately **no** `portals/linkedin.yaml` and **no** `helpers/linkedin.py` — requesting `--portal linkedin` errors cleanly.
 - The paired draft is a `NO_APPLY` refusal — the bot must refuse to plan (guardrail #28).
 
 ---
@@ -37,9 +37,9 @@ This is the **structured counterpart** to the free-form `job-portal-browser` nav
 
 | Parameter | Via flag | Type | Required | Description |
 |---|---|---|---|---|
-| `job-url` | `--job-url` | string | yes | Gupy job URL (id derived from the `/jobs/<slug>` segment) |
+| `job-url` | `--job-url` | string | yes | Job URL (id derived from the portal's URL pattern) |
 | profile | `--profile` | JSON file path | yes | `{name, email, phone, cv_path, cover_text}` (+ optional `no_apply: true`) |
-| portal | `--portal` | string | yes | `gupy` (v1 only; unknown values error cleanly) |
+| portal | `--portal` | string | no (default `gupy`) | `gupy` \| `infojobs` (issue #45; unknown values error cleanly — **`linkedin` is NOT supported, by design**) |
 | memory dir | `--memory-dir` | dir path | no | Base for idempotency records; default `~/.hermes/profiles/jobhunter-bot/memails` |
 | checkpoints | `--confirmed`, `--record-applied`, `--dry-run` | flags | no | See Confirmation protocol + Recording below |
 | auto apply | `--auto-apply` | flag | no | Issue #42: implies `--confirmed` (submit emitted), omits the `confirm_checkpoint`, keeps `screenshot` + record. NEVER bypasses idempotency (#27), refusal (#28), or the session gate (#41) |
@@ -95,6 +95,41 @@ Profile JSON:
 5. **Screenshot + pause (interactive mode)** — at `screenshot`, the bot captures the filled form to the given path; at `confirm_checkpoint`, the bot stops and asks the user to confirm every value. In `--auto-apply` mode the `confirm_checkpoint` is omitted — the user pre-authorized the run.
 6. **Submit (only after confirmation)** — the bot re-runs with `--confirmed` (or `--auto-apply`) to obtain the `submit` step, OR the user confirms the checkpoint and the bot proceeds with the confirmed plan; the `submit` step is executed last.
 7. **Record** — after the browser submit, the bot calls `apply.py --record-applied` (or the confirmed/`--auto-apply` run already recorded it) so future runs short-circuit with `already_applied`.
+
+---
+
+## Portal helpers (issue #45)
+
+Each portal maps to a YAML config (`portals/<portal>.yaml`) **and** a Python helper module (`helpers/<portal>.py`). `apply.py` loads both by name (`--portal`); either missing on disk means `unknown_portal`.
+
+### Layout
+
+```
+skills/job-application/
+├── portals/
+│   ├── gupy.yaml          # Gupy selector mapping (input[name='name'], ...)
+│   └── infojobs.yaml      # InfoJobs selector mapping (BEST-EFFORT)
+└── helpers/
+    ├── __init__.py        # shared non_submit_fields(); must NOT import portal modules
+    ├── gupy.py            # Gupy flow builder (same interface as infojobs.py)
+    └── infojobs.py        # InfoJobs flow builder
+```
+
+### Per-portal interface (identical for both portals)
+
+All helper functions are **pure** (return action dicts; no browser/network I/O) and take the portal mapping as `portal_cfg`:
+
+| Function | Returns | Notes |
+|---|---|---|
+| `click_apply_button(portal_cfg, url)` | `{"type": "click", "action": "click_apply_button", "selector": <apply_button_selector>, "url": <job url>}` | Selector from `portal_cfg["apply_button_selector"]` or a portal best-effort default |
+| `fill_form(profile, portal_cfg)` | `{"type": "fill_form", "action": "fill_form", "fields": [{name, selector, type, value}...]}` | All non-submit fields in portal order; same batch shape as the plan's `fill_form` step (issue #42) |
+| `handle_cover_letter(profile, portal_cfg)` | `{"type": "fill", "action": "handle_cover_letter", "field": "cover_letter", "selector": <...>, "value": profile["cover_text"]}` | |
+| `submit(portal_cfg, confirmed=False)` | `{"type": "submit", "action": "submit", "selector": <submit selector>}` | **Raises ValueError unless `confirmed=True`** — never called without explicit confirmation |
+| `apply(job_url, profile, portal_cfg, confirmed=False)` | `[click_apply_button, fill_form, handle_cover_letter, submit]` | Orchestration; a `confirmed=False` run raises via `submit` |
+
+Signature parity between `gupy.py` and `infojobs.py` is enforced by `helpers_test.py`. The `helpers` package imports lazily: `import helpers` never pulls in a portal module.
+
+> **LinkedIn is deliberately absent** (no `helpers/linkedin.py`, no `portals/linkedin.yaml`). Applications on LinkedIn are manual-only; the LinkedIn scraper microservice is read-only. `--portal linkedin` → `unknown_portal`.
 
 ---
 
@@ -321,7 +356,7 @@ Records live at:
 | `error` code | Meaning | Bot behavior |
 |---|---|---|
 | `usage` | Missing/invalid CLI arguments | Fix invocation |
-| `unknown_portal` | Portal YAML absent (v1: gupy only) | Do not plan; no YAML loaded |
+| `unknown_portal` | Portal YAML/helper absent (v2: gupy + infojobs; `linkedin` NOT supported by design) | Do not plan; no YAML loaded |
 | `invalid_profile` | Profile file missing / bad JSON / missing required fields | Show detail; fix profile |
 | `refusal_draft_blocked` | Profile marks `no_apply` or cover text carries `NO_APPLY` (guardrail #28) | Stop — never send a refusal as an application |
 | `invalid_job_url` | No `/jobs/<slug>` segment derivable | Show detail |
@@ -352,14 +387,15 @@ Errors are always JSON: `{"error": <code>, "detail": <message>, "screenshot_path
 - **Login / sessions** — the bot never authenticates by itself: issue #39 recovery starts Chromium and hands a fresh session back as `needs_login` (the user logs in manually once), issue #41 detects an expired session before any fill and stops at a login `confirm_checkpoint`, and a login redirect mid-flow stops cleanly rather than retrying.
 - **CAPTCHA** — out of scope; if the portal presents one, the bot reports and stops.
 - **Persistence of visited-URL history** — navigation history is passed per-invocation by the bot (`--visited-urls`); the guard never stores state across calls or to disk.
-- **Multi-step / paginated forms** — v1 is a single flat form (fields defined in `portals/gupy.yaml`).
+- **Multi-step / paginated forms** — v2 is a single flat form per portal (fields defined in `portals/gupy.yaml` / `portals/infojobs.yaml`).
 - **Terminal / system operations** — out of scope for this skill.
-- **Other portals** — the YAML loader errors cleanly (`unknown_portal`) instead of guessing.
+- **LinkedIn automation** — deliberately unsupported. Applications on LinkedIn are done **manually** only; the LinkedIn Node.js scraper microservice is read-only and never submits. No `linkedin` YAML/helper exists (`--portal linkedin` → `unknown_portal`).
+- **Other portals** — the YAML/helper loader errors cleanly (`unknown_portal`) instead of guessing.
 
 ---
 
 ## Limitations
 
-- Selectors are static in `portals/gupy.yaml`; if Gupy changes its markup, the YAML (not the bot) must be updated.
+- Selectors are static in the per-portal YAML files; if a portal changes its markup, the YAML (not the bot) must be updated. **InfoJobs selectors are best-effort** and should be verified before heavy use — the markup can vary by region/over time.
 - The planner never performs browser actions itself — it relies on the bot's browser tool executing the plan.
 - Recording is best-effort: a confirmed/recorded run assumes the submit step actually succeeded in the browser; the bot should prefer `--record-applied` after confirming completion.
