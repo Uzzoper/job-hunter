@@ -359,25 +359,40 @@ class PlanContentTests(unittest.TestCase):
         self.assertEqual(self.result.data["jobId"], JOB_ID)
         self.assertEqual(self.result.data["jobUrl"], GUPY_URL)
 
-    def test_fill_upload_order(self):
+    # With issue #42 the per-field fill/upload steps are consolidated into a
+    # single fill_form batch step carrying every non-submit field in portal order.
+    def test_fill_form_single_batch_step(self):
         steps = self.result.data["steps"]
-        field_steps = [s for s in steps if "field" in s]
+        fill_form = [s for s in steps if s["type"] == "fill_form"]
+        self.assertEqual(len(fill_form), 1)
+        self.assertEqual(fill_form[0]["action"], "fill_form")
+        # No per-field fill/upload steps remain.
+        self.assertNotIn("fill", [s["type"] for s in steps])
+        self.assertNotIn("upload", [s["type"] for s in steps])
+
+    def test_fill_form_fields_preserve_portal_order(self):
+        fill_form = next(s for s in self.result.data["steps"] if s["type"] == "fill_form")
         self.assertEqual(
-            [s["field"] for s in field_steps],
+            [f["name"] for f in fill_form["fields"]],
             ["name", "email", "phone", "cv_upload", "cover_letter"],
         )
-        self.assertEqual(field_steps[0]["type"], "fill")
-        self.assertEqual(field_steps[3]["type"], "upload")
 
-    def test_steps_carry_selectors_and_profile_values(self):
-        steps = self.result.data["steps"]
-        by_field = {s["field"]: s for s in steps if "field" in s}
-        self.assertEqual(by_field["name"]["selector"], "input[name='name']")
-        self.assertEqual(by_field["name"]["value"], VALID_PROFILE["name"])
-        self.assertEqual(by_field["email"]["value"], VALID_PROFILE["email"])
-        self.assertEqual(by_field["cv_upload"]["value"], VALID_PROFILE["cv_path"])
+    def test_fill_form_fields_carry_types(self):
+        fill_form = next(s for s in self.result.data["steps"] if s["type"] == "fill_form")
+        by_name = {f["name"]: f for f in fill_form["fields"]}
+        self.assertEqual(by_name["name"]["type"], "fill")
+        self.assertEqual(by_name["cv_upload"]["type"], "upload")
+        self.assertEqual(by_name["cover_letter"]["type"], "fill")
+
+    def test_fill_form_fields_carry_selectors_and_profile_values(self):
+        fill_form = next(s for s in self.result.data["steps"] if s["type"] == "fill_form")
+        by_name = {f["name"]: f for f in fill_form["fields"]}
+        self.assertEqual(by_name["name"]["selector"], "input[name='name']")
+        self.assertEqual(by_name["name"]["value"], VALID_PROFILE["name"])
+        self.assertEqual(by_name["email"]["value"], VALID_PROFILE["email"])
+        self.assertEqual(by_name["cv_upload"]["value"], VALID_PROFILE["cv_path"])
         self.assertEqual(
-            by_field["cover_letter"]["value"], VALID_PROFILE["cover_text"]
+            by_name["cover_letter"]["value"], VALID_PROFILE["cover_text"]
         )
 
     def test_screenshot_path_lives_under_memory_dir(self):
@@ -391,6 +406,144 @@ class PlanContentTests(unittest.TestCase):
             self.result.data["form_url"],
             "https://jobs.gupy.io/jobs/12345-desenvolvedor-java",
         )
+
+
+# ---------------------------------------------------------------------------
+# fill_form batch step (issue #42)
+# ---------------------------------------------------------------------------
+
+class FillFormTests(unittest.TestCase):
+    """The fill_form step is emitted for every plan mode (unconfirmed,
+    confirmed, auto-apply) as a single batch step preserving portal order."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.mem = Path(self.tmp.name)
+        self.profile_path = write_profile(self.mem)
+
+    def step_types(self, result):
+        return [s["type"] for s in result.data["steps"]]
+
+    def _fill_form(self, result):
+        return next(s for s in result.data["steps"] if s["type"] == "fill_form")
+
+    def test_confirmed_plan_uses_fill_form(self):
+        result = run_cli(self.mem, self.profile_path, "--confirmed")
+        self.assertEqual(result.code, 0)
+        ff = self._fill_form(result)
+        self.assertEqual(ff["action"], "fill_form")
+        self.assertEqual(
+            [f["name"] for f in ff["fields"]],
+            ["name", "email", "phone", "cv_upload", "cover_letter"],
+        )
+        self.assertEqual(result.data["steps"][-1]["type"], "submit")
+
+    def test_fill_form_excludes_submit_field(self):
+        result = run_cli(self.mem, self.profile_path)
+        ff = self._fill_form(result)
+        names = [f["name"] for f in ff["fields"]]
+        self.assertNotIn("submit", names)
+        self.assertEqual(len(ff["fields"]), 5)
+
+
+# ---------------------------------------------------------------------------
+# --auto-apply (issue #42)
+# ---------------------------------------------------------------------------
+
+class AutoApplyTests(unittest.TestCase):
+    """--auto-apply implies confirmed (submit), skips the confirm_checkpoint,
+    keeps screenshot + record for the audit trail, and NEVER bypasses the
+    safety guardrails (#27 idempotency, #28 refusal, #41 session gate)."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.mem = Path(self.tmp.name)
+        self.profile_path = write_profile(self.mem)
+        self.record_path = self.mem / "applications" / f"{JOB_ID}.json"
+
+    def step_types(self, result):
+        return [s["type"] for s in result.data["steps"]]
+
+    def test_auto_apply_has_submit_and_no_confirm_checkpoint(self):
+        result = run_cli(self.mem, self.profile_path, "--auto-apply")
+        self.assertEqual(result.code, 0)
+        self.assertTrue(result.data["ok"])
+        self.assertFalse(result.data["confirmationRequired"])
+        types = self.step_types(result)
+        self.assertIn("submit", types)
+        self.assertNotIn("confirm_checkpoint", types)
+        self.assertEqual(types[-1], "submit")
+
+    def test_auto_apply_keeps_screenshot_and_fill_form(self):
+        result = run_cli(self.mem, self.profile_path, "--auto-apply")
+        types = self.step_types(result)
+        self.assertIn("screenshot", types)
+        self.assertIn("fill_form", types)
+        self.assertIn("verify_session", types)
+
+    def test_auto_apply_records_applied(self):
+        result = run_cli(self.mem, self.profile_path, "--auto-apply")
+        self.assertEqual(result.code, 0)
+        self.assertTrue(self.record_path.is_file())
+        record = json.loads(self.record_path.read_text(encoding="utf-8"))
+        self.assertEqual(record["status"], "applied")
+        self.assertEqual(record["job_id"], JOB_ID)
+
+    def test_auto_apply_no_confirm_checkpoint_in_dry_run(self):
+        # dry-run + auto-apply: still no confirm_checkpoint, and nothing recorded.
+        result = run_cli(self.mem, self.profile_path, "--auto-apply", "--dry-run")
+        self.assertEqual(result.code, 0)
+        types = self.step_types(result)
+        self.assertNotIn("confirm_checkpoint", types)
+        self.assertFalse(self.record_path.exists())
+
+    def test_auto_apply_still_blocked_by_already_applied(self):
+        # Safety #27: auto-apply must NOT bypass idempotency.
+        run_cli(self.mem, self.profile_path, "--auto-apply")
+        second = run_cli(self.mem, self.profile_path, "--auto-apply")
+        self.assertEqual(second.code, 1)
+        self.assertEqual(second.data["error"], "already_applied")
+
+    def test_auto_apply_still_blocked_by_refusal(self):
+        # Safety #28: auto-apply must NOT bypass the refusal block.
+        profile = dict(VALID_PROFILE, no_apply=True)
+        path = write_profile(self.mem, profile)
+        result = run_cli(self.mem, path, "--auto-apply")
+        self.assertEqual(result.code, 1)
+        self.assertEqual(result.data["error"], "refusal_draft_blocked")
+
+    def test_auto_apply_still_blocked_by_expired_session(self):
+        # Safety #41: even in auto mode an expired session stops at the login
+        # confirm checkpoint — no fill/submit may happen.
+        result = run_cli(self.mem, self.profile_path, "--auto-apply",
+                         "--current-url", "https://jobs.gupy.io/login")
+        self.assertEqual(result.code, 0)
+        self.assertTrue(result.data["sessionExpired"])
+        # The plan still records the requested mode...
+        self.assertTrue(result.data["autoApply"])
+        # ...but the safety gate wins: stop at the login checkpoint.
+        types = self.step_types(result)
+        self.assertEqual(types, ["verify_session", "confirm_checkpoint"])
+        self.assertNotIn("submit", types)
+
+    def test_auto_apply_marks_auto_apply_in_plan(self):
+        result = run_cli(self.mem, self.profile_path, "--auto-apply")
+        self.assertTrue(result.data["autoApply"])
+
+    def test_build_action_plan_auto_apply_direct_call(self):
+        plan = apply.build_action_plan(
+            VALID_PROFILE, apply.load_portal("gupy"), JOB_ID, GUPY_URL,
+            confirmed=False, memory_dir=self.mem, dry_run=False,
+            session_check_enabled=False, auto_apply=True,
+        )
+        self.assertTrue(plan["autoApply"])
+        self.assertFalse(plan["confirmationRequired"])
+        types = [s["type"] for s in plan["steps"]]
+        self.assertIn("submit", types)
+        self.assertNotIn("confirm_checkpoint", types)
+        self.assertEqual(types[-1], "submit")
 
 
 # ---------------------------------------------------------------------------
@@ -422,11 +575,12 @@ class SessionCheckTests(unittest.TestCase):
         self.assertTrue(result.data["sessionCheck"])
         self.assertFalse(result.data["sessionExpired"])
 
-    def test_active_session_still_emits_fill_steps(self):
+    def test_active_session_still_emits_fill_form(self):
         result = run_cli(self.mem, self.profile_path)
         types = self.step_types(result)
-        self.assertIn("fill", types)
-        self.assertIn("upload", types)
+        self.assertIn("fill_form", types)
+        self.assertNotIn("fill", types)
+        self.assertNotIn("upload", types)
         self.assertEqual(types[-1], "confirm_checkpoint")
 
     def test_login_current_url_produces_expired_plan(self):
@@ -456,7 +610,7 @@ class SessionCheckTests(unittest.TestCase):
         result = run_cli(self.mem, self.profile_path,
                          "--current-url", "https://jobs.gupy.io/candidates/auth")
         types = self.step_types(result)
-        for banned in ("fill", "upload", "submit", "screenshot"):
+        for banned in ("fill", "upload", "fill_form", "submit", "screenshot"):
             self.assertNotIn(banned, types)
 
     def test_skip_session_check_omits_verify_step(self):
@@ -466,7 +620,7 @@ class SessionCheckTests(unittest.TestCase):
         self.assertFalse(result.data["sessionExpired"])
         types = self.step_types(result)
         self.assertNotIn("verify_session", types)
-        self.assertIn("fill", types)
+        self.assertIn("fill_form", types)
 
     def test_skip_session_check_keeps_auth_guard(self):
         # Skipping the session check must not disable the #38 auth/loop guard.
@@ -638,6 +792,7 @@ class UsageTests(unittest.TestCase):
         self.assertIsNone(args.user_data_dir)
         self.assertFalse(args.check_browser)
         self.assertFalse(args.skip_session_check)
+        self.assertFalse(args.auto_apply)
 
 
 # ---------------------------------------------------------------------------
@@ -916,6 +1071,11 @@ class CdpUrlFlagTests(unittest.TestCase):
         """parse_args recognizes --skip-session-check (issue #41)."""
         args = apply.parse_args(["--skip-session-check"])
         self.assertTrue(args.skip_session_check)
+
+    def test_parse_args_has_auto_apply(self):
+        """parse_args recognizes --auto-apply (issue #42)."""
+        args = apply.parse_args(["--auto-apply"])
+        self.assertTrue(args.auto_apply)
 
 
 if __name__ == "__main__":
