@@ -31,8 +31,8 @@ top-scored from `GET /api/jobs` (`--from-api`) or by id from
 The bot authenticates to the backend with the **static service token** (issue
 #47, `BotTokenFilter`): the bot sends it via the `X-Bot-Token` header and the
 backend matches it against `bot.service.api-key`. Bot calls use `X-Bot-Token`
-only — no `Authorization: Bearer`, no user login. The token does not expire;
-rotation = change `bot.service.api-key` and restart the backend.
+only — no `Bearer` header, no user login. The token does not expire; rotation
+= change `bot.service.api-key` and restart the backend.
 
 To enable it once:
 
@@ -59,6 +59,34 @@ The service token is a plain static key — it identifies the *bot*, scoped by
 the backend to the configured `owner-user-id` (every request runs as that
 user). Missing/401 semantics are unchanged: a missing token or a 401 (secret
 mismatch) map to clean JSON and never fall back to storing human credentials.
+
+### First-run bootstrap (the bot self-guides)
+
+On a fresh host `resolve_token()` returns `missing_api_token`. Instead of
+improvising, the bot runs this fixed bootstrap once and never asks again:
+
+1. **Generate the secret** — `openssl rand -hex 24`.
+2. **Save it to bot memory** — write it to
+   `~/.hermes/profiles/jobhunter-bot/api-token.txt` (chmod 600), the exact
+   file `resolve_token()` reads from.
+3. **Show the human the backend step** — print this snippet and ask them to
+   paste the secret + owner id, then restart the backend:
+   ```yaml
+   bot:
+     service:
+       api-key: <generated secret>
+       owner-user-id: <your user id>   # from POST /api/auth/login
+   ```
+   (env form: `export BOT_SERVICE_API_KEY=<secret> BOT_SERVICE_OWNER_USER_ID=<id>`, then restart the service.)
+4. **Wait for the human** — the backend lifecycle stays **human**: secrets,
+   config edits and restarts are operator territory and deliberately NOT bot
+   actions. The human step is bounded to paste-secret + restart, nothing more.
+5. **Verify** — when the human confirms, probe once:
+   `curl -s http://localhost:8080/api/jobs?hasEmail=true
+   -H "X-Bot-Token: <secret>"` — HTTP 200 means the token works.
+6. **Full autonomy after** — the same secret serves every list/fetch/detail
+   call; on later runs the bot can also self-update its skills via
+   `bash scripts/install-bot-skills.sh`.
 
 ### Token resolution order
 
