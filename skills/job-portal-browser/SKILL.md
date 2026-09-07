@@ -17,6 +17,70 @@ It covers three distinct situations the API/HTML scrapers cannot handle:
 
 ---
 
+## API-first priority (issue #46) — query the API BEFORE scraping
+
+**The Job Hunter REST API is the first-line job source.** The browser skill is a
+true fallback: it is used **only when the API has no data** for the task.
+
+### Standing rule
+
+> **Always query the Job Hunter API first (`GET /api/jobs`, `GET /api/jobs/{id}`).
+> Only when the API returns no listing (or no matching listing) fall back to
+> scraping the portal with the browser.**
+
+The API answers every request with real, persisted jobs from the primary
+scrapers (Gupy / InfoJobs / LinkedIn microservice) — so browsing the portal
+again to *discover* listings is redundant work.
+
+### `job_api` integration
+
+The bot profile carries a companion module: `skills/job-application/job_api.py`
+(stdlib-only, JWT Bearer). Its functions mirror this skill's needs:
+
+| Need | Call |
+|---|---|
+| List jobs (`hasEmail` filter on by default) | `job_api.api_list_jobs(base_url, token, min_score=..., has_email=True)` |
+| One job detail | `job_api.api_get_job(base_url, token, job_id)` |
+| Trigger a scraping cycle when the API is empty | `job_api.api_trigger_fetch(base_url, token, portal="gupy")` |
+| List → fetch-if-empty → re-list → top job | `job_api.pick_jobs_for_apply(base_url, token, ...)` |
+
+A 401 anywhere maps to `{"error": "unauthorized"}` — the bot should surface
+that and ask the human to regenerate the token (see the one-time setup below).
+
+### curl examples (one-time token setup)
+
+```bash
+# 1) one-time login; save the returned token to bot memory (never the repo):
+curl -s -X POST http://localhost:8080/api/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"you@example.com","password":"********"}'
+
+# 2) use the token:
+TOKEN="<paste token here>"   # or stored in ~/.hermes/profiles/jobhunter-bot/api-token.txt
+
+# List jobs with a contact email (the API's real query param is hasEmail):
+curl -s http://localhost:8080/api/jobs?hasEmail=true -H "Authorization: Bearer $TOKEN"
+
+# Single job detail (id, title, company, url, description, postedAt, source, contactEmail):
+curl -s http://localhost:8080/api/jobs/7 -H "Authorization: Bearer $TOKEN"
+
+# Trigger a scrape when the list is empty (default portal gupy):
+curl -s -X POST http://localhost:8080/api/jobs/fetch/gupy -H "Authorization: Bearer $TOKEN"
+```
+
+The token lives in bot memory (`~/.hermes/profiles/jobhunter-bot/api-token.txt`
+or `JOBHUNTER_API_TOKEN`); no credential is ever stored in this repository.
+
+### How this changes the browser skill's task decisions
+
+- `scrape_listings` → first call `GET /api/jobs`; scrape the portal **only** when
+  the API returns no listings for the query.
+- `apply` → when the job id is known from the API (`--job-id`) the browser
+  session/tab resumes the application form directly — no browsing around to find
+  the listing again.
+
+---
+
 ## When to use
 
 - A targeted portal/board has **no public API** and the existing scraper for it (Gupy, InfoJobs, LinkedIn) **failed or returned empty** for the same query — the browser is the fallback.
@@ -26,6 +90,7 @@ It covers three distinct situations the API/HTML scrapers cannot handle:
 
 ### When NOT to use
 
+- The Job Hunter API already returns the listing (`GET /api/jobs` / `GET /api/jobs/{id}`) — **query the API BEFORE scraping** (issue #46 standing rule above).
 - Gupy, InfoJobs, or LinkedIn scrapers already return the listing — use those.
 - The job communicates a direct `contactEmail` (or a careers-page email) — prefer the `company-scraper` skill and email application.
 - The task is **sending an email** — that is the himalaya-tool domain, **not** this skill.

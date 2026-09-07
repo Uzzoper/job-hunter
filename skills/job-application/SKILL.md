@@ -18,11 +18,79 @@ This is the **structured counterpart** to the free-form `job-portal-browser` nav
 
 ---
 
+## API-first flow (issue #46)
+
+**The Job Hunter REST API is the PRIMARY job source.** Instead of receiving a
+job URL from elsewhere, `apply.py` can pick the job straight from the backend:
+top-scored from `GET /api/jobs` (`--from-api`) or by id from
+`GET /api/jobs/{id}` (`--job-id <id>`, which prefills `jobUrl` +
+`jobTitle`/`jobCompany` metadata into the plan).
+
+### One-time token setup (never store credentials in the repo)
+
+The auth decision for the bot (issue #46, option b) is a **long-lived token
+registered once in bot memory**. The bot profile path is
+`~/.hermes/profiles/jobhunter-bot/` and the token file is `api-token.txt`:
+
+```bash
+mkdir -p ~/.hermes/profiles/jobhunter-bot
+# manual one-time login (with your email/password) and save the token:
+curl -s -X POST http://localhost:8080/api/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"you@example.com","password":"********"}'   # → {"token":"...", ...}
+```
+
+Save the `token` value to `~/.hermes/profiles/jobhunter-bot/api-token.txt`
+(so no credential — and no token — ever lands in a git repo). Alternative:
+export `JOBHUNTER_API_TOKEN=<token>` on the bot host.
+
+### Token resolution order
+
+`job_api.resolve_token()` tries, in order:
+
+1. `--api-token` flag,
+2. `JOBHUNTER_API_TOKEN` environment variable,
+3. `<profile-dir>/api-token.txt` — `--profile-dir` overrides the default
+   `~/.hermes/profiles/jobhunter-bot`.
+
+Missing → clean JSON `{"error": "missing_api_token", "detail": <pt-br one-time
+login + save step>}` (exit 1).
+
+### Commands
+
+```bash
+# Plan from the top-scored job in the API (empty list → auto-fetch gupy → re-list):
+python3 skills/job-application/apply.py --from-api \
+  --profile profile.json --portal gupy --memory-dir <memails-dir> \
+  [--min-score 60] [--no-fetch-if-empty] [--api-base-url http://localhost:8080]
+
+# Plan from a specific job id (prefills job_url/title/company into the plan):
+python3 skills/job-application/apply.py --job-id 7 \
+  --profile profile.json --portal gupy --memory-dir <memails-dir>
+```
+
+New flags (all optional): `--job-id`, `--from-api`, `--api-base-url` (default
+`http://localhost:8080`), `--api-token`, `--profile-dir`, `--min-score`,
+`--fetch-if-empty` (default True) / `--no-fetch-if-empty`.
+
+- `--fetch-if-empty` (default **True**): when `GET /api/jobs` returns empty the
+  orchestrator triggers `POST /api/jobs/fetch/gupy` and re-lists.
+- `--min-score` is forwarded as the real `minScore` query param; `hasEmail=true`
+  is always sent by default (only jobs with a contact email are considered).
+- `--job-id` takes precedence when both `--job-id` and `--from-api` are given.
+- The classic `--job-url` flow is unchanged when no API flag is supplied.
+- Every API failure (missing token, 401, unknown job, unreachable host) prints
+  clean JSON and exits 1 — never a traceback. A 401 maps to
+  `{"error": "unauthorized"}`.
+
+---
+
 ## When to use
 
 - The portal is **Gupy** or **InfoJobs** and the job URL follows the portal's pattern (`https://<portal>.gupy.io/jobs/<id-slug>` or `https://www.infojobs.com.br/vaga/<id-slug>`).
 - The bot has structured application data (name, email, phone, resume path, cover text) from the app profile.
 - The user explicitly asked the bot to apply, and the confirmation protocol below can be honored.
+- The job to apply to was picked from the **Job Hunter API** (issue #46) via `--from-api` or `--job-id`.
 
 ### When NOT to use
 
@@ -37,7 +105,10 @@ This is the **structured counterpart** to the free-form `job-portal-browser` nav
 
 | Parameter | Via flag | Type | Required | Description |
 |---|---|---|---|---|
-| `job-url` | `--job-url` | string | yes | Job URL (id derived from the portal's URL pattern) |
+| `job-url` | `--job-url` | string | no * | Job URL (id derived from the portal's URL pattern). Required only when no API flag is used |
+| API source | `--from-api` / `--job-id <id>` | flag / int | no | Issue #46: pick the top-scored job from the Job Hunter API, or a specific job detail (`GET /api/jobs/{id}` — prefills `jobUrl` + `jobTitle`/`jobCompany`) |
+| API config | `--api-base-url` / `--api-token` / `--profile-dir` | string | no | Issue #46: backend base URL (default `http://localhost:8080`), token flag, and bot profile dir holding `api-token.txt` (default `~/.hermes/profiles/jobhunter-bot`) |
+| API filters | `--min-score` / `--fetch-if-empty` | int / flag | no | Issue #46: `minScore` query filter; trigger a fetch (default gupy) when the list is empty — `--no-fetch-if-empty` disables it |
 | profile | `--profile` | JSON file path | yes | `{name, email, phone, cv_path, cover_text}` (+ optional `no_apply: true`) |
 | portal | `--portal` | string | no (default `gupy`) | `gupy` \| `infojobs` (issue #45; unknown values error cleanly — **`linkedin` is NOT supported, by design**) |
 | memory dir | `--memory-dir` | dir path | no | Base for idempotency records; default `~/.hermes/profiles/jobhunter-bot/memails` |
@@ -398,6 +469,10 @@ Records live at:
 | `invalid_profile` | Profile file missing / bad JSON / missing required fields | Show detail; fix profile |
 | `refusal_draft_blocked` | Profile marks `no_apply` or cover text carries `NO_APPLY` (guardrail #28) | Stop — never send a refusal as an application |
 | `invalid_job_url` | No `/jobs/<slug>` segment derivable | Show detail |
+| `missing_api_token` | No Job Hunter API token found (issue #46) — try `--api-token`, `JOBHUNTER_API_TOKEN`, or `<profile-dir>/api-token.txt` | Show the one-time login + save step (PT-BR) |
+| `unauthorized` | Job Hunter API answered HTTP 401 (issue #46) — token invalid/expired | Regenerate the token and re-save it to bot memory |
+| `api_error` | Job Hunter API unreachable / unexpected response (issue #46) | Show detail; check `--api-base-url` and the backend |
+| `no_jobs` | API list empty after fetch-if-empty (issue #46) | Nothing to apply to — stop |
 | `already_applied` | Record exists with `status: applied` (guardrail #27) | Stop — duplicate apply refused |
 | `auth_required` | Current URL is a login/auth/signin page while the session check is disabled (issue #38, reached with `--skip-session-check`) | Stop immediately — ask the human; report `manual_url` + `screenshot_path` |
 | `navigation_loop` | Same URL visited 3+ times (issue #38) | Stop — ask the human; report `manual_url` + `screenshot_path` |
