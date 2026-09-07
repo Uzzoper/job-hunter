@@ -1,0 +1,41 @@
+# systemd USER unit for the jobhunter CDP daemon (issue #44).
+#
+# The daemon keeps ONE warm WebSocket to Chrome (the persistent Chromium profile
+# recovered by apply.py, issue #39) so the bot does not re-handshake per
+# application. It exposes a small HTTP API on 127.0.0.1:19999.
+#
+# Install as a USER service (no sudo):
+#   cp jobhunter-cdp-daemon.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now jobhunter-cdp-daemon.service
+#
+# For the unit to keep running after logout (like the Hermes gateway bot):
+#   loginctl enable-linger $USER
+#
+# Troubleshooting:
+#   systemctl --user status jobhunter-cdp-daemon.service
+#   systemctl --user restart jobhunter-cdp-daemon.service
+#   journalctl --user -u jobhunter-cdp-daemon.service -f
+#   curl -s http://127.0.0.1:19999/health   # -> {"cdp_connected":..., "queue_depth":...}
+#
+# The daemon listens on 127.0.0.1 only (loopback) -> the systemd Service section
+# does not open any firewall port.
+
+[Unit]
+Description=JobHunter CDP daemon - warm WebSocket to Chrome for session reuse
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/cdp_daemon.py --port 19999 --cdp-url http://localhost:9222 --user-data-dir %h/.chromium-profile-cdp
+# Chrome (--remote-debugging-port) is recovered/started by apply.py's issue #39
+# flow; the daemon just re-listens to /json/list. Restart if it crashes or is
+# killed so the warm WS is maintained across transient failures.
+Restart=on-failure
+RestartSec=3
+# Exit cleanly on stop.
+KillSignal=SIGINT
+TimeoutStopSec=10
+
+[Install]
+WantedBy=default.target
