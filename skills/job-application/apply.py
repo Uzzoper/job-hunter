@@ -60,6 +60,10 @@ SCREENSHOTS_SUBDIR = "screenshots"
 APPLIED_STATUS = "applied"
 REFUSAL_MARKER = "NO_APPLY"
 
+# Issue #43 — verification methods. Default is screenshot (behavior unchanged);
+# "ax" asks the executor to verify via the accessibility tree instead.
+VALID_VERIFY_MODES = ("screenshot", "ax")
+
 # Issue #39 — browser recovery defaults.
 DEFAULT_CDP_URL = "http://localhost:9222"
 DEFAULT_USER_DATA_DIR = "~/.chromium-profile-cdp"
@@ -424,13 +428,31 @@ def write_applied_record(memory_dir: Path, job_id: str, profile: Dict[str, Any],
 # Action-plan builder
 # ---------------------------------------------------------------------------
 
+def verification_meta(verify_with: str, step_type: str) -> Dict[str, Any]:
+    """Return the ``verification`` metadata for a fill_form / submit step (issue #43).
+
+    Provides the executor's optional AX query (a ``find_in_ax_tree``-style
+    hint) when in "ax" mode, or marks the step as screenshot-verified (the
+    default). ``ax_query`` is a best-effort hint the bot interprets against
+    the accessibility tree; ``null`` means no AX check.
+    """
+    if verify_with == "ax":
+        if step_type == "submit":
+            # Verify the confirm/submit control exists before submitting.
+            return {"method": "ax", "ax_query": {"role": "button", "name": "Enviar"}}
+        # fill_form: verify at least one editable field is present.
+        return {"method": "ax", "ax_query": {"role": "textbox"}}
+    return {"method": "screenshot", "ax_query": None}
+
+
 def build_action_plan(profile: Dict[str, Any], portal_cfg: Dict[str, Any],
                       job_id: str, job_url: str, confirmed: bool,
                       memory_dir: Path, dry_run: bool,
                       session_check_enabled: bool = True,
                       session_expired: bool = False,
                       login_url: Optional[str] = None,
-                      auto_apply: bool = False) -> Dict[str, Any]:
+                      auto_apply: bool = False,
+                      verify_with: str = "screenshot") -> Dict[str, Any]:
     """Emit the ordered action plan steps (session check / batch fill / screenshot / checkpoint / submit).
 
     Issue #41 — the session expiry gate: when ``session_check_enabled`` the
@@ -515,6 +537,7 @@ def build_action_plan(profile: Dict[str, Any], portal_cfg: Dict[str, Any],
         "type": "fill_form",
         "action": "fill_form",
         "fields": fields,
+        "verification": verification_meta(verify_with, "fill_form"),  # issue #43
     })
 
     # Screenshot: kept in every mode (including auto-apply) for the audit trail.
@@ -547,6 +570,7 @@ def build_action_plan(profile: Dict[str, Any], portal_cfg: Dict[str, Any],
             "step": step_no,
             "type": "submit",
             "selector": submit.get("selector", "button[type='submit']") if submit else "button[type='submit']",
+            "verification": verification_meta(verify_with, "submit"),  # issue #43
         })
 
     plan: Dict[str, Any] = {
@@ -641,6 +665,11 @@ def parse_args(argv: Optional[List[str]]):
     # Issue #41 — session expiry gate.
     parser.add_argument("--skip-session-check", action="store_true",
                         help="skip the session expiry check (also skipped on --dry-run)")
+    # Issue #43 — verification: screenshot (default) or the AX tree.
+    # A free string (not argparse choices) so an invalid mode trips our clean
+    # exit-2 usage error instead of argparse printing to stderr.
+    parser.add_argument("--verify-with", default="screenshot",
+                        help="verification method for fill/submit steps: screenshot (default) or ax")
     return parser.parse_args(argv)
 
 
@@ -662,6 +691,16 @@ def run(argv: Optional[List[str]] = None) -> int:
         return 0 if status["status"] != "browser_unavailable" else 1
 
     memory_dir = Path(args.memory_dir) if args.memory_dir else DEFAULT_MEMORY_DIR
+
+    # Issue #43 — validate the verification mode up front (clean JSON error,
+    # keeping stdout JSON-only rather than argparse's stderr usage dump).
+    if args.verify_with not in VALID_VERIFY_MODES:
+        print(json.dumps(build_error(
+            "usage",
+            f"invalid --verify-with mode: {args.verify_with} (supported: {', '.join(VALID_VERIFY_MODES)})",
+            memory_dir=memory_dir,
+        )))
+        return 2
 
     if not args.job_url or not args.profile:
         print(json.dumps(build_error(
@@ -760,6 +799,7 @@ def run(argv: Optional[List[str]] = None) -> int:
             session_expired=True,
             login_url=session_login_url,
             auto_apply=args.auto_apply,
+            verify_with=args.verify_with,
         )
         print(json.dumps(plan, ensure_ascii=False, indent=2))
         return 0
@@ -801,6 +841,7 @@ def run(argv: Optional[List[str]] = None) -> int:
         session_check_enabled=session_check_enabled,
         session_expired=False,
         auto_apply=args.auto_apply,
+        verify_with=args.verify_with,
     )
 
     # Record the application after a confirmed/auto run, or on explicit
