@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """
-apply.py — structured job-portal application planner for the Hermes bot (issues #37, #38, #39, #41).
+apply.py — structured job-portal application planner for the Hermes bot (issues #37, #38, #39, #41, #42).
 
 Plans a Gupy application as an ordered ACTION PLAN (JSON) that the bot executes
 through its browser tool. This script validates inputs, enforces guardrails
 (#27 idempotency, #28 refusal), checks/recovers the browser session (#39),
-detects an expired session before any fill (#41), and emits steps with CSS
-selectors loaded from portals/<portal>.yaml.
+detects an expired session before any fill (#41), emits a single batch
+fill_form step (#42), and supports an --auto-apply mode that implies
+confirmation, skips the manual confirm_checkpoint, and keeps the screenshot +
+record audit trail (#42).
 
 Stdlib only: argparse, json, os, re, subprocess, time, urllib, pathlib.
 No pip dependencies.
@@ -14,7 +16,7 @@ No pip dependencies.
 Usage:
     python3 apply.py --job-url <url> --profile <profile.json> --portal gupy \\
         [--memory-dir <dir>] [--dry-run] [--confirmed] [--record-applied]
-        [--skip-session-check]
+        [--skip-session-check] [--auto-apply]
     python3 apply.py --check-browser [--cdp-url <url>] [--user-data-dir <dir>]
 
 Output: JSON to stdout (action plan, browser status, or {"error": <code>, "detail": ...}).
@@ -392,19 +394,31 @@ def build_action_plan(profile: Dict[str, Any], portal_cfg: Dict[str, Any],
                       memory_dir: Path, dry_run: bool,
                       session_check_enabled: bool = True,
                       session_expired: bool = False,
-                      login_url: Optional[str] = None) -> Dict[str, Any]:
-    """Emit the ordered action plan steps (session check / fill / upload / screenshot / checkpoint / submit).
+                      login_url: Optional[str] = None,
+                      auto_apply: bool = False) -> Dict[str, Any]:
+    """Emit the ordered action plan steps (session check / batch fill / screenshot / checkpoint / submit).
 
     Issue #41 — the session expiry gate: when ``session_check_enabled`` the
     plan starts with a ``verify_session`` step.  When ``session_expired`` the
     plan stops at a confirm_checkpoint carrying the PT-BR login prompt — the
     bot must NOT fill or submit anything; the human has to authenticate first.
+
+    Issue #42 —
+      * all form fields (non-submit) are consolidated into a single ``fill_form``
+        batch step so the executor makes one browser call instead of several;
+      * ``auto_apply`` implies ``confirmed`` (submit is emitted) but omits the
+        user ``confirm_checkpoint``, keeping the ``screenshot`` and record steps
+        for the audit trail.  Auto-apply never bypasses the (#41) session gate,
+        (#28) refusal block, or (#27) idempotency — those are enforced upstream.
     """
     steps: List[Dict[str, Any]] = []
     step_no = 0
     shot_path = str(Path(memory_dir) / SCREENSHOTS_SUBDIR / f"{job_id}.png")
 
-    # Session expiry gate (#41): verify the session before ANY fill/upload.
+    # --auto-apply implies confirmed: a submit step is emitted.
+    confirmed = confirmed or auto_apply
+
+    # Session expiry gate (#41): verify the session before ANY fill.
     if session_check_enabled or session_expired:
         step_no += 1
         steps.append({
@@ -436,6 +450,7 @@ def build_action_plan(profile: Dict[str, Any], portal_cfg: Dict[str, Any],
             "dryRun": dry_run,
             "sessionCheck": session_check_enabled,
             "sessionExpired": True,
+            "autoApply": auto_apply,
             "steps": steps,
         }
         pattern = portal_cfg.get("form_url_pattern")
@@ -443,23 +458,31 @@ def build_action_plan(profile: Dict[str, Any], portal_cfg: Dict[str, Any],
             plan["form_url"] = str(pattern).format(job_id=job_id)
         return plan
 
+    # Issue #42 — consolidate all non-submit fields into ONE fill_form batch step
+    # so the executor makes a single browser call (no reload risk between fields).
+    fields: List[Dict[str, Any]] = []
     for field in portal_fields(portal_cfg):
         ftype = field.get("type", "")
         if ftype == "submit":
             continue  # submit is appended only after the confirmation gate
-        step_no += 1
-        step: Dict[str, Any] = {
-            "step": step_no,
-            "type": ftype,
-            "field": field["name"],
+        item: Dict[str, Any] = {
+            "name": field["name"],
             "selector": field.get("selector", ""),
+            "type": ftype,
         }
         source = field.get("source")
-        step["value"] = profile.get(source) if source else None
-        steps.append(step)
+        item["value"] = profile.get(source) if source else None
+        fields.append(item)
 
-    # Screenshot + explicit confirmation checkpoint.
-    shot_path = str(Path(memory_dir) / SCREENSHOTS_SUBDIR / f"{job_id}.png")
+    step_no += 1
+    steps.append({
+        "step": step_no,
+        "type": "fill_form",
+        "action": "fill_form",
+        "fields": fields,
+    })
+
+    # Screenshot: kept in every mode (including auto-apply) for the audit trail.
     step_no += 1
     steps.append({
         "step": step_no,
@@ -468,15 +491,20 @@ def build_action_plan(profile: Dict[str, Any], portal_cfg: Dict[str, Any],
         "note": "capture the filled form before user confirmation",
     })
 
-    step_no += 1
-    steps.append({
-        "step": step_no,
-        "type": "confirm_checkpoint",
-        "note": "PAUSE - do not continue until the user confirms every value and the screenshot",
-        "screenshot_path": shot_path,
-    })
+    # The user confirm_checkpoint is SKIPPED in auto-apply mode — the bot has
+    # explicit authorization to proceed end-to-end without pausing for a manual
+    # confirm.  It remains for all interactive (non-auto) plans.
+    if not auto_apply:
+        step_no += 1
+        steps.append({
+            "step": step_no,
+            "type": "confirm_checkpoint",
+            "note": "PAUSE - do not continue until the user confirms every value and the screenshot",
+            "screenshot_path": shot_path,
+        })
 
-    # Submit is NEVER emitted unless the explicit --confirmed gate is passed.
+    # Submit is NEVER emitted unless the --confirmed gate is passed (auto-apply
+    # implies confirmed, handled above).
     if confirmed:
         submit = next((f for f in portal_fields(portal_cfg) if f.get("type") == "submit"), None)
         step_no += 1
@@ -496,6 +524,7 @@ def build_action_plan(profile: Dict[str, Any], portal_cfg: Dict[str, Any],
         "dryRun": dry_run,
         "sessionCheck": session_check_enabled,
         "sessionExpired": False,
+        "autoApply": auto_apply,
         "steps": steps,
     }
     pattern = portal_cfg.get("form_url_pattern")
@@ -556,6 +585,10 @@ def parse_args(argv: Optional[List[str]]):
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--confirmed", action="store_true")
     parser.add_argument("--record-applied", action="store_true")
+    # Issue #42 — auto-apply: implies --confirmed (submit), omits the
+    # confirm_checkpoint, keeps screenshot + record for the audit trail.
+    parser.add_argument("--auto-apply", action="store_true",
+                        help="implied confirmed + skip the confirm checkpoint (never bypasses idempotency/refusal/session safety)")
     # Issue #38 navigation auth/loop guard. Stateless: the bot/executor passes
     # visited history and the current URL; apply.py never tracks state.
     parser.add_argument("--visited-urls", help="comma-separated list of previously visited URLs")
@@ -687,6 +720,7 @@ def run(argv: Optional[List[str]] = None) -> int:
             session_check_enabled=True,
             session_expired=True,
             login_url=session_login_url,
+            auto_apply=args.auto_apply,
         )
         print(json.dumps(plan, ensure_ascii=False, indent=2))
         return 0
@@ -727,11 +761,12 @@ def run(argv: Optional[List[str]] = None) -> int:
         confirmed=args.confirmed, memory_dir=memory_dir, dry_run=args.dry_run,
         session_check_enabled=session_check_enabled,
         session_expired=False,
+        auto_apply=args.auto_apply,
     )
 
-    # Record the application after a confirmed run, or on explicit
+    # Record the application after a confirmed/auto run, or on explicit
     # --record-applied (bot calls it post-submit). --dry-run never records.
-    should_record = (args.record_applied or args.confirmed) and not args.dry_run
+    should_record = (args.record_applied or args.confirmed or args.auto_apply) and not args.dry_run
     if should_record:
         shot = str(Path(memory_dir) / SCREENSHOTS_SUBDIR / f"{job_id}.png")
         record = write_applied_record(
