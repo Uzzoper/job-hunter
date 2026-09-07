@@ -26,23 +26,39 @@ top-scored from `GET /api/jobs` (`--from-api`) or by id from
 `GET /api/jobs/{id}` (`--job-id <id>`, which prefills `jobUrl` +
 `jobTitle`/`jobCompany` metadata into the plan).
 
-### One-time token setup (never store credentials in the repo)
+### One-time service-token setup (never store credentials in the repo)
 
-The auth decision for the bot (issue #46, option b) is a **long-lived token
-registered once in bot memory**. The bot profile path is
-`~/.hermes/profiles/jobhunter-bot/` and the token file is `api-token.txt`:
+The bot authenticates to the backend with the **static service token** (issue
+#47, `BotTokenFilter`): the bot sends it via the `X-Bot-Token` header and the
+backend matches it against `bot.service.api-key`. Bot calls use `X-Bot-Token`
+only — no `Authorization: Bearer`, no user login. The token does not expire;
+rotation = change `bot.service.api-key` and restart the backend.
 
-```bash
-mkdir -p ~/.hermes/profiles/jobhunter-bot
-# manual one-time login (with your email/password) and save the token:
-curl -s -X POST http://localhost:8080/api/auth/login \
-  -H 'Content-Type: application/json' \
-  -d '{"email":"you@example.com","password":"********"}'   # → {"token":"...", ...}
-```
+To enable it once:
 
-Save the `token` value to `~/.hermes/profiles/jobhunter-bot/api-token.txt`
-(so no credential — and no token — ever lands in a git repo). Alternative:
-export `JOBHUNTER_API_TOKEN=<token>` on the bot host.
+1. **Generate a secret** (same value goes on both sides):
+   ```bash
+   openssl rand -hex 24
+   ```
+2. **Set it on the backend** in `application-local.yaml`:
+   ```yaml
+   bot:
+     service:
+       api-key: ${BOT_SERVICE_API_KEY}            # X-Bot-Token must match exactly
+       owner-user-id: ${BOT_SERVICE_OWNER_USER_ID}  # existing user the bot acts as (positive id)
+   ```
+   and export before running: `export BOT_SERVICE_API_KEY=<secret>`,
+   `export BOT_SERVICE_OWNER_USER_ID=<your user id>` (the `userId` from
+   `POST /api/auth/login`). Blank `api-key` disables the feature → bot calls
+   fall through to the JWT chain and answer 401.
+3. **Save the SAME value in bot memory** (so no secret ever lands in a git
+   repo): `~/.hermes/profiles/jobhunter-bot/api-token.txt` — or export
+   `JOBHUNTER_API_TOKEN=<secret>` on the bot host as an alternative.
+
+The service token is a plain static key — it identifies the *bot*, scoped by
+the backend to the configured `owner-user-id` (every request runs as that
+user). Missing/401 semantics are unchanged: a missing token or a 401 (secret
+mismatch) map to clean JSON and never fall back to storing human credentials.
 
 ### Token resolution order
 
@@ -53,8 +69,8 @@ export `JOBHUNTER_API_TOKEN=<token>` on the bot host.
 3. `<profile-dir>/api-token.txt` — `--profile-dir` overrides the default
    `~/.hermes/profiles/jobhunter-bot`.
 
-Missing → clean JSON `{"error": "missing_api_token", "detail": <pt-br one-time
-login + save step>}` (exit 1).
+Missing → clean JSON `{"error": "missing_api_token", "detail": <pt-br
+service-token setup + save step>}` (exit 1).
 
 ### Commands
 
@@ -469,8 +485,8 @@ Records live at:
 | `invalid_profile` | Profile file missing / bad JSON / missing required fields | Show detail; fix profile |
 | `refusal_draft_blocked` | Profile marks `no_apply` or cover text carries `NO_APPLY` (guardrail #28) | Stop — never send a refusal as an application |
 | `invalid_job_url` | No `/jobs/<slug>` segment derivable | Show detail |
-| `missing_api_token` | No Job Hunter API token found (issue #46) — try `--api-token`, `JOBHUNTER_API_TOKEN`, or `<profile-dir>/api-token.txt` | Show the one-time login + save step (PT-BR) |
-| `unauthorized` | Job Hunter API answered HTTP 401 (issue #46) — token invalid/expired | Regenerate the token and re-save it to bot memory |
+| `missing_api_token` | No Job Hunter API service token found (issue #46) — try `--api-token`, `JOBHUNTER_API_TOKEN`, or `<profile-dir>/api-token.txt` | Show the one-time service-token setup + save step (PT-BR) |
+| `unauthorized` | Job Hunter API answered HTTP 401 (issue #47 — `X-Bot-Token` present but `bot.service.api-key` mismatch, or the feature is disabled) | Verify the bot secret equals `BOT_SERVICE_API_KEY` and `BOT_SERVICE_OWNER_USER_ID` is a positive id |
 | `api_error` | Job Hunter API unreachable / unexpected response (issue #46) | Show detail; check `--api-base-url` and the backend |
 | `no_jobs` | API list empty after fetch-if-empty (issue #46) | Nothing to apply to — stop |
 | `already_applied` | Record exists with `status: applied` (guardrail #27) | Stop — duplicate apply refused |

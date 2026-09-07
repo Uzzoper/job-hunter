@@ -343,6 +343,15 @@ hermes:
   api-key: YOUR_HERMES_API_KEY   # equals the gateway API_SERVER_KEY
   model: default                 # model pinned on the Bot profile
   timeout-seconds: 120
+
+bot:
+  service:
+    # Static service token for bot API access (issue #47): the bot sends it
+    # via the X-Bot-Token header (no Bearer — CLI/webapp keep JWT login).
+    # Blank api-key disables the feature. Same value goes in the bot profile
+    # as api-token.txt.
+    api-key: ${BOT_SERVICE_API_KEY}
+    owner-user-id: ${BOT_SERVICE_OWNER_USER_ID}   # existing user the bot acts as
 ```
 
 > This file is in `.gitignore` and will never be committed.

@@ -27,9 +27,24 @@ hermes:
 bot:
   memory:
     dir: ${user.home}/.hermes/profiles/jobhunter-bot/memories
+  service:
+    # Static service token for bot API access (issue #47). Bot calls send it
+    # via the X-Bot-Token header; CLI/webapp keep the normal JWT login.
+    # The SAME value must be saved later in the bot profile (api-token.txt).
+    api-key: ${BOT_SERVICE_API_KEY}         # blank = bot token auth disabled
+    owner-user-id: ${BOT_SERVICE_OWNER_USER_ID}  # existing user the bot acts as
 ```
 
 Export `HERMES_API_KEY=YOUR_HERMES_API_KEY` before running the backend.
+
+**Service token (optional — for bot API access, issue #47):** the bot
+authenticates to the Job Hunter API with a static token via the
+`X-Bot-Token` header, while CLI/webapp keep `Authorization: Bearer` (JWT
+login). Generate the secret once and set both sides to the SAME value:
+`bot.service.api-key` here (env `BOT_SERVICE_API_KEY`) and later in the bot
+profile as `api-token.txt` (step 3 / step 5). `owner-user-id` must be a
+positive id (the `userId` from `POST /api/auth/login`) for the feature to
+engage; blank `api-key` keeps the old JWT-only behavior.
 
 ## 2. Verify backend-only mode (no bot required)
 
@@ -125,6 +140,7 @@ Expected layout afterwards:
 | `404` from the gateway | `base-url` missing the `/v1` suffix |
 | Requests hang until timeout | `approvals.mode` not `off` in profile `config.yaml` |
 | `401` / empty replies | `HERMES_API_KEY` differs from profile `API_SERVER_KEY` |
+| `401` on bot API calls (with a token) | `bot.service.api-key` on the backend differs from the profile's `api-token.txt` / `JOBHUNTER_API_TOKEN`, or `BOT_SERVICE_OWNER_USER_ID` is blank/0 so the filter is disabled | Compare both secrets (they must be the SAME value); confirm `BOT_SERVICE_OWNER_USER_ID` is a positive id |
 | `EMAIL_TOOL_MISSING` | himalaya missing/misconfigured for the profile |
 | Backend warns about memory dir | normal without a bot profile; set `bot.memory.dir` if custom |
 | Skill not found by the bot | re-run `scripts/install-bot-skills.sh`, check per-skill subdirs |
