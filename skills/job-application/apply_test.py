@@ -615,6 +615,198 @@ class DaemonExecutionTests(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
+# Issue #46 — API-first flow: Job Hunter API as the primary job source
+# (--job-id detail prefill / --from-api top-scored job / 401 clean JSON).
+# ---------------------------------------------------------------------------
+
+class ApiFirstTests(unittest.TestCase):
+    """apply.py API-first wiring (issue #46). The network boundary (job_api
+    functions) is mocked — never a real HTTP call. The classic --job-url flow
+    must stay untouched otherwise."""
+
+    API_JOB = {
+        "id": 7,
+        "title": "Desenvolvedor Java Pleno",
+        "company": "Acme Corp",
+        "url": "https://jobs.gupy.io/jobs/777-java-pleno",
+        "description": "Backend Java 21, Spring Boot",
+        "postedAt": "2026-09-01",
+        "source": "gupy",
+        "contactEmail": "rh@acme.example",
+    }
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.mem = Path(self.tmp.name)
+        self.profile_path = write_profile(self.mem)
+
+    def _run_api(self, *args):
+        """Run apply.run() in-process with the standard API-first flags and
+        capture (exit_code, stdout). --dry-run keeps the run off the browser."""
+        cmd = list(args) + [
+            "--profile", self.profile_path,
+            "--memory-dir", str(self.mem),
+            "--portal", "gupy",
+            "--dry-run",
+        ]
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            code = apply.run(cmd)
+        return code, buf.getvalue()
+
+    @unittest.mock.patch("apply.job_api.api_get_job")
+    @unittest.mock.patch("apply.job_api.resolve_token")
+    def test_job_id_prefills_url_title_company(self, mock_token, mock_get):
+        """--job-id fetches the detail and pre-fills jobUrl/title/company."""
+        mock_token.return_value = "tok-1"
+        mock_get.return_value = self.API_JOB
+        code, out = self._run_api("--job-id", "7")
+        self.assertEqual(code, 0)
+        plan = json.loads(out)
+        self.assertTrue(plan["ok"])
+        self.assertEqual(plan["jobUrl"], self.API_JOB["url"])
+        self.assertEqual(plan["jobTitle"], self.API_JOB["title"])
+        self.assertEqual(plan["jobCompany"], self.API_JOB["company"])
+        self.assertEqual(plan["jobId"], "777-java-pleno")
+        mock_get.assert_called_once()
+        base, token, jid = mock_get.call_args[0]
+        self.assertEqual(base, "http://localhost:8080")
+        self.assertEqual(token, "tok-1")
+        self.assertEqual(jid, 7)
+
+    @unittest.mock.patch("apply.job_api.pick_jobs_for_apply")
+    @unittest.mock.patch("apply.job_api.resolve_token")
+    def test_from_api_selects_top_job(self, mock_token, mock_pick):
+        """--from-api plans from the top-scored job returned by the API."""
+        mock_token.return_value = "tok-1"
+        jobs = [
+            {**self.API_JOB, "id": 8, "url": "https://jobs.gupy.io/jobs/888-a",
+             "matchScore": 90},
+            {**self.API_JOB, "id": 7, "url": "https://jobs.gupy.io/jobs/777-b",
+             "matchScore": 70},
+        ]
+        mock_pick.return_value = jobs
+        code, out = self._run_api("--from-api")
+        self.assertEqual(code, 0)
+        plan = json.loads(out)
+        self.assertTrue(plan["ok"])
+        self.assertEqual(plan["jobUrl"], jobs[0]["url"])
+        self.assertEqual(plan["jobTitle"], jobs[0]["title"])
+        self.assertEqual(plan["jobCompany"], jobs[0]["company"])
+        self.assertEqual(plan["jobId"], "888-a")
+        mock_pick.assert_called_once()
+        kwargs = mock_pick.call_args.kwargs
+        self.assertEqual(kwargs.get("fetch_if_empty"), True)
+        self.assertEqual(kwargs.get("portal"), "gupy")
+        self.assertIsNone(kwargs.get("min_score"))
+
+    @unittest.mock.patch("apply.job_api.pick_jobs_for_apply")
+    @unittest.mock.patch("apply.job_api.resolve_token")
+    def test_from_api_min_score_and_no_fetch_flags_forwarded(self, mock_token, mock_pick):
+        """--min-score and --no-fetch-if-empty are passed through to the picker."""
+        mock_token.return_value = "tok-1"
+        mock_pick.return_value = [self.API_JOB]
+        code, out = self._run_api(
+            "--from-api", "--min-score", "60", "--no-fetch-if-empty"
+        )
+        self.assertEqual(code, 0)
+        kwargs = mock_pick.call_args.kwargs
+        self.assertEqual(kwargs.get("min_score"), 60)
+        self.assertFalse(kwargs.get("fetch_if_empty"))
+
+    @unittest.mock.patch("apply.job_api.pick_jobs_for_apply")
+    @unittest.mock.patch("apply.job_api.resolve_token")
+    def test_from_api_custom_base_url_and_token(self, mock_token, mock_pick):
+        """--api-base-url and --api-token are forwarded to the picker."""
+        mock_token.return_value = "flag-tok"
+        mock_pick.return_value = [self.API_JOB]
+        code, out = self._run_api(
+            "--from-api", "--api-base-url", "http://10.0.0.1:9000",
+            "--api-token", "flag-tok",
+        )
+        self.assertEqual(code, 0)
+        kwargs = mock_pick.call_args.kwargs
+        self.assertEqual(kwargs.get("base_url"), "http://10.0.0.1:9000")
+        self.assertEqual(kwargs.get("token"), "flag-tok")
+
+    @unittest.mock.patch("apply.job_api.pick_jobs_for_apply")
+    @unittest.mock.patch("apply.job_api.resolve_token")
+    def test_401_maps_to_clean_json_exit_1(self, mock_token, mock_pick):
+        """401 → {"error": "unauthorized"} printed as clean JSON, exit 1."""
+        mock_token.return_value = "tok-1"
+        mock_pick.return_value = {
+            "error": "unauthorized", "detail": "401 Unauthorized",
+        }
+        code, out = self._run_api("--from-api")
+        self.assertEqual(code, 1)
+        data = json.loads(out)
+        self.assertEqual(data["error"], "unauthorized")
+
+    @unittest.mock.patch("apply.job_api.resolve_token")
+    def test_missing_api_token_clean_json_exit_1(self, mock_token):
+        """Missing token → {"error": "missing_api_token"} clean JSON, exit 1."""
+        mock_token.return_value = {
+            "error": "missing_api_token",
+            "detail": "Token da API do Job Hunter não encontrado.",
+        }
+        code, out = self._run_api("--from-api")
+        self.assertEqual(code, 1)
+        data = json.loads(out)
+        self.assertEqual(data["error"], "missing_api_token")
+
+    @unittest.mock.patch("apply.job_api.resolve_token")
+    def test_classic_job_url_flow_does_not_call_api(self, mock_token):
+        """No API flags → behavior unchanged, job_api is never touched."""
+        code, out = self._run_api("--job-url", GUPY_URL)
+        self.assertEqual(code, 0)
+        plan = json.loads(out)
+        self.assertEqual(plan["jobUrl"], GUPY_URL)
+        self.assertNotIn("jobTitle", plan)
+        self.assertNotIn("jobCompany", plan)
+        mock_token.assert_not_called()
+
+    def test_from_api_requires_profile(self):
+        """API-first still requires --profile (the apply data)."""
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            code = apply.run(["--from-api"])
+        self.assertEqual(code, 2)
+        data = json.loads(buf.getvalue())
+        self.assertEqual(data["error"], "usage")
+
+    def test_parse_args_api_defaults(self):
+        args = apply.parse_args([])
+        self.assertIsNone(args.job_id)
+        self.assertIsNone(args.api_token)
+        self.assertIsNone(args.profile_dir)
+        self.assertIsNone(args.min_score)
+        self.assertEqual(args.api_base_url, "http://localhost:8080")
+        self.assertTrue(args.fetch_if_empty)
+        self.assertFalse(args.from_api)
+
+    def test_parse_args_api_flags_parsed(self):
+        args = apply.parse_args([
+            "--job-id", "42",
+            "--api-base-url", "http://10.0.0.1:9000",
+            "--api-token", "abc",
+            "--profile-dir", "/tmp/prof",
+            "--min-score", "60",
+            "--from-api",
+        ])
+        self.assertEqual(args.job_id, "42")
+        self.assertEqual(args.api_base_url, "http://10.0.0.1:9000")
+        self.assertEqual(args.api_token, "abc")
+        self.assertEqual(args.profile_dir, "/tmp/prof")
+        self.assertEqual(args.min_score, 60)
+        self.assertTrue(args.from_api)
+
+    def test_parse_args_no_fetch_if_empty(self):
+        args = apply.parse_args(["--no-fetch-if-empty"])
+        self.assertFalse(args.fetch_if_empty)
+
+
+# ---------------------------------------------------------------------------
 # --auto-apply (issue #42)
 # ---------------------------------------------------------------------------
 
