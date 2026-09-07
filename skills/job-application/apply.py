@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-apply.py — structured job-portal application planner for the Hermes bot (issues #37, #38, #39, #41, #42, #45).
+apply.py — structured job-portal application planner for the Hermes bot (issues #37, #38, #39, #41, #42, #45, #46).
 
 Plans a portal application as an ordered ACTION PLAN (JSON) that the bot executes
 through its browser tool. This script validates inputs, enforces guardrails
@@ -11,6 +11,14 @@ confirmation, skips the manual confirm_checkpoint, and keeps the screenshot +
 record audit trail (#42). Domain-specific portal helpers (#45) turn the portal
 YAML mapping into the flow steps (click_apply_button → fill_form →
 handle_cover_letter → submit with always-gated confirmation).
+
+# Issue #46 — API-first: the Job Hunter REST API is the PRIMARY job source.
+# The bot plans from top-scored DB jobs (--from-api) or a specific job detail
+# (--job-id <id>), prefilling jobUrl/title/company into the plan via
+# job_api.py. --api-base-url / --api-token / --profile-dir / --min-score /
+# --fetch-if-empty configure the API call. The long-lived token is registered
+# ONCE by the human (never stored in this repo). The classic --job-url flow is
+# unchanged otherwise.
 
 # Issue #45 — domain-specific portal helpers: apply.py loads the per-portal
 # YAML mapping (portals/<portal>.yaml) AND the matching helper module
@@ -46,6 +54,8 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from navigation import MAX_VISITS, SESSION_EXPIRED_DETAIL, guard_from_cli, verify_session  # issues #38, #41
 
+import job_api  # issue #46 — Job Hunter API as the PRIMARY job source
+
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
@@ -59,6 +69,9 @@ APPLICATIONS_SUBDIR = "applications"
 SCREENSHOTS_SUBDIR = "screenshots"
 APPLIED_STATUS = "applied"
 REFUSAL_MARKER = "NO_APPLY"
+
+# Issue #46 — Job Hunter API-first flow: base URL of the Spring Boot backend.
+DEFAULT_API_BASE_URL = "http://localhost:8080"
 
 # Issue #43 — verification methods. Default is screenshot (behavior unchanged);
 # "ax" asks the executor to verify via the accessibility tree instead.
@@ -460,7 +473,9 @@ def build_action_plan(profile: Dict[str, Any], portal_cfg: Dict[str, Any],
                       session_expired: bool = False,
                       login_url: Optional[str] = None,
                       auto_apply: bool = False,
-                      verify_with: str = "screenshot") -> Dict[str, Any]:
+                      verify_with: str = "screenshot",
+                      job_title: Optional[str] = None,
+                      job_company: Optional[str] = None) -> Dict[str, Any]:
     """Emit the ordered action plan steps (session check / batch fill / screenshot / checkpoint / submit).
 
     Issue #41 — the session expiry gate: when ``session_check_enabled`` the
@@ -475,6 +490,10 @@ def build_action_plan(profile: Dict[str, Any], portal_cfg: Dict[str, Any],
         user ``confirm_checkpoint``, keeping the ``screenshot`` and record steps
         for the audit trail.  Auto-apply never bypasses the (#41) session gate,
         (#28) refusal block, or (#27) idempotency — those are enforced upstream.
+
+    Issue #46 — when the job came from the Job Hunter API, *job_title* and
+    *job_company* are emitted as ``jobTitle`` / ``jobCompany`` plan metadata
+    (prefilled from GET /api/jobs/{id} or the top-scored list job).
     """
     steps: List[Dict[str, Any]] = []
     step_no = 0
@@ -518,6 +537,10 @@ def build_action_plan(profile: Dict[str, Any], portal_cfg: Dict[str, Any],
             "autoApply": auto_apply,
             "steps": steps,
         }
+        if job_title is not None:
+            plan["jobTitle"] = job_title
+        if job_company is not None:
+            plan["jobCompany"] = job_company
         pattern = portal_cfg.get("form_url_pattern")
         if pattern:
             plan["form_url"] = str(pattern).format(job_id=job_id)
@@ -594,6 +617,10 @@ def build_action_plan(profile: Dict[str, Any], portal_cfg: Dict[str, Any],
         "autoApply": auto_apply,
         "steps": steps,
     }
+    if job_title is not None:
+        plan["jobTitle"] = job_title
+    if job_company is not None:
+        plan["jobCompany"] = job_company
     pattern = portal_cfg.get("form_url_pattern")
     if pattern:
         plan["form_url"] = str(pattern).format(job_id=job_id)
@@ -696,6 +723,26 @@ def parse_args(argv: Optional[List[str]]):
     # like "linkedin" trips our clean exit-1 unknown_portal error, not argparse
     # choices which would exit 2 and break that contract).
     parser.add_argument("--portal", default="gupy")
+    # Issue #46 — API-first flow. The Job Hunter API is the PRIMARY job source:
+    # --from-api plans from the top-scored DB job, --job-id from GET /api/jobs/{id}.
+    parser.add_argument("--job-id", default=None,
+                        help="issue #46: Job Hunter API job id; fetches the detail and prefills job_url/title/company into the plan (takes precedence over --from-api)")
+    parser.add_argument("--from-api", action="store_true",
+                        help="issue #46: pick the top-scored job from GET /api/jobs instead of --job-url (empty list triggers a fetch — see --fetch-if-empty)")
+    parser.add_argument("--api-base-url", default=DEFAULT_API_BASE_URL,
+                        help=f"issue #46: Job Hunter API base URL (default: {DEFAULT_API_BASE_URL})")
+    parser.add_argument("--api-token", default=None,
+                        help="issue #46: Job Hunter API token (overrides JOBHUNTER_API_TOKEN env and <profile-dir>/api-token.txt)")
+    parser.add_argument("--profile-dir", default=None,
+                        help="issue #46: bot profile dir holding api-token.txt (default ~/.hermes/profiles/jobhunter-bot)")
+    parser.add_argument("--min-score", type=int, default=None,
+                        help="issue #46: minimum match score filter forwarded to GET /api/jobs (minScore)")
+    parser.add_argument("--fetch-if-empty", dest="fetch_if_empty",
+                        action="store_true", default=True,
+                        help="issue #46: when the API list is empty, trigger a fetch and re-list (default)")
+    parser.add_argument("--no-fetch-if-empty", dest="fetch_if_empty",
+                        action="store_false",
+                        help="issue #46: do not trigger a fetch when the API list is empty")
     parser.add_argument("--memory-dir")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--confirmed", action="store_true")
@@ -759,10 +806,25 @@ def run(argv: Optional[List[str]] = None) -> int:
         )))
         return 2
 
-    if not args.job_url or not args.profile:
+    # Issue #46 — API-first: the job URL may come from the Job Hunter API
+    # (--job-id detail or --from-api top-scored job) instead of --job-url.
+    # --job-id is the most specific source; it wins when both are supplied.
+    api_mode = args.from_api or bool((args.job_id or "").strip())
+    job_url: Optional[str] = args.job_url
+    job_title: Optional[str] = None
+    job_company: Optional[str] = None
+
+    if not api_mode and not args.job_url:
         print(json.dumps(build_error(
             "usage",
-            "required arguments: --job-url, --profile <json>",
+            "required arguments: --profile <json> plus one of --job-url | --from-api | --job-id",
+            memory_dir=memory_dir,
+        )))
+        return 2
+    if not args.profile:
+        print(json.dumps(build_error(
+            "usage",
+            "required arguments: --profile <json> plus one of --job-url | --from-api | --job-id",
             memory_dir=memory_dir,
         )))
         return 2
@@ -799,11 +861,65 @@ def run(argv: Optional[List[str]] = None) -> int:
         )))
         return 1
 
-    job_id = derive_job_id(args.job_url)
+    # Issue #46 — resolve the job from the Job Hunter API when API-first mode
+    # is active. Every failure (missing token, 401, unknown job id, empty
+    # list after fetch-if-empty) prints clean JSON and exits 1 — never a
+    # traceback on the bot side.
+    if api_mode:
+        token = job_api.resolve_token(args.api_token, profile_dir=args.profile_dir)
+        if isinstance(token, dict):
+            print(json.dumps(token, ensure_ascii=False))
+            return 1
+        base_url = args.api_base_url or DEFAULT_API_BASE_URL
+        if bool((args.job_id or "").strip()):
+            try:
+                job_id_int = int(args.job_id)
+            except ValueError:
+                print(json.dumps(build_error(
+                    "usage",
+                    f"--job-id must be a numeric Job Hunter job id, got: {args.job_id}",
+                    memory_dir=memory_dir,
+                )))
+                return 1
+            api_job = job_api.api_get_job(base_url, token, job_id_int)
+            if isinstance(api_job, dict) and "error" in api_job:
+                print(json.dumps(api_job, ensure_ascii=False))
+                return 1
+        else:
+            jobs = job_api.pick_jobs_for_apply(
+                base_url=base_url,
+                token=token,
+                min_score=args.min_score,
+                fetch_if_empty=args.fetch_if_empty,
+                portal=args.portal,
+            )
+            if isinstance(jobs, dict) and "error" in jobs:
+                print(json.dumps(jobs, ensure_ascii=False))
+                return 1
+            if not jobs:
+                print(json.dumps(build_error(
+                    "no_jobs",
+                    "no jobs available from the Job Hunter API after fetch-if-empty; nothing to apply to",
+                    memory_dir=memory_dir,
+                )))
+                return 1
+            api_job = jobs[0]
+        if not isinstance(api_job, dict):
+            print(json.dumps(build_error(
+                "api_error",
+                "unexpected job payload from the Job Hunter API",
+                memory_dir=memory_dir,
+            )))
+            return 1
+        job_url = str(api_job.get("url") or "")
+        job_title = api_job.get("title")
+        job_company = api_job.get("company")
+
+    job_id = derive_job_id(job_url)
     if not job_id:
         print(json.dumps(build_error(
             "invalid_job_url",
-            f"could not derive a job id from url: {args.job_url}",
+            f"could not derive a job id from url: {job_url}",
             memory_dir=memory_dir,
         )))
         return 1
@@ -843,20 +959,22 @@ def run(argv: Optional[List[str]] = None) -> int:
     session_login_url: Optional[str] = None
     if session_check_enabled:
         session_result = verify_session(
-            args.current_url, login_hint_url=args.job_url,
+            args.current_url, login_hint_url=job_url,
         )
         session_expired = session_result["session"] == "expired"
         session_login_url = session_result.get("login_url")
 
     if session_expired:
         plan = build_action_plan(
-            profile, portal_cfg, job_id, args.job_url,
+            profile, portal_cfg, job_id, job_url,
             confirmed=args.confirmed, memory_dir=memory_dir, dry_run=args.dry_run,
             session_check_enabled=True,
             session_expired=True,
             login_url=session_login_url,
             auto_apply=args.auto_apply,
             verify_with=args.verify_with,
+            job_title=job_title,
+            job_company=job_company,
         )
         print(json.dumps(plan, ensure_ascii=False, indent=2))
         return 0
@@ -865,7 +983,7 @@ def run(argv: Optional[List[str]] = None) -> int:
     # a login page or is stuck re-visiting the same URL, stop early and hand the
     # task back to the human with a direct link + screenshot hint. The guard is
     # stateless: history is supplied via --visited-urls each invocation.
-    guard = guard_from_cli(args.job_url, args.current_url, args.visited_urls)
+    guard = guard_from_cli(job_url, args.current_url, args.visited_urls)
     if guard.get("block") in ("auth_required", "navigation_loop"):
         code = guard["block"]
         detail = _guard_detail(code, guard)
@@ -876,7 +994,7 @@ def run(argv: Optional[List[str]] = None) -> int:
             detail,
             memory_dir=memory_dir,
             job_id=job_id,
-            manual_url=guard.get("manual_url") or args.job_url,
+            manual_url=guard.get("manual_url") or job_url,
             visited_count=guard.get("visits"),
         )))
         return 1
@@ -893,12 +1011,14 @@ def run(argv: Optional[List[str]] = None) -> int:
         return 1
 
     plan = build_action_plan(
-        profile, portal_cfg, job_id, args.job_url,
+        profile, portal_cfg, job_id, job_url,
         confirmed=args.confirmed, memory_dir=memory_dir, dry_run=args.dry_run,
         session_check_enabled=session_check_enabled,
         session_expired=False,
         auto_apply=args.auto_apply,
         verify_with=args.verify_with,
+        job_title=job_title,
+        job_company=job_company,
     )
 
     # Record the application after a confirmed/auto run, or on explicit
@@ -922,7 +1042,7 @@ def run(argv: Optional[List[str]] = None) -> int:
         if reachable and connected:
             try:
                 job_id_remote = submit_to_daemon(
-                    args.daemon_url, args.job_url, plan.get("steps")
+                    args.daemon_url, job_url, plan.get("steps")
                 )
                 plan["executor"] = {
                     "via": "cdp-daemon",
