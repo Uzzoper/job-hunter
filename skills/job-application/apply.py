@@ -69,6 +69,14 @@ DEFAULT_CDP_URL = "http://localhost:9222"
 DEFAULT_USER_DATA_DIR = "~/.chromium-profile-cdp"
 CDP_RECHECK_DELAY = 3  # seconds to wait after starting Chromium before re-checking CDP
 
+# Issue #44 — optional CDP daemon delegation (skills/cdp-daemon).
+# When --daemon-url is passed and the daemon /health reports cdp_connected, the
+# action plan is submitted via POST /jobs and the printed plan carries an
+# "executor" metadata block. Never a hard dependency: absent flag or an
+# unreachable daemon falls back to the direct plan (with a warning field).
+DEFAULT_DAEMON_TIMEOUT = 3.0  # seconds for /health and /jobs HTTP calls
+
+
 # Gupy job URLs look like https://<portal>.gupy.io/jobs/<id-slug>
 JOB_SLUG_RE = re.compile(r"/jobs/([^/?#]+)")
 
@@ -624,14 +632,59 @@ def _guard_detail(block: str, guard: Dict[str, Any]) -> str:
             "this looks like a navigation loop. Open the job manually and finish "
             f"the application by hand: {manual}"
         )
-    return (
+        return (
         "navigation loop detected: same page visited repeatedly. Open the job "
         f"manually and finish the application by hand: {manual}"
     )
 
 
 # ---------------------------------------------------------------------------
+# Issue #44 — CDP daemon delegation (thin, optional).
+# ---------------------------------------------------------------------------
+
+def daemon_health(daemon_url: str, timeout: float = DEFAULT_DAEMON_TIMEOUT
+                  ) -> Tuple[bool, bool]:
+    """GET <daemon_url>/health.
+
+    Returns ``(reachable, cdp_connected)``. ``reachable`` is False when the
+    daemon is down or unreachable; ``cdp_connected`` tells whether the daemon
+    holds a warm WebSocket to Chrome. Never raises.
+    """
+    url = daemon_url.rstrip("/") + "/health"
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as resp:
+            data = json.loads(resp.read())
+        return True, bool(data.get("cdp_connected"))
+    except Exception:
+        return False, False
+
+
+def submit_to_daemon(daemon_url: str, job_url: str,
+                     action_plan: Optional[List[Dict[str, Any]]],
+                     timeout: float = DEFAULT_DAEMON_TIMEOUT) -> str:
+    """POST <daemon_url>/jobs with ``{job_url, action_plan}``.
+
+    Returns the daemon-issued job_id, or raises on any transport/HTTP error so
+    the caller can fall back to the direct plan (issue #44 non-goal: we never
+    treat a submission error as a hard failure).
+    """
+    url = daemon_url.rstrip("/") + "/jobs"
+    body = json.dumps(
+        {"job_url": job_url, "action_plan": action_plan or []},
+        ensure_ascii=False,
+    ).encode("utf-8")
+    req = urllib.request.Request(
+        url, data=body, method="POST",
+        headers={"Content-Type": "application/json"},
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return json.loads(resp.read())["job_id"]
+
+
+# ---------------------------------------------------------------------------
 # CLI
+
+
 # ---------------------------------------------------------------------------
 
 def parse_args(argv: Optional[List[str]]):
@@ -670,6 +723,10 @@ def parse_args(argv: Optional[List[str]]):
     # exit-2 usage error instead of argparse printing to stderr.
     parser.add_argument("--verify-with", default="screenshot",
                         help="verification method for fill/submit steps: screenshot (default) or ax")
+    # Issue #44 — optional CDP daemon delegation. Environment variable for the
+    # daemon base URL, real CLI flag is --daemon-url (default None = direct plan).
+    parser.add_argument("--daemon-url", default=None,
+                        help="CDP daemon HTTP base URL (issue #44): when /health reports cdp_connected the plan is submitted via POST /jobs and printed with an 'executor' block; otherwise falls back to the direct plan")
     return parser.parse_args(argv)
 
 
@@ -853,6 +910,35 @@ def run(argv: Optional[List[str]] = None) -> int:
             memory_dir, job_id, profile, portal_cfg.get("portal"), shot
         )
         plan["recorded"] = record
+
+    # Issue #44 — optional CDP daemon delegation. Only on the normal plan path
+    # (never on the session_expired stop-ask-human path). When the flag is set
+    # AND the daemon reports cdp_connected we submit the plan and attach an
+    # "executor" metadata block while STILL printing the plan (the bot decides).
+    # An unreachable/not-connected daemon falls back to the direct plan with a
+    # warning field. Absent flag = behavior unchanged.
+    if args.daemon_url:
+        reachable, connected = daemon_health(args.daemon_url)
+        if reachable and connected:
+            try:
+                job_id_remote = submit_to_daemon(
+                    args.daemon_url, args.job_url, plan.get("steps")
+                )
+                plan["executor"] = {
+                    "via": "cdp-daemon",
+                    "daemon_url": args.daemon_url,
+                    "job_id": job_id_remote,
+                }
+            except Exception:
+                plan["daemon_fallback"] = {
+                    "reason": "submission_failed",
+                    "detail": "Não foi possível enviar a aplicação ao daemon CDP; plano executado diretamente.",
+                }
+        else:
+            plan["daemon_fallback"] = {
+                "reason": "unreachable",
+                "detail": "Daemon CDP indisponível ou sem conexão com o Chrome; plano executado diretamente.",
+            }
 
     print(json.dumps(plan, ensure_ascii=False, indent=2))
     return 0
