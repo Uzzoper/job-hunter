@@ -448,6 +448,67 @@ class FillFormTests(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
+# --verify-with (issue #43) — replace screenshot verification with AX tree
+# ---------------------------------------------------------------------------
+
+class VerifyWithTests(unittest.TestCase):
+    """--verify-with {screenshot,ax} controls the verification metadata on the
+    fill_form / submit steps; default screenshot keeps behavior unchanged; an
+    invalid mode errors cleanly."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.mem = Path(self.tmp.name)
+        self.profile_path = write_profile(self.mem)
+
+    def _fill_form(self, result):
+        return next(s for s in result.data["steps"] if s["type"] == "fill_form")
+
+    def _submit(self, result):
+        return next(s for s in result.data["steps"] if s["type"] == "submit")
+
+    def test_default_mode_is_screenshot(self):
+        result = run_cli(self.mem, self.profile_path, "--confirmed")
+        self.assertEqual(result.code, 0)
+        self.assertEqual(self._fill_form(result)["verification"],
+                         {"method": "screenshot", "ax_query": None})
+        self.assertEqual(self._submit(result)["verification"],
+                         {"method": "screenshot", "ax_query": None})
+
+    def test_verify_with_ax_emits_ax_metadata(self):
+        result = run_cli(self.mem, self.profile_path,
+                         "--verify-with", "ax", "--confirmed")
+        self.assertEqual(result.code, 0)
+        ff = self._fill_form(result)["verification"]
+        self.assertEqual(ff["method"], "ax")
+        self.assertIsNotNone(ff["ax_query"])
+        submit = self._submit(result)["verification"]
+        self.assertEqual(submit["method"], "ax")
+        self.assertIsNotNone(submit["ax_query"])
+
+    def test_verify_with_ax_fill_form_query(self):
+        result = run_cli(self.mem, self.profile_path, "--verify-with", "ax")
+        ff = self._fill_form(result)["verification"]
+        self.assertEqual(ff["method"], "ax")
+        self.assertIn("role", ff["ax_query"])
+
+    def test_invalid_verify_with_errors_cleanly(self):
+        result = run_cli(self.mem, self.profile_path, "--verify-with", "banana")
+        self.assertEqual(result.code, 2)
+        self.assertEqual(result.data["error"], "usage")
+        self.assertIn("banana", result.data["detail"])
+
+    def test_parse_args_verify_with_default_screenshot(self):
+        args = apply.parse_args([])
+        self.assertEqual(args.verify_with, "screenshot")
+
+    def test_parse_args_verify_with_ax(self):
+        args = apply.parse_args(["--verify-with", "ax"])
+        self.assertEqual(args.verify_with, "ax")
+
+
+# ---------------------------------------------------------------------------
 # --auto-apply (issue #42)
 # ---------------------------------------------------------------------------
 
