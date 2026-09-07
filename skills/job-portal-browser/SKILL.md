@@ -35,7 +35,8 @@ again to *discover* listings is redundant work.
 ### `job_api` integration
 
 The bot profile carries a companion module: `skills/job-application/job_api.py`
-(stdlib-only, JWT Bearer). Its functions mirror this skill's needs:
+(stdlib-only, `X-Bot-Token` service auth — issue #47). Its functions mirror
+this skill's needs:
 
 | Need | Call |
 |---|---|
@@ -45,27 +46,26 @@ The bot profile carries a companion module: `skills/job-application/job_api.py`
 | List → fetch-if-empty → re-list → top job | `job_api.pick_jobs_for_apply(base_url, token, ...)` |
 
 A 401 anywhere maps to `{"error": "unauthorized"}` — the bot should surface
-that and ask the human to regenerate the token (see the one-time setup below).
+that and ask the human to verify the secret matches `bot.service.api-key`
+(see the service-token setup below).
 
-### curl examples (one-time token setup)
+### curl examples (service-token setup)
 
 ```bash
-# 1) one-time login; save the returned token to bot memory (never the repo):
-curl -s -X POST http://localhost:8080/api/auth/login \
-  -H 'Content-Type: application/json' \
-  -d '{"email":"you@example.com","password":"********"}'
+# 1) generate the service token once (the SAME value goes on both sides):
+openssl rand -hex 24
 
-# 2) use the token:
-TOKEN="<paste token here>"   # or stored in ~/.hermes/profiles/jobhunter-bot/api-token.txt
+# 2) use it (backend bot.service.api-key must hold the same secret, issue #47):
+TOKEN="<the same secret>"   # or stored in ~/.hermes/profiles/jobhunter-bot/api-token.txt
 
 # List jobs with a contact email (the API's real query param is hasEmail):
-curl -s http://localhost:8080/api/jobs?hasEmail=true -H "Authorization: Bearer $TOKEN"
+curl -s http://localhost:8080/api/jobs?hasEmail=true -H "X-Bot-Token: $TOKEN"
 
 # Single job detail (id, title, company, url, description, postedAt, source, contactEmail):
-curl -s http://localhost:8080/api/jobs/7 -H "Authorization: Bearer $TOKEN"
+curl -s http://localhost:8080/api/jobs/7 -H "X-Bot-Token: $TOKEN"
 
 # Trigger a scrape when the list is empty (default portal gupy):
-curl -s -X POST http://localhost:8080/api/jobs/fetch/gupy -H "Authorization: Bearer $TOKEN"
+curl -s -X POST http://localhost:8080/api/jobs/fetch/gupy -H "X-Bot-Token: $TOKEN"
 ```
 
 The token lives in bot memory (`~/.hermes/profiles/jobhunter-bot/api-token.txt`
@@ -78,6 +78,39 @@ or `JOBHUNTER_API_TOKEN`); no credential is ever stored in this repository.
 - `apply` → when the job id is known from the API (`--job-id`) the browser
   session/tab resumes the application form directly — no browsing around to find
   the listing again.
+
+### Listing jobs (API-first — the fixed procedure)
+
+The bot's job-discovery flow is **fixed**: run this sequence exactly once per
+request, present the result, and stop. Do not improvise, retry, or loop back
+to "find more" — a surprising result is reported to the user, never repaired
+by re-browsing portals within the same flow.
+
+1. **List** — `GET /api/jobs?hasEmail=true&minScore=<threshold>` with the
+   `X-Bot-Token` header (`job_api.api_list_jobs`). `hasEmail=true` is always
+   sent, so only jobs with a contact email are considered.
+2. **Empty → fetch + re-list once** — if the list is empty, `POST
+   /api/jobs/fetch` (all providers), then re-list. Still empty → report
+   "nothing to apply to" and stop — no re-fetch, no browser pass here.
+3. **Join scores/analyses** — pair each listing with its stored AI analysis
+   (`matchScore`, matched/missing skills, company tone) when present; a job
+   without an analysis is marked `unanalyzed` — offer analysis as the next
+   step instead of analyzing silently.
+4. **Filter dev roles** — keep dev/engineering roles (title/skills contain
+   dev, developer, software, backend, frontend, full-stack, java, ...),
+   honoring bot-memory preferences (excluded companies, location,
+   remote-only). Non-dev roles are dropped from the table — never applied to
+   by accident.
+5. **Present a ranked table** — score descending, columns:
+   `# | title | company | match | contact | draft status` (draft status:
+   `none` / `draft` / `applied`), followed by **observations** (strongest and
+   weakest match, missing skills to address in the cover letter).
+6. **Ask ONE next-step question** — e.g. *"Analyze `<job>` (match `<n>`)? Or
+   draft the application email?"* — one question, then wait for the answer.
+
+> Rule: this procedure replaces improvisation — there are **no self-correction
+> loops**. If the data looks wrong, present what exists and ask the user how
+> to proceed.
 
 ---
 
