@@ -47,6 +47,7 @@ This is the **structured counterpart** to the free-form `job-portal-browser` nav
 | session expiry | `--skip-session-check` | flag | no | Issue #41: skip the session expiry gate (also skipped on `--dry-run`) |
 | browser recovery | `--cdp-url`, `--user-data-dir` | URL / dir path | no | Issue #39: CDP endpoint (default `http://localhost:9222`, also from `portals/gupy.yaml` `cdp_url` key) and persistent Chromium profile dir (default `~/.chromium-profile-cdp`) |
 | status check | `--check-browser` | flag | no | Issue #39: print browser status as JSON and exit — no action plan required |
+| verification | `--verify-with` | string | no (default `screenshot`) | Issue #43: `screenshot` (default) or `ax` — how the executor verifies `fill_form`/`submit` steps. Invalid modes error cleanly |
 
 Profile JSON:
 
@@ -130,6 +131,41 @@ All helper functions are **pure** (return action dicts; no browser/network I/O) 
 Signature parity between `gupy.py` and `infojobs.py` is enforced by `helpers_test.py`. The `helpers` package imports lazily: `import helpers` never pulls in a portal module.
 
 > **LinkedIn is deliberately absent** (no `helpers/linkedin.py`, no `portals/linkedin.yaml`). Applications on LinkedIn are manual-only; the LinkedIn scraper microservice is read-only. `--portal linkedin` → `unknown_portal`.
+
+---
+
+## Verification hierarchy (issue #43)
+
+After a `fill_form` / `submit` step, the executor verifies the page state instead of relying on an LLM-vision screenshot by default. `apply.py` emits a `"verification"` object on each `fill_form` and `submit` step telling the executor how (and, for AX, what) to check:
+
+```json
+{"verification": {"method": "screenshot", "ax_query": null}}
+{"verification": {"method": "ax", "ax_query": {"role": "button", "name": "Enviar"}}}
+```
+
+- **`--verify-with screenshot` (default)** — behavior unchanged: the executor captures a screenshot. `ax_query` is `null`.
+- **`--verify-with ax`** — the executor verifies via the **accessibility tree** (fast, no LLM vision cost). The `ax_query` is a best-effort hint interpreted against the tree:
+  - `fill_form` → `{"role": "textbox"}` (at least one editable field present)
+  - `submit` → `{"role": "button", "name": "Enviar"}` (confirm control present before submitting)
+
+### `ax_tree.py` (new module, issue #43)
+
+`ax_tree.py` (stdlib: `urllib`, `json`, `typing` only — separate from `navigation.py`, which stays stateless by design and never touches the network) provides:
+
+| Function | Purpose |
+|---|---|
+| `fetch_ax_tree(cdp_url, timeout=5, cdp_post=None)` | Fetch + normalize the AX tree via an **injected** `cdp_post(method, params)` transport. No transport → `{"error": "cdp_transport_required"}`; transport failure → `{"error": "ax_fetch_failed", "detail": ...}`; success → `{"nodes": [...]}` |
+| `snapshot_from_cdp_response(payload)` | Pure parser: flatten a CDP `Accessibility.getFullAXTree` payload into `[{role, name, value, backendNodeId, ignored}]`, **skipping ignored nodes** |
+| `find_in_ax_tree(nodes, query)` | Pure search: case-insensitive substring over `role`+`name`+`value`. `query` is a string or a dict like `{"role": "button", "name": "Enviar"}`. Empty/no-match → `[]` |
+
+Because stdlib has no WebSocket client, this module does **not** own a CDP session: the bot (which has a real CDP/WebSocket transport) injects `cdp_post`, and tests inject fakes. The exposed `getFullAXTree` is the CDP HTTP-readable surface stub; in practice the transport is bot-side.
+
+### Hierarchy
+
+1. **AX tree first (primary)** — fast, no LLM vision cost, deterministic. Preferred for routine `fill_form` / `submit` verification.
+2. **Screenshot (fallback only)** — used for **errors, CAPTCHA, unexpected layout, and the final user confirmation**, where a human/LLM must visually confirm. Screenshot *steps* (the audit-trail capture before `confirm_checkpoint`, issue #42) are unchanged and independent of the verification method.
+
+> **Note:** the "50%+ faster" acceptance metric is measured on the bot host (manual benchmarking), not provable by unit tests. The unit suite here proves the AX parsing/searching and the plan metadata wiring only.
 
 ---
 
@@ -251,16 +287,18 @@ apply.py  ──► plan[0] = verify_session  (expect "not_auth_page")
         {"name": "phone",         "selector": "input[name='phone']",         "type": "fill",   "value": "+55 42 99833-1363"},
         {"name": "cv_upload",     "selector": "input[type='file']",          "type": "upload", "value": "/home/juan/cv.pdf"},
         {"name": "cover_letter",  "selector": "textarea[name='coverLetter']", "type": "fill",   "value": "Olá! ..."}
-    ]},
+    ],
+     "verification": {"method": "screenshot", "ax_query": null}},   <!-- issue #43: {"method": "ax", "ax_query": {"role": "textbox"}} with --verify-with ax -->
     {"step": 3, "type": "screenshot", "path": "<memory-dir>/screenshots/<id-slug>.png"},
     {"step": 4, "type": "confirm_checkpoint", "screenshot_path": "<...png>",
      "note": "PAUSE - do not continue until the user confirms every value and the screenshot"},
-    {"step": 5, "type": "submit", "selector": "button[type='submit']"}
+    {"step": 5, "type": "submit", "selector": "button[type='submit']",
+     "verification": {"method": "screenshot", "ax_query": null}}   <!-- issue #43 -->
   ]
 }
 ```
 
-Step types: `verify_session` (issue #41, always first unless `--skip-session-check`), `fill_form` (issue #42 — single batch step for all non-submit fields; executor contract: **one browser call**), `screenshot`, `confirm_checkpoint`, `submit`.
+Step types: `verify_session` (issue #41, always first unless `--skip-session-check`), `fill_form` (issue #42 — single batch step for all non-submit fields; executor contract: **one browser call**), `screenshot`, `confirm_checkpoint`, `submit`. `fill_form` and `submit` carry a `"verification"` object (issue #43) controlling how the executor verifies the step — see "Verification hierarchy".
 
 ### `--auto-apply` plan (issue #42)
 
@@ -282,9 +320,9 @@ Step types: `verify_session` (issue #41, always first unless `--skip-session-che
   "sessionCheck": true, "sessionExpired": false, "autoApply": true,
   "steps": [
     {"step": 1, "type": "verify_session", "action": "verify_session", "url": "<job-url>", "expect": "not_auth_page", "on_expired": "ask_login_and_confirm"},
-    {"step": 2, "type": "fill_form", "action": "fill_form", "fields": [{"name": "name", "selector": "input[name='name']", "type": "fill", "value": "..."}, ...]},
+    {"step": 2, "type": "fill_form", "action": "fill_form", "fields": [{"name": "name", "selector": "input[name='name']", "type": "fill", "value": "..."}, ...], "verification": {"method": "screenshot", "ax_query": null}},
     {"step": 3, "type": "screenshot", "path": "<memory-dir>/screenshots/<id-slug>.png"},
-    {"step": 4, "type": "submit", "selector": "button[type='submit']"}
+    {"step": 4, "type": "submit", "selector": "button[type='submit']", "verification": {"method": "screenshot", "ax_query": null}}
   ]
 }
 ```
