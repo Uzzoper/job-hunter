@@ -10,6 +10,7 @@ import com.juanperuzzo.job_hunter.application.port.in.FetchSourceJobsUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.GenerateEmailUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.GetEmailDraftUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.GetJobUseCase;
+import com.juanperuzzo.job_hunter.application.port.in.JobWithDraftStatus;
 import com.juanperuzzo.job_hunter.application.port.in.ListJobsUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.ProviderFetchStats;
 import com.juanperuzzo.job_hunter.application.port.in.SendEmailUseCase;
@@ -56,6 +57,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.nullValue;
 
 @WebMvcTest(controllers = JobController.class, excludeAutoConfiguration = SecurityAutoConfiguration.class)
 @AutoConfigureMockMvc(addFilters = false)
@@ -199,15 +201,19 @@ class JobControllerTest {
     }
 
     @Test
-    @DisplayName("getAllJobs should return 200 with list of jobs")
+    @DisplayName("getAllJobs should return 200 with list of jobs carrying draftStatus")
     void getAllJobs_whenJobsExist_shouldReturn200() throws Exception {
         authenticateAs(1L);
 
         var jobs = List.of(
-                new Job(1L, "Java Dev", "Acme", "https://acme.com/job1", "Description 1", LocalDate.now(), "test"),
-                new Job(2L, "React Dev", "Beta", "https://beta.com/job2", "Description 2", LocalDate.now(), "test")
+                new JobWithDraftStatus(
+                        new Job(1L, "Java Dev", "Acme", "https://acme.com/job1", "Description 1", LocalDate.now(), "test"),
+                        EmailStatus.SENT),
+                new JobWithDraftStatus(
+                        new Job(2L, "React Dev", "Beta", "https://beta.com/job2", "Description 2", LocalDate.now(), "test"),
+                        null)
         );
-        when(listJobsUseCase.findAll()).thenReturn(jobs);
+        when(listJobsUseCase.findAllWithDraftStatus(1L, null, null)).thenReturn(jobs);
 
         mockMvc.perform(get("/api/jobs"))
                 .andExpect(status().isOk())
@@ -215,10 +221,12 @@ class JobControllerTest {
                 .andExpect(jsonPath("$.length()").value(2))
                 .andExpect(jsonPath("$[0].title").value("Java Dev"))
                 .andExpect(jsonPath("$[0].company").value("Acme"))
+                .andExpect(jsonPath("$[0].draftStatus").value("SENT"))
                 .andExpect(jsonPath("$[1].title").value("React Dev"))
-                .andExpect(jsonPath("$[1].company").value("Beta"));
+                .andExpect(jsonPath("$[1].company").value("Beta"))
+                .andExpect(jsonPath("$[1].draftStatus").value(nullValue()));
 
-        verify(listJobsUseCase).findAll();
+        verify(listJobsUseCase).findAllWithDraftStatus(1L, null, null);
     }
 
     @Test
@@ -226,14 +234,44 @@ class JobControllerTest {
     void getAllJobs_whenNoJobs_shouldReturn200EmptyList() throws Exception {
         authenticateAs(1L);
 
-        when(listJobsUseCase.findAll()).thenReturn(List.of());
+        when(listJobsUseCase.findAllWithDraftStatus(1L, null, null)).thenReturn(List.of());
 
         mockMvc.perform(get("/api/jobs"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$").isArray())
                 .andExpect(jsonPath("$.length()").value(0));
 
-        verify(listJobsUseCase).findAll();
+        verify(listJobsUseCase).findAllWithDraftStatus(1L, null, null);
+    }
+
+    @Test
+    @DisplayName("getAllJobs should pass excludeApplied=true to the use case and drop applied jobs")
+    void getAllJobs_whenExcludeAppliedTrue_shouldPassExcludeAppliedToUseCase() throws Exception {
+        authenticateAs(1L);
+
+        when(listJobsUseCase.findAllWithDraftStatus(1L, null, true)).thenReturn(List.of());
+
+        mockMvc.perform(get("/api/jobs").param("excludeApplied", "true"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$").isArray())
+                .andExpect(jsonPath("$.length()").value(0));
+
+        verify(listJobsUseCase).findAllWithDraftStatus(1L, null, true);
+    }
+
+    @Test
+    @DisplayName("getAllJobs should combine hasEmail and excludeApplied query params")
+    void getAllJobs_whenHasEmailAndExcludeApplied_shouldPassBothToUseCase() throws Exception {
+        authenticateAs(1L);
+
+        when(listJobsUseCase.findAllWithDraftStatus(1L, true, true)).thenReturn(List.of());
+
+        mockMvc.perform(get("/api/jobs").param("hasEmail", "true").param("excludeApplied", "true"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$").isArray())
+                .andExpect(jsonPath("$.length()").value(0));
+
+        verify(listJobsUseCase).findAllWithDraftStatus(1L, true, true);
     }
 
     @Test
@@ -250,7 +288,8 @@ class JobControllerTest {
                 .andExpect(jsonPath("$.title").value("Java Dev"))
                 .andExpect(jsonPath("$.company").value("Acme"))
                 .andExpect(jsonPath("$.url").value("https://acme.com/job"))
-                .andExpect(jsonPath("$.description").value("Description"));
+                .andExpect(jsonPath("$.description").value("Description"))
+                .andExpect(jsonPath("$.draftStatus").value(nullValue()));
 
         verify(getJobUseCase).getById(1L);
     }
