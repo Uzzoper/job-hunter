@@ -89,6 +89,7 @@ Then, inside `~/.hermes/profiles/jobhunter-bot/`:
 - **Standing instruction** in `SOUL.md`: send with
   `himalaya message compose --send --attach YourName.pdf` and reply only
   `EMAIL_SENT` / `EMAIL_TOOL_MISSING`.
+  Versioned source: `bot-profile/SOUL.md` — installed (never overwritten) by `scripts/install-bot-skills.sh`.
 - **Gateway keys** in the profile `.env`:
   `API_SERVER_KEY=YOUR_HERMES_API_KEY`, `API_SERVER_PORT=9119`.
 - **Approvals off** in the profile `config.yaml`
