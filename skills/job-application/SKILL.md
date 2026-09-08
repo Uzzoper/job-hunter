@@ -78,9 +78,11 @@ improvising, the bot runs this fixed bootstrap once and never asks again:
        owner-user-id: <your user id>   # from POST /api/auth/login
    ```
    (env form: `export BOT_SERVICE_API_KEY=<secret> BOT_SERVICE_OWNER_USER_ID=<id>`, then restart the service.)
-4. **Wait for the human** — the backend lifecycle stays **human**: secrets,
-   config edits and restarts are operator territory and deliberately NOT bot
-   actions. The human step is bounded to paste-secret + restart, nothing more.
+4. **Apply backend side** — plain Java setups: the human pastes secret +
+   owner id and restarts (operator territory, deliberately NOT bot actions).
+   Docker setups: `bash scripts/setup-bot-access.sh --compose-dir DIR
+   --recreate-backend` syncs the override env, recreates the backend, waits
+   healthy and verifies — full auto once the human passes the flags.
 5. **Verify** — when the human confirms, probe once:
    `curl -s http://localhost:8080/api/jobs?hasEmail=true
    -H "X-Bot-Token: <secret>"` — HTTP 200 means the token works.
