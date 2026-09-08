@@ -3,11 +3,15 @@ package com.juanperuzzo.job_hunter.application.service;
 import com.juanperuzzo.job_hunter.application.port.in.FetchJobsUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.FetchResult;
 import com.juanperuzzo.job_hunter.application.port.in.GetJobUseCase;
+import com.juanperuzzo.job_hunter.application.port.in.JobWithDraftStatus;
 import com.juanperuzzo.job_hunter.application.port.in.ListJobsUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.ProviderFetchStats;
+import com.juanperuzzo.job_hunter.application.port.out.EmailDraftRepository;
 import com.juanperuzzo.job_hunter.application.port.out.JobRepository;
 import com.juanperuzzo.job_hunter.application.port.out.ScraperPort;
 import com.juanperuzzo.job_hunter.domain.exception.JobNotFoundException;
+import com.juanperuzzo.job_hunter.domain.model.EmailDraft;
+import com.juanperuzzo.job_hunter.domain.model.EmailStatus;
 import com.juanperuzzo.job_hunter.domain.model.Job;
 
 import java.util.ArrayList;
@@ -18,10 +22,12 @@ public class FetchJobsService implements FetchJobsUseCase, ListJobsUseCase, GetJ
 
     private final ScraperPort scraperPort;
     private final JobRepository jobRepository;
+    private final EmailDraftRepository emailDraftRepository;
 
-    public FetchJobsService(ScraperPort scraperPort, JobRepository jobRepository) {
+    public FetchJobsService(ScraperPort scraperPort, JobRepository jobRepository, EmailDraftRepository emailDraftRepository) {
         this.scraperPort = scraperPort;
         this.jobRepository = jobRepository;
+        this.emailDraftRepository = emailDraftRepository;
     }
 
     @Override
@@ -74,6 +80,24 @@ public class FetchJobsService implements FetchJobsUseCase, ListJobsUseCase, GetJ
         return hasEmail
                 ? jobRepository.findAllByContactEmailIsNotNull()
                 : jobRepository.findAllByContactEmailIsNull();
+    }
+
+    @Override
+    public List<JobWithDraftStatus> findAllWithDraftStatus(Long userId, Boolean hasEmail, Boolean excludeApplied) {
+        // Deliberately a per-job lookup (1 draft query per listed job, i.e. N+1).
+        // At the current job-list scale this is negligible and keeps the change
+        // reuse-only; a single findByUserIdAndStatusIn(userId, ...) bulk lookup
+        // keyed by jobId replaces this if the list grows.
+        return findAll(hasEmail).stream()
+                .map(job -> new JobWithDraftStatus(job, draftStatus(job, userId)))
+                .filter(entry -> !Boolean.TRUE.equals(excludeApplied) || entry.draftStatus() != EmailStatus.SENT)
+                .toList();
+    }
+
+    private EmailStatus draftStatus(Job job, Long userId) {
+        return emailDraftRepository.findByJobIdAndUserId(job.id(), userId)
+                .map(EmailDraft::status)
+                .orElse(null);
     }
 
     @Override
