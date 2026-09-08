@@ -323,8 +323,8 @@ public class AppConfig {
     }
 
     @Bean
-    public FetchJobsService fetchJobsService(ScraperPort scraperPort, JobRepository jobRepository) {
-        return new FetchJobsService(scraperPort, jobRepository);
+    public FetchJobsService fetchJobsService(ScraperPort scraperPort, JobRepository jobRepository, EmailDraftRepository emailDraftRepository) {
+        return new FetchJobsService(scraperPort, jobRepository, emailDraftRepository);
     }
 
     @Bean
