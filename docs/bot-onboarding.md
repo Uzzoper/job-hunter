@@ -75,6 +75,18 @@ python3 skills/company-scraper/scraper_test.py
 python3 skills/job-application/apply_test.py
 ```
 
+### Listing API: applied status and contact emails
+
+`GET /api/jobs` returns all jobs by default and never hides jobs without a
+contact email — those go through the `company-scraper` skill instead.
+
+- **`excludeApplied=true`** — drops jobs that already have a sent draft.
+- **`draftStatus`** — per-job field in API responses: `SENT` means the job was
+  already applied to (a draft email was sent); `null` means no draft exists.
+- **`hasEmail` is opt-in** — the default list omits the filter entirely (all
+  jobs). Add `hasEmail=true` only on explicit request, when you want to see
+  jobs that carry a contact email.
+
 ## 3. Create the bot profile
 
 ```bash
@@ -104,6 +116,22 @@ Then, inside `~/.hermes/profiles/jobhunter-bot/`:
   ```
 - **Resume**: copy your CV into the profile and add the standing rule
   (see README "Resume attachment").
+
+### Merging SOUL updates (one-time, manual)
+
+When `bot-profile/SOUL.md` changes upstream, merge it by hand — never let a
+script auto-overwrite the live copy.
+
+1. Pull the branch: `git pull`.
+2. Read `bot-profile/SOUL.md` and compare it with
+   `~/.hermes/profiles/jobhunter-bot/SOUL.md`.
+3. Append any missing sections to the live SOUL, keeping the boilerplate and
+   the Resume block intact.
+4. Fill in the `Identity` values on the live copy.
+5. Show the final file before finishing.
+
+Rationale in one line: auto-overwriting would silently wipe your local edits
+(resume, identity) — merge manually.
 
 ## 4. Run the gateway as a service
 
@@ -139,9 +167,23 @@ Expected layout afterwards:
 │   ├── report-generator/     # progress reports (#35)
 │   ├── analyzer/             # pattern analysis (#35)
 │   ├── visualizer/           # funnel charts (#35)
-│   └── job-application/      # Gupy apply planner (#37)
+│   ├── job-application/      # Gupy apply planner (#37)
+│   └── cdp-daemon/           # persistent CDP daemon for batch applies (#44)
 └── memails/                  # enrichment + application records (created empty)
 ```
+
+### job_api client (job-application skill)
+
+`skills/job-application/apply.py` can pick the job from the Job Hunter API
+(issue #46) instead of taking a `--job-url`:
+
+- **`--job-id <id>`** — fetches `GET /api/jobs/{id}` and prefills the job
+  detail into the plan.
+- **`--from-api`** — picks the top-scored eligible job from `GET /api/jobs`
+  and applies to it.
+
+Token resolution order: `--api-token` flag > `JOBHUNTER_API_TOKEN` env var >
+`api-token.txt` in the bot profile.
 
 ## 6. Verify memory sync end to end (#31)
 
@@ -151,6 +193,22 @@ Expected layout afterwards:
    `GET /api/profile` should reflect the merged preference.
 4. Reject a role for a stated reason and confirm a new section is
    appended back to `MEMORY.md`.
+
+### Docker compose override (memory volume)
+
+When running the backend in Docker, the compose override must mount the host
+bot profile into the container:
+
+```
+~/.hermes/profiles/jobhunter-bot:/home/appuser/.hermes/profiles/jobhunter-bot:rw
+```
+
+- The container user is `appuser`, not `root` — mount at the `appuser` home
+  path or the profile is invisible.
+- The compose override also needs `network_mode: host` (or equivalent) so the
+  container can reach the gateway at `http://localhost:9119`.
+- Without the mount, `BotMemorySyncService` logs a warning and skips
+  memory sync.
 
 ## 7. Troubleshooting
 
@@ -201,6 +259,28 @@ unless you use the `job-application` skill (#37) against Gupy.
    curl -s http://localhost:9222/json/list | python3 -m json.tool
    ```
    You should see the Gupy tab listed.
+
+### CDP daemon (optional, systemd user unit)
+
+Instead of keeping a manual Chromium session open, you can run the persistent
+CDP daemon (`skills/cdp-daemon`, issue #44) as a systemd **user** unit. It is
+opt-in — the setup above works without it.
+
+1. Copy the unit into your user units:
+   ```bash
+   cp skills/cdp-daemon/jobhunter-cdp-daemon.service ~/.config/systemd/user/
+   ```
+2. Reload and enable/start it:
+   ```bash
+   systemctl --user daemon-reload
+   systemctl --user enable --now jobhunter-cdp-daemon.service
+   ```
+3. Health-check the daemon:
+   ```bash
+   curl -s http://127.0.0.1:19999/health
+   ```
+   `cdp_connected: false` is normal until a Chrome/CDP session is attached —
+   apply.py then falls back to a direct plan with a warning.
 
 ### Troubleshooting CDP
 
