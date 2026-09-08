@@ -141,7 +141,7 @@ class ListJobsTests(unittest.TestCase):
     """GET /api/jobs — real query names (hasEmail/minScore) + X-Bot-Token auth."""
 
     @unittest.mock.patch("urllib.request.urlopen")
-    def test_sends_bot_service_token_and_default_has_email_true(self, mock_urlopen):
+    def test_sends_bot_service_token_and_default_omits_has_email(self, mock_urlopen):
         mock_urlopen.return_value = _json_response([{"id": 1, "title": "x"}])
         result = job_api.api_list_jobs("http://localhost:8080", "tok-123")
         req = mock_urlopen.call_args[0][0]
@@ -149,13 +149,21 @@ class ListJobsTests(unittest.TestCase):
         self.assertEqual(_request_header(req, "X-Bot-Token"), "tok-123")
         self.assertIsNone(_request_header(req, "Authorization"))
         self.assertIn("api/jobs", req.full_url)
-        self.assertIn("hasEmail=true", req.full_url)
+        self.assertNotIn("hasEmail", req.full_url)
         self.assertEqual(result, [{"id": 1, "title": "x"}])
+
+    @unittest.mock.patch("urllib.request.urlopen")
+    def test_has_email_true_sent_as_true(self, mock_urlopen):
+        mock_urlopen.return_value = _json_response([])
+        job_api.api_list_jobs("http://localhost:8080", "t", has_email=True)
+        req = mock_urlopen.call_args[0][0]
+        self.assertIn("hasEmail=true", req.full_url)
+        self.assertNotIn("hasEmail=false", req.full_url)
 
     @unittest.mock.patch("urllib.request.urlopen")
     def test_min_score_maps_to_min_score_param(self, mock_urlopen):
         mock_urlopen.return_value = _json_response([])
-        job_api.api_list_jobs("http://localhost:8080", "t", min_score=70)
+        job_api.api_list_jobs("http://localhost:8080", "t", min_score=70, has_email=True)
         req = mock_urlopen.call_args[0][0]
         self.assertIn("minScore=70", req.full_url)
         self.assertIn("hasEmail=true", req.full_url)
