@@ -194,6 +194,9 @@ Token resolution order: `--api-token` flag > `JOBHUNTER_API_TOKEN` env var >
 4. Reject a role for a stated reason and confirm a new section is
    appended back to `MEMORY.md`.
 
+> Tell job preferences to the `jobhunter-bot` profile directly — by design
+> it is isolated and never reads your personal Hermes profile's memory.
+
 ### Docker compose override (memory volume)
 
 When running the backend in Docker, the compose override must mount the host
