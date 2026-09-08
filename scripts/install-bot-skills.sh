@@ -2,7 +2,10 @@
 # install-bot-skills.sh
 #
 # Installs Hermes Agent bot skills from the repository into the bot profile
-# directory (~/.hermes/profiles/jobhunter-bot/skills/<skill-name>/).
+# directory (~/.hermes/profiles/jobhunter-bot/skills/<skill-name>/), and renders
+# the versioned standing-instructions template (bot-profile/SOUL.md) into
+# ~/.hermes/profiles/jobhunter-bot/SOUL.md on first install only — a live
+# SOUL.md is never overwritten.
 #
 # Usage:
 #   bash scripts/install-bot-skills.sh
@@ -10,6 +13,9 @@
 # Safe to re-run: overwrites existing skill files.
 # New skills are picked up automatically: every subdirectory of skills/
 # containing a SKILL.md is installed under its own name.
+#
+# Optional env vars for SOUL.md rendering (default: placeholder stays visible):
+#   SOUL_USER_NAME / SOUL_USER_EMAIL / SOUL_RESUME_FILENAME
 
 set -euo pipefail
 
@@ -119,6 +125,62 @@ echo "Memory directory:"
 ls -la "${MEMORY_DIR}/" 2>/dev/null || echo "  (empty)"
 echo ""
 
+# ---------------------------------------------------------------------------
+# Install SOUL.md (versioned standing instructions — never overwrite a live file)
+# ---------------------------------------------------------------------------
+
+echo "=== Installing SOUL.md ==="
+echo ""
+SOUL_SRC="${REPO_ROOT}/bot-profile/SOUL.md"
+SOUL_DEST="${BOT_PROFILE}/SOUL.md"
+
+if [ ! -f "${SOUL_SRC}" ]; then
+    echo "SKIP: template not found at ${SOUL_SRC} (nothing to install)"
+elif [ -f "${SOUL_DEST}" ]; then
+    echo "EXISTS: ${SOUL_DEST} already present — leaving untouched (live file may hold learned content)"
+    if command -v diff &>/dev/null; then
+        if diff -q "${SOUL_DEST}" "${SOUL_SRC}" &>/dev/null; then
+            echo "  (no differences vs the template)"
+        else
+            echo "  To review differences: diff ${SOUL_DEST} ${SOUL_SRC}"
+        fi
+    fi
+else
+    # NOTE: bash mis-parses nested braces in the default word
+    # (${VAR:-{{X}}} appends "}}"), so placeholders are passed via variables.
+    SOUL_PH_NAME="{{USER_NAME}}"
+    SOUL_PH_EMAIL="{{USER_EMAIL}}"
+    SOUL_PH_RESUME="{{RESUME_FILENAME}}"
+    SOUL_USER_NAME="${SOUL_USER_NAME:-${SOUL_PH_NAME}}"
+    SOUL_USER_EMAIL="${SOUL_USER_EMAIL:-${SOUL_PH_EMAIL}}"
+    SOUL_RESUME_FILENAME="${SOUL_RESUME_FILENAME:-${SOUL_PH_RESUME}}"
+    # Escape '&' for sed replacement and use '|' as the delimiter (paths/emails
+    # contain '/'; '&' would otherwise be re-expanded by sed).
+    sed -e "s|{{USER_NAME}}|${SOUL_USER_NAME//&/\\&}|g" \
+        -e "s|{{USER_EMAIL}}|${SOUL_USER_EMAIL//&/\\&}|g" \
+        -e "s|{{RESUME_FILENAME}}|${SOUL_RESUME_FILENAME//&/\\&}|g" \
+        "${SOUL_SRC}" > "${SOUL_DEST}"
+    echo "RENDERED: ${SOUL_DEST} (from ${SOUL_SRC})"
+fi
+echo ""
+
+# Verify SOUL.md presence and warn on unsubstituted placeholders
+echo "=== SOUL.md verification ==="
+if [ -f "${SOUL_DEST}" ]; then
+    echo "OK: SOUL.md present at ${SOUL_DEST}"
+    unresolved="$(grep -o '{{[A-Z_]*}}' "${SOUL_DEST}" || true)"
+    if [ -n "${unresolved}" ]; then
+        echo "WARNING: FILL-ME — unsubstituted placeholders remain (set SOUL_USER_NAME, SOUL_USER_EMAIL, SOUL_RESUME_FILENAME and re-run, or edit by hand):"
+        printf '  %s\n' ${unresolved} | sort -u
+    else
+        echo "OK: no unsubstituted placeholders"
+    fi
+else
+    echo "WARNING: SOUL.md not found at ${SOUL_DEST}"
+fi
+echo ""
+
 echo "=== Done ==="
 echo "Skills installed under: ${SKILLS_DEST}/<skill-name>/ (per-skill layout)"
 echo "Memory files will be written to: ${MEMORY_DIR}/"
+echo "Standing instructions installed at: ${SOUL_DEST}"
