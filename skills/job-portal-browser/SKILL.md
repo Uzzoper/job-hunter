@@ -58,8 +58,8 @@ openssl rand -hex 24
 # 2) use it (backend bot.service.api-key must hold the same secret, issue #47):
 TOKEN="<the same secret>"   # or stored in ~/.hermes/profiles/jobhunter-bot/api-token.txt
 
-# List jobs with a contact email (the API's real query param is hasEmail):
-curl -s http://localhost:8080/api/jobs?hasEmail=true -H "X-Bot-Token: $TOKEN"
+# List jobs with a contact email (hasEmail) and already-applied jobs excluded:
+curl -s "http://localhost:8080/api/jobs?hasEmail=true&excludeApplied=true" -H "X-Bot-Token: $TOKEN"
 
 # Single job detail (id, title, company, url, description, postedAt, source, contactEmail):
 curl -s http://localhost:8080/api/jobs/7 -H "X-Bot-Token: $TOKEN"
@@ -86,9 +86,11 @@ request, present the result, and stop. Do not improvise, retry, or loop back
 to "find more" — a surprising result is reported to the user, never repaired
 by re-browsing portals within the same flow.
 
-1. **List** — `GET /api/jobs?hasEmail=true&minScore=<threshold>` with the
-   `X-Bot-Token` header (`job_api.api_list_jobs`). `hasEmail=true` is always
-   sent, so only jobs with a contact email are considered.
+1. **List** — `GET /api/jobs?hasEmail=true&excludeApplied=true&minScore=<threshold>`
+   with the `X-Bot-Token` header (`job_api.api_list_jobs`). `hasEmail=true` is
+   always sent, so only jobs with a contact email are considered;
+   `excludeApplied=true` drops jobs the owner already applied to (a `SENT` draft
+   for `(jobId, userId)`).
 2. **Empty → fetch + re-list once** — if the list is empty, `POST
    /api/jobs/fetch` (all providers), then re-list. Still empty → report
    "nothing to apply to" and stop — no re-fetch, no browser pass here.
@@ -102,9 +104,11 @@ by re-browsing portals within the same flow.
    remote-only). Non-dev roles are dropped from the table — never applied to
    by accident.
 5. **Present a ranked table** — score descending, columns:
-   `# | title | company | match | contact | draft status` (draft status:
-   `none` / `draft` / `applied`), followed by **observations** (strongest and
-   weakest match, missing skills to address in the cover letter).
+   `# | title | company | match | contact | draft status` (draft status now maps
+   to the API's new per-job `draftStatus` field: `none` when the field is
+   `null`, `draft` for a `PENDING`/`APPROVED`/`REJECTED` draft, `applied` when
+   `SENT`), followed by **observations** (strongest and weakest match, missing
+   skills to address in the cover letter).
 6. **Ask ONE next-step question** — e.g. *"Analyze `<job>` (match `<n>`)? Or
    draft the application email?"* — one question, then wait for the answer.
 
