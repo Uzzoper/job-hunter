@@ -48,7 +48,9 @@ engage; blank `api-key` keeps the old JWT-only behavior.
 
 **Shortcut (recommended):** `bash scripts/setup-bot-access.sh --owner-id <id>`
 automates secret generation + profile save + backend exports + endpoint
-verification in one go (see its `--help`). Backend restart stays manual.
+verification in one go (see its `--help`). Plain Java: restart stays manual.
+Docker: add `--compose-dir DIR --recreate-backend` and the script syncs the
+override, recreates, waits healthy and verifies by itself.
 
 **First-run bootstrap (bot self-guides, issue #46/#47):** when the bot reports
 `missing_api_token` it generates the secret, saves it to
