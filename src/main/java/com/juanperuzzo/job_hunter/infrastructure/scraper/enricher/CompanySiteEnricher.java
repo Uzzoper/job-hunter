@@ -4,6 +4,7 @@ import com.juanperuzzo.job_hunter.application.port.out.CompanySiteEnrichmentPort
 import com.juanperuzzo.job_hunter.domain.PortalDomains;
 import com.juanperuzzo.job_hunter.domain.model.Job;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.normalizer.EmailExtractor;
+import com.juanperuzzo.job_hunter.infrastructure.scraper.normalizer.OwnerEmailGuard;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.normalizer.UrlNormalizer;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.ratelimit.RateLimiter;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.retry.ExponentialBackoffRetry;
@@ -36,6 +37,10 @@ import java.util.function.Supplier;
  * <p>
  * Email extraction is delegated to the shared {@link EmailExtractor}; host/origin logic
  * matches the shared {@link PortalDomains} and {@link UrlNormalizer} constants.
+ * <p>
+ * Owner self-match guard: an extracted email that matches a registered user's email is
+ * never attached (shared {@link OwnerEmailGuard}, same guard as {@code JobNormalizer}) —
+ * this stage must not reattach an owner email that the description-guard discarded.
  */
 public class CompanySiteEnricher implements CompanySiteEnrichmentPort {
 
@@ -51,6 +56,7 @@ public class CompanySiteEnricher implements CompanySiteEnrichmentPort {
     private final int maxPages;
     private final Duration cacheTtl;
     private final List<String> contactPaths;
+    private final OwnerEmailGuard ownerEmailGuard;
     private final Map<String, CachedContact> cache = new ConcurrentHashMap<>();
 
     public CompanySiteEnricher(
@@ -61,7 +67,8 @@ public class CompanySiteEnricher implements CompanySiteEnrichmentPort {
             int concurrency,
             int maxPages,
             Duration cacheTtl,
-            List<String> contactPaths) {
+            List<String> contactPaths,
+            OwnerEmailGuard ownerEmailGuard) {
         this.restClient = restClient;
         this.retry = retry;
         this.rateLimiter = rateLimiter;
@@ -70,6 +77,7 @@ public class CompanySiteEnricher implements CompanySiteEnrichmentPort {
         this.maxPages = maxPages > 0 ? maxPages : 2;
         this.cacheTtl = cacheTtl != null ? cacheTtl : Duration.ofHours(24);
         this.contactPaths = contactPaths != null ? contactPaths : List.of();
+        this.ownerEmailGuard = ownerEmailGuard;
     }
 
     /**
@@ -106,10 +114,21 @@ public class CompanySiteEnricher implements CompanySiteEnrichmentPort {
             var cached = cache.get(domain);
             if (cached != null && !isExpired(cached.fetchedAt())) {
                 log.debug("company site cache hit for domain {}", domain);
-                return cached.email() == null ? job : withEmail(job, cached.email());
+                if (cached.email() == null) {
+                    return job;
+                }
+                // Guard cached entries too: an owner email must never be attached, even
+                // if a pre-fix cache entry holds one.
+                var guarded = ownerEmailGuard.discardIfOwnerEmail(cached.email(), job.url());
+                return guarded == null ? job : withEmail(job, guarded);
             }
 
             var email = crawl(domain, origin, job.companyWebsite());
+            if (email != null) {
+                // Owner self-match guard (shared with JobNormalizer): an owner email is
+                // discarded BEFORE it can enter the per-domain cache.
+                email = ownerEmailGuard.discardIfOwnerEmail(email, job.url());
+            }
             cache.put(domain, new CachedContact(email, Instant.now()));
 
             if (email == null) {
