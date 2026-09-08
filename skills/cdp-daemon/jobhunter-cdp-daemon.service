@@ -27,7 +27,7 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=%h/.local/bin/cdp_daemon.py --port 19999 --cdp-url http://localhost:9222 --user-data-dir %h/.chromium-profile-cdp
+ExecStart=%h/.hermes/profiles/jobhunter-bot/skills/cdp-daemon/cdp_daemon.py --port 19999 --cdp-url http://localhost:9222 --user-data-dir %h/.chromium-profile-cdp
 # Chrome (--remote-debugging-port) is recovered/started by apply.py's issue #39
 # flow; the daemon just re-listens to /json/list. Restart if it crashes or is
 # killed so the warm WS is maintained across transient failures.
