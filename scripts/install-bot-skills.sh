@@ -52,6 +52,16 @@ mkdir -p "${SKILLS_DEST}"
 mkdir -p "${MEMORY_DIR}"
 echo "  Skills dir:  ${SKILLS_DEST}"
 echo "  Memory dir:  ${MEMORY_DIR}"
+# Seed empty USER.md (Hermes convention: user profile vs agent learnings).
+# Never overwrite an existing file — the bot owns its content.
+USER_MD="${BOT_PROFILE}/memories/USER.md"
+if [ ! -f "${USER_MD}" ]; then
+    mkdir -p "$(dirname "${USER_MD}")"
+    : > "${USER_MD}"
+    echo "  USER.md seeded (empty) at ${USER_MD}"
+else
+    echo "  USER.md exists — leaving untouched"
+fi
 echo ""
 
 # ---------------------------------------------------------------------------
