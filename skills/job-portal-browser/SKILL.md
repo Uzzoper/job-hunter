@@ -40,7 +40,7 @@ this skill's needs:
 
 | Need | Call |
 |---|---|
-| List jobs (`hasEmail` filter on by default) | `job_api.api_list_jobs(base_url, token, min_score=..., has_email=True)` |
+| List jobs (all by default; `hasEmail` opt-in only) | `job_api.api_list_jobs(base_url, token, min_score=...)` — pass `has_email=True` only on explicit user request |
 | One job detail | `job_api.api_get_job(base_url, token, job_id)` |
 | Trigger a scraping cycle when the API is empty | `job_api.api_trigger_fetch(base_url, token, portal="gupy")` |
 | List → fetch-if-empty → re-list → top job | `job_api.pick_jobs_for_apply(base_url, token, ...)` |
@@ -58,8 +58,12 @@ openssl rand -hex 24
 # 2) use it (backend bot.service.api-key must hold the same secret, issue #47):
 TOKEN="<the same secret>"   # or stored in ~/.hermes/profiles/jobhunter-bot/api-token.txt
 
-# List jobs with a contact email (hasEmail) and already-applied jobs excluded:
-curl -s "http://localhost:8080/api/jobs?hasEmail=true&excludeApplied=true" -H "X-Bot-Token: $TOKEN"
+# List jobs (all by default) and already-applied jobs excluded:
+curl -s "http://localhost:8080/api/jobs?excludeApplied=true" -H "X-Bot-Token: $TOKEN"
+
+# Only with an explicit "only jobs with email" request, add the filter:
+# curl -s "http://localhost:8080/api/jobs?hasEmail=true&excludeApplied=true" -H "X-Bot-Token: $TOKEN"
+# Jobs without a contact email go to the company-scraper skill, never hidden silently.
 
 # Single job detail (id, title, company, url, description, postedAt, source, contactEmail):
 curl -s http://localhost:8080/api/jobs/7 -H "X-Bot-Token: $TOKEN"
@@ -86,9 +90,11 @@ request, present the result, and stop. Do not improvise, retry, or loop back
 to "find more" — a surprising result is reported to the user, never repaired
 by re-browsing portals within the same flow.
 
-1. **List** — `GET /api/jobs?hasEmail=true&excludeApplied=true&minScore=<threshold>`
-   with the `X-Bot-Token` header (`job_api.api_list_jobs`). `hasEmail=true` is
-   always sent, so only jobs with a contact email are considered;
+1. **List** — `GET /api/jobs?excludeApplied=true&minScore=<threshold>`
+   with the `X-Bot-Token` header (`job_api.api_list_jobs`). No `hasEmail`
+   filter by default, so ALL jobs are considered; add `hasEmail=true` only
+   on explicit user request ("only jobs with email"). Jobs without a
+   contact email go to the company-scraper skill instead of being hidden;
    `excludeApplied=true` drops jobs the owner already applied to (a `SENT` draft
    for `(jobId, userId)`).
 2. **Empty → fetch + re-list once** — if the list is empty, `POST
