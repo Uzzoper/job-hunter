@@ -11,6 +11,7 @@ import com.juanperuzzo.job_hunter.application.port.out.NormalizerPort;
 import com.juanperuzzo.job_hunter.application.port.out.PdfRendererPort;
 import com.juanperuzzo.job_hunter.application.port.out.ScraperPort;
 import com.juanperuzzo.job_hunter.application.port.out.SourceFetchPort;
+import com.juanperuzzo.job_hunter.application.port.out.UserRepository;
 import com.juanperuzzo.job_hunter.application.service.AiAnalysisService;
 import com.juanperuzzo.job_hunter.application.service.CompanyEnrichmentService;
 import com.juanperuzzo.job_hunter.application.service.EmailGenerationService;
@@ -67,6 +68,7 @@ import com.juanperuzzo.job_hunter.infrastructure.scraper.adapter.ProviderBasedSc
 import com.juanperuzzo.job_hunter.infrastructure.scraper.enricher.CompanySiteEnricher;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.normalizer.DateParser;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.normalizer.JobNormalizer;
+import com.juanperuzzo.job_hunter.infrastructure.scraper.normalizer.OwnerEmailGuard;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.client.LinkedInScraperClient;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.provider.GupyProvider;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.provider.InfoJobsProvider;
@@ -160,10 +162,17 @@ public class AppConfig {
     }
 
     @Bean
+    public OwnerEmailGuard ownerEmailGuard(UserRepository userRepository) {
+        // Shared by the company-site enricher (the normalizers build their own internally).
+        return new OwnerEmailGuard(userRepository);
+    }
+
+    @Bean
     public CompanySiteEnricher companySiteEnricher(
             RestClient scraperRestClient,
             ExponentialBackoffRetry exponentialBackoffRetry,
             @Qualifier("enricherRateLimiter") RateLimiter enricherRateLimiter,
+            OwnerEmailGuard ownerEmailGuard,
             @Value("${scraper.enricher.enabled:true}") boolean enabled,
             @Value("${scraper.enricher.concurrency:2}") int concurrency,
             @Value("${scraper.enricher.max-pages-per-company:2}") int maxPages,
@@ -177,27 +186,32 @@ public class AppConfig {
                 concurrency,
                 maxPages,
                 Duration.ofHours(cacheTtlHours),
-                contactPaths);
+                contactPaths,
+                ownerEmailGuard);
     }
 
     @Bean
     public JobNormalizer jobNormalizer(
             DateParser dateParser,
+            UserRepository userRepository,
             @Value("#{'${scraper.gupy.keywords}'.split(',')}") List<String> keywords,
             @Value("${scraper.normalizer.max-age-days}") int maxAgeDays) {
         var excludePatterns = List.of(
                 Pattern.compile("(?i)\\b(s[eê]nior|senior|sr\\.?|especialista|lead|coordenador|manager|bdr)\\b"));
-        return new JobNormalizer(dateParser, keywords, excludePatterns, List.of(), maxAgeDays, Clock.systemUTC());
+        return new JobNormalizer(dateParser, keywords, excludePatterns, List.of(), maxAgeDays, Clock.systemUTC(),
+                userRepository);
     }
 
     @Bean
     public JobNormalizer linkedinJobNormalizer(
             DateParser dateParser,
+            UserRepository userRepository,
             @Value("#{'${scraper.linkedin.keywords}'.split(',')}") List<String> keywords,
             @Value("${scraper.normalizer.max-age-days}") int maxAgeDays) {
         var excludePatterns = List.of(
                 Pattern.compile("(?i)\\b(s[eê]nior|senior|sr\\.?|especialista|lead|coordenador|manager|bdr)\\b"));
-        return new JobNormalizer(dateParser, keywords, excludePatterns, List.of(), maxAgeDays, Clock.systemUTC());
+        return new JobNormalizer(dateParser, keywords, excludePatterns, List.of(), maxAgeDays, Clock.systemUTC(),
+                userRepository);
     }
 
     @Bean
