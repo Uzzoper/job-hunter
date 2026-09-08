@@ -8,6 +8,7 @@ import com.juanperuzzo.job_hunter.application.port.in.FetchSourceJobsUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.GenerateEmailUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.GetEmailDraftUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.GetJobUseCase;
+import com.juanperuzzo.job_hunter.application.port.in.JobWithDraftStatus;
 import com.juanperuzzo.job_hunter.application.port.in.ListJobsUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.SendEmailUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.TailorResumeUseCase;
@@ -73,21 +74,11 @@ public class JobController {
 
     @GetMapping
     public ResponseEntity<List<JobResponse>> getAllJobs(
-            @RequestParam(required = false) Boolean hasEmail) {
-        List<Job> jobs = hasEmail != null
-                ? listJobsUseCase.findAll(hasEmail)
-                : listJobsUseCase.findAll();
-        List<JobResponse> response = jobs.stream()
-                .map(job -> new JobResponse(
-                        job.id(),
-                        job.title(),
-                        job.company(),
-                        job.url(),
-                        job.description(),
-                        job.postedAt(),
-                        job.source(),
-                        job.contactEmail()
-                ))
+            @RequestParam(required = false) Boolean hasEmail,
+            @RequestParam(required = false) Boolean excludeApplied) {
+        Long userId = currentUserService.getCurrentUserId();
+        List<JobResponse> response = listJobsUseCase.findAllWithDraftStatus(userId, hasEmail, excludeApplied).stream()
+                .map(this::toJobResponse)
                 .collect(Collectors.toList());
         return ResponseEntity.ok(response);
     }
@@ -103,9 +94,25 @@ public class JobController {
                 job.description(),
                 job.postedAt(),
                 job.source(),
-                job.contactEmail()
+                job.contactEmail(),
+                null // draft status is not resolved on the detail endpoint
         );
         return ResponseEntity.ok(response);
+    }
+
+    private JobResponse toJobResponse(JobWithDraftStatus entry) {
+        Job job = entry.job();
+        return new JobResponse(
+                job.id(),
+                job.title(),
+                job.company(),
+                job.url(),
+                job.description(),
+                job.postedAt(),
+                job.source(),
+                job.contactEmail(),
+                entry.draftStatus()
+        );
     }
 
     @PostMapping("/{id}/analyze")
