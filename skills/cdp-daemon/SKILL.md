@@ -94,7 +94,9 @@ CLI flags (English help):
 --user-data-dir DIR    note: the Chromium profile kept warm (default apply.py's)
 ```
 
-Systemd user service:
+Systemd user service (installed automatically by
+`scripts/install-bot-skills.sh`, which copies the unit and runs
+`daemon-reload`; enabling stays a manual opt-in step):
 
 ```bash
 cp skills/cdp-daemon/jobhunter-cdp-daemon.service ~/.config/systemd/user/
