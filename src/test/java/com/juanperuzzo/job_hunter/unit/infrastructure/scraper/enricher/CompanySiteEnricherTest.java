@@ -2,8 +2,10 @@ package com.juanperuzzo.job_hunter.unit.infrastructure.scraper.enricher;
 
 import com.github.tomakehurst.wiremock.junit5.WireMockExtension;
 import com.github.tomakehurst.wiremock.junit5.WireMockRuntimeInfo;
+import com.juanperuzzo.job_hunter.application.port.out.UserRepository;
 import com.juanperuzzo.job_hunter.domain.model.Job;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.enricher.CompanySiteEnricher;
+import com.juanperuzzo.job_hunter.infrastructure.scraper.normalizer.OwnerEmailGuard;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.ratelimit.RateLimiter;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.ratelimit.TokenBucketRateLimiter;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.retry.ExponentialBackoffRetry;
@@ -30,6 +32,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 @ExtendWith(WireMockExtension.class)
 @DisplayName("CompanySiteEnricher tests")
@@ -46,8 +50,8 @@ class CompanySiteEnricherTest {
     void setUp(WireMockRuntimeInfo wmRuntimeInfo) {
         baseUrl = wmRuntimeInfo.getHttpBaseUrl();
         var retry = new ExponentialBackoffRetry(2, Duration.ofMillis(1), Duration.ofMillis(10), Duration.ofMillis(2));
-        enricher = buildEnricher(retry, new TokenBucketRateLimiter(1000, 100, null));
-        throttlingEnricher = buildEnricher(retry, new TokenBucketRateLimiter(2.0, 1, null));
+        enricher = buildEnricher(retry, new TokenBucketRateLimiter(1000, 100, null), mock(UserRepository.class));
+        throttlingEnricher = buildEnricher(retry, new TokenBucketRateLimiter(2.0, 1, null), mock(UserRepository.class));
     }
 
     @Nested
@@ -333,6 +337,58 @@ class CompanySiteEnricherTest {
         }
     }
 
+    @Nested
+    @DisplayName("Owner self-match guard on enriched emails")
+    class OwnerSelfMatch {
+
+        @Test
+        @DisplayName("enrich should not attach an email that matches a registered user email")
+        void enrich_whenCompanySiteHasOwnerEmail_shouldNotAttachIt() {
+            stubFor(get(urlPathEqualTo("/robots.txt")).willReturn(status(404)));
+            stubFor(get(urlPathEqualTo("/"))
+                    .willReturn(ok("<html><body><a href=\"mailto:user@example.org\">Owner</a></body></html>")));
+
+            var enriched = guardEnricher(List.of("user@example.org")).enrich(job(null, baseUrl));
+
+            assertNull(enriched.contactEmail());
+        }
+
+        @Test
+        @DisplayName("enrich should not attach an owner email on a cache hit for the same domain")
+        void enrich_whenCachedEmailIsOwnerEmail_shouldNotAttachItOnCacheHit() {
+            stubFor(get(urlPathEqualTo("/robots.txt")).willReturn(status(404)));
+            stubFor(get(urlPathEqualTo("/"))
+                    .willReturn(ok("<html><body><a href=\"mailto:user@example.org\">Owner</a></body></html>")));
+
+            var enricherWithOwners = guardEnricher(List.of("user@example.org"));
+            var first = enricherWithOwners.enrich(job(null, baseUrl));
+            var second = enricherWithOwners.enrich(job(null, baseUrl + "/"));
+
+            assertNull(first.contactEmail());
+            assertNull(second.contactEmail());
+            verify(1, getRequestedFor(urlPathEqualTo("/")));
+        }
+
+        @Test
+        @DisplayName("enrich should still attach a distinct company email when owners exist")
+        void enrich_whenCompanySiteHasDistinctCompanyEmail_shouldAttachIt() {
+            stubFor(get(urlPathEqualTo("/robots.txt")).willReturn(status(404)));
+            stubFor(get(urlPathEqualTo("/"))
+                    .willReturn(ok("<html><body><a href=\"mailto:rh@techcorp.com.br\">RH</a></body></html>")));
+
+            var enriched = guardEnricher(List.of("user@example.org")).enrich(job(null, baseUrl));
+
+            assertEquals("rh@techcorp.com.br", enriched.contactEmail());
+        }
+
+        private CompanySiteEnricher guardEnricher(List<String> ownerEmails) {
+            var userRepository = mock(UserRepository.class);
+            when(userRepository.findAllEmails()).thenReturn(ownerEmails);
+            var retry = new ExponentialBackoffRetry(2, Duration.ofMillis(1), Duration.ofMillis(10), Duration.ofMillis(2));
+            return buildEnricher(retry, new TokenBucketRateLimiter(1000, 100, null), userRepository);
+        }
+    }
+
     private Job job(String contactEmail, String companyWebsite) {
         return new Job(null, "Desenvolvedor Junior", "TechCorp", "https://jobs.example.com/1",
                 "descricao", LocalDate.now(), "gupy", contactEmail, companyWebsite);
@@ -342,12 +398,16 @@ class CompanySiteEnricherTest {
         return job(contactEmail, companyWebsite);
     }
 
-    private static CompanySiteEnricher buildEnricher(ExponentialBackoffRetry retry, RateLimiter rateLimiter) {
+    private static CompanySiteEnricher buildEnricher(
+            ExponentialBackoffRetry retry,
+            RateLimiter rateLimiter,
+            UserRepository userRepository) {
         var factory = new SimpleClientHttpRequestFactory();
         factory.setConnectTimeout(2000);
         factory.setReadTimeout(2000);
         var client = RestClient.builder().requestFactory(factory).build();
         return new CompanySiteEnricher(
-                client, retry, rateLimiter, true, 2, 2, Duration.ofHours(24), CONTACT_PATHS);
+                client, retry, rateLimiter, true, 2, 2, Duration.ofHours(24), CONTACT_PATHS,
+                new OwnerEmailGuard(userRepository));
     }
 }
