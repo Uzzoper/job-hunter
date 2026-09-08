@@ -14,6 +14,8 @@
 #   eval "$(bash scripts/setup-bot-access.sh --owner-id N)"  # exports into your shell
 #   bash scripts/setup-bot-access.sh --verify-only            # probe only
 #   bash scripts/setup-bot-access.sh --rotate                 # new secret (restart + re-verify after)
+#   bash scripts/setup-bot-access.sh --compose-dir DIR --recreate-backend
+#       # Docker setups: sync override env, recreate backend, wait healthy, verify
 #
 # Safe to re-run: reuses the existing api-token.txt unless --rotate.
 
@@ -31,6 +33,8 @@ OWNER_ID=""
 VERIFY_ONLY=0
 ROTATE=0
 SKIP_VERIFY=0
+COMPOSE_DIR=""
+RECREATE=0
 
 say() { echo "$@" >&2; }
 
@@ -45,6 +49,8 @@ while [ $# -gt 0 ]; do
         --verify-only) VERIFY_ONLY=1; shift ;;
         --rotate) ROTATE=1; shift ;;
         --skip-verify) SKIP_VERIFY=1; shift ;;
+        --compose-dir) COMPOSE_DIR="$2"; shift 2 ;;
+        --recreate-backend) RECREATE=1; shift ;;
         --help|-h) usage; exit 0 ;;
         *) say "ERROR: unknown flag: $1 (see --help)"; exit 2 ;;
     esac
@@ -96,6 +102,33 @@ if [ -z "${OWNER_ID}" ] && [ "${VERIFY_ONLY}" -eq 0 ]; then
 fi
 
 # ---------------------------------------------------------------------------
+# Compose override sync (only with --compose-dir). Secrets are hex-only
+# (openssl/python generators), so the sed replacement below is safe.
+# ---------------------------------------------------------------------------
+
+if [ -n "${COMPOSE_DIR}" ]; then
+    if [ ! -f "${COMPOSE_DIR}/docker-compose.yml" ] && [ ! -f "${COMPOSE_DIR}/compose.yaml" ]; then
+        say "ERROR: no docker-compose.yml/compose.yaml in ${COMPOSE_DIR}."
+        exit 2
+    fi
+    OVERRIDE="${COMPOSE_DIR}/docker-compose.override.yaml"
+    if [ ! -f "${OVERRIDE}" ]; then
+        printf 'services:\n  backend:\n    environment:\n      BOT_SERVICE_API_KEY: "%s"\n      BOT_SERVICE_OWNER_USER_ID: "%s"\n' \
+            "${SECRET}" "${OWNER_ID}" > "${OVERRIDE}"
+        say "Created ${OVERRIDE} with the service env."
+    elif grep -qE '^[[:space:]]*BOT_SERVICE_API_KEY:' "${OVERRIDE}"; then
+        sed -i -E "s|^([[:space:]]*BOT_SERVICE_API_KEY:).*|\1 \"${SECRET}\"|" "${OVERRIDE}"
+        sed -i -E "s|^([[:space:]]*BOT_SERVICE_OWNER_USER_ID:).*|\1 \"${OWNER_ID}\"|" "${OVERRIDE}"
+        say "Synced service env into ${OVERRIDE}."
+    else
+        say "ERROR: ${OVERRIDE} has no BOT_SERVICE_* keys — add once under the backend service:"
+        say '    BOT_SERVICE_API_KEY: "<secret>"'
+        say '    BOT_SERVICE_OWNER_USER_ID: "<owner-id>"'
+        exit 2
+    fi
+fi
+
+# ---------------------------------------------------------------------------
 # Backend exports (STDOUT ONLY — eval-safe) + human next steps (stderr)
 # ---------------------------------------------------------------------------
 
@@ -106,6 +139,47 @@ if [ "${VERIFY_ONLY}" -eq 0 ]; then
     echo "export BOT_SERVICE_OWNER_USER_ID=\"${OWNER_ID}\""
     say "--- then: restart backend, re-run: bash scripts/setup-bot-access.sh --verify-only ---"
     say ""
+fi
+
+# ---------------------------------------------------------------------------
+# Docker recreate + wait (only with --recreate-backend)
+# ---------------------------------------------------------------------------
+
+wait_for_api() {
+    local tries=0
+    while [ "${tries}" -lt 36 ]; do
+        CODE="$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 \
+            "${API_BASE_URL}/api/jobs?hasEmail=true" \
+            -H "X-Bot-Token: ${SECRET}" 2>/dev/null || true)"
+        case "${CODE}" in
+            200)
+                say "OK (HTTP 200) — bot API access is working."
+                return 0
+                ;;
+            401)
+                say "FAIL (HTTP 401) — secret mismatch: container env differs from ${TOKEN_FILE}."
+                return 1
+                ;;
+        esac
+        tries=$((tries + 1))
+        sleep 5
+    done
+    say "FAIL (timeout) — backend did not answer within ~180s; check docker logs."
+    return 1
+}
+
+if [ "${RECREATE}" -eq 1 ]; then
+    if [ -z "${COMPOSE_DIR}" ]; then
+        say "ERROR: --recreate-backend needs --compose-dir DIR."
+        exit 2
+    fi
+    ( cd "${COMPOSE_DIR}" && docker compose up -d --force-recreate backend ) || {
+        say "ERROR: docker compose recreate failed — check the compose project."
+        exit 1
+    }
+    say "Backend recreating — waiting for a healthy API (up to ~180s) ..."
+    wait_for_api
+    exit $?
 fi
 
 # ---------------------------------------------------------------------------
