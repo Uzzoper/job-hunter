@@ -158,7 +158,7 @@ def _should_error_short_circuit(payload: Any) -> bool:
 # ---------------------------------------------------------------------------
 
 def api_list_jobs(base_url: str, token: str, min_score: Optional[int] = None,
-                  has_email: Optional[bool] = True,
+                  has_email: Optional[bool] = None,
                   timeout: int = 10) -> Union[List[Dict[str, Any]],
                                               Dict[str, Any]]:
     """GET <base_url>/api/jobs — the primary job source (issue #46).
@@ -167,6 +167,8 @@ def api_list_jobs(base_url: str, token: str, min_score: Optional[int] = None,
 
         * ``hasEmail`` — contact-email presence filter (``@RequestParam
           Boolean hasEmail``); sent whenever *has_email* is not None.
+          Default ``None`` omits the filter (list ALL jobs); pass True
+          only on explicit request ("only jobs with email").
         * ``minScore`` — score filter (API roadmap); sent only when
           *min_score* is not None.
 
@@ -242,7 +244,7 @@ def sort_jobs_by_score(jobs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
 def pick_jobs_for_apply(base_url: str, token: str,
                         min_score: Optional[int] = None,
-                        has_email: Optional[bool] = True,
+                        has_email: Optional[bool] = None,
                         fetch_if_empty: bool = True,
                         portal: str = "gupy",
                         timeout: int = 10,
@@ -251,7 +253,8 @@ def pick_jobs_for_apply(base_url: str, token: str,
     """Orchestrate the API-first job picker for the apply bot.
 
     Flow:
-        1. GET /api/jobs (hasEmail + minScore filters) — the PRIMARY source.
+        1. GET /api/jobs (optional hasEmail + minScore filters) — the PRIMARY source.
+           Default lists ALL jobs; hasEmail applies only on explicit request.
         2. If the list is empty AND *fetch_if_empty* (default True): trigger a
            scrape via POST /api/jobs/fetch/<portal> (portal defaults to gupy,
            matching the apply flow's primary portal).
