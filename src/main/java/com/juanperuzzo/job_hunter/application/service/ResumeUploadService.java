@@ -117,7 +117,7 @@ public class ResumeUploadService {
                 contact == null ? null : contact.linkedinUrl(), "linkedinUrl", URL_MAX_LENGTH, false);
 
         var profile = new UserProfile(null, userId, rawText, extraction.skills(), tone, projects,
-                phone, contactEmail, portfolioUrl, githubUrl, linkedinUrl);
+                phone, contactEmail, portfolioUrl, githubUrl, linkedinUrl, null);
         return userProfileService.saveProfile(userId, profile);
     }
 
