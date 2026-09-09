@@ -49,6 +49,11 @@ class BotMemoryStartupSyncTest {
         Files.writeString(tempDir.resolve("memories/MEMORY.md"), "\n§\nphone: 123\n");
     }
 
+    private void writeUserFile() throws IOException {
+        Files.createDirectories(tempDir.resolve("memories"));
+        Files.writeString(tempDir.resolve("memories/USER.md"), "\n§\nsalary: 5000\n");
+    }
+
     @Test
     @DisplayName("onApplicationReady should invoke syncFromBotMemory for every registered user")
     void onApplicationReady_whenUsersRegistered_shouldSyncEachUser() throws IOException {
@@ -102,8 +107,22 @@ class BotMemoryStartupSyncTest {
     }
 
     @Test
-    @DisplayName("onApplicationReady should warn and skip when the memory file is missing")
-    void onApplicationReady_whenMemoryFileMissing_shouldWarnAndSkip() {
+    @DisplayName("onApplicationReady should sync when only USER.md exists (split-memory state is not dropped)")
+    void onApplicationReady_whenOnlyUserFileExists_shouldSyncEachUser() throws IOException {
+        writeUserFile();
+        var user1 = new User(1L, "a@test.com", "Alice", "hash");
+        when(userRepository.findAll()).thenReturn(List.of(user1));
+
+        startupSync.onApplicationReady();
+
+        // Gate is per-file, not per-MEMORY.md: USER.md alone is enough to proceed
+        verify(userRepository).findAll();
+        verify(botMemorySyncService).syncFromBotMemory(1L);
+    }
+
+    @Test
+    @DisplayName("onApplicationReady should warn and skip when neither memory file exists")
+    void onApplicationReady_whenNeitherMemoryFileExists_shouldWarnAndSkip() {
         assertDoesNotThrow(startupSync::onApplicationReady);
 
         verify(userRepository, never()).findAll();
