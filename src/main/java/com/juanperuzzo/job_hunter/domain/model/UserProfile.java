@@ -14,7 +14,8 @@ public record UserProfile(
         String contactEmail,
         String portfolioUrl,
         String githubUrl,
-        String linkedinUrl
+        String linkedinUrl,
+        UserPreferences preferences
 ) {
     public UserProfile {
         requireNonNull(userId, "userId must not be null");
