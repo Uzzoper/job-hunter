@@ -807,6 +807,261 @@ class ApiFirstTests(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
+# Issue #48 — Record-back: backend canonical record after a confirmed local write
+# ---------------------------------------------------------------------------
+
+class ApiRecordBackTests(unittest.TestCase):
+    """After a confirmed local apply record, apply.py POSTs it to the backend.
+
+    The backend record is best-effort: a backend failure must NOT fail the
+    local record (it only warns in the output JSON as ``backend_record`` and
+    leaves the exit code unchanged). Nothing is sent on dry-run / unconfirmed /
+    expired-session / refusal paths. All network I/O and the browser are mocked
+    — never a real HTTP call.
+    """
+
+    API_JOB = {
+        "id": 7,
+        "title": "Desenvolvedor Java Pleno",
+        "company": "Acme Corp",
+        "url": "https://jobs.gupy.io/jobs/777-java-pleno",
+        "description": "Backend Java 21, Spring Boot",
+        "postedAt": "2026-09-01",
+        "source": "gupy",
+        "contactEmail": "rh@acme.example",
+    }
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.mem = Path(self.tmp.name)
+        self.profile_path = write_profile(self.mem)
+        self.record_path = self.mem / "applications" / "777-java-pleno.json"
+
+    def _run(self, *args):
+        """Run apply.run() in api_mode (--job-id 7) with the browser mocked.
+
+        Non-dry runs reach the record path; ensure_browser is patched to
+        report "ready" so no real Chromium/CDP interaction ever happens.
+        """
+        cmd = list(args) + [
+            "--job-id", "7",
+            "--profile", self.profile_path,
+            "--memory-dir", str(self.mem),
+            "--portal", "gupy",
+        ]
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            code = apply.run(cmd)
+        return code, buf.getvalue()
+
+    def _patches(self, token="tok-1", backend=None):
+        """A set of context-manager patches returning the apply/record mocks."""
+        token_patch = unittest.mock.patch("apply.job_api.resolve_token")
+        token_mock = token_patch.start()
+        token_mock.return_value = token
+
+        get_patch = unittest.mock.patch("apply.job_api.api_get_job")
+        get_mock = get_patch.start()
+        get_mock.return_value = self.API_JOB
+
+        rec_patch = unittest.mock.patch("apply.job_api.api_record_applied")
+        rec_mock = rec_patch.start()
+        rec_mock.return_value = backend if backend is not None else {
+            "jobId": 7, "status": "applied"
+        }
+
+        browser_patch = unittest.mock.patch("apply.ensure_browser")
+        browser_mock = browser_patch.start()
+        browser_mock.return_value = {"status": "ready"}
+
+        def stop():
+            for p in (token_patch, get_patch, rec_patch, browser_patch):
+                p.stop()
+            return rec_mock
+
+        return token_mock, get_mock, stop
+
+    def test_posts_after_confirmed_record_with_token(self):
+        """--record-applied with a resolvable token POSTs the backend, keeps local."""
+        token, get, stop = self._patches()
+        try:
+            code, out = self._run("--record-applied")
+        finally:
+            rec = stop()
+        self.assertEqual(code, 0)
+        plan = json.loads(out)
+        # local record still written
+        self.assertTrue(self.record_path.is_file())
+        self.assertEqual(plan["recorded"]["status"], "applied")
+        # backend POST used the numeric job id + token + default base URL
+        rec.assert_called_once()
+        args = rec.call_args[0]
+        self.assertEqual(args[0], "http://localhost:8080")
+        self.assertEqual(args[1], "tok-1")
+        self.assertEqual(args[2], 7)
+        self.assertTrue(plan["backend_record"]["ok"])
+        self.assertEqual(plan["backend_record"]["jobId"], 7)
+
+    def test_posts_after_auto_apply(self):
+        """--auto-apply (confirmed submit path) also POSTs the backend."""
+        token, get, stop = self._patches()
+        try:
+            code, out = self._run("--auto-apply")
+        finally:
+            rec = stop()
+        self.assertEqual(code, 0)
+        plan = json.loads(out)
+        self.assertTrue(self.record_path.is_file())
+        rec.assert_called_once()
+        self.assertTrue(plan["backend_record"]["ok"])
+
+    def test_local_record_kept_when_backend_unreachable(self):
+        """Backend failure warns + keeps local record; exit code unchanged (0)."""
+        token, get, stop = self._patches(
+            backend={"error": "api_error",
+                     "detail": "URLError: connection refused"},
+        )
+        try:
+            code, out = self._run("--record-applied")
+        finally:
+            rec = stop()
+        self.assertEqual(code, 0)
+        plan = json.loads(out)
+        # local record still written and exit unchanged
+        self.assertTrue(self.record_path.is_file())
+        self.assertEqual(plan["recorded"]["status"], "applied")
+        # backend warning present, ok=false, error surfaced
+        self.assertIn("backend_record", plan)
+        self.assertFalse(plan["backend_record"]["ok"])
+        self.assertEqual(plan["backend_record"]["error"], "api_error")
+
+    def test_backend_404_warns_but_keeps_local_record(self):
+        """A 404 (unknown job upstream) warns; local record is still written."""
+        token, get, stop = self._patches(backend={"error": "not_found"})
+        try:
+            code, out = self._run("--record-applied")
+        finally:
+            rec = stop()
+        self.assertEqual(code, 0)
+        plan = json.loads(out)
+        self.assertTrue(self.record_path.is_file())
+        self.assertIn("backend_record", plan)
+        self.assertFalse(plan["backend_record"]["ok"])
+        self.assertEqual(plan["backend_record"]["error"], "not_found")
+
+    def test_backend_401_warns_but_keeps_local_record(self):
+        """A 401 (bad token) warns; local record is still written."""
+        token, get, stop = self._patches(backend={"error": "unauthorized"})
+        try:
+            code, out = self._run("--record-applied")
+        finally:
+            rec = stop()
+        self.assertEqual(code, 0)
+        self.assertTrue(self.record_path.is_file())
+        plan = json.loads(out)
+        self.assertIn("backend_record", plan)
+        self.assertFalse(plan["backend_record"]["ok"])
+        self.assertEqual(plan["backend_record"]["error"], "unauthorized")
+
+    def test_classic_flow_without_numeric_id_skips_backend(self):
+        """Classic --job-url flow (no numeric backend id) never POSTs back.
+
+        Even with a resolvable token, the backend can only be recorded for a
+        job that came from the API (it has a numeric id). The classic flow has
+        only a URL slug, so record-back is skipped and the local record stays.
+        """
+        with unittest.mock.patch("apply.job_api.api_record_applied") as mock_rec, \
+             unittest.mock.patch("apply.job_api.resolve_token") as mock_token, \
+             unittest.mock.patch("apply.ensure_browser") as mock_browser:
+            mock_token.return_value = "tok-1"
+            mock_browser.return_value = {"status": "ready"}
+            cmd = [
+                "--job-url", GUPY_URL,
+                "--profile", self.profile_path,
+                "--memory-dir", str(self.mem),
+                "--portal", "gupy",
+                "--record-applied",
+            ]
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                code = apply.run(cmd)
+        self.assertEqual(code, 0)
+        plan = json.loads(buf.getvalue())
+        # local record still written (classic, slug id)
+        self.assertTrue((self.mem / "applications" / f"{JOB_ID}.json").is_file())
+        self.assertEqual(plan["recorded"]["status"], "applied")
+        mock_rec.assert_not_called()
+        self.assertNotIn("backend_record", plan)
+
+    def test_nothing_sent_on_dry_run(self):
+        """--dry-run: no local record, no backend POST."""
+        token, get, stop = self._patches()
+        try:
+            code, out = self._run("--record-applied", "--dry-run")
+        finally:
+            rec = stop()
+        self.assertEqual(code, 0)
+        plan = json.loads(out)
+        self.assertFalse(self.record_path.exists())
+        self.assertNotIn("recorded", plan)
+        rec.assert_not_called()
+        self.assertNotIn("backend_record", plan)
+
+    def test_nothing_sent_on_unconfirmed(self):
+        """No record flags → not confirmed → no local record, no backend POST."""
+        token, get, stop = self._patches()
+        try:
+            code, out = self._run()
+        finally:
+            rec = stop()
+        self.assertEqual(code, 0)
+        plan = json.loads(out)
+        self.assertFalse(self.record_path.exists())
+        rec.assert_not_called()
+        self.assertNotIn("backend_record", plan)
+
+    def test_nothing_sent_on_expired_session(self):
+        """Expired session returns before the record block — no POST."""
+        token, get, stop = self._patches()
+        try:
+            code, out = self._run("--record-applied",
+                                  "--current-url", "https://jobs.gupy.io/login")
+        finally:
+            rec = stop()
+        self.assertEqual(code, 0)
+        plan = json.loads(out)
+        self.assertTrue(plan["sessionExpired"])
+        self.assertFalse(self.record_path.exists())
+        rec.assert_not_called()
+        self.assertNotIn("backend_record", plan)
+
+    def test_nothing_sent_on_refusal(self):
+        """Refusal profile → clean error; no local record, no backend POST."""
+        refusal = dict(VALID_PROFILE, no_apply=True)
+        path = write_profile(self.mem, refusal)
+        cmd = [
+            "--job-id", "7",
+            "--profile", path,
+            "--memory-dir", str(self.mem),
+            "--portal", "gupy",
+            "--record-applied",
+        ]
+        with unittest.mock.patch("apply.job_api.resolve_token") as mock_token, \
+             unittest.mock.patch("apply.job_api.api_get_job") as mock_get, \
+             unittest.mock.patch("apply.job_api.api_record_applied") as mock_rec:
+            mock_token.return_value = "tok-1"
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                code = apply.run(cmd)
+        self.assertEqual(code, 1)
+        data = json.loads(buf.getvalue())
+        self.assertEqual(data["error"], "refusal_draft_blocked")
+        mock_rec.assert_not_called()
+        self.assertFalse(self.record_path.exists())
+
+
+# ---------------------------------------------------------------------------
 # --auto-apply (issue #42)
 # ---------------------------------------------------------------------------
 
