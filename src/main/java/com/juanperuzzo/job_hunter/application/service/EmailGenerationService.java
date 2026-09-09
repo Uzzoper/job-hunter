@@ -134,7 +134,18 @@ public class EmailGenerationService implements GenerateEmailUseCase, GetEmailDra
         var existingId = emailDraftRepository.findByJobIdAndUserId(job.id(), userId)
                 .map(EmailDraft::id)
                 .orElse(null);
-        var draft = new EmailDraft(existingId, job.id(), userId, template.subject(), template.body(),
+        String body = template.body().trim();
+        if (body.startsWith("NO_APPLY:")) {
+            // Template results carrying the refusal marker follow the same contract as the
+            // AI path: never persist a sendable PENDING draft, and write the reason back
+            // to bot memory best-effort so the bot learns why the job was skipped.
+            var refused = new EmailDraft(existingId, job.id(), userId, template.subject(), body,
+                    EmailStatus.REJECTED, LocalDateTime.now(), null, job.contactEmail());
+            EmailDraft saved = emailDraftRepository.save(refused);
+            writeRefusalReasonBestEffort(userId, job.id(), body);
+            return saved;
+        }
+        var draft = new EmailDraft(existingId, job.id(), userId, template.subject(), body,
                 EmailStatus.PENDING, LocalDateTime.now(), null, job.contactEmail());
         return emailDraftRepository.save(draft);
     }
