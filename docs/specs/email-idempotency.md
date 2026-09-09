@@ -154,6 +154,90 @@ No new exceptions. `EmailAlreadySentException` (409) covers the send double-chec
 
 ---
 
+# Spec extension: External application record (portal applies)
+
+> **Layer:** `application` (new use case + service) + `web` (controller + DTO) + `infrastructure` (AppConfig wiring only — **zero migration**)
+> **Issue:** the bot reports applies made directly on the portal (Gupy/InfoJobs) — no email involved — and the backend must keep the canonical applied record.
+> **Corresponding tests:** `RecordExternalApplyServiceTest.java`, `JobControllerTest` (`recordExternalApply` group), `EmailGenerationServiceTest` (external-marker skip).
+
+## Context
+
+The Hermes bot also applies directly on portal sites (Gupy/InfoJobs) where the flow has no contact email. Those applications leave no trace in the backend. This adds `POST /api/jobs/{id}/applied` so the bot can record a portal apply as the canonical applied record — the same `SENT` signal the email flow produces.
+
+## Decision: reuse SENT with a null-recipient marker, zero migration
+
+Chosen over a new `EXTERNAL_APPLIED` status and over a new column:
+
+- `draftStatus` already maps to "applied" (`excludeApplied`, job list filter) — a SENT marker is picked up with no filter change.
+- `send()` and `approve()` already treat `SENT` as terminal; `generate()` gains a new guard (below), so a marker can never be re-sent, approved, or overwritten.
+- The existing unique constraint `(job_id, user_id)` already guarantees one record per job per user; the partial index `(job_id, recipient_email) WHERE status = 'SENT'` is unaffected because `NULL` recipient values never conflict in SQLite unique indexes.
+- A new enum value would be VARCHAR-only (no DDL) but would ripple through the AutoSend scheduler, eligibility/rate-limit counting, list filters, and every guard — blast radius with no behavioral return for a marker row.
+
+Marker payload (stored `EmailDraft`):
+
+- `status = SENT`, `recipientEmail = null`, `sentAt = now()`, `generatedAt = now()`
+- `subject = "Subject: [Aplicação externa]"` (keeps the `Subject: ` prefix convention used by generated drafts)
+- `body = "Inscrição realizada diretamente no portal da vaga. Nenhum e-mail foi enviado."`
+
+## Endpoint contract
+
+`POST /api/jobs/{id}/applied` — no request body. User-scoped via `CurrentUserService`.
+
+| Situation | Status | Response |
+|---|---|---|
+| Job does not exist | 404 | `JobNotFoundException` (existing mapping; no upsert of jobs) |
+| First record for `(jobId, userId)` | 201 Created | `{ "jobId": id, "status": "SENT" }`; new marker row persisted |
+| SENT marker already exists (replay) | 200 | `{ jobId, "status": "SENT" }`; existing row returned, nothing persisted |
+| PENDING / APPROVED / REJECTED draft exists | 200 | same row id superseded **in place** to the SENT marker |
+| Missing/invalid auth | 401 | `IllegalStateException` → 401 (existing mapping) |
+
+## Business rules
+
+- Idempotency is keyed on `(jobId, userId)`: a repeated POST is a replay, never a duplicate row — the lookup short-circuits before any save.
+- Superseding keeps the existing draft `id` (update, not insert): exactly one row per `(job_id, user_id)` is preserved and the unique constraint is never violated.
+- No AI call, no template, no email send: the service only depends on `JobRepository` and `EmailDraftRepository`.
+
+## generate() guard (scope addition — required for the canonical record)
+
+`EmailGenerationService.generate()` — a portal apply stores `recipientEmail = null`, so the `(jobId, recipientEmail)` pair check (email-idempotency Scenario 1 above) cannot see it. Without a new guard, `generate()` would resolve `existingId` via `findByJobIdAndUserId` and overwrite the SENT marker with a PENDING draft (resurrection ⇒ double application). The new guard runs before the pair check and covers both the AI and template paths:
+
+```java
+var existingSent = emailDraftRepository.findByJobIdAndUserId(job.id(), userId)
+        .filter(d -> d.status() == EmailStatus.SENT);
+if (existingSent.isPresent()) {
+    log.debug("Skipping generation, job {} already applied (SENT) for user {}", job.id(), userId);
+    return existingSent.get();
+}
+```
+
+## Interface contract
+
+```java
+// port/in — RecordExternalApplyUseCase
+public interface RecordExternalApplyUseCase {
+    RecordExternalApplyResult record(Long userId, Long jobId);
+}
+
+public record RecordExternalApplyResult(EmailDraft draft, boolean created) {}
+```
+
+DTO: `web/dto/ExternalApplyResponse(Long jobId, EmailStatus status)`.
+Service: `application/service/RecordExternalApplyService(EmailDraftRepository, JobRepository)`, exposed as a `@Bean` in `AppConfig`.
+
+## Acceptance criteria
+
+- [ ] `RecordExternalApplyServiceTest.record_whenNoDraftExists_shouldCreateSentMarker` — created, SENT, null recipient, marker subject/body
+- [ ] `RecordExternalApplyServiceTest.record_whenSentMarkerExists_shouldReturnExistingWithoutSaving`
+- [ ] `RecordExternalApplyServiceTest.record_whenPendingDraftExists_shouldSupersedeInPlace` — same id, SENT, null recipient, no second row
+- [ ] `RecordExternalApplyServiceTest.record_whenJobNotFound_shouldThrowJobNotFoundException`
+- [ ] `JobControllerTest.recordExternalApply_whenCreated_shouldReturn201WithJobIdAndStatus`
+- [ ] `JobControllerTest.recordExternalApply_whenReplay_shouldReturn200WithSameJobId`
+- [ ] `JobControllerTest.recordExternalApply_whenJobMissing_shouldReturn404`
+- [ ] `JobControllerTest.recordExternalApply_withoutAuthentication_shouldReturn401`
+- [ ] `EmailGenerationServiceTest.generate_whenExternalApplyMarkerSent_shouldSkipRegeneration` — no AI, no save
+
+---
+
 ## Agent prompt (OpenCode)
 
 ```
