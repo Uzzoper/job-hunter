@@ -35,6 +35,7 @@ import com.juanperuzzo.job_hunter.application.port.out.UserProfileRepository;
 import com.juanperuzzo.job_hunter.application.port.out.BotMemoryPort;
 import com.juanperuzzo.job_hunter.application.service.BotMemorySyncService;
 import com.juanperuzzo.job_hunter.application.service.ApproveDraftService;
+import com.juanperuzzo.job_hunter.application.service.RecordExternalApplyService;
 import com.juanperuzzo.job_hunter.application.service.AuthService;
 import com.juanperuzzo.job_hunter.application.service.AutoSendEligibilityService;
 import com.juanperuzzo.job_hunter.application.service.ResumeUploadService;
@@ -471,6 +472,13 @@ public class AppConfig {
     @Bean
     public ApproveDraftService approveDraftService(EmailDraftRepository emailDraftRepository) {
         return new ApproveDraftService(emailDraftRepository);
+    }
+
+    @Bean
+    public RecordExternalApplyService recordExternalApplyService(
+            EmailDraftRepository emailDraftRepository,
+            JobRepository jobRepository) {
+        return new RecordExternalApplyService(emailDraftRepository, jobRepository);
     }
 
     @Bean
