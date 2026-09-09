@@ -10,6 +10,7 @@ import com.juanperuzzo.job_hunter.application.port.in.GetEmailDraftUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.GetJobUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.JobWithDraftStatus;
 import com.juanperuzzo.job_hunter.application.port.in.ListJobsUseCase;
+import com.juanperuzzo.job_hunter.application.port.in.RecordExternalApplyUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.SendEmailUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.TailorResumeUseCase;
 import com.juanperuzzo.job_hunter.domain.model.EmailDraft;
@@ -18,9 +19,11 @@ import com.juanperuzzo.job_hunter.domain.model.JobAnalysis;
 import com.juanperuzzo.job_hunter.application.port.in.CurrentUserProvider;
 import com.juanperuzzo.job_hunter.web.dto.EmailDraftResponse;
 import com.juanperuzzo.job_hunter.web.dto.EnrichmentResultResponse;
+import com.juanperuzzo.job_hunter.web.dto.ExternalApplyResponse;
 import com.juanperuzzo.job_hunter.web.dto.FetchResultResponse;
 import com.juanperuzzo.job_hunter.web.dto.JobResponse;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -43,6 +46,7 @@ public class JobController {
     private final SendEmailUseCase sendEmailUseCase;
     private final TailorResumeUseCase tailorResumeUseCase;
     private final CompanyEnrichmentUseCase companyEnrichmentUseCase;
+    private final RecordExternalApplyUseCase recordExternalApplyUseCase;
     private final CurrentUserProvider currentUserService;
 
     public JobController(
@@ -57,6 +61,7 @@ public class JobController {
             SendEmailUseCase sendEmailUseCase,
             TailorResumeUseCase tailorResumeUseCase,
             CompanyEnrichmentUseCase companyEnrichmentUseCase,
+            RecordExternalApplyUseCase recordExternalApplyUseCase,
             CurrentUserProvider currentUserService) {
         this.fetchJobsUseCase = fetchJobsUseCase;
         this.fetchSourceJobsUseCase = fetchSourceJobsUseCase;
@@ -69,6 +74,7 @@ public class JobController {
         this.sendEmailUseCase = sendEmailUseCase;
         this.tailorResumeUseCase = tailorResumeUseCase;
         this.companyEnrichmentUseCase = companyEnrichmentUseCase;
+        this.recordExternalApplyUseCase = recordExternalApplyUseCase;
         this.currentUserService = currentUserService;
     }
 
@@ -135,6 +141,16 @@ public class JobController {
                 emailDraft.generatedAt()
         );
         return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/{id}/applied")
+    public ResponseEntity<ExternalApplyResponse> recordExternalApply(@PathVariable Long id) {
+        Long userId = currentUserService.getCurrentUserId();
+        var result = recordExternalApplyUseCase.record(userId, id);
+        var body = new ExternalApplyResponse(result.draft().jobId(), result.draft().status());
+        return result.created()
+                ? ResponseEntity.status(HttpStatus.CREATED).body(body)
+                : ResponseEntity.ok(body);
     }
 
     @PostMapping("/fetch")
