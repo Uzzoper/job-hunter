@@ -9,10 +9,14 @@ import com.juanperuzzo.job_hunter.domain.exception.UserNotFoundException;
 import com.juanperuzzo.job_hunter.domain.model.CompanyTone;
 import com.juanperuzzo.job_hunter.domain.model.Project;
 import com.juanperuzzo.job_hunter.domain.model.User;
+import com.juanperuzzo.job_hunter.domain.model.UserPreferences;
 import com.juanperuzzo.job_hunter.domain.model.UserProfile;
+import com.juanperuzzo.job_hunter.domain.model.WorkModel;
 import com.juanperuzzo.job_hunter.infrastructure.security.CurrentUserService;
 import com.juanperuzzo.job_hunter.web.controller.ProfileController;
 import com.juanperuzzo.job_hunter.web.dto.ProfileRequest;
+import com.juanperuzzo.job_hunter.web.dto.PreferencesRequest;
+import com.juanperuzzo.job_hunter.web.dto.PreferencesResponse;
 import com.juanperuzzo.job_hunter.web.exception.GlobalExceptionHandler;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.AfterEach;
@@ -72,7 +76,7 @@ class ProfileControllerTest {
         SecurityContextHolder.getContext().setAuthentication(authentication);
 
         var profile = new UserProfile(1L, 1L, "Experienced dev...", List.of("Java", "Spring Boot"), CompanyTone.FORMAL, List.of(),
-                null, null, null, null, null);
+                null, null, null, null, null, null);
         when(userProfileService.getProfile(1L)).thenReturn(profile);
 
         mockMvc.perform(get("/api/profile"))
@@ -103,9 +107,9 @@ class ProfileControllerTest {
         SecurityContextHolder.getContext().setAuthentication(authentication);
 
         var request = new ProfileRequest("New resume text that is certainly long enough to pass the minimum length constraint of fifty characters for test", List.of("Java", "Python"), CompanyTone.STARTUP, List.of(),
-                null, null, null, null, null);
+                null, null, null, null, null, null);
         var profile = new UserProfile(1L, 1L, "New resume text that is certainly long enough to pass the minimum length constraint of fifty characters for test", List.of("Java", "Python"), CompanyTone.STARTUP, List.of(),
-                null, null, null, null, null);
+                null, null, null, null, null, null);
 
         when(userProfileService.saveProfile(eq(1L), any(UserProfile.class)))
                 .thenReturn(profile);
@@ -127,7 +131,7 @@ class ProfileControllerTest {
         SecurityContextHolder.getContext().setAuthentication(authentication);
 
         var request = new ProfileRequest(null, List.of("Java"), CompanyTone.STARTUP, List.of(),
-                null, null, null, null, null);
+                null, null, null, null, null, null);
 
         mockMvc.perform(put("/api/profile")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -142,7 +146,7 @@ class ProfileControllerTest {
         SecurityContextHolder.getContext().setAuthentication(authentication);
 
         var request = new ProfileRequest("short", List.of("Java"), CompanyTone.STARTUP, List.of(),
-                null, null, null, null, null);
+                null, null, null, null, null, null);
 
         mockMvc.perform(put("/api/profile")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -157,7 +161,7 @@ class ProfileControllerTest {
         SecurityContextHolder.getContext().setAuthentication(authentication);
 
         var request = new ProfileRequest("A very long resume text that is certainly more than fifty characters long to pass validation", List.of(), CompanyTone.STARTUP, List.of(),
-                null, null, null, null, null);
+                null, null, null, null, null, null);
 
         mockMvc.perform(put("/api/profile")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -172,7 +176,7 @@ class ProfileControllerTest {
         SecurityContextHolder.getContext().setAuthentication(authentication);
 
         var request = new ProfileRequest("A very long resume text that is certainly more than fifty characters long to pass validation", List.of("Java"), null, List.of(),
-                null, null, null, null, null);
+                null, null, null, null, null, null);
 
         mockMvc.perform(put("/api/profile")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -187,7 +191,7 @@ class ProfileControllerTest {
         SecurityContextHolder.getContext().setAuthentication(authentication);
 
         var request = new ProfileRequest("New resume text that is certainly long enough to pass the minimum length constraint of fifty characters for test", List.of("Java"), CompanyTone.FORMAL, List.of(),
-                null, null, null, null, null);
+                null, null, null, null, null, null);
 
         when(userProfileService.saveProfile(eq(1L), any(UserProfile.class)))
                 .thenThrow(new IllegalArgumentException("Invalid input"));
@@ -205,7 +209,7 @@ class ProfileControllerTest {
         SecurityContextHolder.getContext().setAuthentication(authentication);
 
         var profile = new UserProfile(2L, 42L, "Dev resume", List.of("Go"), CompanyTone.CASUAL, List.of(),
-                null, null, null, null, null);
+                null, null, null, null, null, null);
         when(userProfileService.getProfile(42L)).thenReturn(profile);
 
         mockMvc.perform(get("/api/profile"))
@@ -225,10 +229,10 @@ class ProfileControllerTest {
         var resume = "New resume text that is certainly long enough to pass the minimum length constraint of fifty characters for test";
         var request = new ProfileRequest(resume, List.of("Java"), CompanyTone.FORMAL, List.of(),
                 "(42) 99999-0000", "me@example.com", "https://me.dev",
-                "https://github.com/me", "https://linkedin.com/in/me");
+                "https://github.com/me", "https://linkedin.com/in/me", null);
         var profile = new UserProfile(1L, 1L, resume, List.of("Java"), CompanyTone.FORMAL, List.of(),
                 "(42) 99999-0000", "me@example.com", "https://me.dev",
-                "https://github.com/me", "https://linkedin.com/in/me");
+                "https://github.com/me", "https://linkedin.com/in/me", null);
 
         when(userProfileService.saveProfile(eq(1L), any(UserProfile.class))).thenReturn(profile);
 
@@ -250,7 +254,7 @@ class ProfileControllerTest {
         SecurityContextHolder.getContext().setAuthentication(authentication);
 
         var profile = new UserProfile(1L, 1L, "Experienced dev...", List.of("Java"), CompanyTone.FORMAL, List.of(),
-                null, "stored@example.com", "https://stored.dev", null, null);
+                null, "stored@example.com", "https://stored.dev", null, null, null);
         when(userProfileService.getProfile(1L)).thenReturn(profile);
 
         mockMvc.perform(get("/api/profile"))
@@ -269,7 +273,7 @@ class ProfileControllerTest {
         var profile = new UserProfile(1L, 1L, "Experienced Java developer with Spring Boot",
                 List.of("Java", "Spring Boot"), CompanyTone.FORMAL,
                 List.of(new Project("ProjectX", "A project", "Java, Maven")),
-                null, null, null, null, null);
+                null, null, null, null, null, null);
         var pdfBytes = "fake pdf content".getBytes();
         var multipartFile = new MockMultipartFile("file", "resume.pdf", "application/pdf", pdfBytes);
 
@@ -333,5 +337,89 @@ class ProfileControllerTest {
         mockMvc.perform(multipart("/api/profile/upload-resume")
                         .file(multipartFile))
                 .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("getProfile should expose preferences when set on profile")
+    void getProfile_withPreferences_shouldExposeThem() throws Exception {
+        var authentication = new UsernamePasswordAuthenticationToken(new User(1L, "test@test.com", "Test", "hash"), null, List.of());
+        SecurityContextHolder.getContext().setAuthentication(authentication);
+
+        var prefs = new UserPreferences(WorkModel.REMOTE, 5000, List.of("Curitiba"), List.of("Acme"));
+        var profile = new UserProfile(1L, 1L, "Experienced dev...", List.of("Java"), CompanyTone.FORMAL, List.of(),
+                null, null, null, null, null, prefs);
+        when(userProfileService.getProfile(1L)).thenReturn(profile);
+
+        mockMvc.perform(get("/api/profile"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.preferences.workModel").value("REMOTE"))
+                .andExpect(jsonPath("$.preferences.salaryFloor").value(5000))
+                .andExpect(jsonPath("$.preferences.locations[0]").value("Curitiba"))
+                .andExpect(jsonPath("$.preferences.excludedCompanies[0]").value("Acme"));
+    }
+
+    @Test
+    @DisplayName("getProfile should return null preferences when not set")
+    void getProfile_withoutPreferences_shouldReturnNull() throws Exception {
+        var authentication = new UsernamePasswordAuthenticationToken(new User(1L, "test@test.com", "Test", "hash"), null, List.of());
+        SecurityContextHolder.getContext().setAuthentication(authentication);
+
+        var profile = new UserProfile(1L, 1L, "Experienced dev...", List.of("Java"), CompanyTone.FORMAL, List.of(),
+                null, null, null, null, null, null);
+        when(userProfileService.getProfile(1L)).thenReturn(profile);
+
+        mockMvc.perform(get("/api/profile"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.preferences").value(org.hamcrest.Matchers.nullValue()));
+    }
+
+    @Test
+    @DisplayName("saveProfile without preferences should preserve existing preferences")
+    void saveProfile_withoutPreferences_shouldPreserveExisting() throws Exception {
+        var authentication = new UsernamePasswordAuthenticationToken(new User(1L, "test@test.com", "Test", "hash"), null, List.of());
+        SecurityContextHolder.getContext().setAuthentication(authentication);
+
+        var resume = "New resume text that is certainly long enough to pass the minimum length constraint of fifty characters for test";
+        var request = new ProfileRequest(resume, List.of("Java"), CompanyTone.STARTUP, List.of(),
+                null, null, null, null, null, null);
+        var prefs = new UserPreferences(WorkModel.HYBRID, 3000, List.of("Curitiba"), List.of());
+        var profile = new UserProfile(1L, 1L, resume, List.of("Java"), CompanyTone.STARTUP, List.of(),
+                null, null, null, null, null, prefs);
+
+        when(userProfileService.saveProfile(eq(1L), any(UserProfile.class)))
+                .thenReturn(profile);
+
+        mockMvc.perform(put("/api/profile")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.preferences.workModel").value("HYBRID"))
+                .andExpect(jsonPath("$.preferences.salaryFloor").value(3000));
+    }
+
+    @Test
+    @DisplayName("saveProfile with preferences should override all preference fields")
+    void saveProfile_withPreferences_shouldOverride() throws Exception {
+        var authentication = new UsernamePasswordAuthenticationToken(new User(1L, "test@test.com", "Test", "hash"), null, List.of());
+        SecurityContextHolder.getContext().setAuthentication(authentication);
+
+        var resume = "New resume text that is certainly long enough to pass the minimum length constraint of fifty characters for test";
+        var requestPrefs = new PreferencesRequest(WorkModel.REMOTE, 6000, List.of("São Paulo"), List.of());
+        var request = new ProfileRequest(resume, List.of("Java"), CompanyTone.STARTUP, List.of(),
+                null, null, null, null, null, requestPrefs);
+        var prefs = new UserPreferences(WorkModel.REMOTE, 6000, List.of("São Paulo"), List.of());
+        var profile = new UserProfile(1L, 1L, resume, List.of("Java"), CompanyTone.STARTUP, List.of(),
+                null, null, null, null, null, prefs);
+
+        when(userProfileService.saveProfile(eq(1L), any(UserProfile.class)))
+                .thenReturn(profile);
+
+        mockMvc.perform(put("/api/profile")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.preferences.workModel").value("REMOTE"))
+                .andExpect(jsonPath("$.preferences.salaryFloor").value(6000))
+                .andExpect(jsonPath("$.preferences.locations[0]").value("São Paulo"));
     }
 }

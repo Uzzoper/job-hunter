@@ -127,7 +127,7 @@ class ResumeTailoringServiceTest {
         when(jobAnalysisRepository.findByJobIdAndUserId(JOB_ID, USER_ID)).thenReturn(Optional.of(analysis()));
         when(userProfileRepository.findByUserId(USER_ID))
                 .thenReturn(Optional.of(new UserProfile(1L, USER_ID, "   ", List.of(), CompanyTone.FORMAL, List.of(),
-                null, null, null, null, null)));
+                null, null, null, null, null, null)));
 
         assertThrows(ProfileNotConfiguredException.class,
                 () -> service.tailorResume(USER_ID, JOB_ID));
@@ -300,7 +300,7 @@ class ResumeTailoringServiceTest {
         when(jobAnalysisRepository.findByJobIdAndUserId(JOB_ID, USER_ID)).thenReturn(Optional.of(analysis()));
         when(userProfileRepository.findByUserId(USER_ID))
                 .thenReturn(Optional.of(new UserProfile(1L, USER_ID, longResume, List.of(), CompanyTone.FORMAL, List.of(),
-                        null, null, null, null, null)));
+                        null, null, null, null, null, null)));
         when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user()));
         when(aiPort.complete(anyString())).thenReturn(validAiJson());
         when(pdfRendererPort.renderPdf(anyString())).thenReturn(new byte[]{1});
@@ -491,7 +491,7 @@ class ResumeTailoringServiceTest {
     private UserProfile profile() {
         return new UserProfile(1L, USER_ID, RESUME_TEXT,
                 List.of("Java", "Spring Boot", "PostgreSQL"), CompanyTone.FORMAL, List.of(),
-                null, null, null, null, null);
+                null, null, null, null, null, null);
     }
 
     private UserProfile profileWithContact() {
@@ -499,7 +499,7 @@ class ResumeTailoringServiceTest {
                 List.of("Java", "Spring Boot", "PostgreSQL"), CompanyTone.FORMAL, List.of(),
                 "(42) 99833-1363", "contato@juan.dev",
                 "https://juanperuzzo.is-a.dev", "https://github.com/Uzzoper",
-                "https://linkedin.com/in/juanperuzzo");
+                "https://linkedin.com/in/juanperuzzo", null);
     }
 
     private User user() {

@@ -97,7 +97,7 @@ class EmailGenerationServiceTest {
                 "Experienced Java developer with Spring Boot expertise.",
                 List.of("Java", "Spring Boot", "PostgreSQL"),
                 CompanyTone.FORMAL,
-                List.of(), null, null, null, null, null);
+                List.of(), null, null, null, null, null, null);
             when(userProfileRepository.findByUserId(any())).thenReturn(Optional.of(validProfile));
 
             Long jobId = 1L;
@@ -148,7 +148,7 @@ class EmailGenerationServiceTest {
                 "Experienced Java developer with Spring Boot expertise.",
                 List.of("Java", "Spring Boot", "PostgreSQL"),
                 CompanyTone.FORMAL,
-                List.of(), null, null, null, null, null);
+                List.of(), null, null, null, null, null, null);
             when(userProfileRepository.findByUserId(any())).thenReturn(Optional.of(validProfile));
 
             Long jobId = 2L;
@@ -197,7 +197,7 @@ class EmailGenerationServiceTest {
                 "Experienced Java developer with Spring Boot expertise.",
                 List.of("Java", "Spring Boot", "PostgreSQL"),
                 CompanyTone.FORMAL,
-                List.of(), null, null, null, null, null);
+                List.of(), null, null, null, null, null, null);
             when(userProfileRepository.findByUserId(any())).thenReturn(Optional.of(validProfile));
 
             Long jobId = 3L;
@@ -243,7 +243,7 @@ class EmailGenerationServiceTest {
                 "Experienced Java developer with Spring Boot expertise.",
                 List.of("Java", "Spring Boot", "PostgreSQL"),
                 CompanyTone.FORMAL,
-                List.of(), null, null, null, null, null);
+                List.of(), null, null, null, null, null, null);
             when(userProfileRepository.findByUserId(any())).thenReturn(Optional.of(validProfile));
 
             Long jobId = 4L;
@@ -277,7 +277,7 @@ class EmailGenerationServiceTest {
                 "Experienced Java developer with Spring Boot expertise.",
                 List.of("Java", "Spring Boot", "PostgreSQL"),
                 CompanyTone.FORMAL,
-                List.of(), null, null, null, null, null);
+                List.of(), null, null, null, null, null, null);
             when(userProfileRepository.findByUserId(any())).thenReturn(Optional.of(validProfile));
 
             Long jobId = 5L;
@@ -313,7 +313,7 @@ class EmailGenerationServiceTest {
                     "Java developer position");
             UserProfile profile = new UserProfile(null, 1L,
                     "Resume text", List.of("Java"), CompanyTone.FORMAL, List.of(),
-                    null, null, null, null, null);
+                    null, null, null, null, null, null);
 
             when(jobRepository.findById(jobId)).thenReturn(Optional.of(job));
             when(jobAnalysisRepository.findByJobIdAndUserId(jobId, 1L)).thenReturn(Optional.of(analysis));
@@ -370,7 +370,7 @@ class EmailGenerationServiceTest {
                 "Experienced Java developer with Spring Boot expertise.",
                 List.of("Java", "Spring Boot", "PostgreSQL"),
                 CompanyTone.FORMAL,
-                List.of(), null, null, null, null, null);
+                List.of(), null, null, null, null, null, null);
             when(userProfileRepository.findByUserId(any())).thenReturn(Optional.of(validProfile));
 
             Long jobId = 7L;
@@ -405,7 +405,7 @@ class EmailGenerationServiceTest {
                 "Experienced Java developer with Spring Boot expertise.",
                 List.of("Java", "Spring Boot", "PostgreSQL"),
                 CompanyTone.FORMAL,
-                List.of(), null, null, null, null, null);
+                List.of(), null, null, null, null, null, null);
             when(userProfileRepository.findByUserId(any())).thenReturn(Optional.of(validProfile));
 
             Long jobId = 8L;
@@ -433,7 +433,7 @@ class EmailGenerationServiceTest {
                 "Experienced Java developer with Spring Boot expertise.",
                 List.of("Java", "Spring Boot"),
                 CompanyTone.FORMAL,
-                List.of(), null, null, null, null, null);
+                List.of(), null, null, null, null, null, null);
             when(userProfileRepository.findByUserId(any())).thenReturn(Optional.of(validProfile));
 
             Long jobId = 9L;
@@ -472,7 +472,7 @@ class EmailGenerationServiceTest {
                     "Developer role");
             UserProfile profile = new UserProfile(null, 1L,
                     "Experienced Java developer.", List.of("Java"), CompanyTone.FORMAL, List.of(),
-                    null, null, null, null, null);
+                    null, null, null, null, null, null);
 
             var existingSent = new EmailDraft(100L, jobId, 1L, "Subject", "Body",
                     EmailStatus.SENT, LocalDateTime.now(), LocalDateTime.now());
@@ -504,7 +504,7 @@ class EmailGenerationServiceTest {
                     "Developer role");
             UserProfile profile = new UserProfile(null, 1L,
                     "Experienced Java developer.", List.of("Java"), CompanyTone.FORMAL, List.of(),
-                    null, null, null, null, null);
+                    null, null, null, null, null, null);
 
             var externalApplyMarker = new EmailDraft(200L, jobId, 1L,
                     "Subject: [Aplicação externa]",
@@ -537,7 +537,7 @@ class EmailGenerationServiceTest {
                     "Developer role");
             UserProfile profile = new UserProfile(null, 1L,
                     "Experienced Java developer.", List.of("Java"), CompanyTone.FORMAL, List.of(),
-                    null, null, null, null, null);
+                    null, null, null, null, null, null);
 
             when(jobRepository.findById(jobId)).thenReturn(Optional.of(job));
             when(jobAnalysisRepository.findByJobIdAndUserId(jobId, 1L)).thenReturn(Optional.of(analysis));
@@ -566,7 +566,7 @@ class EmailGenerationServiceTest {
             when(emailDraftRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
             UserProfile profile = new UserProfile(null, 1L,
                     "Experienced Java developer.", List.of("Java"), CompanyTone.FORMAL, List.of(),
-                    null, null, null, null, null);
+                    null, null, null, null, null, null);
             when(userProfileRepository.findByUserId(any())).thenReturn(Optional.of(profile));
 
             Long jobId = 20L;
@@ -595,7 +595,7 @@ class EmailGenerationServiceTest {
                     .when(botMemorySyncService).writeMemoryEntry(eq(1L), anyString());
             UserProfile profile = new UserProfile(null, 1L,
                     "Experienced Java developer.", List.of("Java"), CompanyTone.FORMAL, List.of(),
-                    null, null, null, null, null);
+                    null, null, null, null, null, null);
             when(userProfileRepository.findByUserId(any())).thenReturn(Optional.of(profile));
 
             Long jobId = 21L;

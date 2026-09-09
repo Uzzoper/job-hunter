@@ -9,7 +9,9 @@ import com.juanperuzzo.job_hunter.domain.exception.InvalidResumeTextException;
 import com.juanperuzzo.job_hunter.domain.exception.UserNotFoundException;
 import com.juanperuzzo.job_hunter.domain.model.CompanyTone;
 import com.juanperuzzo.job_hunter.domain.model.Project;
+import com.juanperuzzo.job_hunter.domain.model.UserPreferences;
 import com.juanperuzzo.job_hunter.domain.model.UserProfile;
+import com.juanperuzzo.job_hunter.domain.model.WorkModel;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.PDPageContentStream;
@@ -93,7 +95,7 @@ class ResumeUploadServiceTest {
         var profile = new UserProfile(1L, 1L, "Experienced Java developer with Spring Boot",
                 List.of("Java", "Spring Boot"), CompanyTone.FORMAL,
                 List.of(new Project("ProjectX", "A project", "Java, Maven")),
-                null, null, null, null, null);
+                null, null, null, null, null, null);
 
         when(aiPort.complete(anyString())).thenReturn(aiJson);
         when(userProfileRepository.findByUserId(1L)).thenReturn(Optional.empty());
@@ -123,7 +125,7 @@ class ResumeUploadServiceTest {
                 """;
         var profile = new UserProfile(1L, 1L, "Java developer",
                 List.of("Java"), CompanyTone.FORMAL, List.of(),
-                null, null, null, null, null);
+                null, null, null, null, null, null);
 
         when(aiPort.complete(anyString())).thenReturn(aiJson);
         when(userProfileRepository.findByUserId(1L)).thenReturn(Optional.empty());
@@ -260,10 +262,10 @@ class ResumeUploadServiceTest {
     void uploadResume_whenExistingProfile_shouldPreserveTone() throws Exception {
         var file = validPdfMock("Existing user with a CASUAL tone in the existing profile record.");
         var existingProfile = new UserProfile(5L, 1L, "Old resume...", List.of("Java"), CompanyTone.CASUAL, List.of(),
-                null, null, null, null, null);
+                null, null, null, null, null, null);
         var expectedProfile = new UserProfile(5L, 1L, "Existing user with a CASUAL tone in the existing profile record.",
                 List.of("Spring"), CompanyTone.CASUAL, List.of(),
-                null, null, null, null, null);
+                null, null, null, null, null, null);
 
         when(aiPort.complete(anyString())).thenReturn("{\"skills\": [\"Spring\"], \"projects\": []}");
         when(userProfileRepository.findByUserId(1L)).thenReturn(Optional.of(existingProfile));
@@ -284,7 +286,7 @@ class ResumeUploadServiceTest {
         var file = validPdfMock("New user uploading resume for the very first time.");
         var expectedProfile = new UserProfile(null, 1L, "New user uploading resume for the very first time.",
                 List.of("Kotlin"), CompanyTone.FORMAL, List.of(),
-                null, null, null, null, null);
+                null, null, null, null, null, null);
 
         when(aiPort.complete(anyString())).thenReturn("{\"skills\": [\"Kotlin\"], \"projects\": []}");
         when(userProfileRepository.findByUserId(1L)).thenReturn(Optional.empty());
@@ -316,11 +318,11 @@ class ResumeUploadServiceTest {
                 """;
         var existingProfile = new UserProfile(5L, 1L, "Old resume text that is long enough to pass.",
                 List.of("Java"), CompanyTone.CASUAL, List.of(),
-                null, null, null, null, null);
+                null, null, null, null, null, null);
         var savedProfile = new UserProfile(5L, 1L, "John Doe phone +55 42 99999-0000 github.com/juan",
                 List.of("Java"), CompanyTone.CASUAL, List.of(),
                 "+55 42 99999-0000", "juan@example.com", "https://juan.dev", "github.com/juan",
-                "linkedin.com/in/juan");
+                "linkedin.com/in/juan", null);
 
         when(aiPort.complete(anyString())).thenReturn(aiJson);
         when(userProfileRepository.findByUserId(1L)).thenReturn(Optional.of(existingProfile));
@@ -351,11 +353,11 @@ class ResumeUploadServiceTest {
                 """;
         var existingProfile = new UserProfile(5L, 1L, "Old resume text that is long enough to pass.",
                 List.of("Java"), CompanyTone.CASUAL, List.of(),
-                null, null, null, "github.com/juan", null);
+                null, null, null, "github.com/juan", null, null);
         var savedProfile = new UserProfile(5L, 1L, "Juan Peruzzo resume with contact details",
                 List.of("Java"), CompanyTone.CASUAL, List.of(),
                 "+55 42 98888-1111", "ai@example.com", "https://ai.dev", "github.com/juan",
-                "linkedin.com/in/ai-extracted");
+                "linkedin.com/in/ai-extracted", null);
 
         when(aiPort.complete(anyString())).thenReturn(aiJson);
         when(userProfileRepository.findByUserId(1L)).thenReturn(Optional.of(existingProfile));
@@ -385,10 +387,10 @@ class ResumeUploadServiceTest {
                 """;
         var existingProfile = new UserProfile(5L, 1L, "Old resume text that is long enough to pass.",
                 List.of("Java"), CompanyTone.CASUAL, List.of(),
-                "+55 42 99777-2222", null, null, "github.com/juan", null);
+                "+55 42 99777-2222", null, null, "github.com/juan", null, null);
         var savedProfile = new UserProfile(5L, 1L, "Resume without any contact information at all",
                 List.of("Java"), CompanyTone.CASUAL, List.of(),
-                "+55 42 99777-2222", null, null, "github.com/juan", null);
+                "+55 42 99777-2222", null, null, "github.com/juan", null, null);
 
         when(aiPort.complete(anyString())).thenReturn(aiJson);
         when(userProfileRepository.findByUserId(1L)).thenReturn(Optional.of(existingProfile));
@@ -418,10 +420,10 @@ class ResumeUploadServiceTest {
                 """;
         var existingProfile = new UserProfile(5L, 1L, "Old resume text that is long enough to pass.",
                 List.of("Java"), CompanyTone.CASUAL, List.of(),
-                null, null, null, null, null);
+                null, null, null, null, null, null);
         var savedProfile = new UserProfile(5L, 1L, "Resume with a typo in the extracted contact email",
                 List.of("Java"), CompanyTone.CASUAL, List.of(),
-                "+55 42 99666-3333", null, null, null, null);
+                "+55 42 99666-3333", null, null, null, null, null);
 
         when(aiPort.complete(anyString())).thenReturn(aiJson);
         when(userProfileRepository.findByUserId(1L)).thenReturn(Optional.of(existingProfile));
@@ -447,10 +449,10 @@ class ResumeUploadServiceTest {
                 """;
         var existingProfile = new UserProfile(5L, 1L, "Old resume text that is long enough to pass.",
                 List.of("Java"), CompanyTone.CASUAL, List.of(),
-                "+55 42 99555-4444", null, null, null, null);
+                "+55 42 99555-4444", null, null, null, null, null);
         var savedProfile = new UserProfile(5L, 1L, "Resume uploaded with a malformed AI contact response",
                 List.of("Java"), CompanyTone.CASUAL, List.of(),
-                "+55 42 99555-4444", null, null, null, null);
+                "+55 42 99555-4444", null, null, null, null, null);
 
         when(aiPort.complete(anyString())).thenReturn(aiJson);
         when(userProfileRepository.findByUserId(1L)).thenReturn(Optional.of(existingProfile));
@@ -464,6 +466,37 @@ class ResumeUploadServiceTest {
         assertEquals("+55 42 99555-4444", saved.phone());
         assertNull(saved.contactEmail());
         assertNull(saved.githubUrl());
+    }
+
+    // =========================================================================
+    // Profile preferences preservation on upload (Finding 1 regression)
+    // =========================================================================
+
+    @Test
+    @DisplayName("uploadResume should preserve existing preferences from stored profile")
+    void uploadResume_shouldPreserveExistingPreferences() throws Exception {
+        var file = validPdfMock("Updated resume content for user with existing preferences.");
+        var existingPrefs = new UserPreferences(WorkModel.HYBRID, 3000, List.of("Curitiba"), List.of("Acme"));
+        var existingProfile = new UserProfile(5L, 1L, "Old resume text that is long enough to pass.",
+                List.of("Java"), CompanyTone.CASUAL, List.of(),
+                null, null, null, null, null, existingPrefs);
+        var savedProfile = new UserProfile(5L, 1L, "Updated resume content for user with existing preferences.",
+                List.of("Java", "Spring"), CompanyTone.CASUAL, List.of(),
+                null, null, null, null, null, existingPrefs);
+
+        when(aiPort.complete(anyString())).thenReturn("{\"skills\": [\"Java\", \"Spring\"], \"projects\": []}");
+        when(userProfileRepository.findByUserId(1L)).thenReturn(Optional.of(existingProfile));
+        when(userProfileService.saveProfile(eq(1L), any(UserProfile.class)))
+                .thenReturn(savedProfile);
+
+        var result = service.uploadResume(1L, file);
+
+        // Verify the result (returned from saveProfile) preserves the existing preferences
+        assertNotNull(result.preferences());
+        assertEquals(WorkModel.HYBRID, result.preferences().workModel());
+        assertEquals(3000, result.preferences().salaryFloor());
+        assertEquals(List.of("Curitiba"), result.preferences().locations());
+        assertEquals(List.of("Acme"), result.preferences().excludedCompanies());
     }
 
     // =========================================================================
