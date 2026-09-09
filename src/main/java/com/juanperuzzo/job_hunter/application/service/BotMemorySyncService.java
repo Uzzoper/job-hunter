@@ -5,7 +5,7 @@ import com.juanperuzzo.job_hunter.application.port.out.UserProfileRepository;
 import com.juanperuzzo.job_hunter.domain.model.BotPreferences;
 import com.juanperuzzo.job_hunter.domain.model.UserPreferences;
 import com.juanperuzzo.job_hunter.domain.model.UserProfile;
-import com.juanperuzzo.job_hunter.domain.model.WorkModel;
+import com.juanperuzzo.job_hunter.domain.model.WorkPreference;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -61,16 +61,19 @@ public class BotMemorySyncService {
             "linkedinurl",  (p, v) -> isBlank(p.linkedinUrl())  ? copyContact(p, p.phone(),            p.contactEmail(), p.portfolioUrl(), p.githubUrl(), v)               : p
     );
 
-    // --- Work-model token normalization map (lowercase + accent-stripped → WorkModel) ---
-    private static final Map<String, WorkModel> WORK_MODEL_TOKENS = Map.of(
-            "remoto",    WorkModel.REMOTE,
-            "remote",    WorkModel.REMOTE,
-            "hibrido",   WorkModel.HYBRID,
-            "hybrid",    WorkModel.HYBRID,
-            "presencial", WorkModel.ONSITE,
-            "onsite",    WorkModel.ONSITE,
-            "on-site",   WorkModel.ONSITE,
-            "on site",   WorkModel.ONSITE
+    // --- WorkPreference token normalization (lowercase + accent-stripped → WorkKind) ---
+    /** Parser-internal discriminant; the sealed {@link WorkPreference} domain type is built from it. */
+    private enum WorkKind { REMOTE, HYBRID, ONSITE }
+
+    private static final Map<String, WorkKind> WORK_KIND_TOKENS = Map.of(
+            "remoto",     WorkKind.REMOTE,
+            "remote",     WorkKind.REMOTE,
+            "hibrido",    WorkKind.HYBRID,
+            "hybrid",     WorkKind.HYBRID,
+            "presencial", WorkKind.ONSITE,
+            "onsite",     WorkKind.ONSITE,
+            "on-site",    WorkKind.ONSITE,
+            "on site",    WorkKind.ONSITE
     );
 
     private static final String SALARY_NON_DIGITS = "[^0-9]";
@@ -241,10 +244,8 @@ public class BotMemorySyncService {
      */
     private UserProfile mergePreferences(UserProfile profile, BotPreferences prefs, Long userId) {
         var existingPrefs = profile.preferences();
-        WorkModel workModel = existingPrefs != null ? existingPrefs.workModel() : null;
+        WorkPreference workPreference = existingPrefs != null ? existingPrefs.workPreference() : null;
         Integer salaryFloor = existingPrefs != null ? existingPrefs.salaryFloor() : null;
-        List<String> locations = existingPrefs != null && !existingPrefs.locations().isEmpty()
-                ? existingPrefs.locations() : null;
         List<String> excludedCompanies = existingPrefs != null && !existingPrefs.excludedCompanies().isEmpty()
                 ? existingPrefs.excludedCompanies() : null;
 
@@ -255,16 +256,21 @@ public class BotMemorySyncService {
 
         boolean changed = false;
 
-        // workModel: fill-if-empty + normalize
-        if (workModel == null && rawWorkModel != null && !rawWorkModel.isBlank()) {
-            WorkModel parsed = parseWorkModel(rawWorkModel);
+        // workPreference: fill-if-empty + normalize.
+        // The single sum-type field is built from the work-model token and the
+        // city list together — Remote carries no cities, Hybrid/Onsite require
+        // them, so a bare token is never enough on its own.
+        if (workPreference == null && rawWorkModel != null && !rawWorkModel.isBlank()) {
+            List<String> cities = parseCities(rawLocations);
+            WorkPreference parsed = parseWorkPreference(rawWorkModel, cities);
             if (parsed != null) {
-                log.info("Merged preferences for user {}: workModel=null→{} (source: '{}')",
-                        userId, parsed, truncate(rawWorkModel, 80));
-                workModel = parsed;
+                log.info("Merged preferences for user {}: workPreference=null→{} (source: '{}', cities: {})",
+                        userId, variantName(parsed), truncate(rawWorkModel, 80), cities);
+                workPreference = parsed;
                 changed = true;
             } else {
-                log.warn("Dropped invalid workModel token '{}' for user {} — not a recognized work-model value", rawWorkModel, userId);
+                log.warn("Dropped invalid workPreference token '{}' for user {} — not a recognized work-model value (or cities missing)",
+                        rawWorkModel, userId);
             }
         }
 
@@ -278,19 +284,6 @@ public class BotMemorySyncService {
                 changed = true;
             } else {
                 log.warn("Dropped invalid salary value '{}' for user {} — not a valid positive integer", rawSalary, userId);
-            }
-        }
-
-        // locations: fill-if-empty + normalize
-        if (locations == null && rawLocations != null && !rawLocations.isBlank()) {
-            List<String> parsed = parseLocations(rawLocations);
-            if (!parsed.isEmpty()) {
-                log.info("Merged preferences for user {}: locations=null→{} (source: '{}')",
-                        userId, parsed, truncate(rawLocations, 80));
-                locations = parsed;
-                changed = true;
-            } else {
-                log.warn("Dropped invalid locations value '{}' for user {} — no valid locations parsed", rawLocations, userId);
             }
         }
 
@@ -316,21 +309,44 @@ public class BotMemorySyncService {
                 profile.skills(), profile.tone(), profile.projects(),
                 profile.phone(), profile.contactEmail(),
                 profile.portfolioUrl(), profile.githubUrl(), profile.linkedinUrl(),
-                new UserPreferences(workModel, salaryFloor,
-                        locations != null ? locations : List.of(),
+                new UserPreferences(workPreference, salaryFloor,
                         excludedCompanies != null ? excludedCompanies : List.of()));
     }
 
     // ── Parse-lenient / validate-strict firewall ────────────────────
 
     /**
-     * Parse a raw work-model string: normalize (lowercase, strip accents) then
-     * exact-match against known tokens. Returns null if unrecognizable.
+     * Parse a raw work-model string into a {@link WorkPreference} variant by
+     * exact normalized-match only (lowercase, strip accents, trim).
+     * <p>
+     * <ul>
+     *   <li>{@code remoto}/{@code remote} → {@code Remote()} — the city list is
+     *       ignored because a fully-remote worker has no city constraint
+     *       (cities are unrepresentable for Remote).</li>
+     *   <li>{@code hibrido}/{@code hybrid} → {@code Hybrid(cities)} — requires a
+     *       non-empty city list, otherwise null (never hallucinated).</li>
+     *   <li>{@code presencial}/{@code onsite}/{@code on-site}/{@code on site} →
+     *       {@code Onsite(cities)} — requires a non-empty city list as well.</li>
+     * </ul>
+     * Anything that is not an exact token match (ambiguous phrases, free text,
+     * garbage) is dropped with null — no fuzzy matching, no guessing.
      */
-    public static WorkModel parseWorkModel(String raw) {
-        if (raw == null || raw.isBlank()) return null;
-        String normalized = stripAccents(raw.trim().toLowerCase(Locale.ROOT));
-        return WORK_MODEL_TOKENS.get(normalized);
+    public static WorkPreference parseWorkPreference(String rawToken, List<String> cities) {
+        if (rawToken == null || rawToken.isBlank()) return null;
+        String normalized = stripAccents(rawToken.trim().toLowerCase(Locale.ROOT));
+        WorkKind kind = WORK_KIND_TOKENS.get(normalized);
+        if (kind == null) return null;
+        try {
+            return switch (kind) {
+                case REMOTE -> new WorkPreference.Remote();
+                case HYBRID -> new WorkPreference.Hybrid(cities);
+                case ONSITE -> new WorkPreference.Onsite(cities);
+            };
+        } catch (IllegalArgumentException e) {
+            log.warn("Dropping {} workPreference token '{}' — city list unusable",
+                    kind.name().toLowerCase(Locale.ROOT), truncate(rawToken, 80));
+            return null;
+        }
     }
 
     /**
@@ -358,24 +374,39 @@ public class BotMemorySyncService {
     }
 
     /**
-     * Parse a comma-delimited locations string: split, trim, filter blanks and
-     * length-exceeding items, cap at MAX_LOCATIONS.
+     * Parse a comma-delimited city list: split, trim, drop blanks and
+     * length-exceeding items, cap at {@link WorkPreference#MAX_CITIES}.
      */
-    public static List<String> parseLocations(String raw) {
+    public static List<String> parseCities(String raw) {
         if (raw == null || raw.isBlank()) return List.of();
         String[] parts = raw.split(",");
         var result = new ArrayList<String>();
         for (String part : parts) {
             String trimmed = part.strip();
             if (trimmed.isEmpty()) continue;
-            if (trimmed.length() > UserPreferences.MAX_LOCATION_LENGTH) {
-                log.warn("Dropping location exceeding {} chars: '{}'", UserPreferences.MAX_LOCATION_LENGTH, truncate(trimmed, 100));
+            if (trimmed.length() > WorkPreference.MAX_CITY_LENGTH) {
+                log.warn("Dropping city exceeding {} chars: '{}'", WorkPreference.MAX_CITY_LENGTH, truncate(trimmed, 100));
                 continue;
             }
             result.add(trimmed);
-            if (result.size() >= UserPreferences.MAX_LOCATIONS) break;
+            if (result.size() >= WorkPreference.MAX_CITIES) break;
         }
         return List.copyOf(result);
+    }
+
+    /**
+     * Returns the variant name of a {@link WorkPreference} for audit log lines
+     * (e.g. "Hybrid"), never null.
+     */
+    private static String variantName(WorkPreference workPreference) {
+        if (workPreference == null) {
+            return "null";
+        }
+        return switch (workPreference) {
+            case WorkPreference.Remote r -> "Remote";
+            case WorkPreference.Hybrid h -> "Hybrid";
+            case WorkPreference.Onsite o -> "Onsite";
+        };
     }
 
     /**
