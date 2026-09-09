@@ -107,8 +107,12 @@ fi
 # ---------------------------------------------------------------------------
 
 if [ -n "${COMPOSE_DIR}" ]; then
-    if [ ! -f "${COMPOSE_DIR}/docker-compose.yml" ] && [ ! -f "${COMPOSE_DIR}/compose.yaml" ]; then
-        say "ERROR: no docker-compose.yml/compose.yaml in ${COMPOSE_DIR}."
+    COMPOSE_FILE=""
+    for candidate in docker-compose.yml docker-compose.yaml compose.yml compose.yaml; do
+        if [ -f "${COMPOSE_DIR}/${candidate}" ]; then COMPOSE_FILE="${candidate}"; break; fi
+    done
+    if [ -z "${COMPOSE_FILE}" ]; then
+        say "ERROR: no compose file (docker-compose.yml/yaml, compose.yml/yaml) in ${COMPOSE_DIR}."
         exit 2
     fi
     OVERRIDE="${COMPOSE_DIR}/docker-compose.override.yaml"
