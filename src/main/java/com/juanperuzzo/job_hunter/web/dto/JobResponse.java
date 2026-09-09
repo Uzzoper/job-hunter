@@ -14,5 +14,7 @@ public record JobResponse(
     String source,
     String contactEmail,
     /** Current user's draft status for the job; null when there is no draft. SENT means already applied. */
-    EmailStatus draftStatus
+    EmailStatus draftStatus,
+    /** Current user's AI match score (0-100) for the job; null when not analyzed. */
+    Integer matchScore
 ) {}

@@ -81,9 +81,10 @@ public class JobController {
     @GetMapping
     public ResponseEntity<List<JobResponse>> getAllJobs(
             @RequestParam(required = false) Boolean hasEmail,
-            @RequestParam(required = false) Boolean excludeApplied) {
+            @RequestParam(required = false) Boolean excludeApplied,
+            @RequestParam(required = false) Integer minScore) {
         Long userId = currentUserService.getCurrentUserId();
-        List<JobResponse> response = listJobsUseCase.findAllWithDraftStatus(userId, hasEmail, excludeApplied).stream()
+        List<JobResponse> response = listJobsUseCase.findAllWithDraftStatus(userId, hasEmail, excludeApplied, minScore).stream()
                 .map(this::toJobResponse)
                 .collect(Collectors.toList());
         return ResponseEntity.ok(response);
@@ -101,7 +102,8 @@ public class JobController {
                 job.postedAt(),
                 job.source(),
                 job.contactEmail(),
-                null // draft status is not resolved on the detail endpoint
+                null, // draft status is not resolved on the detail endpoint
+                null  // match score is not resolved on the detail endpoint
         );
         return ResponseEntity.ok(response);
     }
@@ -117,7 +119,8 @@ public class JobController {
                 job.postedAt(),
                 job.source(),
                 job.contactEmail(),
-                entry.draftStatus()
+                entry.draftStatus(),
+                entry.matchScore()
         );
     }
 
