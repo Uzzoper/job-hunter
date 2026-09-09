@@ -65,6 +65,7 @@ flowchart TB
 
 0. Register or login via `/api/auth/register` and `/api/auth/login` to receive a JWT token.
    All subsequent requests must include `Authorization: Bearer <token>`.
+   The bot lane uses a static service token instead: `X-Bot-Token: <secret>` (no `Bearer`) — see `bot.service` in `application-local.yaml` and `scripts/setup-bot-access.sh`. CLI/webapp keep JWT login.
 1. The scraper fetches job listings from Gupy, InfoJobs, and LinkedIn, filtered by keywords.
 2. Each listing is saved to SQLite (`./data/jobhunter.db`) — duplicates are skipped by URL.
 3. On demand, the AI analyzes the listing against your profile and returns a match score (0–100), matched/missing skills, and company tone.
@@ -105,6 +106,19 @@ The project includes a **Rust** binary (`jh-cli`) with two interaction modes for
 | `jh-cli email approve <job-id>` | Approve a pending draft for auto-send |
 
 > Full spec at [`docs/specs/cli-tui-spec.md`](docs/specs/cli-tui-spec.md)
+
+---
+
+## Hermes bot (primary interface)
+
+Per [ADR 001](docs/adr/001-multi-interface.md), the Hermes Agent bot (`jobhunter-bot` profile) is the primary interface: you chat, it lists/applies/reports via skills. **Start at [`docs/bot-onboarding.md`](docs/bot-onboarding.md)** — the step-by-step guide from fresh clone to working integration.
+
+```bash
+bash scripts/install-bot-skills.sh                # install skills into the bot profile
+bash scripts/setup-bot-access.sh --owner-id <id>  # service-token setup (X-Bot-Token)
+```
+
+Skills: `company-scraper` (company contact research), `job-application` (Gupy + InfoJobs apply planner), `job-portal-browser` (browser fallback), `report-generator` + `analyzer` + `visualizer` (progress reports and funnel charts), `cdp-daemon` (persistent Chrome session for batch applies). Standing-instructions template: `bot-profile/SOUL.md` (installed once, never overwritten).
 
 ---
 
@@ -234,6 +248,33 @@ flowchart BT
 ```
 
 The dependency rule is strictly enforced: `domain` has no external dependencies, `application` depends only on `domain`, and `infrastructure`/`web` depend on `application`.
+
+### Bot as interface
+
+```mermaid
+flowchart TB
+    subgraph Chat["💬 Bot chat"]
+        U[User] <--> B["jobhunter-bot<br/>(Hermes profile)"]
+        B --> SK["Skills<br/>job-application · company-scraper<br/>job-portal-browser · report-generator<br/>analyzer · visualizer"]
+    end
+
+    subgraph Lanes["Access lanes"]
+        direction LR
+        L1[("SQLite<br/>read-only direct")]
+        L2["Backend REST<br/>X-Bot-Token"]
+        L3["Hermes gateway<br/>AI + email"]
+    end
+
+    SK --> L1
+    SK --> L2
+    SK --> L3
+    L2 --> DB[("SQLite<br/>./data/jobhunter.db")]
+
+    MEM["Bot memories<br/>MEMORY.md"] <-->|sync| SYNC[BotMemorySyncService]
+    SYNC <--> DB
+```
+
+The bot reaches the backend through the `X-Bot-Token` lane, reads SQLite directly for reporting skills, and uses the Hermes gateway for AI/email. Preferences flow both ways via `BotMemorySyncService` (bot memories ↔ backend, see `docs/bot-onboarding.md` §6).
 
 ---
 
@@ -550,7 +591,7 @@ Start the TUI (default mode, no subcommand needed):
 |--------|----------|-------------|:---:|
 | `POST` | `/api/auth/register` | Register a new user | No |
 | `POST` | `/api/auth/login` | Login and receive JWT token | No |
-| `GET` | `/api/jobs?hasEmail=true` | List jobs (filter by has contact email) | Yes |
+| `GET` | `/api/jobs?hasEmail=&excludeApplied=&minScore=` | List jobs (filters: has contact email, hide applied, minimum AI score; each item carries draftStatus + matchScore) | Yes |
 | `GET` | `/api/jobs/{id}` | Get job detail | Yes |
 | `POST` | `/api/jobs/fetch` | Trigger all scrapers (Gupy + InfoJobs + LinkedIn) | Yes |
 | `POST` | `/api/jobs/fetch/linkedin` | Trigger only LinkedIn scraper | Yes |
@@ -559,7 +600,8 @@ Start the TUI (default mode, no subcommand needed):
 | `POST` | `/api/jobs/{id}/email` | Generate new email for the job | Yes |
 | `POST` | `/api/jobs/{id}/email/approve` | Approve a PENDING draft for auto-send | Yes |
 | `POST` | `/api/jobs/{id}/send` | Send email via Hermes bot using user's email as from | Yes |
-| `GET` | `/api/profile` | Get authenticated user's profile | Yes |
+| `POST` | `/api/jobs/{id}/applied` | Record an external application (201 when created) | Yes |
+| `GET` | `/api/profile` | Get authenticated user's profile (includes preferences: workPreference, salaryFloor, excludedCompanies) | Yes |
 | `PUT` | `/api/profile` | Save/update user profile | Yes |
 | `POST` | `/api/profile/upload-resume` | Upload PDF resume → AI extracts skills & projects | Yes |
 
