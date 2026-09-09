@@ -48,8 +48,10 @@ public class BotMemoryStartupSync {
         }
 
         Path memoryFile = memoryDir.resolve("memories/MEMORY.md");
-        if (!Files.isRegularFile(memoryFile)) {
-            log.warn("Bot memory file '{}' not found — skipping. Startup continues.", memoryFile);
+        Path userFile = memoryDir.resolve("memories/USER.md");
+        if (!Files.isRegularFile(memoryFile) && !Files.isRegularFile(userFile)) {
+            log.warn("Neither bot memory file '{}' nor '{}' found — skipping. Startup continues.",
+                    memoryFile, userFile);
             return;
         }
 
