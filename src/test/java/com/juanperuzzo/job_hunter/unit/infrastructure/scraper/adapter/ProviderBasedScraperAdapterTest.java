@@ -1,6 +1,7 @@
 package com.juanperuzzo.job_hunter.unit.infrastructure.scraper.adapter;
 
 import com.juanperuzzo.job_hunter.application.port.out.RawJob;
+import com.juanperuzzo.job_hunter.application.port.out.UserRepository;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.adapter.ProviderBasedScraperAdapter;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.normalizer.DateParser;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.normalizer.JobNormalizer;
@@ -19,6 +20,7 @@ import java.time.ZoneId;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.mock;
 
 @DisplayName("ProviderBasedScraperAdapter tests")
 class ProviderBasedScraperAdapterTest {
@@ -136,7 +138,7 @@ class ProviderBasedScraperAdapterTest {
                             raw("Bad", "https://a.com/2")),
                     null, noopRateLimiter,
                     new JobNormalizer(new DateParser(FIXED_CLOCK), List.of("dev1"),
-                            List.of(), List.of(), 90, FIXED_CLOCK));
+                            List.of(), List.of(), 90, FIXED_CLOCK, mock(UserRepository.class)));
 
             adapter = new ProviderBasedScraperAdapter(registry);
             var jobs = adapter.fetch().jobs();
@@ -286,6 +288,7 @@ class ProviderBasedScraperAdapterTest {
     }
 
     private static JobNormalizer createNormalizer(List<String> keywords) {
-        return new JobNormalizer(new DateParser(FIXED_CLOCK), keywords, List.of(), List.of(), 90, FIXED_CLOCK);
+        return new JobNormalizer(new DateParser(FIXED_CLOCK), keywords, List.of(), List.of(), 90, FIXED_CLOCK,
+                mock(UserRepository.class));
     }
 }

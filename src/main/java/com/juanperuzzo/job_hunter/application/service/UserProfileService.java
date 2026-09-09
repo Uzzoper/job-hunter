@@ -26,7 +26,7 @@ public class UserProfileService implements UserProfileUseCase {
 
         return userProfileRepository.findByUserId(userId)
                 .orElse(new UserProfile(null, userId, "", List.of(), CompanyTone.STARTUP, List.of(),
-                        null, null, null, null, null));
+                        null, null, null, null, null, null));
     }
 
     /**
@@ -47,11 +47,20 @@ public class UserProfileService implements UserProfileUseCase {
             throw new InvalidResumeTextException("Resume text must not be null and must be at least 50 characters");
         }
 
-        Long profileId = userProfileRepository.findByUserId(userId).map(UserProfile::id).orElse(null);
+        var existing = userProfileRepository.findByUserId(userId);
+        Long profileId = existing.map(UserProfile::id).orElse(null);
+
+        // Preserve existing preferences when incoming is null (omit = keep).
+        // When incoming is non-null, all sub-fields are authoritative (human override).
+        var existingPrefs = existing.flatMap(p ->
+                p.preferences() != null ? java.util.Optional.of(p.preferences()) : java.util.Optional.empty())
+                .orElse(null);
+        var effectivePrefs = profile.preferences() != null ? profile.preferences() : existingPrefs;
 
         var toSave = new UserProfile(profileId, userId, profile.resumeText(), profile.skills(),
                 profile.tone(), profile.projects(), profile.phone(), profile.contactEmail(),
-                profile.portfolioUrl(), profile.githubUrl(), profile.linkedinUrl());
+                profile.portfolioUrl(), profile.githubUrl(), profile.linkedinUrl(),
+                effectivePrefs);
         return userProfileRepository.save(toSave);
     }
 }

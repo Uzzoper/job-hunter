@@ -1,0 +1,29 @@
+package com.juanperuzzo.job_hunter.web.dto;
+
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Size;
+import java.util.List;
+
+/**
+ * Optional preferences the user can send via {@code PUT /api/profile}.
+ * <p>
+ * When the entire object is omitted or null, existing preferences are preserved.
+ * When present, all sub-fields are authoritative (human override).
+ * <p>
+ * The work-location dimension is a single discriminated {@link WorkPreferenceDto}
+ * object replacing the old {@code workModel} enum + {@code locations} list pair
+ * (spec: docs/specs/user-preferences.md — abrupt removal of contradictory states).
+ */
+public record PreferencesRequest(
+        @Valid
+        WorkPreferenceDto workPreference,
+
+        @Min(value = 1, message = "salaryFloor must be at least 1")
+        @Max(value = 500_000, message = "salaryFloor must not exceed 500,000")
+        Integer salaryFloor,
+
+        @Size(max = 50, message = "excludedCompanies must contain at most 50 items")
+        List<@Size(max = 200, message = "each company name must be at most 200 characters") String> excludedCompanies
+) {}

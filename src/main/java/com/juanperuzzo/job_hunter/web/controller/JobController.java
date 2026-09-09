@@ -8,7 +8,9 @@ import com.juanperuzzo.job_hunter.application.port.in.FetchSourceJobsUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.GenerateEmailUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.GetEmailDraftUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.GetJobUseCase;
+import com.juanperuzzo.job_hunter.application.port.in.JobWithDraftStatus;
 import com.juanperuzzo.job_hunter.application.port.in.ListJobsUseCase;
+import com.juanperuzzo.job_hunter.application.port.in.RecordExternalApplyUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.SendEmailUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.TailorResumeUseCase;
 import com.juanperuzzo.job_hunter.domain.model.EmailDraft;
@@ -17,9 +19,11 @@ import com.juanperuzzo.job_hunter.domain.model.JobAnalysis;
 import com.juanperuzzo.job_hunter.application.port.in.CurrentUserProvider;
 import com.juanperuzzo.job_hunter.web.dto.EmailDraftResponse;
 import com.juanperuzzo.job_hunter.web.dto.EnrichmentResultResponse;
+import com.juanperuzzo.job_hunter.web.dto.ExternalApplyResponse;
 import com.juanperuzzo.job_hunter.web.dto.FetchResultResponse;
 import com.juanperuzzo.job_hunter.web.dto.JobResponse;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -42,6 +46,7 @@ public class JobController {
     private final SendEmailUseCase sendEmailUseCase;
     private final TailorResumeUseCase tailorResumeUseCase;
     private final CompanyEnrichmentUseCase companyEnrichmentUseCase;
+    private final RecordExternalApplyUseCase recordExternalApplyUseCase;
     private final CurrentUserProvider currentUserService;
 
     public JobController(
@@ -56,6 +61,7 @@ public class JobController {
             SendEmailUseCase sendEmailUseCase,
             TailorResumeUseCase tailorResumeUseCase,
             CompanyEnrichmentUseCase companyEnrichmentUseCase,
+            RecordExternalApplyUseCase recordExternalApplyUseCase,
             CurrentUserProvider currentUserService) {
         this.fetchJobsUseCase = fetchJobsUseCase;
         this.fetchSourceJobsUseCase = fetchSourceJobsUseCase;
@@ -68,26 +74,18 @@ public class JobController {
         this.sendEmailUseCase = sendEmailUseCase;
         this.tailorResumeUseCase = tailorResumeUseCase;
         this.companyEnrichmentUseCase = companyEnrichmentUseCase;
+        this.recordExternalApplyUseCase = recordExternalApplyUseCase;
         this.currentUserService = currentUserService;
     }
 
     @GetMapping
     public ResponseEntity<List<JobResponse>> getAllJobs(
-            @RequestParam(required = false) Boolean hasEmail) {
-        List<Job> jobs = hasEmail != null
-                ? listJobsUseCase.findAll(hasEmail)
-                : listJobsUseCase.findAll();
-        List<JobResponse> response = jobs.stream()
-                .map(job -> new JobResponse(
-                        job.id(),
-                        job.title(),
-                        job.company(),
-                        job.url(),
-                        job.description(),
-                        job.postedAt(),
-                        job.source(),
-                        job.contactEmail()
-                ))
+            @RequestParam(required = false) Boolean hasEmail,
+            @RequestParam(required = false) Boolean excludeApplied,
+            @RequestParam(required = false) Integer minScore) {
+        Long userId = currentUserService.getCurrentUserId();
+        List<JobResponse> response = listJobsUseCase.findAllWithDraftStatus(userId, hasEmail, excludeApplied, minScore).stream()
+                .map(this::toJobResponse)
                 .collect(Collectors.toList());
         return ResponseEntity.ok(response);
     }
@@ -103,9 +101,27 @@ public class JobController {
                 job.description(),
                 job.postedAt(),
                 job.source(),
-                job.contactEmail()
+                job.contactEmail(),
+                null, // draft status is not resolved on the detail endpoint
+                null  // match score is not resolved on the detail endpoint
         );
         return ResponseEntity.ok(response);
+    }
+
+    private JobResponse toJobResponse(JobWithDraftStatus entry) {
+        Job job = entry.job();
+        return new JobResponse(
+                job.id(),
+                job.title(),
+                job.company(),
+                job.url(),
+                job.description(),
+                job.postedAt(),
+                job.source(),
+                job.contactEmail(),
+                entry.draftStatus(),
+                entry.matchScore()
+        );
     }
 
     @PostMapping("/{id}/analyze")
@@ -128,6 +144,16 @@ public class JobController {
                 emailDraft.generatedAt()
         );
         return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/{id}/applied")
+    public ResponseEntity<ExternalApplyResponse> recordExternalApply(@PathVariable Long id) {
+        Long userId = currentUserService.getCurrentUserId();
+        var result = recordExternalApplyUseCase.record(userId, id);
+        var body = new ExternalApplyResponse(result.draft().jobId(), result.draft().status());
+        return result.created()
+                ? ResponseEntity.status(HttpStatus.CREATED).body(body)
+                : ResponseEntity.ok(body);
     }
 
     @PostMapping("/fetch")
