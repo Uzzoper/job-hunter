@@ -338,8 +338,9 @@ public class AppConfig {
     }
 
     @Bean
-    public FetchJobsService fetchJobsService(ScraperPort scraperPort, JobRepository jobRepository, EmailDraftRepository emailDraftRepository) {
-        return new FetchJobsService(scraperPort, jobRepository, emailDraftRepository);
+    public FetchJobsService fetchJobsService(ScraperPort scraperPort, JobRepository jobRepository, EmailDraftRepository emailDraftRepository,
+                                             JobAnalysisRepository jobAnalysisRepository) {
+        return new FetchJobsService(scraperPort, jobRepository, emailDraftRepository, jobAnalysisRepository);
     }
 
     @Bean
@@ -366,9 +367,10 @@ public class AppConfig {
                                                          UserProfileRepository userProfileRepository,
                                                          JobRepository jobRepository, JobAnalysisRepository jobAnalysisRepository,
                                                          TemplateEmailService templateEmailService,
+                                                         BotMemorySyncService botMemorySyncService,
                                                          @Value("${email.standard-template.min-match-score:60}") int minMatchScore) {
         return new EmailGenerationService(aiPort, emailDraftRepository, userProfileRepository, jobRepository,
-                jobAnalysisRepository, templateEmailService, minMatchScore);
+                jobAnalysisRepository, templateEmailService, botMemorySyncService, minMatchScore);
     }
 
     @Bean
@@ -504,7 +506,8 @@ public class AppConfig {
     @Bean
     public BotMemoryStartupSync botMemoryStartupSync(
             BotMemorySyncService botMemorySyncService,
+            UserRepository userRepository,
             @Value("${bot.memory.dir}") String memoryDir) {
-        return new BotMemoryStartupSync(botMemorySyncService, Path.of(memoryDir));
+        return new BotMemoryStartupSync(botMemorySyncService, userRepository, Path.of(memoryDir));
     }
 }
