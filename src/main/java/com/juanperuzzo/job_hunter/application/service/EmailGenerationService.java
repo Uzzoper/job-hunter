@@ -33,12 +33,14 @@ public class EmailGenerationService implements GenerateEmailUseCase, GetEmailDra
     private final JobRepository jobRepository;
     private final JobAnalysisRepository jobAnalysisRepository;
     private final TemplateEmailService templateEmailService;
+    private final BotMemorySyncService botMemorySyncService;
     private final int minMatchScore;
 
     public EmailGenerationService(AiPort aiPort, EmailDraftRepository emailDraftRepository,
                                   UserProfileRepository userProfileRepository,
                                   JobRepository jobRepository, JobAnalysisRepository jobAnalysisRepository,
                                   TemplateEmailService templateEmailService,
+                                  BotMemorySyncService botMemorySyncService,
                                   int minMatchScore) {
         this.aiPort = aiPort;
         this.emailDraftRepository = emailDraftRepository;
@@ -46,6 +48,7 @@ public class EmailGenerationService implements GenerateEmailUseCase, GetEmailDra
         this.jobRepository = jobRepository;
         this.jobAnalysisRepository = jobAnalysisRepository;
         this.templateEmailService = templateEmailService;
+        this.botMemorySyncService = botMemorySyncService;
         this.minMatchScore = minMatchScore;
     }
 
@@ -89,12 +92,41 @@ public class EmailGenerationService implements GenerateEmailUseCase, GetEmailDra
                     .map(EmailDraft::id)
                     .orElse(null);
             EmailDraft draft = parseEmailDraft(existingId, job.id(), userId, response, job.contactEmail());
-            return emailDraftRepository.save(draft);
+            EmailDraft saved = emailDraftRepository.save(draft);
+            if (saved.status() == EmailStatus.REJECTED) {
+                writeRefusalReasonBestEffort(userId, job.id(), response);
+            }
+            return saved;
         } catch (AiException e) {
             throw e;
         } catch (Exception e) {
             throw new AiException("Failed to generate email: " + e.getMessage(), e);
         }
+    }
+
+    /**
+     * Best-effort write-back of the AI refusal reason to the bot memory, so the bot
+     * learns why a job was skipped. Never fails the rejection flow: any failure is
+     * logged as a WARN and swallowed.
+     */
+    private void writeRefusalReasonBestEffort(Long userId, Long jobId, String aiResponse) {
+        try {
+            botMemorySyncService.writeMemoryEntry(userId, refusalReason(aiResponse));
+        } catch (Exception e) {
+            log.warn("Could not write refusal reason to bot memory for user {} job {}: {}",
+                    userId, jobId, e.getMessage());
+        }
+    }
+
+    /** Extracts the reason text after the {@code NO_APPLY:} prefix (falls back to the whole response). */
+    private static String refusalReason(String aiResponse) {
+        String response = aiResponse.trim();
+        String prefix = "NO_APPLY:";
+        if (response.startsWith(prefix)) {
+            String reason = response.substring(prefix.length()).trim();
+            return reason.isEmpty() ? response : reason;
+        }
+        return response;
     }
 
     private EmailDraft generateFromTemplate(Job job, Long userId) {
