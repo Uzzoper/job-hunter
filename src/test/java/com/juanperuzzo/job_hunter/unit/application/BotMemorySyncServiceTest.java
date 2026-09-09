@@ -222,8 +222,8 @@ class BotMemorySyncServiceTest {
         Path memoryFile = tempDir.resolve("memories/MEMORY.md");
         when(botMemoryPort.readFile(memoryFile)).thenReturn(Optional.of("""
                 §
-                Locations: City X
-                Salary: Z range
+                FavoriteColor: Blue
+                LastProject: K8s migration
                 """));
 
         var existingProfile = existingProfile(null, null);
@@ -240,6 +240,6 @@ class BotMemorySyncServiceTest {
         return new UserProfile(
                 10L, 1L, "Valid resume text for testing purposes with enough content here.",
                 List.of("Java"), CompanyTone.STARTUP, List.of(),
-                phone, contactEmail, null, null, null);
+                phone, contactEmail, null, null, null, null);
     }
 }

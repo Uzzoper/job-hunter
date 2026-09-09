@@ -4,6 +4,7 @@ import com.juanperuzzo.job_hunter.infrastructure.persistence.UserEntity;
 import com.juanperuzzo.job_hunter.infrastructure.persistence.UserJpaRepository;
 import com.juanperuzzo.job_hunter.infrastructure.persistence.UserProfileEntity;
 import com.juanperuzzo.job_hunter.infrastructure.persistence.UserProfileJpaRepository;
+import com.juanperuzzo.job_hunter.infrastructure.persistence.UserProfilePersistenceAdapter;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -15,6 +16,7 @@ import org.springframework.test.context.DynamicPropertySource;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -61,6 +63,9 @@ class SqliteBaselineIntegrationTest {
     private UserProfileJpaRepository userProfileJpaRepository;
 
     @Autowired
+    private UserProfilePersistenceAdapter userProfilePersistenceAdapter;
+
+    @Autowired
     private JdbcTemplate jdbcTemplate;
 
     @Test
@@ -83,7 +88,8 @@ class SqliteBaselineIntegrationTest {
                 "Java developer with Spring Boot experience building REST APIs.",
                 new String[]{"Java", "Spring"},
                 "FORMAL",
-                null, null, null, null, null);
+                null, null, null, null, null,
+                null, null, null, null);
         var saved = userProfileJpaRepository.save(profile);
 
         var reloaded = userProfileJpaRepository.findByUserId(user.getId()).orElseThrow();
@@ -91,5 +97,77 @@ class SqliteBaselineIntegrationTest {
         assertThat(reloaded.getId()).isEqualTo(saved.getId());
         assertThat(reloaded.getUserId()).isEqualTo(user.getId());
         assertThat(reloaded.getSkills()).containsExactly("Java", "Spring");
+    }
+
+    @Test
+    @DisplayName("should round-trip V6 user preferences columns (set → save → reload → equal)")
+    void saveAndReload_withPreferences_shouldRoundTrip() {
+        var user = userJpaRepository.save(
+                new UserEntity(null, "prefs-roundtrip@example.com", "PrefsTester", "$2a$hash"));
+
+        var entity = new UserProfileEntity(
+                null, user.getId(),
+                "Java developer with Spring Boot experience building REST APIs.",
+                new String[]{"Java", "Spring"},
+                "FORMAL",
+                null, null, null, null, null,
+                "REMOTE", 5000,
+                new String[]{"Curitiba", "São Paulo"},
+                new String[]{"Acme Corp", "Evil Inc"});
+        var saved = userProfileJpaRepository.save(entity);
+
+        var reloaded = userProfileJpaRepository.findByUserId(user.getId()).orElseThrow();
+
+        assertThat(reloaded.getWorkModel()).isEqualTo("REMOTE");
+        assertThat(reloaded.getSalaryFloor()).isEqualTo(5000);
+        assertThat(reloaded.getLocations()).containsExactly("Curitiba", "São Paulo");
+        assertThat(reloaded.getExcludedCompanies()).containsExactly("Acme Corp", "Evil Inc");
+    }
+
+    @Test
+    @DisplayName("should return null preferences when all preference columns are null")
+    void saveAndReload_allNullPreferences_shouldReturnNull() {
+        var user = userJpaRepository.save(
+                new UserEntity(null, "null-prefs@example.com", "NullPrefsTester", "$2a$hash"));
+
+        var entity = new UserProfileEntity(
+                null, user.getId(),
+                "Java developer with Spring Boot experience building REST APIs.",
+                new String[]{"Java"},
+                "STARTUP",
+                null, null, null, null, null,
+                null, null, null, null);
+        userProfileJpaRepository.save(entity);
+
+        var reloaded = userProfileJpaRepository.findByUserId(user.getId()).orElseThrow();
+
+        assertThat(reloaded.getWorkModel()).isNull();
+        assertThat(reloaded.getSalaryFloor()).isNull();
+        assertThat(reloaded.getLocations()).isNull();
+        assertThat(reloaded.getExcludedCompanies()).isNull();
+    }
+
+    @Test
+    @DisplayName("should handle poisoned work_model value gracefully via adapter (Finding 4)")
+    void findByUserId_withGarbageWorkModel_shouldReturnNullWorkModel() {
+        var user = userJpaRepository.save(
+                new UserEntity(null, "garbage-workmodel@example.com", "GarbageTester", "$2a$hash"));
+
+        // Directly insert a row with garbage work_model + valid salary_floor via JDBC
+        // so a preferences object is still built (salaryFloor present) and the
+        // poisoned work_model must degrade to null without failing the read.
+        jdbcTemplate.update(
+                "INSERT INTO user_profiles (user_id, resume_text, skills, tone, work_model, salary_floor) VALUES (?, ?, ?, ?, ?, ?)",
+                user.getId(), "Resume with garbage work model for testing.",
+                "[\"Java\"]", "FORMAL", "BANANA_GARBAGE", 5000);
+
+        var profileOpt = userProfilePersistenceAdapter.findByUserId(user.getId());
+
+        assertThat(profileOpt).isPresent();
+        var profile = profileOpt.get();
+        // Garbage work_model should be tolerated — preferences built, workModel null, salaryFloor preserved
+        assertThat(profile.preferences()).isNotNull();
+        assertThat(profile.preferences().workModel()).isNull();
+        assertThat(profile.preferences().salaryFloor()).isEqualTo(5000);
     }
 }
