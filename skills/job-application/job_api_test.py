@@ -294,6 +294,97 @@ class GetJobTests(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
+# api_record_applied (issue #48 — backend canonical record)
+# ---------------------------------------------------------------------------
+
+class RecordAppliedTests(unittest.TestCase):
+    """POST /api/jobs/{id}/applied — send the applied marker upstream.
+
+    Follows the existing conventions: X-Bot-Token header, JSON echo response,
+    401 → unauthorized, 404 → not_found, transport → api_error. Stdlib urllib
+    only, all network I/O mocked at urllib.request.urlopen.
+    """
+
+    @unittest.mock.patch("urllib.request.urlopen")
+    def test_posts_to_applied_path_with_token(self, mock_urlopen):
+        mock_urlopen.return_value = _json_response({"jobId": 7, "status": "applied"})
+        result = job_api.api_record_applied("http://localhost:8080", "tok-1", 7)
+        req = mock_urlopen.call_args[0][0]
+        self.assertEqual(req.get_method(), "POST")
+        self.assertEqual(req.full_url, "http://localhost:8080/api/jobs/7/applied")
+        self.assertEqual(_request_header(req, "X-Bot-Token"), "tok-1")
+        self.assertIsNone(_request_header(req, "Authorization"))
+        self.assertEqual(result, {"jobId": 7, "status": "applied"})
+
+    @unittest.mock.patch("urllib.request.urlopen")
+    def test_returns_echoed_applied_marker(self, mock_urlopen):
+        mock_urlopen.return_value = _json_response({"jobId": 7, "status": "applied"})
+        result = job_api.api_record_applied("http://localhost:8080", "t", 7)
+        self.assertEqual(result["jobId"], 7)
+        self.assertEqual(result["status"], "applied")
+
+    @unittest.mock.patch("urllib.request.urlopen")
+    def test_sends_empty_json_object_body(self, mock_urlopen):
+        mock_urlopen.return_value = _json_response({"jobId": 7, "status": "applied"})
+        job_api.api_record_applied("http://localhost:8080", "t", 7)
+        req = mock_urlopen.call_args[0][0]
+        self.assertEqual(req.get_method(), "POST")
+        self.assertEqual(req.data, b"{}")
+        self.assertEqual(_request_header(req, "Content-Type"), "application/json")
+
+    @unittest.mock.patch("urllib.request.urlopen")
+    def test_base_url_with_trailing_slash_still_one_slash(self, mock_urlopen):
+        mock_urlopen.return_value = _json_response({"jobId": 7, "status": "applied"})
+        job_api.api_record_applied("http://localhost:8080/", "t", 7)
+        req = mock_urlopen.call_args[0][0]
+        self.assertEqual(req.full_url, "http://localhost:8080/api/jobs/7/applied")
+        self.assertIn("api/jobs/7/applied", req.full_url)
+
+    @unittest.mock.patch("urllib.request.urlopen")
+    def test_401_returns_unauthorized(self, mock_urlopen):
+        mock_urlopen.side_effect = _http_error(401)
+        self.assertEqual(
+            job_api.api_record_applied("http://localhost:8080", "t", 7),
+            {"error": "unauthorized"},
+        )
+
+    @unittest.mock.patch("urllib.request.urlopen")
+    def test_404_returns_not_found(self, mock_urlopen):
+        mock_urlopen.side_effect = _http_error(404)
+        self.assertEqual(
+            job_api.api_record_applied("http://localhost:8080", "t", 999),
+            {"error": "not_found"},
+        )
+
+    @unittest.mock.patch("urllib.request.urlopen")
+    def test_transport_error_returns_api_error(self, mock_urlopen):
+        mock_urlopen.side_effect = OSError("connection refused")
+        result = job_api.api_record_applied("http://localhost:8080", "t", 7)
+        self.assertEqual(result["error"], "api_error")
+        self.assertIn("connection refused", result.get("detail", ""))
+
+    @unittest.mock.patch("urllib.request.urlopen")
+    def test_timeout_returns_api_error(self, mock_urlopen):
+        mock_urlopen.side_effect = TimeoutError("timed out")
+        result = job_api.api_record_applied("http://localhost:8080", "t", 7)
+        self.assertEqual(result["error"], "api_error")
+
+    @unittest.mock.patch("urllib.request.urlopen")
+    def test_timeout_default_is_10(self, mock_urlopen):
+        mock_urlopen.side_effect = OSError("fail")
+        job_api.api_record_applied("http://localhost:8080", "t", 7)
+        _, kwargs = mock_urlopen.call_args
+        self.assertEqual(kwargs.get("timeout"), 10)
+
+    @unittest.mock.patch("urllib.request.urlopen")
+    def test_custom_timeout_forwarded(self, mock_urlopen):
+        mock_urlopen.side_effect = OSError("fail")
+        job_api.api_record_applied("http://localhost:8080", "t", 7, timeout=25)
+        _, kwargs = mock_urlopen.call_args
+        self.assertEqual(kwargs.get("timeout"), 25)
+
+
+# ---------------------------------------------------------------------------
 # pick_jobs_for_apply (orchestrator)
 # ---------------------------------------------------------------------------
 
