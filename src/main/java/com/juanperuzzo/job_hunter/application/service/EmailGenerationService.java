@@ -63,6 +63,13 @@ public class EmailGenerationService implements GenerateEmailUseCase, GetEmailDra
         UserProfile profile = userProfileRepository.findByUserId(userId)
                 .orElseThrow(() -> new AiException("User profile not found for userId: " + userId));
 
+        var existingSent = emailDraftRepository.findByJobIdAndUserId(job.id(), userId)
+                .filter(draft -> draft.status() == EmailStatus.SENT);
+        if (existingSent.isPresent()) {
+            log.debug("Skipping generation, job {} already applied (SENT) for user {}", job.id(), userId);
+            return existingSent.get();
+        }
+
         if (job.contactEmail() != null) {
             var alreadySent = emailDraftRepository.findSentByJobIdAndRecipientEmail(job.id(), job.contactEmail());
             if (alreadySent.isPresent()) {
