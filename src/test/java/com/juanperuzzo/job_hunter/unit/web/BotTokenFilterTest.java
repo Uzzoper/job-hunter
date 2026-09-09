@@ -9,6 +9,7 @@ import com.juanperuzzo.job_hunter.application.port.in.GenerateEmailUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.GetEmailDraftUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.GetJobUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.ListJobsUseCase;
+import com.juanperuzzo.job_hunter.application.port.in.RecordExternalApplyUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.SendEmailUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.TailorResumeUseCase;
 import com.juanperuzzo.job_hunter.application.port.out.TokenProvider;
@@ -88,6 +89,9 @@ class BotTokenFilterTest {
 
     @MockitoBean
     private CompanyEnrichmentUseCase companyEnrichmentUseCase;
+
+    @MockitoBean
+    private RecordExternalApplyUseCase recordExternalApplyUseCase;
 
     @MockitoBean
     private TokenProvider tokenProvider;
