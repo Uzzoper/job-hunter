@@ -7,6 +7,7 @@ import com.juanperuzzo.job_hunter.application.port.in.JobWithDraftStatus;
 import com.juanperuzzo.job_hunter.application.port.in.ListJobsUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.ProviderFetchStats;
 import com.juanperuzzo.job_hunter.application.port.out.EmailDraftRepository;
+import com.juanperuzzo.job_hunter.application.port.out.JobAnalysisRepository;
 import com.juanperuzzo.job_hunter.application.port.out.JobRepository;
 import com.juanperuzzo.job_hunter.application.port.out.ScraperPort;
 import com.juanperuzzo.job_hunter.domain.exception.JobNotFoundException;
@@ -15,6 +16,7 @@ import com.juanperuzzo.job_hunter.domain.model.EmailStatus;
 import com.juanperuzzo.job_hunter.domain.model.Job;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 
@@ -23,11 +25,14 @@ public class FetchJobsService implements FetchJobsUseCase, ListJobsUseCase, GetJ
     private final ScraperPort scraperPort;
     private final JobRepository jobRepository;
     private final EmailDraftRepository emailDraftRepository;
+    private final JobAnalysisRepository jobAnalysisRepository;
 
-    public FetchJobsService(ScraperPort scraperPort, JobRepository jobRepository, EmailDraftRepository emailDraftRepository) {
+    public FetchJobsService(ScraperPort scraperPort, JobRepository jobRepository, EmailDraftRepository emailDraftRepository,
+                            JobAnalysisRepository jobAnalysisRepository) {
         this.scraperPort = scraperPort;
         this.jobRepository = jobRepository;
         this.emailDraftRepository = emailDraftRepository;
+        this.jobAnalysisRepository = jobAnalysisRepository;
     }
 
     @Override
@@ -83,20 +88,39 @@ public class FetchJobsService implements FetchJobsUseCase, ListJobsUseCase, GetJ
     }
 
     @Override
-    public List<JobWithDraftStatus> findAllWithDraftStatus(Long userId, Boolean hasEmail, Boolean excludeApplied) {
-        // Deliberately a per-job lookup (1 draft query per listed job, i.e. N+1).
+    public List<JobWithDraftStatus> findAllWithDraftStatus(Long userId, Boolean hasEmail, Boolean excludeApplied, Integer minScore) {
+        // Deliberately per-job lookups (1 draft + 1 analysis query per listed job, i.e. 2N+1).
         // At the current job-list scale this is negligible and keeps the change
-        // reuse-only; a single findByUserIdAndStatusIn(userId, ...) bulk lookup
-        // keyed by jobId replaces this if the list grows.
-        return findAll(hasEmail).stream()
-                .map(job -> new JobWithDraftStatus(job, draftStatus(job, userId)))
+        // reuse-only; a single bulk lookup replaces this if the list grows.
+        var entries = findAll(hasEmail).stream()
+                .map(job -> new JobWithDraftStatus(job, draftStatus(job, userId), matchScore(job, userId)))
                 .filter(entry -> !Boolean.TRUE.equals(excludeApplied) || entry.draftStatus() != EmailStatus.SENT)
+                .toList();
+
+        // minScore filter: drop jobs below threshold or unanalyzed (null score)
+        if (minScore != null) {
+            entries = entries.stream()
+                    .filter(entry -> entry.matchScore() != null && entry.matchScore() >= minScore)
+                    .toList();
+        }
+
+        // Sort by matchScore descending; null scores last
+        return entries.stream()
+                .sorted(Comparator.comparing(
+                        (JobWithDraftStatus e) -> e.matchScore() != null ? e.matchScore() : Integer.MIN_VALUE)
+                        .reversed())
                 .toList();
     }
 
     private EmailStatus draftStatus(Job job, Long userId) {
         return emailDraftRepository.findByJobIdAndUserId(job.id(), userId)
                 .map(EmailDraft::status)
+                .orElse(null);
+    }
+
+    private Integer matchScore(Job job, Long userId) {
+        return jobAnalysisRepository.findByJobIdAndUserId(job.id(), userId)
+                .map(analysis -> analysis.matchScore())
                 .orElse(null);
     }
 

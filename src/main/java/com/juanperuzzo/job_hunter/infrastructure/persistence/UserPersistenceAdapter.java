@@ -43,6 +43,13 @@ public class UserPersistenceAdapter implements UserRepository {
         return jpaRepository.findAllEmails();
     }
 
+    @Override
+    public List<User> findAll() {
+        return jpaRepository.findAll().stream()
+                .map(this::toDomain)
+                .toList();
+    }
+
     private UserEntity toEntity(User user) {
         return new UserEntity(user.id(), user.email(), user.name(), user.passwordHash());
     }
