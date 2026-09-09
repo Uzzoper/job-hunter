@@ -865,6 +865,7 @@ def run(argv: Optional[List[str]] = None) -> int:
     # is active. Every failure (missing token, 401, unknown job id, empty
     # list after fetch-if-empty) prints clean JSON and exits 1 — never a
     # traceback on the bot side.
+    backend_job_id: Optional[int] = None  # issue #48 — numeric backend id for record-back
     if api_mode:
         token = job_api.resolve_token(args.api_token, profile_dir=args.profile_dir)
         if isinstance(token, dict):
@@ -914,6 +915,7 @@ def run(argv: Optional[List[str]] = None) -> int:
         job_url = str(api_job.get("url") or "")
         job_title = api_job.get("title")
         job_company = api_job.get("company")
+        backend_job_id = api_job.get("id")
 
     job_id = derive_job_id(job_url)
     if not job_id:
@@ -1030,6 +1032,31 @@ def run(argv: Optional[List[str]] = None) -> int:
             memory_dir, job_id, profile, portal_cfg.get("portal"), shot
         )
         plan["recorded"] = record
+
+        # Issue #48 — backend canonical record. After a confirmed local record,
+        # POST it upstream when this job came from the API and the bot has
+        # backend access (a resolvable token + base URL). Backend failure is
+        # best-effort: it warns in the output as ``backend_record`` and NEVER
+        # fails the local record or changes the exit code. Skipped entirely
+        # when the job has no numeric backend id (classic --job-url flow), the
+        # token is missing, or --dry-run (never, since should_record is False).
+        if backend_job_id is not None and (args.api_base_url or "").strip():
+            token = job_api.resolve_token(args.api_token, profile_dir=args.profile_dir)
+            if isinstance(token, str) and token:
+                try:
+                    backend = job_api.api_record_applied(
+                        args.api_base_url or DEFAULT_API_BASE_URL, token, backend_job_id
+                    )
+                except Exception as exc:  # defensive: never crash the record path
+                    backend = {"error": "api_error",
+                               "detail": f"{type(exc).__name__}: {exc}"}
+                if isinstance(backend, dict) and "error" in backend:
+                    plan["backend_record"] = {"ok": False, "error": backend["error"]}
+                elif isinstance(backend, dict):
+                    plan["backend_record"] = {"ok": True, **backend}
+                else:
+                    plan["backend_record"] = {"ok": True, "error": "unexpected response"}
+            # else: token unresolvable → no backend_record field, API not configured
 
     # Issue #44 — optional CDP daemon delegation. Only on the normal plan path
     # (never on the session_expired stop-ask-human path). When the flag is set
