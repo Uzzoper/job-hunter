@@ -14,5 +14,6 @@ public record ProfileResponse(
     String contactEmail,
     String portfolioUrl,
     String githubUrl,
-    String linkedinUrl
+    String linkedinUrl,
+    PreferencesResponse preferences
 ) {}
