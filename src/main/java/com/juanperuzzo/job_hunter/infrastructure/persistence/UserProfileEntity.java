@@ -1,5 +1,6 @@
 package com.juanperuzzo.job_hunter.infrastructure.persistence;
 
+import com.juanperuzzo.job_hunter.domain.model.WorkPreference;
 import jakarta.persistence.*;
 import java.time.LocalDateTime;
 
@@ -39,6 +40,23 @@ public class UserProfileEntity {
     @Column(name = "linkedin_url", length = 500)
     private String linkedinUrl;
 
+    // --- UserPreferences (nullable) ---
+    // Notes: V7 added work_preference as the single sum-type column for the
+    // Remote/Hybrid/Onsite variant. The legacy V6 columns work_model and locations
+    // remain in the schema but are deliberately NOT mapped here — they are dead
+    // columns kept only because the V6 migration must stay valid.
+
+    @Column(name = "work_preference")
+    @Convert(converter = WorkPreferenceConverter.class)
+    private WorkPreference workPreference;
+
+    @Column(name = "salary_floor")
+    private Integer salaryFloor;
+
+    @Column(name = "excluded_companies")
+    @Convert(converter = StringListConverter.class)
+    private String[] excludedCompanies;
+
     @Column(name = "updated_at", insertable = false, columnDefinition = "TIMESTAMP DEFAULT NOW()")
     private LocalDateTime updatedAt;
 
@@ -47,7 +65,9 @@ public class UserProfileEntity {
 
     public UserProfileEntity(Long id, Long userId, String resumeText, String[] skills, String tone,
                              String phone, String contactEmail, String portfolioUrl,
-                             String githubUrl, String linkedinUrl) {
+                             String githubUrl, String linkedinUrl,
+                             WorkPreference workPreference, Integer salaryFloor,
+                             String[] excludedCompanies) {
         this.id = id;
         this.userId = userId;
         this.resumeText = resumeText;
@@ -58,6 +78,9 @@ public class UserProfileEntity {
         this.portfolioUrl = portfolioUrl;
         this.githubUrl = githubUrl;
         this.linkedinUrl = linkedinUrl;
+        this.workPreference = workPreference;
+        this.salaryFloor = salaryFloor;
+        this.excludedCompanies = excludedCompanies;
     }
 
     public Long getId() { return id; }
@@ -89,6 +112,15 @@ public class UserProfileEntity {
 
     public String getLinkedinUrl() { return linkedinUrl; }
     public void setLinkedinUrl(String linkedinUrl) { this.linkedinUrl = linkedinUrl; }
+
+    public WorkPreference getWorkPreference() { return workPreference; }
+    public void setWorkPreference(WorkPreference workPreference) { this.workPreference = workPreference; }
+
+    public Integer getSalaryFloor() { return salaryFloor; }
+    public void setSalaryFloor(Integer salaryFloor) { this.salaryFloor = salaryFloor; }
+
+    public String[] getExcludedCompanies() { return excludedCompanies; }
+    public void setExcludedCompanies(String[] excludedCompanies) { this.excludedCompanies = excludedCompanies; }
 
     public LocalDateTime getUpdatedAt() { return updatedAt; }
     public void setUpdatedAt(LocalDateTime updatedAt) { this.updatedAt = updatedAt; }

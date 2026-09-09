@@ -2,6 +2,7 @@ package com.juanperuzzo.job_hunter.infrastructure.scraper.normalizer;
 
 import com.juanperuzzo.job_hunter.application.port.out.NormalizerPort;
 import com.juanperuzzo.job_hunter.application.port.out.RawJob;
+import com.juanperuzzo.job_hunter.application.port.out.UserRepository;
 import com.juanperuzzo.job_hunter.domain.model.Job;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -21,6 +22,14 @@ import java.util.regex.Pattern;
  * <p>
  * Email extraction is delegated to the shared {@link EmailExtractor}; company-website
  * normalization uses the shared {@link UrlNormalizer}.
+ * <p>
+ * <strong>Owner email self-match guard:</strong> after extraction, if the contact email
+ * matches any registered user's email (case-insensitive, trimmed), it is discarded
+ * (set to null). A registered user's own email must never be used as a company contact
+ * email — it breaks email idempotency (which keys on the recipient email) and would send
+ * application emails back to the owner. The guard logic lives in the shared
+ * {@link OwnerEmailGuard}, which is also applied to company-site enrichment; the owner
+ * email set is fetched lazily once and cached per guard instance.
  */
 public class JobNormalizer implements NormalizerPort {
 
@@ -37,6 +46,7 @@ public class JobNormalizer implements NormalizerPort {
     private final List<String> locations;
     private final int maxAgeDays;
     private final Clock clock;
+    private final OwnerEmailGuard ownerEmailGuard;
 
     public JobNormalizer(
             DateParser dateParser,
@@ -44,13 +54,15 @@ public class JobNormalizer implements NormalizerPort {
             List<Pattern> excludePatterns,
             List<String> locations,
             int maxAgeDays,
-            Clock clock) {
+            Clock clock,
+            UserRepository userRepository) {
         this.dateParser = dateParser;
         this.keywords = keywords != null ? keywords : List.of();
         this.excludePatterns = excludePatterns != null ? excludePatterns : List.of();
         this.locations = locations != null ? locations : List.of();
         this.maxAgeDays = maxAgeDays;
         this.clock = clock;
+        this.ownerEmailGuard = new OwnerEmailGuard(userRepository);
     }
 
     /**
@@ -95,6 +107,12 @@ public class JobNormalizer implements NormalizerPort {
         var company = raw.company() != null ? cleanText(raw.company()) : "";
         var description = raw.description() != null ? decodeEntities(raw.description()) : "";
         var contactEmail = EmailExtractor.extract(raw.title(), raw.description());
+        // Owner self-match guard. Global by design: the jobs table is global and this
+        // deployment is single-owner, so the guard runs for every ingestion stage and
+        // owner address (incl. the V5 data fix) regardless of the requesting user.
+        // Sharing the guard here and in the company-site enricher keeps the owner set
+        // loaded once. (See OwnerEmailGuard for the multi-user out-of-scope note.)
+        contactEmail = ownerEmailGuard.discardIfOwnerEmail(contactEmail, raw.url());
         var companyWebsite = normalizeCompanyWebsite(raw.metadata().get("companyWebsite"));
 
         return new Job(null, cleanText(raw.title()), company, raw.url(), description, postedDate, raw.source(),
