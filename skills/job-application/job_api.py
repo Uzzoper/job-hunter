@@ -16,7 +16,7 @@ resolve_token(api_token=None, profile_dir=None)
     flag > JOBHUNTER_API_TOKEN env > <profile_dir>/api-token.txt.
     Missing → {"error": "missing_api_token", "detail": <pt-br login+save step>}.
 
-api_list_jobs(base_url, token, min_score=None, has_email=True, timeout=10)
+api_list_jobs(base_url, token, min_score=None, has_email=None, timeout=10)
     GET <base_url>/api/jobs with the REAL query names (hasEmail, minScore).
     401 → {"error": "unauthorized"}.
 
