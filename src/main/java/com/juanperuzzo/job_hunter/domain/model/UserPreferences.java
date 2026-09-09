@@ -9,20 +9,22 @@ import java.util.List;
  * normalizes the data: lists are capped and null-coalesced, salary is bounds-checked.
  * This is the <em>validate-strict</em> half of the parse-lenient / validate-strict
  * firewall — raw bot-mem strings are normalized <em>before</em> reaching this record.
+ * <p>
+ * The work-location dimension is a single nullable {@link WorkPreference} sum
+ * type — a Remote/Hybrid/Onsite choice. The bare {@code locations} list and the
+ * loose {@code WorkModel} enum were removed in the #50 evolution because they
+ * allowed contradictory states (e.g. {@code REMOTE} + a city list, or hybrid
+ * without cities).
  *
- * @param workModel          preferred work model (nullable)
+ * @param workPreference     preferred work location model (nullable)
  * @param salaryFloor        desired minimum salary in BRL (nullable; must be 1–500,000)
- * @param locations          preferred locations (null → empty; max 20 items ≤ 100 chars each)
  * @param excludedCompanies  companies to skip (null → empty; max 50 items ≤ 200 chars each)
  */
 public record UserPreferences(
-        WorkModel workModel,
+        WorkPreference workPreference,
         Integer salaryFloor,
-        List<String> locations,
         List<String> excludedCompanies
 ) {
-    public static final int MAX_LOCATIONS = 20;
-    public static final int MAX_LOCATION_LENGTH = 100;
     public static final int MAX_EXCLUDED_COMPANIES = 50;
     public static final int MAX_COMPANY_NAME_LENGTH = 200;
     public static final int MAX_SALARY_FLOOR = 500_000;
@@ -34,7 +36,6 @@ public record UserPreferences(
         if (salaryFloor != null && salaryFloor > MAX_SALARY_FLOOR) {
             throw new IllegalArgumentException("salaryFloor exceeds sanity cap of " + MAX_SALARY_FLOOR + ", got: " + salaryFloor);
         }
-        locations = normalizeList(locations, MAX_LOCATIONS, MAX_LOCATION_LENGTH, "location");
         excludedCompanies = normalizeList(excludedCompanies, MAX_EXCLUDED_COMPANIES, MAX_COMPANY_NAME_LENGTH, "company name");
     }
 
@@ -42,7 +43,7 @@ public record UserPreferences(
      * Returns an empty {@code UserPreferences} (all fields null/empty).
      */
     public static UserPreferences empty() {
-        return new UserPreferences(null, null, List.of(), List.of());
+        return new UserPreferences(null, null, List.of());
     }
 
     /**
