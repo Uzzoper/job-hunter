@@ -504,6 +504,32 @@ Records live at:
 - Before planning, apply.py checks `<memory-dir>/applications/<job_id>.json`; a record with `status: "applied"` short-circuits with `{"error": "already_applied"}` — the bot must never apply twice to the same job.
 - Recording triggers: `--confirmed`, `--auto-apply` (planner treats authorization as the commit point) or `--record-applied` (bot calls it **post-submit** after the real browser step succeeded). `--dry-run` never writes records.
 
+### Record-back (backend canonical record)
+
+The **local file is a fast pre-check**; the **backend is the canonical record**.
+After a confirmed local record is written (`--record-applied` or the
+`--auto-apply` submit path), apply.py ALSO posts an applied marker upstream:
+
+```
+POST <api-base-url>/api/jobs/<id>/applied      # empty JSON {} + X-Bot-Token
+```
+
+- Only for **API-sourced jobs** (`--job-id` / `--from-api`) — the numeric
+  backend id is known; the classic `--job-url` flow (slug only) never posts back.
+- Triggered only when the backend is reachable: `--api-base-url` set and a
+  token resolvable (`--api-token` / `JOBHUNTER_API_TOKEN` /
+  `<profile-dir>/api-token.txt`). Otherwise no `backend_record` field is emitted.
+- **Failure semantics:** the backend is best-effort. On success the echoed
+  `{jobId, status}` is attached as `"backend_record": {"ok": true, ...}`. On
+  failure (unreachable host, 401, 404, HTTP error) apply.py warns with
+  `"backend_record": {"ok": false, "error": <code>}` and **never** fails the
+  local record nor changes the exit code.
+- **Never sent** on `--dry-run`, an unconfirmed plan, an expired session, or a
+  refusal path — the same guards that block recording locally also prevent the
+  backend POST.
+- The backend endpoint is idempotent: re-posting the marker returns the
+  existing applied record instead of failing.
+
 ---
 
 ## Error codes
