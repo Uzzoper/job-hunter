@@ -11,7 +11,7 @@ import com.juanperuzzo.job_hunter.domain.model.CompanyTone;
 import com.juanperuzzo.job_hunter.domain.model.Project;
 import com.juanperuzzo.job_hunter.domain.model.UserPreferences;
 import com.juanperuzzo.job_hunter.domain.model.UserProfile;
-import com.juanperuzzo.job_hunter.domain.model.WorkModel;
+import com.juanperuzzo.job_hunter.domain.model.WorkPreference;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.PDPageContentStream;
@@ -476,7 +476,7 @@ class ResumeUploadServiceTest {
     @DisplayName("uploadResume should preserve existing preferences from stored profile")
     void uploadResume_shouldPreserveExistingPreferences() throws Exception {
         var file = validPdfMock("Updated resume content for user with existing preferences.");
-        var existingPrefs = new UserPreferences(WorkModel.HYBRID, 3000, List.of("Curitiba"), List.of("Acme"));
+        var existingPrefs = new UserPreferences(new WorkPreference.Hybrid(List.of("Curitiba")), 3000, List.of("Acme"));
         var existingProfile = new UserProfile(5L, 1L, "Old resume text that is long enough to pass.",
                 List.of("Java"), CompanyTone.CASUAL, List.of(),
                 null, null, null, null, null, existingPrefs);
@@ -491,11 +491,18 @@ class ResumeUploadServiceTest {
 
         var result = service.uploadResume(1L, file);
 
+        // Division of labor contract (docs/specs/user-preferences.md §Blast-radius):
+        // the upload path ALWAYS passes null preferences into saveProfile — it
+        // deliberately does not read them. Preservation of human-set preferences is
+        // wholly owned by UserProfileService.saveProfile (fill-if-empty).
+        verify(userProfileService).saveProfile(eq(1L), profileCaptor.capture());
+        assertNull(profileCaptor.getValue().preferences(),
+                "uploadResume must pass null preferences — preservation is the service layer's job");
+
         // Verify the result (returned from saveProfile) preserves the existing preferences
         assertNotNull(result.preferences());
-        assertEquals(WorkModel.HYBRID, result.preferences().workModel());
+        assertEquals(new WorkPreference.Hybrid(List.of("Curitiba")), result.preferences().workPreference());
         assertEquals(3000, result.preferences().salaryFloor());
-        assertEquals(List.of("Curitiba"), result.preferences().locations());
         assertEquals(List.of("Acme"), result.preferences().excludedCompanies());
     }
 

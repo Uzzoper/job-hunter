@@ -1,5 +1,6 @@
 package com.juanperuzzo.job_hunter.integration;
 
+import com.juanperuzzo.job_hunter.domain.model.WorkPreference;
 import com.juanperuzzo.job_hunter.infrastructure.persistence.UserEntity;
 import com.juanperuzzo.job_hunter.infrastructure.persistence.UserJpaRepository;
 import com.juanperuzzo.job_hunter.infrastructure.persistence.UserProfileEntity;
@@ -89,7 +90,7 @@ class SqliteBaselineIntegrationTest {
                 new String[]{"Java", "Spring"},
                 "FORMAL",
                 null, null, null, null, null,
-                null, null, null, null);
+                null, null, null);
         var saved = userProfileJpaRepository.save(profile);
 
         var reloaded = userProfileJpaRepository.findByUserId(user.getId()).orElseThrow();
@@ -100,8 +101,8 @@ class SqliteBaselineIntegrationTest {
     }
 
     @Test
-    @DisplayName("should round-trip V6 user preferences columns (set → save → reload → equal)")
-    void saveAndReload_withPreferences_shouldRoundTrip() {
+    @DisplayName("should round-trip V7 work_preference column (set → save → reload → equal)")
+    void saveAndReload_withWorkPreference_shouldRoundTrip() {
         var user = userJpaRepository.save(
                 new UserEntity(null, "prefs-roundtrip@example.com", "PrefsTester", "$2a$hash"));
 
@@ -111,17 +112,37 @@ class SqliteBaselineIntegrationTest {
                 new String[]{"Java", "Spring"},
                 "FORMAL",
                 null, null, null, null, null,
-                "REMOTE", 5000,
-                new String[]{"Curitiba", "São Paulo"},
+                new WorkPreference.Hybrid(List.of("Curitiba", "São Paulo")), 5000,
                 new String[]{"Acme Corp", "Evil Inc"});
         var saved = userProfileJpaRepository.save(entity);
 
         var reloaded = userProfileJpaRepository.findByUserId(user.getId()).orElseThrow();
 
-        assertThat(reloaded.getWorkModel()).isEqualTo("REMOTE");
+        assertThat(reloaded.getWorkPreference()).isEqualTo(new WorkPreference.Hybrid(List.of("Curitiba", "São Paulo")));
         assertThat(reloaded.getSalaryFloor()).isEqualTo(5000);
-        assertThat(reloaded.getLocations()).containsExactly("Curitiba", "São Paulo");
         assertThat(reloaded.getExcludedCompanies()).containsExactly("Acme Corp", "Evil Inc");
+    }
+
+    @Test
+    @DisplayName("should round-trip a Remote work_preference (empty variant) through the adapter")
+    void saveAndReload_withRemoteWorkPreference_shouldRoundTrip() {
+        var user = userJpaRepository.save(
+                new UserEntity(null, "remote-roundtrip@example.com", "RemoteTester", "$2a$hash"));
+
+        var entity = new UserProfileEntity(
+                null, user.getId(),
+                "Java developer with Spring Boot experience building REST APIs.",
+                new String[]{"Java"},
+                "STARTUP",
+                null, null, null, null, null,
+                new WorkPreference.Remote(), 8000, null);
+        userProfileJpaRepository.save(entity);
+
+        var profile = userProfilePersistenceAdapter.findByUserId(user.getId()).orElseThrow();
+
+        assertThat(profile.preferences()).isNotNull();
+        assertThat(profile.preferences().workPreference()).isEqualTo(new WorkPreference.Remote());
+        assertThat(profile.preferences().salaryFloor()).isEqualTo(8000);
     }
 
     @Test
@@ -136,38 +157,37 @@ class SqliteBaselineIntegrationTest {
                 new String[]{"Java"},
                 "STARTUP",
                 null, null, null, null, null,
-                null, null, null, null);
+                null, null, null);
         userProfileJpaRepository.save(entity);
 
         var reloaded = userProfileJpaRepository.findByUserId(user.getId()).orElseThrow();
 
-        assertThat(reloaded.getWorkModel()).isNull();
+        assertThat(reloaded.getWorkPreference()).isNull();
         assertThat(reloaded.getSalaryFloor()).isNull();
-        assertThat(reloaded.getLocations()).isNull();
         assertThat(reloaded.getExcludedCompanies()).isNull();
     }
 
     @Test
-    @DisplayName("should handle poisoned work_model value gracefully via adapter (Finding 4)")
-    void findByUserId_withGarbageWorkModel_shouldReturnNullWorkModel() {
+    @DisplayName("should handle poisoned work_preference value gracefully via converter (anti-hallucination degraded read)")
+    void findByUserId_withGarbageWorkPreference_shouldReturnNullWorkPreference() {
         var user = userJpaRepository.save(
-                new UserEntity(null, "garbage-workmodel@example.com", "GarbageTester", "$2a$hash"));
+                new UserEntity(null, "garbage-workpref@example.com", "GarbageTester", "$2a$hash"));
 
-        // Directly insert a row with garbage work_model + valid salary_floor via JDBC
+        // Directly insert a row with garbage work_preference + valid salary_floor via JDBC
         // so a preferences object is still built (salaryFloor present) and the
-        // poisoned work_model must degrade to null without failing the read.
+        // poisoned work_preference must degrade to null without failing the read.
         jdbcTemplate.update(
-                "INSERT INTO user_profiles (user_id, resume_text, skills, tone, work_model, salary_floor) VALUES (?, ?, ?, ?, ?, ?)",
-                user.getId(), "Resume with garbage work model for testing.",
-                "[\"Java\"]", "FORMAL", "BANANA_GARBAGE", 5000);
+                "INSERT INTO user_profiles (user_id, resume_text, skills, tone, work_preference, salary_floor) VALUES (?, ?, ?, ?, ?, ?)",
+                user.getId(), "Resume with garbage work preference for testing.",
+                "[\"Java\"]", "FORMAL", "{\"type\":\"banana\"}", 5000);
 
         var profileOpt = userProfilePersistenceAdapter.findByUserId(user.getId());
 
         assertThat(profileOpt).isPresent();
         var profile = profileOpt.get();
-        // Garbage work_model should be tolerated — preferences built, workModel null, salaryFloor preserved
+        // Garbage work_preference should be tolerated — preferences built, workPreference null, salaryFloor preserved
         assertThat(profile.preferences()).isNotNull();
-        assertThat(profile.preferences().workModel()).isNull();
+        assertThat(profile.preferences().workPreference()).isNull();
         assertThat(profile.preferences().salaryFloor()).isEqualTo(5000);
     }
 }

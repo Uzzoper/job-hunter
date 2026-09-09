@@ -6,7 +6,11 @@ import com.juanperuzzo.job_hunter.application.service.BotMemorySyncService;
 import com.juanperuzzo.job_hunter.domain.model.CompanyTone;
 import com.juanperuzzo.job_hunter.domain.model.UserPreferences;
 import com.juanperuzzo.job_hunter.domain.model.UserProfile;
-import com.juanperuzzo.job_hunter.domain.model.WorkModel;
+import com.juanperuzzo.job_hunter.domain.model.WorkPreference;
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -15,6 +19,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.slf4j.LoggerFactory;
 
 import java.nio.file.Path;
 import java.util.List;
@@ -49,80 +54,111 @@ class BotMemorySyncPreferencesTest {
                 "memories/USER.md");
     }
 
-    // ── WorkModel parse firewall ────────────────────────────────────
+    // ── WorkPreference parse firewall ────────────────────────────────
 
     @Nested
-    @DisplayName("WorkModel parse-lenient / validate-strict")
-    class WorkModelParseTests {
+    @DisplayName("WorkPreference parse-lenient / validate-strict")
+    class WorkPreferenceParseTests {
 
         @Test
-        @DisplayName("parseWorkModel 'remoto' should return REMOTE")
-        void parseWorkModel_remoto_shouldReturnRemote() {
-            assertEquals(WorkModel.REMOTE, BotMemorySyncService.parseWorkModel("remoto"));
+        @DisplayName("parseWorkPreference 'remoto' should return Remote")
+        void parseWorkPreference_remoto_shouldReturnRemote() {
+            assertEquals(new WorkPreference.Remote(),
+                    BotMemorySyncService.parseWorkPreference("remoto", List.of()));
         }
 
         @Test
-        @DisplayName("parseWorkModel 'remote' should return REMOTE")
-        void parseWorkModel_remote_shouldReturnRemote() {
-            assertEquals(WorkModel.REMOTE, BotMemorySyncService.parseWorkModel("remote"));
+        @DisplayName("parseWorkPreference 'remote' with a city list should still return Remote (cities are unrepresentable for Remote)")
+        void parseWorkPreference_remote_ignoresCityList() {
+            assertEquals(new WorkPreference.Remote(),
+                    BotMemorySyncService.parseWorkPreference("remote", List.of("Curitiba")));
         }
 
         @Test
-        @DisplayName("parseWorkModel 'Híbrido' with accent should return HYBRID")
-        void parseWorkModel_hibrido_shouldReturnHybrid() {
-            assertEquals(WorkModel.HYBRID, BotMemorySyncService.parseWorkModel("Híbrido"));
+        @DisplayName("parseWorkPreference 'Híbrido' with accent and cities should return Hybrid")
+        void parseWorkPreference_hibrido_shouldReturnHybrid() {
+            assertEquals(new WorkPreference.Hybrid(List.of("Curitiba", "São Paulo")),
+                    BotMemorySyncService.parseWorkPreference("Híbrido", List.of("Curitiba", "São Paulo")));
         }
 
         @Test
-        @DisplayName("parseWorkModel 'hybrid' should return HYBRID")
-        void parseWorkModel_hybrid_shouldReturnHybrid() {
-            assertEquals(WorkModel.HYBRID, BotMemorySyncService.parseWorkModel("hybrid"));
+        @DisplayName("parseWorkPreference 'hybrid' with cities should return Hybrid")
+        void parseWorkPreference_hybrid_shouldReturnHybrid() {
+            assertEquals(new WorkPreference.Hybrid(List.of("Curitiba")),
+                    BotMemorySyncService.parseWorkPreference("hybrid", List.of("Curitiba")));
         }
 
         @Test
-        @DisplayName("parseWorkModel 'presencial' should return ONSITE")
-        void parseWorkModel_presencial_shouldReturnOnsite() {
-            assertEquals(WorkModel.ONSITE, BotMemorySyncService.parseWorkModel("presencial"));
+        @DisplayName("parseWorkPreference 'hibrido' without cities should return null (unrepresentable, never invented)")
+        void parseWorkPreference_hybridWithoutCities_shouldDrop() {
+            assertNull(BotMemorySyncService.parseWorkPreference("hibrido", List.of()));
         }
 
         @Test
-        @DisplayName("parseWorkModel 'on-site' should return ONSITE")
-        void parseWorkModel_onsite_shouldReturnOnsite() {
-            assertEquals(WorkModel.ONSITE, BotMemorySyncService.parseWorkModel("on-site"));
+        @DisplayName("parseWorkPreference 'hybrid' with null cities should return null")
+        void parseWorkPreference_hybridWithNullCities_shouldDrop() {
+            assertNull(BotMemorySyncService.parseWorkPreference("hybrid", null));
         }
 
         @Test
-        @DisplayName("parseWorkModel 'maybe remote' should return null (ambiguous)")
-        void parseWorkModel_ambiguousPhrase_shouldDrop() {
-            assertNull(BotMemorySyncService.parseWorkModel("maybe remote"));
+        @DisplayName("parseWorkPreference 'presencial' with cities should return Onsite")
+        void parseWorkPreference_presencial_shouldReturnOnsite() {
+            assertEquals(new WorkPreference.Onsite(List.of("São Paulo")),
+                    BotMemorySyncService.parseWorkPreference("presencial", List.of("São Paulo")));
         }
 
         @Test
-        @DisplayName("parseWorkModel 'banana' should return null (garbage)")
-        void parseWorkModel_garbage_shouldDrop() {
-            assertNull(BotMemorySyncService.parseWorkModel("banana"));
+        @DisplayName("parseWorkPreference 'on-site' with cities should return Onsite")
+        void parseWorkPreference_onsite_shouldReturnOnsite() {
+            assertEquals(new WorkPreference.Onsite(List.of("Curitiba")),
+                    BotMemorySyncService.parseWorkPreference("on-site", List.of("Curitiba")));
         }
 
         @Test
-        @DisplayName("parseWorkModel 'I work from home' should return null")
-        void parseWorkModel_freeText_shouldDrop() {
-            assertNull(BotMemorySyncService.parseWorkModel("I work from home"));
+        @DisplayName("parseWorkPreference 'on site' with cities should return Onsite")
+        void parseWorkPreference_onsiteSpaced_shouldReturnOnsite() {
+            assertEquals(new WorkPreference.Onsite(List.of("Curitiba")),
+                    BotMemorySyncService.parseWorkPreference("on site", List.of("Curitiba")));
         }
 
         @Test
-        @DisplayName("parseWorkModel null should return null")
-        void parseWorkModel_null_shouldDrop() {
-            assertNull(BotMemorySyncService.parseWorkModel(null));
+        @DisplayName("parseWorkPreference 'presencial' without cities should return null (unrepresentable)")
+        void parseWorkPreference_onsiteWithoutCities_shouldDrop() {
+            assertNull(BotMemorySyncService.parseWorkPreference("presencial", List.of()));
         }
 
         @Test
-        @DisplayName("parseWorkModel blank should return null")
-        void parseWorkModel_blank_shouldDrop() {
-            assertNull(BotMemorySyncService.parseWorkModel("  "));
+        @DisplayName("parseWorkPreference 'maybe remote' should return null (ambiguous)")
+        void parseWorkPreference_ambiguousPhrase_shouldDrop() {
+            assertNull(BotMemorySyncService.parseWorkPreference("maybe remote", List.of()));
+        }
+
+        @Test
+        @DisplayName("parseWorkPreference 'banana' should return null (garbage)")
+        void parseWorkPreference_garbage_shouldDrop() {
+            assertNull(BotMemorySyncService.parseWorkPreference("banana", List.of()));
+        }
+
+        @Test
+        @DisplayName("parseWorkPreference 'I work from home' should return null")
+        void parseWorkPreference_freeText_shouldDrop() {
+            assertNull(BotMemorySyncService.parseWorkPreference("I work from home", List.of("Curitiba")));
+        }
+
+        @Test
+        @DisplayName("parseWorkPreference null should return null")
+        void parseWorkPreference_null_shouldDrop() {
+            assertNull(BotMemorySyncService.parseWorkPreference(null, List.of()));
+        }
+
+        @Test
+        @DisplayName("parseWorkPreference blank should return null")
+        void parseWorkPreference_blank_shouldDrop() {
+            assertNull(BotMemorySyncService.parseWorkPreference("  ", List.of()));
         }
     }
 
-    // ── Salary parse firewall ───────────────────────────────────────
+    // ── Salary parse firewall (unchanged) ────────────────────────────
 
     @Nested
     @DisplayName("SalaryFloor parse-lenient / validate-strict")
@@ -177,44 +213,53 @@ class BotMemorySyncPreferencesTest {
         }
     }
 
-    // ── Locations parse firewall ────────────────────────────────────
+    // ── Cities parse firewall ────────────────────────────────────────
 
     @Nested
-    @DisplayName("Locations parse-lenient / validate-strict")
-    class LocationsParseTests {
+    @DisplayName("Cities parse-lenient / validate-strict")
+    class CitiesParseTests {
 
         @Test
-        @DisplayName("parseLocations 'São Paulo, Remote' should return 2 items")
-        void parseLocations_commaSeparated_shouldParse() {
-            var result = BotMemorySyncService.parseLocations("São Paulo, Remote");
+        @DisplayName("parseCities 'São Paulo, Curitiba' should return 2 items")
+        void parseCities_commaSeparated_shouldParse() {
+            var result = BotMemorySyncService.parseCities("São Paulo, Curitiba");
             assertEquals(2, result.size());
             assertEquals("São Paulo", result.get(0));
-            assertEquals("Remote", result.get(1));
+            assertEquals("Curitiba", result.get(1));
         }
 
         @Test
-        @DisplayName("parseLocations blank should return empty list")
-        void parseLocations_blank_shouldReturnEmpty() {
-            assertEquals(List.of(), BotMemorySyncService.parseLocations("  "));
+        @DisplayName("parseCities blank should return empty list")
+        void parseCities_blank_shouldReturnEmpty() {
+            assertEquals(List.of(), BotMemorySyncService.parseCities("  "));
         }
 
         @Test
-        @DisplayName("parseLocations null should return empty list")
-        void parseLocations_null_shouldReturnEmpty() {
-            assertEquals(List.of(), BotMemorySyncService.parseLocations(null));
+        @DisplayName("parseCities null should return empty list")
+        void parseCities_null_shouldReturnEmpty() {
+            assertEquals(List.of(), BotMemorySyncService.parseCities(null));
         }
 
         @Test
-        @DisplayName("parseLocations items exceeding 100 chars should be dropped")
-        void parseLocations_longItem_shouldDrop() {
+        @DisplayName("parseCities items exceeding 100 chars should be dropped")
+        void parseCities_longItem_shouldDrop() {
             String longCity = "A".repeat(101);
-            var result = BotMemorySyncService.parseLocations(longCity + ", Remote");
+            var result = BotMemorySyncService.parseCities(longCity + ", Curitiba");
             assertEquals(1, result.size());
-            assertEquals("Remote", result.get(0));
+            assertEquals("Curitiba", result.get(0));
+        }
+
+        @Test
+        @DisplayName("parseCities when exceeding 20 items should trim to 20")
+        void parseCities_whenExceeding20_shouldTrim() {
+            var many = new java.util.ArrayList<String>();
+            for (int i = 0; i < 25; i++) many.add("City" + i);
+            var result = BotMemorySyncService.parseCities(String.join(",", many));
+            assertEquals(20, result.size());
         }
     }
 
-    // ── ExcludedCompanies parse firewall ────────────────────────────
+    // ── ExcludedCompanies parse firewall (unchanged) ─────────────────
 
     @Nested
     @DisplayName("ExcludedCompanies parse-lenient / validate-strict")
@@ -252,14 +297,14 @@ class BotMemorySyncPreferencesTest {
     class MergePreferencesTests {
 
         @Test
-        @DisplayName("syncFromBotMemory should fill null preferences from bot data")
+        @DisplayName("syncFromBotMemory should fill null preferences from bot data (hybrid + cities)")
         void mergeIntoProfile_shouldFillNullPreferences() {
             Path memoryFile = tempDir.resolve("memories/MEMORY.md");
             when(botMemoryPort.readFile(memoryFile)).thenReturn(Optional.of("""
                     §
-                    workModel: remoto
+                    workModel: hibrido
                     salary: 5000
-                    locations: São Paulo, Remote
+                    locations: Curitiba, São Paulo
                     excludedCompanies: Acme Corp
                     """));
 
@@ -272,10 +317,33 @@ class BotMemorySyncPreferencesTest {
             verify(userProfileRepository).save(argThat(profile -> {
                 var prefs = profile.preferences();
                 return prefs != null
-                        && prefs.workModel() == WorkModel.REMOTE
+                        && new WorkPreference.Hybrid(List.of("Curitiba", "São Paulo")).equals(prefs.workPreference())
                         && prefs.salaryFloor() == 5000
-                        && prefs.locations().equals(List.of("São Paulo", "Remote"))
                         && prefs.excludedCompanies().equals(List.of("Acme Corp"));
+            }));
+        }
+
+        @Test
+        @DisplayName("syncFromBotMemory should fill a Remote preference (cities dropped — unrepresentable for Remote)")
+        void mergeIntoProfile_shouldFillRemotePreference() {
+            Path memoryFile = tempDir.resolve("memories/MEMORY.md");
+            when(botMemoryPort.readFile(memoryFile)).thenReturn(Optional.of("""
+                    §
+                    workModel: remoto
+                    salary: 8000
+                    """));
+
+            var existingProfile = existingProfile(null);
+            when(userProfileRepository.findByUserId(1L)).thenReturn(Optional.of(existingProfile));
+            when(userProfileRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+            service.syncFromBotMemory(1L);
+
+            verify(userProfileRepository).save(argThat(profile -> {
+                var prefs = profile.preferences();
+                return prefs != null
+                        && prefs.workPreference() instanceof WorkPreference.Remote
+                        && prefs.salaryFloor() == 8000;
             }));
         }
 
@@ -290,7 +358,8 @@ class BotMemorySyncPreferencesTest {
                     locations: Rio de Janeiro
                     """));
 
-            var humanPrefs = new UserPreferences(WorkModel.REMOTE, 8000, List.of("Curitiba"), List.of());
+            var humanPrefs = new UserPreferences(
+                    new WorkPreference.Remote(), 8000, List.of("Acme"));
             var existingProfile = existingProfile(humanPrefs);
             when(userProfileRepository.findByUserId(1L)).thenReturn(Optional.of(existingProfile));
 
@@ -320,7 +389,7 @@ class BotMemorySyncPreferencesTest {
                 var prefs = profile.preferences();
                 return prefs != null
                         && prefs.salaryFloor() == null  // absurd salary dropped
-                        && prefs.workModel() == WorkModel.REMOTE; // workModel still set
+                        && prefs.workPreference() instanceof WorkPreference.Remote; // workPreference still set
             }));
         }
 
@@ -331,6 +400,7 @@ class BotMemorySyncPreferencesTest {
             when(botMemoryPort.readFile(memoryFile)).thenReturn(Optional.of("""
                     §
                     workModel: maybe remote
+                    locations: Curitiba
                     """));
 
             var existingProfile = existingProfile(null);
@@ -343,12 +413,31 @@ class BotMemorySyncPreferencesTest {
         }
 
         @Test
-        @DisplayName("syncFromBotMemory should merge partial preferences (only workModel set)")
-        void mergeIntoProfile_shouldMergePartialPreferences() {
+        @DisplayName("syncFromBotMemory should drop hybrid without cities (unrepresentable — anti-hallucination)")
+        void mergeIntoProfile_shouldDropHybridWithoutCities() {
             Path memoryFile = tempDir.resolve("memories/MEMORY.md");
             when(botMemoryPort.readFile(memoryFile)).thenReturn(Optional.of("""
                     §
-                    workModel: hybrid
+                    workModel: hibrido
+                    """));
+
+            var existingProfile = existingProfile(null);
+            when(userProfileRepository.findByUserId(1L)).thenReturn(Optional.of(existingProfile));
+
+            service.syncFromBotMemory(1L);
+
+            // Hybrid without cities cannot be represented → no save
+            verify(userProfileRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("syncFromBotMemory should ignore locations for Remote (remote implies no city constraint)")
+        void mergeIntoProfile_shouldIgnoreLocationsForRemote() {
+            Path memoryFile = tempDir.resolve("memories/MEMORY.md");
+            when(botMemoryPort.readFile(memoryFile)).thenReturn(Optional.of("""
+                    §
+                    workModel: remoto
+                    locations: Curitiba
                     """));
 
             var existingProfile = existingProfile(null);
@@ -360,9 +449,33 @@ class BotMemorySyncPreferencesTest {
             verify(userProfileRepository).save(argThat(profile -> {
                 var prefs = profile.preferences();
                 return prefs != null
-                        && prefs.workModel() == WorkModel.HYBRID
+                        && prefs.workPreference() instanceof WorkPreference.Remote
+                        // locations line produced no city-carrying variant
+                        && !(prefs.workPreference() instanceof WorkPreference.Hybrid)
+                        && !(prefs.workPreference() instanceof WorkPreference.Onsite);
+            }));
+        }
+
+        @Test
+        @DisplayName("syncFromBotMemory should merge partial preferences (only workPreference set)")
+        void mergeIntoProfile_shouldMergePartialPreferences() {
+            Path memoryFile = tempDir.resolve("memories/MEMORY.md");
+            when(botMemoryPort.readFile(memoryFile)).thenReturn(Optional.of("""
+                    §
+                    workModel: remote
+                    """));
+
+            var existingProfile = existingProfile(null);
+            when(userProfileRepository.findByUserId(1L)).thenReturn(Optional.of(existingProfile));
+            when(userProfileRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+            service.syncFromBotMemory(1L);
+
+            verify(userProfileRepository).save(argThat(profile -> {
+                var prefs = profile.preferences();
+                return prefs != null
+                        && prefs.workPreference() instanceof WorkPreference.Remote
                         && prefs.salaryFloor() == null
-                        && prefs.locations().isEmpty()
                         && prefs.excludedCompanies().isEmpty();
             }));
         }
@@ -377,8 +490,9 @@ class BotMemorySyncPreferencesTest {
                     salary: 3000
                     """));
 
-            // Profile already has workModel set but salary is null
-            var existingPrefs = new UserPreferences(WorkModel.HYBRID, null, List.of(), List.of());
+            // Profile already has workPreference set but salary is null
+            var existingPrefs = new UserPreferences(
+                    new WorkPreference.Hybrid(List.of("Curitiba")), null, List.of());
             var existingProfile = existingProfile(existingPrefs);
             when(userProfileRepository.findByUserId(1L)).thenReturn(Optional.of(existingProfile));
             when(userProfileRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
@@ -388,20 +502,20 @@ class BotMemorySyncPreferencesTest {
             verify(userProfileRepository).save(argThat(profile -> {
                 var prefs = profile.preferences();
                 return prefs != null
-                        && prefs.workModel() == WorkModel.HYBRID  // human-set wins
+                        && new WorkPreference.Hybrid(List.of("Curitiba")).equals(prefs.workPreference()) // human-set wins
                         && prefs.salaryFloor() == 3000;           // bot fills null
             }));
         }
 
         @Test
-        @DisplayName("syncFromBotMemory should emit audit log lines for each merged preference field (behavior-plus-log)")
+        @DisplayName("syncFromBotMemory should emit INFO audit lines for each merged preference field (real log capture)")
         void mergeIntoProfile_shouldLogAuditLines() {
             Path memoryFile = tempDir.resolve("memories/MEMORY.md");
             when(botMemoryPort.readFile(memoryFile)).thenReturn(Optional.of("""
                     §
-                    workModel: remoto
+                    workModel: hibrido
                     salary: 5000
-                    locations: São Paulo, Remote
+                    locations: São Paulo, Curitiba
                     excludedCompanies: Acme Corp
                     """));
 
@@ -409,16 +523,44 @@ class BotMemorySyncPreferencesTest {
             when(userProfileRepository.findByUserId(1L)).thenReturn(Optional.of(existingProfile));
             when(userProfileRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
-            service.syncFromBotMemory(1L);
+            // Attach a real logback appender to the service logger to prove the
+            // audit lines promised by docs/specs/user-preferences.md §Audit trail
+            // are actually emitted, not just conceptually part of the merge.
+            var logger = (Logger) LoggerFactory.getLogger(BotMemorySyncService.class);
+            var appender = new ListAppender<ILoggingEvent>();
+            appender.start();
+            logger.addAppender(appender);
+            try {
+                service.syncFromBotMemory(1L);
 
-            // Behavior-plus-log: verify the save was called (proving merge happened),
-            // which also proves the audit INFO log lines were emitted by mergePreferences()
+                var messages = appender.list.stream()
+                        .map(ILoggingEvent::getFormattedMessage)
+                        .toList();
+                assertTrue(messages.stream().anyMatch(m -> m.contains("workPreference=null→Hybrid")),
+                        "expected an audit line for workPreference fill, got: " + messages);
+                assertTrue(messages.stream().anyMatch(m -> m.contains("salaryFloor=null→5000")),
+                        "expected an audit line for salaryFloor fill, got: " + messages);
+                assertTrue(messages.stream().anyMatch(m -> m.contains("excludedCompanies=null→[Acme Corp]")),
+                        "expected an audit line for excludedCompanies fill, got: " + messages);
+                assertTrue(messages.stream().anyMatch(m -> m.contains("Merged bot memory values into profile for user 1")),
+                        "expected the final merge confirmation line, got: " + messages);
+
+                // The per-field audit lines must be INFO level (filter out the
+                // expected WARN for the missing USER.md file).
+                var workPreferenceEvent = appender.list.stream()
+                        .filter(e -> e.getFormattedMessage().contains("workPreference=null→Hybrid"))
+                        .findFirst().orElseThrow();
+                assertEquals(Level.INFO, workPreferenceEvent.getLevel());
+            } finally {
+                logger.detachAppender(appender);
+            }
+
+            // Behavior-plus-log: the merge still happened
             verify(userProfileRepository).save(argThat(profile -> {
                 var prefs = profile.preferences();
                 return prefs != null
-                        && prefs.workModel() == WorkModel.REMOTE
+                        && new WorkPreference.Hybrid(List.of("São Paulo", "Curitiba")).equals(prefs.workPreference())
                         && prefs.salaryFloor() == 5000
-                        && prefs.locations().size() == 2
                         && prefs.excludedCompanies().size() == 1;
             }));
         }
