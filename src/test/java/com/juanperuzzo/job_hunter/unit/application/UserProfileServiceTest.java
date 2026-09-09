@@ -9,7 +9,7 @@ import com.juanperuzzo.job_hunter.domain.model.CompanyTone;
 import com.juanperuzzo.job_hunter.domain.model.User;
 import com.juanperuzzo.job_hunter.domain.model.UserPreferences;
 import com.juanperuzzo.job_hunter.domain.model.UserProfile;
-import com.juanperuzzo.job_hunter.domain.model.WorkModel;
+import com.juanperuzzo.job_hunter.domain.model.WorkPreference;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -160,7 +160,7 @@ class UserProfileServiceTest {
     @DisplayName("saveProfile when incoming preferences is null should preserve existing preferences")
     void saveProfile_whenPreferencesNull_shouldPreserveExisting() {
         var resume = validResume();
-        var existingPrefs = new UserPreferences(WorkModel.HYBRID, 3000, List.of("Curitiba"), List.of("Acme"));
+        var existingPrefs = new UserPreferences(new WorkPreference.Hybrid(List.of("Curitiba")), 3000, List.of("Acme"));
         var existing = new UserProfile(10L, 1L, "Old resume with enough content to be valid for this test.",
                 List.of("Java"), CompanyTone.CASUAL, List.of(), null, null, null, null, null, existingPrefs);
         var input = new UserProfile(null, 1L, resume, List.of("Java", "PostgreSQL"), CompanyTone.STARTUP, List.of(),
@@ -174,9 +174,8 @@ class UserProfileServiceTest {
 
         var profile = userProfileService.saveProfile(1L, input);
 
-        assertEquals(WorkModel.HYBRID, profile.preferences().workModel());
+        assertEquals(new WorkPreference.Hybrid(List.of("Curitiba")), profile.preferences().workPreference());
         assertEquals(3000, profile.preferences().salaryFloor());
-        assertEquals(List.of("Curitiba"), profile.preferences().locations());
         assertEquals(List.of("Acme"), profile.preferences().excludedCompanies());
     }
 
@@ -184,10 +183,10 @@ class UserProfileServiceTest {
     @DisplayName("saveProfile when incoming preferences is present should use them (authoritative override)")
     void saveProfile_whenPreferencesPresent_shouldOverride() {
         var resume = validResume();
-        var existingPrefs = new UserPreferences(WorkModel.HYBRID, 3000, List.of("Curitiba"), List.of("Acme"));
+        var existingPrefs = new UserPreferences(new WorkPreference.Hybrid(List.of("Curitiba")), 3000, List.of("Acme"));
         var existing = new UserProfile(10L, 1L, "Old resume with enough content to be valid for this test.",
                 List.of("Java"), CompanyTone.CASUAL, List.of(), null, null, null, null, null, existingPrefs);
-        var newPrefs = new UserPreferences(WorkModel.REMOTE, 6000, List.of("São Paulo"), List.of());
+        var newPrefs = new UserPreferences(new WorkPreference.Remote(), 6000, List.of());
         var input = new UserProfile(null, 1L, resume, List.of("Java", "PostgreSQL"), CompanyTone.STARTUP, List.of(),
                 null, null, null, null, null, newPrefs);
         var saved = new UserProfile(10L, 1L, resume, List.of("Java", "PostgreSQL"), CompanyTone.STARTUP, List.of(),
@@ -199,9 +198,8 @@ class UserProfileServiceTest {
 
         var profile = userProfileService.saveProfile(1L, input);
 
-        assertEquals(WorkModel.REMOTE, profile.preferences().workModel());
+        assertEquals(new WorkPreference.Remote(), profile.preferences().workPreference());
         assertEquals(6000, profile.preferences().salaryFloor());
-        assertEquals(List.of("São Paulo"), profile.preferences().locations());
         assertTrue(profile.preferences().excludedCompanies().isEmpty());
     }
 

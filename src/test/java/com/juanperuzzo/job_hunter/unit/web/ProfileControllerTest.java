@@ -11,12 +11,13 @@ import com.juanperuzzo.job_hunter.domain.model.Project;
 import com.juanperuzzo.job_hunter.domain.model.User;
 import com.juanperuzzo.job_hunter.domain.model.UserPreferences;
 import com.juanperuzzo.job_hunter.domain.model.UserProfile;
-import com.juanperuzzo.job_hunter.domain.model.WorkModel;
+import com.juanperuzzo.job_hunter.domain.model.WorkPreference;
 import com.juanperuzzo.job_hunter.infrastructure.security.CurrentUserService;
 import com.juanperuzzo.job_hunter.web.controller.ProfileController;
 import com.juanperuzzo.job_hunter.web.dto.ProfileRequest;
 import com.juanperuzzo.job_hunter.web.dto.PreferencesRequest;
 import com.juanperuzzo.job_hunter.web.dto.PreferencesResponse;
+import com.juanperuzzo.job_hunter.web.dto.WorkPreferenceDto;
 import com.juanperuzzo.job_hunter.web.exception.GlobalExceptionHandler;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.AfterEach;
@@ -38,6 +39,8 @@ import java.util.List;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
@@ -340,21 +343,20 @@ class ProfileControllerTest {
     }
 
     @Test
-    @DisplayName("getProfile should expose preferences when set on profile")
+    @DisplayName("getProfile should expose typed workPreference when set on profile")
     void getProfile_withPreferences_shouldExposeThem() throws Exception {
         var authentication = new UsernamePasswordAuthenticationToken(new User(1L, "test@test.com", "Test", "hash"), null, List.of());
         SecurityContextHolder.getContext().setAuthentication(authentication);
 
-        var prefs = new UserPreferences(WorkModel.REMOTE, 5000, List.of("Curitiba"), List.of("Acme"));
+        var prefs = new UserPreferences(new WorkPreference.Remote(), 5000, List.of("Acme"));
         var profile = new UserProfile(1L, 1L, "Experienced dev...", List.of("Java"), CompanyTone.FORMAL, List.of(),
                 null, null, null, null, null, prefs);
         when(userProfileService.getProfile(1L)).thenReturn(profile);
 
         mockMvc.perform(get("/api/profile"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.preferences.workModel").value("REMOTE"))
+                .andExpect(jsonPath("$.preferences.workPreference.type").value("remote"))
                 .andExpect(jsonPath("$.preferences.salaryFloor").value(5000))
-                .andExpect(jsonPath("$.preferences.locations[0]").value("Curitiba"))
                 .andExpect(jsonPath("$.preferences.excludedCompanies[0]").value("Acme"));
     }
 
@@ -382,7 +384,7 @@ class ProfileControllerTest {
         var resume = "New resume text that is certainly long enough to pass the minimum length constraint of fifty characters for test";
         var request = new ProfileRequest(resume, List.of("Java"), CompanyTone.STARTUP, List.of(),
                 null, null, null, null, null, null);
-        var prefs = new UserPreferences(WorkModel.HYBRID, 3000, List.of("Curitiba"), List.of());
+        var prefs = new UserPreferences(new WorkPreference.Hybrid(List.of("Curitiba")), 3000, List.of());
         var profile = new UserProfile(1L, 1L, resume, List.of("Java"), CompanyTone.STARTUP, List.of(),
                 null, null, null, null, null, prefs);
 
@@ -393,7 +395,8 @@ class ProfileControllerTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.preferences.workModel").value("HYBRID"))
+                .andExpect(jsonPath("$.preferences.workPreference.type").value("hybrid"))
+                .andExpect(jsonPath("$.preferences.workPreference.cities[0]").value("Curitiba"))
                 .andExpect(jsonPath("$.preferences.salaryFloor").value(3000));
     }
 
@@ -404,10 +407,10 @@ class ProfileControllerTest {
         SecurityContextHolder.getContext().setAuthentication(authentication);
 
         var resume = "New resume text that is certainly long enough to pass the minimum length constraint of fifty characters for test";
-        var requestPrefs = new PreferencesRequest(WorkModel.REMOTE, 6000, List.of("São Paulo"), List.of());
+        var requestPrefs = new PreferencesRequest(new WorkPreferenceDto.Hybrid(List.of("São Paulo")), 6000, List.of());
         var request = new ProfileRequest(resume, List.of("Java"), CompanyTone.STARTUP, List.of(),
                 null, null, null, null, null, requestPrefs);
-        var prefs = new UserPreferences(WorkModel.REMOTE, 6000, List.of("São Paulo"), List.of());
+        var prefs = new UserPreferences(new WorkPreference.Hybrid(List.of("São Paulo")), 6000, List.of());
         var profile = new UserProfile(1L, 1L, resume, List.of("Java"), CompanyTone.STARTUP, List.of(),
                 null, null, null, null, null, prefs);
 
@@ -418,8 +421,122 @@ class ProfileControllerTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.preferences.workModel").value("REMOTE"))
-                .andExpect(jsonPath("$.preferences.salaryFloor").value(6000))
-                .andExpect(jsonPath("$.preferences.locations[0]").value("São Paulo"));
+                .andExpect(jsonPath("$.preferences.workPreference.type").value("hybrid"))
+                .andExpect(jsonPath("$.preferences.workPreference.cities[0]").value("São Paulo"))
+                .andExpect(jsonPath("$.preferences.salaryFloor").value(6000));
+    }
+
+    @Test
+    @DisplayName("saveProfile with hybrid workPreference missing cities should return 400")
+    void saveProfile_whenHybridWithoutCities_shouldReturn400() throws Exception {
+        var authentication = new UsernamePasswordAuthenticationToken(new User(1L, "test@test.com", "Test", "hash"), null, List.of());
+        SecurityContextHolder.getContext().setAuthentication(authentication);
+
+        String payload = """
+                {
+                  "resumeText": "New resume text that is certainly long enough to pass the minimum length constraint of fifty characters for test",
+                  "skills": ["Java"],
+                  "tone": "STARTUP",
+                  "projects": [],
+                  "preferences": {
+                    "workPreference": { "type": "hybrid" },
+                    "salaryFloor": 4000,
+                    "excludedCompanies": []
+                  }
+                }
+                """;
+
+        mockMvc.perform(put("/api/profile")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(payload))
+                .andExpect(status().isBadRequest());
+
+        // Rejected before reaching the service (bean validation tier)
+        verify(userProfileService, never()).saveProfile(any(), any());
+    }
+
+    @Test
+    @DisplayName("saveProfile with unknown workPreference type should return 400 (deserialization tier)")
+    void saveProfile_whenUnknownWorkPreferenceType_shouldReturn400() throws Exception {
+        var authentication = new UsernamePasswordAuthenticationToken(new User(1L, "test@test.com", "Test", "hash"), null, List.of());
+        SecurityContextHolder.getContext().setAuthentication(authentication);
+
+        String payload = """
+                {
+                  "resumeText": "New resume text that is certainly long enough to pass the minimum length constraint of fifty characters for test",
+                  "skills": ["Java"],
+                  "tone": "STARTUP",
+                  "projects": [],
+                  "preferences": {
+                    "workPreference": { "type": "hybridity", "cities": ["Curitiba"] }
+                  }
+                }
+                """;
+
+        // Jackson cannot resolve the @JsonTypeInfo subtype "hybridity" →
+        // HttpMessageNotReadableException → 400 by GlobalExceptionHandler.
+        mockMvc.perform(put("/api/profile")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(payload))
+                .andExpect(status().isBadRequest());
+
+        verify(userProfileService, never()).saveProfile(any(), any());
+    }
+
+    @Test
+    @DisplayName("saveProfile with hybrid empty cities list should return 400 (bean validation tier)")
+    void saveProfile_whenHybridEmptyCities_shouldReturn400() throws Exception {
+        var authentication = new UsernamePasswordAuthenticationToken(new User(1L, "test@test.com", "Test", "hash"), null, List.of());
+        SecurityContextHolder.getContext().setAuthentication(authentication);
+
+        String payload = """
+                {
+                  "resumeText": "New resume text that is certainly long enough to pass the minimum length constraint of fifty characters for test",
+                  "skills": ["Java"],
+                  "tone": "STARTUP",
+                  "projects": [],
+                  "preferences": {
+                    "workPreference": { "type": "hybrid", "cities": [] }
+                  }
+                }
+                """;
+
+        // @NotEmpty on WorkPreferenceDto.Hybrid.cities → MethodArgumentNotValidException → 400.
+        mockMvc.perform(put("/api/profile")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(payload))
+                .andExpect(status().isBadRequest());
+
+        verify(userProfileService, never()).saveProfile(any(), any());
+    }
+
+    @Test
+    @DisplayName("saveProfile with blank-string city should return 400 (domain constructor tier)")
+    void saveProfile_whenOnsiteBlankStringCities_shouldReturn400() throws Exception {
+        var authentication = new UsernamePasswordAuthenticationToken(new User(1L, "test@test.com", "Test", "hash"), null, List.of());
+        SecurityContextHolder.getContext().setAuthentication(authentication);
+
+        String payload = """
+                {
+                  "resumeText": "New resume text that is certainly long enough to pass the minimum length constraint of fifty characters for test",
+                  "skills": ["Java"],
+                  "tone": "STARTUP",
+                  "projects": [],
+                  "preferences": {
+                    "workPreference": { "type": "onsite", "cities": ["   "] }
+                  }
+                }
+                """;
+
+        // Bean validation passes (list has 1 element, blank short string) — but the
+        // domain compact constructor trims and rejects the all-blank city list →
+        // IllegalArgumentException → 400 by GlobalExceptionHandler. This pins the
+        // two-tier contract: bean validation + handler both return 400.
+        mockMvc.perform(put("/api/profile")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(payload))
+                .andExpect(status().isBadRequest());
+
+        verify(userProfileService, never()).saveProfile(any(), any());
     }
 }
