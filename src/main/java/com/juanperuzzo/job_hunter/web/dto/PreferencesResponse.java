@@ -1,6 +1,5 @@
 package com.juanperuzzo.job_hunter.web.dto;
 
-import com.juanperuzzo.job_hunter.domain.model.WorkModel;
 import java.util.List;
 
 /**
@@ -8,8 +7,7 @@ import java.util.List;
  * Null when no preferences are set.
  */
 public record PreferencesResponse(
-        WorkModel workModel,
+        WorkPreferenceDto workPreference,
         Integer salaryFloor,
-        List<String> locations,
         List<String> excludedCompanies
 ) {}
