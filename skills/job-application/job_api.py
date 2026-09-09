@@ -27,6 +27,10 @@ api_get_job(base_url, token, job_id, timeout=10)
     GET <base_url>/api/jobs/<job_id> → JobResponse dict (id, title, company,
     url, description, postedAt, source, contactEmail).
 
+api_record_applied(base_url, token, job_id, timeout=10)
+    POST <base_url>/api/jobs/<job_id>/applied with an empty JSON body →
+    echoes {jobId, status}; idempotent backend canonical record.
+
 pick_jobs_for_apply(base_url, token, ...)
     Orchestrator: list → empty → trigger fetch (default gupy) → re-list →
     score-desc sorted.
@@ -221,6 +225,43 @@ def api_get_job(base_url: str, token: str, job_id: int,
     if not isinstance(payload, dict):
         return {"error": "api_error", "detail": "unexpected response: expected a job object"}
     return payload
+
+
+def api_record_applied(base_url: str, token: str, job_id: int,
+                       timeout: int = 10) -> Union[Dict[str, Any], List[Any]]:
+    """POST <base_url>/api/jobs/<job_id>/applied — backend canonical record.
+
+    Sends an empty JSON ``{}`` body (the applied marker) with the X-Bot-Token
+    header. The backend is idempotent: a repeat apply returns the existing
+    marker instead of a conflict.
+
+    Returns the echoed ``{jobId, status}`` dict on success. Errors: 401 →
+    ``unauthorized``, 404 → ``not_found``, transport/HTTP → ``api_error``
+    (the caller decides whether to surface the backend failure).
+    """
+    url = f"{base_url.rstrip('/')}/api/jobs/{job_id}/applied"
+    data = b"{}"
+    headers = {
+        "X-Bot-Token": token,
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+    }
+    req = urllib.request.Request(url, data=data, headers=headers, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            raw = resp.read()
+    except urllib.error.HTTPError as exc:
+        if exc.code == 401:
+            return {"error": "unauthorized"}
+        if exc.code == 404:
+            return {"error": "not_found"}
+        return {"error": "api_error", "detail": f"HTTP {exc.code} from {url}"}
+    except Exception as exc:  # transport-level errors keep stdout JSON-only
+        return {"error": "api_error", "detail": f"{type(exc).__name__}: {exc}"}
+    try:
+        return json.loads(raw.decode("utf-8"))
+    except Exception:
+        return {"error": "api_error", "detail": "invalid JSON response"}
 
 
 # ---------------------------------------------------------------------------
