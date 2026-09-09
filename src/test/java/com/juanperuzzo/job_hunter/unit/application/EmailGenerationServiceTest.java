@@ -486,6 +486,39 @@ class EmailGenerationServiceTest {
         }
 
         @Test
+        @DisplayName("generate should return the existing SENT marker and persist nothing when the job was applied on the portal (recipientEmail is null)")
+        void generate_whenExternalApplyMarkerSent_shouldSkipRegeneration() {
+            Long jobId = 12L;
+            Job job = new Job(jobId, "Developer", "MTP",
+                    "https://example.com/job/12", "Description", LocalDate.now(), "test");
+            JobAnalysis analysis = new JobAnalysis(null, null, null, 10,
+                    List.of(), List.of("Java"),
+                    CompanyTone.FORMAL,
+                    "Developer role");
+            UserProfile profile = new UserProfile(null, 1L,
+                    "Experienced Java developer.", List.of("Java"), CompanyTone.FORMAL, List.of(),
+                    null, null, null, null, null);
+
+            var externalApplyMarker = new EmailDraft(200L, jobId, 1L,
+                    "Subject: [Aplicação externa]",
+                    "Inscrição realizada diretamente no portal da vaga. Nenhum e-mail foi enviado.",
+                    EmailStatus.SENT, LocalDateTime.now(), LocalDateTime.now());
+
+            when(jobRepository.findById(jobId)).thenReturn(Optional.of(job));
+            when(jobAnalysisRepository.findByJobIdAndUserId(jobId, 1L)).thenReturn(Optional.of(analysis));
+            when(userProfileRepository.findByUserId(any())).thenReturn(Optional.of(profile));
+            when(emailDraftRepository.findByJobIdAndUserId(jobId, 1L)).thenReturn(Optional.of(externalApplyMarker));
+
+            EmailDraft result = emailGenerationService.generate(1L, jobId);
+
+            assertEquals(externalApplyMarker.id(), result.id());
+            assertEquals(EmailStatus.SENT, result.status());
+            verify(aiPort, never()).complete(any());
+            verify(templateEmailService, never()).generate(any());
+            verify(emailDraftRepository, never()).save(any());
+        }
+
+        @Test
         @DisplayName("generate should proceed normally to PENDING when no SENT pair exists for the contact email")
         void generate_whenDifferentEmailForSameJob_shouldGenerateNormally() {
             Long jobId = 11L;

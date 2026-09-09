@@ -13,6 +13,8 @@ import com.juanperuzzo.job_hunter.application.port.in.GetJobUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.JobWithDraftStatus;
 import com.juanperuzzo.job_hunter.application.port.in.ListJobsUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.ProviderFetchStats;
+import com.juanperuzzo.job_hunter.application.port.in.RecordExternalApplyResult;
+import com.juanperuzzo.job_hunter.application.port.in.RecordExternalApplyUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.SendEmailUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.TailorResumeUseCase;
 import com.juanperuzzo.job_hunter.application.port.out.TokenProvider;
@@ -102,6 +104,9 @@ class JobControllerTest {
 
     @MockitoBean
     private CompanyEnrichmentUseCase companyEnrichmentUseCase;
+
+    @MockitoBean
+    private RecordExternalApplyUseCase recordExternalApplyUseCase;
 
     @MockitoBean
     private TokenProvider tokenProvider;
@@ -551,6 +556,68 @@ class JobControllerTest {
                 .andExpect(jsonPath("$.checked").value(0));
 
         verify(companyEnrichmentUseCase).enrichMissingEmails(50);
+    }
+
+    @Test
+    @DisplayName("recordExternalApply should return 201 Created with jobId and SENT status when recorded for the first time")
+    void recordExternalApply_whenCreated_shouldReturn201WithJobIdAndStatus() throws Exception {
+        authenticateAs(1L);
+
+        var marker = new EmailDraft(
+                null, JOB_ID, 1L,
+                "Subject: [Aplicação externa]",
+                "Inscrição realizada diretamente no portal da vaga. Nenhum e-mail foi enviado.",
+                EmailStatus.SENT, LocalDateTime.now(), LocalDateTime.now());
+        when(recordExternalApplyUseCase.record(1L, JOB_ID))
+                .thenReturn(new RecordExternalApplyResult(marker, true));
+
+        mockMvc.perform(post("/api/jobs/{id}/applied", JOB_ID))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.jobId").value(JOB_ID))
+                .andExpect(jsonPath("$.status").value("SENT"));
+
+        verify(recordExternalApplyUseCase).record(1L, JOB_ID);
+    }
+
+    @Test
+    @DisplayName("recordExternalApply should return 200 with the existing SENT status when already applied")
+    void recordExternalApply_whenReplay_shouldReturn200WithSameJobId() throws Exception {
+        authenticateAs(1L);
+
+        var marker = new EmailDraft(
+                12L, JOB_ID, 1L,
+                "Subject: [Aplicação externa]",
+                "Inscrição realizada diretamente no portal da vaga. Nenhum e-mail foi enviado.",
+                EmailStatus.SENT, LocalDateTime.now(), LocalDateTime.now());
+        when(recordExternalApplyUseCase.record(1L, JOB_ID))
+                .thenReturn(new RecordExternalApplyResult(marker, false));
+
+        mockMvc.perform(post("/api/jobs/{id}/applied", JOB_ID))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.jobId").value(JOB_ID))
+                .andExpect(jsonPath("$.status").value("SENT"));
+
+        verify(recordExternalApplyUseCase).record(1L, JOB_ID);
+    }
+
+    @Test
+    @DisplayName("recordExternalApply should return 404 when the job does not exist")
+    void recordExternalApply_whenJobMissing_shouldReturn404() throws Exception {
+        authenticateAs(1L);
+
+        when(recordExternalApplyUseCase.record(1L, JOB_ID))
+                .thenThrow(new JobNotFoundException("Job not found with id: 10"));
+
+        mockMvc.perform(post("/api/jobs/{id}/applied", JOB_ID))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.message").value("Job not found with id: 10"));
+    }
+
+    @Test
+    @DisplayName("recordExternalApply should return 401 when the user is not authenticated")
+    void recordExternalApply_withoutAuthentication_shouldReturn401() throws Exception {
+        mockMvc.perform(post("/api/jobs/{id}/applied", JOB_ID))
+                .andExpect(status().isUnauthorized());
     }
 
     private void authenticateAs(Long userId) {
