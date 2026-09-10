@@ -165,6 +165,7 @@ New flags (all optional): `--job-id`, `--from-api`, `--api-base-url` (default
 | browser recovery | `--cdp-url`, `--user-data-dir` | URL / dir path | no | Issue #39: CDP endpoint (default `http://localhost:9222`, also from `portals/gupy.yaml` `cdp_url` key) and persistent Chromium profile dir (default `~/.chromium-profile-cdp`) |
 | status check | `--check-browser` | flag | no | Issue #39: print browser status as JSON and exit — no action plan required |
 | verification | `--verify-with` | string | no (default `screenshot`) | Issue #43: `screenshot` (default) or `ax` — how the executor verifies `fill_form`/`submit` steps. Invalid modes error cleanly |
+| intent mode | `--emit-intent`, `--max-steps` | flag / int | no | Phase 3 (mcp-apply-loop): emit the selector-free executor intent (profile + policy gates, **no steps/selectors**) and exit; `--max-steps` caps the executor loop budget (default `25`) |
 
 Profile JSON:
 
@@ -213,6 +214,46 @@ Profile JSON:
 5. **Screenshot + pause (interactive mode)** — at `screenshot`, the bot captures the filled form to the given path; at `confirm_checkpoint`, the bot stops and asks the user to confirm every value. In `--auto-apply` mode the `confirm_checkpoint` is omitted — the user pre-authorized the run.
 6. **Submit (only after confirmation)** — the bot re-runs with `--confirmed` (or `--auto-apply`) to obtain the `submit` step, OR the user confirms the checkpoint and the bot proceeds with the confirmed plan; the `submit` step is executed last.
 7. **Record** — after the browser submit, the bot calls `apply.py --record-applied` (or the confirmed/`--auto-apply` run already recorded it) so future runs short-circuit with `already_applied`.
+
+---
+
+## MCP executor apply loop (planner-intent mode, phase 3)
+
+For the MCP executor loop (snapshot-driven), `apply.py` emits a **selector-free intent**
+instead of the selector-based plan:
+
+```
+python3 skills/job-application/apply.py --job-url <url> --profile profile.json \
+  --emit-intent [--max-steps 25]
+```
+
+The intent JSON carries **no CSS selectors and no steps** — just
+`{intent_id, job_id, job_url, portal, profile{name, email, phone, resume_path, cover_text},
+policy{require_confirmation_before_final_submit, never_fill_credentials, stop_on_auth_url,
+max_steps}, metadata{...}?, dry_run?}`. All pre-flight guardrails still run (profile
+validation, refusal #28, idempotency #27); the legacy session-expired *plan* and the
+navigation-guard early exits are skipped because the loop enforces auth/page stops per step
+at runtime (the session check itself is still computed).
+
+The executor runs **observe → classify → act → verify** against each **live AX snapshot**
+(`classify.py` is stdlib-only and pure):
+
+1. **Observe** — take the current URL + AX snapshot (screenshot kept for the audit trail).
+2. **Classify** — `classify.classify_page(url, ax_nodes)` → `{page, signals}` where page is
+   one of `form | triagem | review | sucesso | auth | erro | start`. `auth` (auth URL or
+   any credential field) is a hard policy stop; `erro` (validation alert or unrecognized
+   page) means retry within the budget, never a blind fill and never a record.
+3. **Act** — mapped by page kind: `start` → enter the flow; `form` → fill; `triagem` →
+   select answers; `review` → confirm checkpoint (unless `--confirmed`/`--auto-apply`
+   flipped the policy) then apply-final; `sucesso` → post-submit screenshot → verdict.
+4. **Verify** — re-classify: `sucesso` evidence is collected by verdict.py; any other page
+   counts as a stall against the `max_steps` budget → end `INCOMPLETE` and hand off.
+5. **Record (strictly via verdict.py)** — an application is marked `applied` ONLY by
+   `verdict.write_applied_record` after verified success evidence. The intent never writes.
+
+Policy gates: `never_fill_credentials` and `stop_on_auth_url` are always `true` and cannot
+be disabled from the CLI; `require_confirmation_before_final_submit` flips to `false` via
+`--confirmed` / `--auto-apply` (same gates the legacy plan enforces).
 
 ---
 

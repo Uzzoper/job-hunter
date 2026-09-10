@@ -85,7 +85,7 @@
 
 | Skill | Use when |
 |---|---|
-| `job-application` | The application flow is known in advance (Gupy/InfoJobs): it emits a structured action plan (fill → screenshot → confirm → submit). Also the API-first picker (`--from-api` / `--job-id`) and the first-run bootstrap. |
+| `job-application` | The application flow is known in advance (Gupy/InfoJobs): it emits a structured action plan (fill → screenshot → confirm → submit), or — for the MCP executor loop (phase 3) — a selector-free **intent** (`--emit-intent`) driven per live snapshot by the pure `classify.py` classifier, with `verdict.py` as the **sole** writer of `applied` records. Also the API-first picker (`--from-api` / `--job-id`) and the first-run bootstrap. |
 | `job-portal-browser` | Free navigation: unknown flows, in-portal fills, status checks, JS-only scraping; API-first listing when the API has data. |
 | `company-scraper` | A listing has a real company website (not a portal) or a missing `contactEmail` — research the company (contacts, careers page, tech signals) before drafting an email. |
 | `analyzer` | "Which stacks/roles/companies perform best?" — SQLite-backed pattern analysis over match scores, contacts and send conversion. |
