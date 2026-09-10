@@ -14,7 +14,9 @@ import com.juanperuzzo.job_hunter.domain.model.EmailDraft;
 import com.juanperuzzo.job_hunter.domain.model.EmailStatus;
 import com.juanperuzzo.job_hunter.domain.model.Job;
 import com.juanperuzzo.job_hunter.domain.model.JobAnalysis;
+import com.juanperuzzo.job_hunter.domain.model.UserPreferences;
 import com.juanperuzzo.job_hunter.domain.model.UserProfile;
+import com.juanperuzzo.job_hunter.domain.model.WorkPreference;
 
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
@@ -22,6 +24,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -683,6 +686,101 @@ class EmailGenerationServiceTest {
             assertEquals(EmailStatus.REJECTED, draft.status());
             assertEquals("NO_APPLY: sales role, non-tech", draft.body());
             verify(emailDraftRepository).save(draft);
+        }
+    }
+
+    @Nested
+    @DisplayName("Scenario 10: preferences consumed in the generation prompt")
+    class PreferencesPromptTests {
+
+        @Test
+        @DisplayName("generate should include the preferences block and rule 12 in the prompt when preferences are set")
+        void generate_whenPreferencesSet_shouldIncludePreferencesInPrompt() {
+            String aiResponse = """
+                Subject: Application for Java Developer Position
+
+                Olá.
+
+                Eu me candidato à vaga.
+
+                Atenciosamente,
+                Juan Peruzzo
+                """;
+
+            when(emailDraftRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            UserProfile prefProfile = new UserProfile(null, 1L,
+                    "Experienced Java developer with Spring Boot expertise.",
+                    List.of("Java", "Spring Boot", "PostgreSQL"),
+                    CompanyTone.FORMAL,
+                    List.of(), null, null, null, null, null,
+                    new UserPreferences(new WorkPreference.Remote(), 5000, List.of("Acme Corp")));
+            when(userProfileRepository.findByUserId(any())).thenReturn(Optional.of(prefProfile));
+
+            Long jobId = 30L;
+            Job job = new Job(jobId, "Java Developer", "CompanyX",
+                    "https://example.com/job/30", "Description", LocalDate.now(), "test");
+            JobAnalysis analysis = new JobAnalysis(null, null, null, 40,
+                    List.of("Java", "Spring Boot"),
+                    List.of("Kubernetes"),
+                    CompanyTone.FORMAL,
+                    "Java developer position");
+
+            when(jobRepository.findById(jobId)).thenReturn(Optional.of(job));
+            when(jobAnalysisRepository.findByJobIdAndUserId(jobId, 1L)).thenReturn(Optional.of(analysis));
+
+            ArgumentCaptor<String> promptCaptor = ArgumentCaptor.forClass(String.class);
+            when(aiPort.complete(promptCaptor.capture())).thenReturn(aiResponse);
+            emailGenerationService.generate(1L, jobId);
+
+            String prompt = promptCaptor.getValue();
+            assertTrue(prompt.contains("Candidate preferences"));
+            assertTrue(prompt.contains("Work model: Remote"));
+            assertTrue(prompt.contains("Salary floor: R$ 5000"));
+            assertTrue(prompt.contains("Acme Corp"));
+            assertTrue(prompt.contains("NO_APPLY"));
+        }
+
+        @Test
+        @DisplayName("generate should NOT include the preferences block in the prompt when preferences are absent")
+        void generate_whenNoPreferences_shouldNotIncludePreferencesBlock() {
+            String aiResponse = """
+                Subject: Application for Java Developer Position
+
+                Olá.
+
+                Eu me candidato à vaga.
+
+                Atenciosamente,
+                Juan Peruzzo
+                """;
+
+            UserProfile plainProfile = new UserProfile(null, 1L,
+                    "Experienced Java developer with Spring Boot expertise.",
+                    List.of("Java", "Spring Boot", "PostgreSQL"),
+                    CompanyTone.FORMAL,
+                    List.of(), null, null, null, null, null, null);
+            when(userProfileRepository.findByUserId(any())).thenReturn(Optional.of(plainProfile));
+
+            Long jobId = 31L;
+            Job job = new Job(jobId, "Java Developer", "CompanyX",
+                    "https://example.com/job/31", "Description", LocalDate.now(), "test");
+            JobAnalysis analysis = new JobAnalysis(null, null, null, 40,
+                    List.of("Java", "Spring Boot"),
+                    List.of("Kubernetes"),
+                    CompanyTone.FORMAL,
+                    "Java developer position");
+
+            when(jobRepository.findById(jobId)).thenReturn(Optional.of(job));
+            when(jobAnalysisRepository.findByJobIdAndUserId(jobId, 1L)).thenReturn(Optional.of(analysis));
+
+            ArgumentCaptor<String> promptCaptor = ArgumentCaptor.forClass(String.class);
+            when(aiPort.complete(promptCaptor.capture())).thenReturn(aiResponse);
+            when(emailDraftRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+            emailGenerationService.generate(1L, jobId);
+
+            String prompt = promptCaptor.getValue();
+            assertFalse(prompt.contains("Candidate preferences"));
         }
     }
 }
