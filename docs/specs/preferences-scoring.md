@@ -164,7 +164,7 @@ Candidate preferences (authoritative):
 ```
 
 - Prompt 1 (analysis) appends the block + scoring directive: lower `matchScore`
-  on work-model conflict / below-floor salary; excluded companies score 0–10.
+  on work-model conflict / below-floor salary; excluded companies score 0–15.
 - Prompt 2 (generation) appends the block + Rule 12 (above).
 - Absent preferences → block omitted entirely (byte-identical prompts).
 
