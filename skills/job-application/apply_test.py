@@ -1692,5 +1692,157 @@ class CdpUrlFlagTests(unittest.TestCase):
         self.assertTrue(args.auto_apply)
 
 
+# ---------------------------------------------------------------------------
+# Planner-intent emission (mcp-apply-loop, phase 3) — --emit-intent
+# ---------------------------------------------------------------------------
+
+class IntentEmissionTests(unittest.TestCase):
+    """--emit-intent outputs the selector-free intent JSON; legacy path intact."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.mem = Path(self.tmp.name)
+        self.profile_path = write_profile(self.mem)
+        self.record_path = self.mem / "applications" / f"{JOB_ID}.json"
+
+    def test_parse_args_has_emit_intent(self):
+        args = apply.parse_args(["--emit-intent"])
+        self.assertTrue(args.emit_intent)
+
+    def test_parse_args_has_max_steps(self):
+        args = apply.parse_args(["--max-steps", "10"])
+        self.assertEqual(args.max_steps, 10)
+
+    def test_emit_intent_shape(self):
+        result = run_cli(self.mem, self.profile_path, "--emit-intent", "--dry-run")
+        self.assertEqual(result.code, 0)
+        data = result.data
+        self.assertEqual(set(data.keys()),
+                         {"intent_id", "job_id", "job_url", "portal",
+                          "profile", "policy", "dry_run"})
+        self.assertEqual(data["job_id"], JOB_ID)
+        self.assertEqual(data["job_url"], GUPY_URL)
+        self.assertEqual(data["portal"], "gupy")
+        self.assertTrue(data["dry_run"])
+        # Profile carries the applicant data with the intent's resume_path key.
+        self.assertEqual(set(data["profile"].keys()),
+                         {"name", "email", "phone", "resume_path", "cover_text"})
+        self.assertEqual(data["profile"]["resume_path"], VALID_PROFILE["cv_path"])
+        # Policy block, never individual intent->selector fields.
+        self.assertEqual(data["policy"],
+                         {"require_confirmation_before_final_submit": True,
+                          "never_fill_credentials": True,
+                          "stop_on_auth_url": True,
+                          "max_steps": 25})
+        # Legacy --job-url mode has no backend metadata to carry.
+        self.assertNotIn("metadata", data)
+        self.assertNotIn("steps", data)
+        self.assertNotIn("fill_form", data)
+
+    def test_emit_intent_has_no_selector_fields(self):
+        result = run_cli(self.mem, self.profile_path, "--emit-intent", "--dry-run")
+        text = json.dumps(result.data).lower()
+        for forbidden in ("selector", "input[", "button[", "xpath", "fill_form"):
+            self.assertNotIn(forbidden, text,
+                             f"intent must not carry the {forbidden!r} selector hint")
+
+    def test_emit_intent_confirmed_flips_policy(self):
+        confirmed = run_cli(self.mem, self.profile_path, "--emit-intent",
+                            "--dry-run", "--confirmed")
+        self.assertFalse(
+            confirmed.data["policy"]["require_confirmation_before_final_submit"])
+        auto = run_cli(self.mem, self.profile_path, "--emit-intent",
+                       "--dry-run", "--auto-apply")
+        self.assertFalse(
+            auto.data["policy"]["require_confirmation_before_final_submit"])
+        # The hard gates never change.
+        plain = run_cli(self.mem, self.profile_path, "--emit-intent", "--dry-run")
+        self.assertTrue(plain.data["policy"]["never_fill_credentials"])
+        self.assertTrue(plain.data["policy"]["stop_on_auth_url"])
+
+    def test_emit_intent_max_steps_flag(self):
+        default = run_cli(self.mem, self.profile_path, "--emit-intent", "--dry-run")
+        self.assertEqual(default.data["policy"]["max_steps"], 25)
+        tuned = run_cli(self.mem, self.profile_path, "--emit-intent", "--dry-run",
+                        "--max-steps", "10")
+        self.assertEqual(tuned.data["policy"]["max_steps"], 10)
+
+    def test_emit_intent_never_writes_records(self):
+        # Even a non-dry-run intent (browser mock reached) must not write the
+        # applied record — verdict.py is the sole writer.
+        result = run_cli(self.mem, self.profile_path, "--emit-intent",
+                         "--record-applied")
+        self.assertEqual(result.code, 0)
+        self.assertFalse(self.record_path.exists())
+
+    def test_emit_intent_refusal_still_blocks(self):
+        profile = dict(VALID_PROFILE, no_apply=True)
+        path = write_profile(self.mem, profile)
+        result = run_cli(self.mem, path, "--emit-intent", "--dry-run")
+        self.assertEqual(result.code, 1)
+        self.assertEqual(result.data["error"], "refusal_draft_blocked")
+
+    def test_emit_intent_already_applied_still_blocks(self):
+        self.record_path.parent.mkdir(parents=True, exist_ok=True)
+        self.record_path.write_text(
+            json.dumps({"job_id": JOB_ID, "status": "applied"}), encoding="utf-8"
+        )
+        result = run_cli(self.mem, self.profile_path, "--emit-intent", "--dry-run")
+        self.assertEqual(result.code, 1)
+        self.assertEqual(result.data["error"], "already_applied")
+
+    def test_build_intent_carries_metadata(self):
+        intent = apply.build_intent(
+            intent_id="test-uuid",
+            job_id=JOB_ID,
+            job_url=GUPY_URL,
+            portal="gupy",
+            profile=VALID_PROFILE,
+            require_confirmation=True,
+            job_title="Back-end Developer Jr",
+            job_company="ACME Tech",
+            backend_job_id=7,
+            api_base_url="http://localhost:8080",
+        )
+        self.assertEqual(intent["metadata"]["job_title"], "Back-end Developer Jr")
+        self.assertEqual(intent["metadata"]["job_company"], "ACME Tech")
+        self.assertEqual(intent["metadata"]["backend_job_id"], 7)
+        self.assertEqual(intent["metadata"]["api_base_url"], "http://localhost:8080")
+        self.assertNotIn("dry_run", intent)
+
+    def test_emit_intent_api_mode_carries_metadata(self):
+        # API-first mode (--job-id) prefills title/company/backend_id into the
+        # intent metadata (issue #46 bridge into the mcp-apply-loop intent).
+        with redirect_stdout(io.StringIO()) as buf:
+            with unittest.mock.patch("job_api.resolve_token", return_value="tok"), \
+                    unittest.mock.patch("job_api.api_get_job", return_value={
+                        "id": 7,
+                        "url": GUPY_URL,
+                        "title": "Back-end Developer Jr",
+                        "company": "ACME Tech",
+                    }):
+                code = apply.run([
+                    "--profile", str(self.profile_path),
+                    "--memory-dir", str(self.mem),
+                    "--job-id", "7",
+                    "--api-base-url", "http://localhost:8080",
+                    "--emit-intent",
+                    "--dry-run",
+                ])
+        self.assertEqual(code, 0)
+        data = json.loads(buf.getvalue())
+        self.assertEqual(data["metadata"]["job_title"], "Back-end Developer Jr")
+        self.assertEqual(data["metadata"]["job_company"], "ACME Tech")
+        self.assertEqual(data["metadata"]["backend_job_id"], 7)
+        self.assertEqual(data["metadata"]["api_base_url"], "http://localhost:8080")
+
+    def test_legacy_plan_path_unchanged(self):
+        result = run_cli(self.mem, self.profile_path, "--dry-run")
+        self.assertEqual(result.code, 0)
+        self.assertIn("steps", result.data)
+        self.assertNotIn("intent_id", result.data)
+
+
 if __name__ == "__main__":
     unittest.main()

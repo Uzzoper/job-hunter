@@ -26,16 +26,27 @@ handle_cover_letter → submit with always-gated confirmation).
 # Supported portals: gupy, infojobs. LinkedIn is explicitly OUT of scope (manual
 # flow + the separate Node.js scraper microservice) — no linkedin helper/YAML.
 
-Stdlib only: argparse, json, os, re, subprocess, time, urllib, pathlib.
+Stdlib only: argparse, json, os, re, subprocess, time, uuid, urllib, pathlib.
 No pip dependencies.
 
 Usage:
     python3 apply.py --job-url <url> --profile <profile.json> [--portal gupy|infojobs] \\
         [--memory-dir <dir>] [--dry-run] [--confirmed] [--record-applied]
         [--skip-session-check] [--auto-apply]
+    python3 apply.py --job-url <url> --profile <profile.json> --emit-intent [--max-steps N] \\   # mcp-apply-loop
     python3 apply.py --check-browser [--cdp-url <url>] [--user-data-dir <dir>]
 
-Output: JSON to stdout (action plan, browser status, or {"error": <code>, "detail": ...}).
+Output: JSON to stdout (action plan, browser status, executor intent, or {"error": <code>, "detail": ...}).
+
+--emit-intent (mcp-apply-loop, phase 3): instead of the selector-based ACTION
+PLAN, print the selector-free INTENT JSON (intent_id/job_url/portal/profile/
+policy/metadata — no steps, no selectors, no fill_form). The intent carries
+policy gates (require_confirmation_before_final_submit, never_fill_credentials,
+stop_on_auth_url, max_steps) that the executor enforces at runtime via
+classify.py against each live AX snapshot. Legacy gate checks (refusal, already
+applied, invalid profile) still run; legacy session-expired plan + navigation
+guard early-exits are skipped because the intent loop enforces auth/loops at
+runtime. verdict.py remains the sole applier of the applied record.
 """
 
 import argparse
@@ -46,6 +57,7 @@ import re
 import subprocess
 import sys
 import time
+import uuid
 import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
@@ -88,6 +100,9 @@ CDP_RECHECK_DELAY = 3  # seconds to wait after starting Chromium before re-check
 # "executor" metadata block. Never a hard dependency: absent flag or an
 # unreachable daemon falls back to the direct plan (with a warning field).
 DEFAULT_DAEMON_TIMEOUT = 3.0  # seconds for /health and /jobs HTTP calls
+
+# mcp-apply-loop (phase 3) — executor loop step budget for the planner intent.
+DEFAULT_MAX_STEPS = 25
 
 
 # Gupy job URLs look like https://<portal>.gupy.io/jobs/<id-slug>
@@ -628,6 +643,74 @@ def build_action_plan(profile: Dict[str, Any], portal_cfg: Dict[str, Any],
 
 
 # ---------------------------------------------------------------------------
+# Planner intent — mcp-apply-loop phase 3 (selector-free executor contract)
+# ---------------------------------------------------------------------------
+
+def build_intent(*, intent_id: str, job_id: str, job_url: str, portal: str,
+                 profile: Dict[str, Any],
+                 require_confirmation: bool,
+                 max_steps: int = DEFAULT_MAX_STEPS,
+                 never_fill_credentials: bool = True,
+                 stop_on_auth_url: bool = True,
+                 job_title: Optional[str] = None,
+                 job_company: Optional[str] = None,
+                 backend_job_id: Optional[Any] = None,
+                 api_base_url: Optional[str] = None,
+                 dry_run: bool = False) -> Dict[str, Any]:
+    """Build the selector-free executor INTENT JSON (mcp-apply-loop spec).
+
+    The intent deliberately carries NO CSS selectors / XPaths / locators and no
+    steps: the executor derives every action on the fly from each live AX
+    snapshot via classify.py (observe -> classify -> act -> verify). Policy
+    carries the hard gates:
+
+      * require_confirmation_before_final_submit — flips to False via
+        --confirmed / --auto-apply (same gates enforced by the legacy plan).
+      * never_fill_credentials / stop_on_auth_url — cannot be disabled from the
+        CLI; safe-by-default always.
+
+    ``dry_run`` adds an execution hint (never fill/submit), never a record —
+    verdict.py is the sole writer of the ``applied`` record.
+    """
+    intent: Dict[str, Any] = {
+        "intent_id": intent_id,
+        "job_id": job_id,
+        "job_url": job_url,
+        "portal": portal,
+        "profile": {
+            "name": profile.get("name"),
+            "email": profile.get("email"),
+            "phone": profile.get("phone"),
+            # The intent uses the executor-side key resume_path: legacy portals
+            # store the CV under cv_path, so map it (prefer resume_path if a
+            # planner-side profile ever uses the new key).
+            "resume_path": profile.get("resume_path") or profile.get("cv_path"),
+            "cover_text": profile.get("cover_text"),
+        },
+        "policy": {
+            "require_confirmation_before_final_submit": bool(require_confirmation),
+            "never_fill_credentials": bool(never_fill_credentials),
+            "stop_on_auth_url": bool(stop_on_auth_url),
+            "max_steps": int(max_steps),
+        },
+    }
+    metadata: Dict[str, Any] = {}
+    if job_title is not None:
+        metadata["job_title"] = job_title
+    if job_company is not None:
+        metadata["job_company"] = job_company
+    if backend_job_id is not None:
+        metadata["backend_job_id"] = backend_job_id
+    if api_base_url:
+        metadata["api_base_url"] = api_base_url
+    if metadata:
+        intent["metadata"] = metadata
+    if dry_run:
+        intent["dry_run"] = True
+    return intent
+
+
+# ---------------------------------------------------------------------------
 # Errors
 # ---------------------------------------------------------------------------
 
@@ -774,6 +857,12 @@ def parse_args(argv: Optional[List[str]]):
     # daemon base URL, real CLI flag is --daemon-url (default None = direct plan).
     parser.add_argument("--daemon-url", default=None,
                         help="CDP daemon HTTP base URL (issue #44): when /health reports cdp_connected the plan is submitted via POST /jobs and printed with an 'executor' block; otherwise falls back to the direct plan")
+    # mcp-apply-loop phase 3 — planner-intent emission (selector-free mode).
+    # --max-steps caps the executor loop budget (default DEFAULT_MAX_STEPS).
+    parser.add_argument("--emit-intent", action="store_true",
+                        help="emit the selector-free executor INTENT JSON (id/url/portal/profile/policy/metadata) and exit — no steps, no selectors; the executor derives actions from live AX snapshots via classify.py")
+    parser.add_argument("--max-steps", type=int, default=None,
+                        help=f"executor loop step budget for the intent (default: {DEFAULT_MAX_STEPS}; must be >= 1)")
     return parser.parse_args(argv)
 
 
@@ -966,7 +1055,11 @@ def run(argv: Optional[List[str]] = None) -> int:
         session_expired = session_result["session"] == "expired"
         session_login_url = session_result.get("login_url")
 
-    if session_expired:
+    # Intent mode (--emit-intent) skips the legacy session-expired PLAN: the
+    # executor enforces auth/loop stops at runtime via classify.py +
+    # stop_on_auth_url. The session check itself is still computed (cheap and
+    # keeps the code path exercised).
+    if session_expired and not args.emit_intent:
         plan = build_action_plan(
             profile, portal_cfg, job_id, job_url,
             confirmed=args.confirmed, memory_dir=memory_dir, dry_run=args.dry_run,
@@ -985,8 +1078,11 @@ def run(argv: Optional[List[str]] = None) -> int:
     # a login page or is stuck re-visiting the same URL, stop early and hand the
     # task back to the human with a direct link + screenshot hint. The guard is
     # stateless: history is supplied via --visited-urls each invocation.
+    # Intent mode skips it: the executor re-checks the live page every step via
+    # classify.py (auth -> stop, loop -> budget/stall), so stale URL hints from
+    # the planner would only cause false aborts.
     guard = guard_from_cli(job_url, args.current_url, args.visited_urls)
-    if guard.get("block") in ("auth_required", "navigation_loop"):
+    if not args.emit_intent and guard.get("block") in ("auth_required", "navigation_loop"):
         code = guard["block"]
         detail = _guard_detail(code, guard)
         # Prefer "auth_required" when both conditions apply, matching the
@@ -1011,6 +1107,30 @@ def run(argv: Optional[List[str]] = None) -> int:
             existing_record=existing,
         )))
         return 1
+
+    # mcp-apply-loop phase 3 — planner-intent emission. Selector-free contract:
+    # the intent carries only the job, portal, applicant profile and policy
+    # gates; the executor derives every action from live AX snapshots via
+    # classify.py. Gates already enforced above (profile validation, refusal,
+    # idempotency) still apply. Never writes a record — verdict.py is the sole
+    # writer of the applied record.
+    if args.emit_intent:
+        intent = build_intent(
+            intent_id=str(uuid.uuid4()),
+            job_id=job_id,
+            job_url=job_url,
+            portal=str(portal_cfg.get("portal") or args.portal),
+            profile=profile,
+            require_confirmation=not (args.confirmed or args.auto_apply),
+            max_steps=args.max_steps if args.max_steps is not None else DEFAULT_MAX_STEPS,
+            job_title=job_title,
+            job_company=job_company,
+            backend_job_id=backend_job_id,
+            api_base_url=args.api_base_url if api_mode else None,
+            dry_run=args.dry_run,
+        )
+        print(json.dumps(intent, ensure_ascii=False, indent=2))
+        return 0
 
     plan = build_action_plan(
         profile, portal_cfg, job_id, job_url,
