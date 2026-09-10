@@ -782,5 +782,50 @@ class EmailGenerationServiceTest {
             String prompt = promptCaptor.getValue();
             assertFalse(prompt.contains("Candidate preferences"));
         }
+
+        @Test
+        @DisplayName("generate should NOT include the preferences block when preferences are non-null but semantically blank (UserPreferences.empty())")
+        void generate_whenEmptyPreferences_shouldNotIncludePreferencesBlock() {
+            String aiResponse = """
+                Subject: Application for Java Developer Position
+
+                Olá.
+
+                Eu me candidato à vaga.
+
+                Atenciosamente,
+                Juan Peruzzo
+                """;
+
+            UserProfile emptyPrefsProfile = new UserProfile(null, 1L,
+                    "Experienced Java developer with Spring Boot expertise.",
+                    List.of("Java", "Spring Boot", "PostgreSQL"),
+                    CompanyTone.FORMAL,
+                    List.of(), null, null, null, null, null,
+                    UserPreferences.empty());
+            when(userProfileRepository.findByUserId(any())).thenReturn(Optional.of(emptyPrefsProfile));
+
+            Long jobId = 32L;
+            Job job = new Job(jobId, "Java Developer", "CompanyX",
+                    "https://example.com/job/32", "Description", LocalDate.now(), "test");
+            JobAnalysis analysis = new JobAnalysis(null, null, null, 40,
+                    List.of("Java", "Spring Boot"),
+                    List.of("Kubernetes"),
+                    CompanyTone.FORMAL,
+                    "Java developer position");
+
+            when(jobRepository.findById(jobId)).thenReturn(Optional.of(job));
+            when(jobAnalysisRepository.findByJobIdAndUserId(jobId, 1L)).thenReturn(Optional.of(analysis));
+
+            ArgumentCaptor<String> promptCaptor = ArgumentCaptor.forClass(String.class);
+            when(aiPort.complete(promptCaptor.capture())).thenReturn(aiResponse);
+            when(emailDraftRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+            emailGenerationService.generate(1L, jobId);
+
+            String prompt = promptCaptor.getValue();
+            assertFalse(prompt.contains("Candidate preferences"),
+                    "UserPreferences.empty() must not inject a preferences block");
+        }
     }
 }
