@@ -68,6 +68,8 @@ companyTone criteria:
 
 {{CANDIDATE_PROFILE}}
 
+{{PREFERENCES_CONTEXT}}  (only when the user has set preferences — see below)
+
 Job listing:
 Title: {{JOB_TITLE}}
 Company: {{COMPANY}}
@@ -126,6 +128,7 @@ MANDATORY RULES:
 9. Include the phrase "Segue meu currículo em anexo" before the signature
 10. Positioning: write as a professional developer who delivers working software — never use trainee phrasing ("em formação", "aprendendo", "buscando oportunidade", "venho me especializando"); education appears at most once as plain fact, never as the opening; close with a confident call to action, never with "fico à disposição"
 11. If the vacancy clearly has no fit with the candidate (non-tech role, stack entirely outside the candidate's, or level far below), DO NOT write an email. Respond with exactly one line: NO_APPLY: [one-line reason in English]. No subject, no body, no signature. (see `email-no-apply-refusal.md`)
+12. If the job clearly conflicts with an explicit candidate preference below (excluded company, incompatible work model, or salary below the floor), DO NOT write an email — respond with exactly one line: NO_APPLY: [one-line reason in English]
 
 Tone guide:
 - formal:  respectful language, formal verbs, "Prezados"
@@ -143,6 +146,8 @@ Available projects to mention (choose the most relevant for the job):
 
 {{CANDIDATE_PROFILE}}
 
+{{PREFERENCES_CONTEXT}}  (only when the user has set preferences — see below)
+
 Job listing:
 Title: {{JOB_TITLE}}
 Company: {{COMPANY}}
@@ -158,6 +163,7 @@ Job summary: {{JOB_SUMMARY}}
 | Variable | Source | Example |
 |---|---|---|
 | `{{CANDIDATE_PROFILE}}` | Fixed (this file) | see section above |
+| `{{PREFERENCES_CONTEXT}}` | `UserProfile.preferences` via `PreferencesPromptFormatter` (emitted only when preferences are set) | see block below |
 | `{{JOB_TITLE}}` | `job.title()` | "Junior Java Developer" |
 | `{{COMPANY}}` | `job.company()` | "CompanyX" |
 | `{{JOB_DESCRIPTION}}` | `job.description()` | full job description text |
@@ -165,6 +171,32 @@ Job summary: {{JOB_SUMMARY}}
 | `{{COMPANY_TONE}}` | `analysis.companyTone().name().toLowerCase()` | "formal" |
 | `{{MATCHED_SKILLS}}` | `analysis.matchedSkills()` | "Java, Spring Boot, REST" |
 | `{{MISSING_SKILLS}}` | `analysis.missingSkills()` | "Kubernetes, AWS" |
+
+### Preferences context block (Prompt 1 and Prompt 2)
+
+Emitted **only** when the user has set at least one meaningful preference
+(`workPreference`, `salaryFloor`, or a non-empty `excludedCompanies`). When the
+profile holds no preferences the whole block — including the marker line — is
+omitted and the prompt is byte-identical to the pre-feature version.
+
+```
+Candidate preferences (authoritative):
+- Work model: Remote — fully remote / anywhere
+             | Hybrid — office in: Curitiba, São Paulo
+             | Onsite — office in: Curitiba
+             | Not set
+- Salary floor: R$ 5000 per month (BRL) | Not set
+- Excluded companies (hard skip): Acme Corp, Globex | None
+```
+
+**Prompt 1 (analysis) scoring directive** appended with the block:
+a job that conflicts with the candidate's work model, or whose advertised
+salary is below the floor, must score lower; excluded companies always score
+0–10 regardless of skills.
+
+**Prompt 2 (generation) rule 12** (see MANDATORY RULES above): preference
+conflicts (excluded company, incompatible work model, below-floor salary)
+produce a one-line `NO_APPLY:` refusal instead of an email.
 
 ---
 
@@ -318,4 +350,5 @@ Resume text:
 | v3.0 | 2026-08 | Add Prompt 4 resume tailoring |
 | v3.1 | 2026-08 | Prompt 3 gains the `contact` object (phone, email, portfolioUrl, githubUrl, linkedinUrl; null when not found) — profile auto-fill from resume upload |
 | v3.2 | 2026-08 | Prompt 2 repositioned as a professional developer: reference example rewritten without trainee phrasing ("em formação", "venho me especializando", "aprimorando habilidades"), new rule 10 (professional positioning, confident CTA instead of "fico à disposição"), missing skills addressed matter-of-factly |
+| v3.3 | 2026-09 | Prompts 1 and 2 gain the `{{PREFERENCES_CONTEXT}}` block (work model, salary floor, excluded companies) when set; Prompt 1 adds a preference-aware scoring directive, Prompt 2 adds rule 12 (preference conflicts → `NO_APPLY:`) — see `preferences-scoring.md` |
 ```
