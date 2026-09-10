@@ -4,6 +4,7 @@ import com.juanperuzzo.job_hunter.domain.model.UserPreferences;
 import com.juanperuzzo.job_hunter.domain.model.WorkPreference;
 
 import java.util.List;
+import java.util.regex.Pattern;
 
 /**
  * Renders the user work-preference context injected into the AI prompts
@@ -15,9 +16,17 @@ import java.util.List;
  * calling services omit the block entirely — the prompt stays byte-identical
  * to the pre-feature version.
  *
- * <p>Pure logic, no framework dependencies.
+ * <p>All free-text values (cities, company names) are sanitized by
+ * {@link #sanitize} before interpolation: control characters (including
+ * newlines, carriage returns, null bytes, ESC) are replaced with a single
+ * space so a hostile value can never forge additional prompt lines inside the
+ * "(authoritative)" block. This is the single trust boundary covering both
+ * prompts at once. Pure logic, no framework dependencies.
  */
 public final class PreferencesPromptFormatter {
+
+    /** Matches any UNICODE control or format character (C0/C1, newlines, CR, null, ESC, etc.). */
+    private static final Pattern CONTROL_CHARS = Pattern.compile("\\p{C}");
 
     private PreferencesPromptFormatter() {
     }
@@ -43,9 +52,22 @@ public final class PreferencesPromptFormatter {
                 - Work model: %s
                 - Salary floor: %s
                 - Excluded companies (hard skip): %s""".formatted(
-                workModel(preferences.workPreference()),
+                sanitize(workModel(preferences.workPreference())),
                 salaryFloor(preferences.salaryFloor()),
-                companies(preferences.excludedCompanies()));
+                sanitize(companies(preferences.excludedCompanies())));
+    }
+
+    /**
+     * Replaces every control character (newlines, carriage returns, null bytes,
+     * ESC, and any other {@code \p{C}} Unicode control) with a single space.
+     * Ensures free-text values render as one inert line and can never forge
+     * additional instructions inside the prompt.
+     */
+    static String sanitize(String value) {
+        if (value == null) {
+            return "";
+        }
+        return CONTROL_CHARS.matcher(value).replaceAll(" ");
     }
 
     private static String workModel(WorkPreference workPreference) {

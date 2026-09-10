@@ -5,6 +5,7 @@ import com.juanperuzzo.job_hunter.domain.model.UserPreferences;
 import com.juanperuzzo.job_hunter.domain.model.WorkPreference;
 
 import java.util.List;
+import java.util.Locale;
 
 /**
  * Deterministic preferences→scoring modifier applied to the raw AI match score
@@ -72,7 +73,7 @@ public final class JobPreferenceScorer {
         if (description == null || workPreference == null) {
             return 0;
         }
-        String d = description.toLowerCase();
+        String d = description.toLowerCase(Locale.ROOT);
         boolean r = containsAny(d, REMOTE_TERMS) && !containsAny(d, REMOTE_NEGATION_TERMS);
         boolean s = containsAny(d, ONSITE_TERMS);
         boolean h = containsAny(d, HYBRID_TERMS);
@@ -112,7 +113,7 @@ public final class JobPreferenceScorer {
     }
 
     private static boolean mentionsAnyCity(String description, List<String> cities) {
-        return cities.stream().anyMatch(city -> description.contains(city.toLowerCase()));
+        return cities.stream().anyMatch(city -> description.contains(city.toLowerCase(Locale.ROOT)));
     }
 
     private static boolean containsAny(String text, List<String> terms) {
@@ -123,9 +124,9 @@ public final class JobPreferenceScorer {
         if (company == null || excludedCompanies.isEmpty()) {
             return false;
         }
-        String normalized = company.trim().toLowerCase();
+        String normalized = company.trim().toLowerCase(Locale.ROOT);
         return excludedCompanies.stream()
-                .map(c -> c.trim().toLowerCase())
+                .map(c -> c.trim().toLowerCase(Locale.ROOT))
                 .anyMatch(normalized::equals);
     }
 }

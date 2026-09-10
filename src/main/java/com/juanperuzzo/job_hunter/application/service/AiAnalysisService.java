@@ -110,7 +110,7 @@ public class AiAnalysisService implements AnalyzeJobUseCase {
 
 
                 Scoring: lower matchScore when the job conflicts with the work model or offers a salary below the floor.
-                Companies in the excluded list always score 0-10 regardless of skills.""";
+                Companies in the excluded list always score 0-15 regardless of skills.""";
         }
         return prompt;
     }
