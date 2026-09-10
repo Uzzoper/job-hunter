@@ -349,5 +349,27 @@ class AiAnalysisServiceTest {
             String prompt = promptCaptor.getValue();
             assertFalse(prompt.contains("Candidate preferences"));
         }
+
+        @Test
+        @DisplayName("analyze should NOT include the preferences block when preferences are non-null but semantically blank (UserPreferences.empty())")
+        void analyze_whenEmptyPreferences_shouldNotIncludePreferencesBlock() {
+            UserProfile emptyPrefsProfile = new UserProfile(1L, 1L, "Experienced Java developer",
+                    List.of("Java"), CompanyTone.FORMAL, List.of(),
+                    null, null, null, null, null,
+                    UserPreferences.empty());
+            when(userProfileRepository.findByUserId(any())).thenReturn(Optional.of(emptyPrefsProfile));
+            ArgumentCaptor<String> promptCaptor = ArgumentCaptor.forClass(String.class);
+            when(aiPort.complete(promptCaptor.capture())).thenReturn(VALID_JSON.formatted(80));
+            when(jobAnalysisRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            when(jobRepository.findById(1L)).thenReturn(Optional.of(
+                    new Job(1L, "Java Developer", "CompanyX", "https://example.com/job/1",
+                            "Atuação 100% presencial em São Paulo.", LocalDate.now(), "test")));
+
+            aiAnalysisService.analyze(1L, 1L);
+
+            String prompt = promptCaptor.getValue();
+            assertFalse(prompt.contains("Candidate preferences"),
+                    "UserPreferences.empty() must not inject a preferences block");
+        }
     }
 }
