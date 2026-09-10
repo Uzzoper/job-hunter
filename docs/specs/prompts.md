@@ -68,12 +68,12 @@ companyTone criteria:
 
 {{CANDIDATE_PROFILE}}
 
-{{PREFERENCES_CONTEXT}}  (only when the user has set preferences — see below)
-
 Job listing:
 Title: {{JOB_TITLE}}
 Company: {{COMPANY}}
 Description: {{JOB_DESCRIPTION}}
+
+{{PREFERENCES_CONTEXT}}  (appended at the very end, only when the user has set preferences — see below)
 ```
 
 ---
@@ -128,7 +128,8 @@ MANDATORY RULES:
 9. Include the phrase "Segue meu currículo em anexo" before the signature
 10. Positioning: write as a professional developer who delivers working software — never use trainee phrasing ("em formação", "aprendendo", "buscando oportunidade", "venho me especializando"); education appears at most once as plain fact, never as the opening; close with a confident call to action, never with "fico à disposição"
 11. If the vacancy clearly has no fit with the candidate (non-tech role, stack entirely outside the candidate's, or level far below), DO NOT write an email. Respond with exactly one line: NO_APPLY: [one-line reason in English]. No subject, no body, no signature. (see `email-no-apply-refusal.md`)
-12. If the job clearly conflicts with an explicit candidate preference below (excluded company, incompatible work model, or salary below the floor), DO NOT write an email — respond with exactly one line: NO_APPLY: [one-line reason in English]
+
+Rule 12 (appended at the very end, directly after {{PREFERENCES_CONTEXT}} — see below):
 
 Tone guide:
 - formal:  respectful language, formal verbs, "Prezados"
@@ -146,14 +147,15 @@ Available projects to mention (choose the most relevant for the job):
 
 {{CANDIDATE_PROFILE}}
 
-{{PREFERENCES_CONTEXT}}  (only when the user has set preferences — see below)
-
 Job listing:
 Title: {{JOB_TITLE}}
 Company: {{COMPANY}}
 Skills the candidate has for this role: {{MATCHED_SKILLS}}
 Skills the candidate lacks (address matter-of-factly if relevant — never apologize or promise to learn them): {{MISSING_SKILLS}}
 Job summary: {{JOB_SUMMARY}}
+
+{{PREFERENCES_CONTEXT}}  (appended at the very end, only when the user has set preferences — see below)
+Rule 12: if the job clearly conflicts with an explicit preference above (excluded company, incompatible work model, or salary below the floor), do NOT write an email — respond with exactly one line: NO_APPLY: [one-line reason in English]
 ```
 
 ---
@@ -192,7 +194,7 @@ Candidate preferences (authoritative):
 **Prompt 1 (analysis) scoring directive** appended with the block:
 a job that conflicts with the candidate's work model, or whose advertised
 salary is below the floor, must score lower; excluded companies always score
-0–10 regardless of skills.
+0–15 regardless of skills.
 
 **Prompt 2 (generation) rule 12** (see MANDATORY RULES above): preference
 conflicts (excluded company, incompatible work model, below-floor salary)
