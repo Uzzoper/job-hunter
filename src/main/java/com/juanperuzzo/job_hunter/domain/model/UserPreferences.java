@@ -47,6 +47,18 @@ public record UserPreferences(
     }
 
     /**
+     * Returns {@code true} when at least one meaningful preference is set.
+     * <p>
+     * A semantically blank object (no work preference, no salary floor, no
+     * excluded companies) behaves exactly like absent preferences: prompts stay
+     * byte-identical and scoring is untouched (preferences-scoring spec,
+     * identity guarantee).
+     */
+    public boolean hasContent() {
+        return workPreference != null || salaryFloor != null || !excludedCompanies.isEmpty();
+    }
+
+    /**
      * Normalizes a list field: null → empty list, trimmed items, cap enforced.
      * <p>
      * Deterministic cap: length validation runs on ALL items BEFORE the cap is
