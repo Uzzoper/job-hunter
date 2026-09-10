@@ -56,11 +56,15 @@ public class AiAnalysisService implements AnalyzeJobUseCase {
             String prompt = buildPrompt(job, profile);
             String response = aiPort.complete(prompt);
             JobAnalysis parsed = parseAnalysis(response);
+            // Deterministic preferences→scoring modifier: guarantees work-model
+            // conflicts and excluded companies lower the persisted matchScore even
+            // if the AI ignores the injected context. Null/blank preferences → no-op.
+            int matchScore = JobPreferenceScorer.adjust(parsed.matchScore(), job, profile.preferences());
             var existingId = jobAnalysisRepository.findByJobIdAndUserId(job.id(), userId)
                     .map(JobAnalysis::id)
                     .orElse(null);
             var analysis = new JobAnalysis(
-                    existingId, job.id(), userId, parsed.matchScore(),
+                    existingId, job.id(), userId, matchScore,
                     parsed.matchedSkills(), parsed.missingSkills(),
                     parsed.companyTone(), parsed.summary()
             );
@@ -76,7 +80,7 @@ public class AiAnalysisService implements AnalyzeJobUseCase {
         String resumeExcerpt = truncate(profile.resumeText(), MAX_RESUME_CHARS);
         String descExcerpt = truncate(job.description(), MAX_DESCRIPTION_CHARS);
 
-        return """
+        String prompt = """
             You are a career assistant. Analyze this job against the candidate.
 
             Candidate skills: %s
@@ -97,6 +101,18 @@ public class AiAnalysisService implements AnalyzeJobUseCase {
                 job.title(),
                 job.company(),
                 descExcerpt);
+
+        // Preferences context (preferences-scoring spec). Empty when the profile
+        // has no meaningful preference → prompt stays byte-identical to pre-feature.
+        String preferencesBlock = PreferencesPromptFormatter.block(profile.preferences());
+        if (!preferencesBlock.isEmpty()) {
+            prompt += "\n\n" + preferencesBlock + """
+
+
+                Scoring: lower matchScore when the job conflicts with the work model or offers a salary below the floor.
+                Companies in the excluded list always score 0-15 regardless of skills.""";
+        }
+        return prompt;
     }
 
     private String truncate(String text, int maxChars) {
