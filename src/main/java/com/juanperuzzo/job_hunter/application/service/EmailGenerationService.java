@@ -171,7 +171,7 @@ public class EmailGenerationService implements GenerateEmailUseCase, GetEmailDra
                         .map(p -> "- " + p.name() + ": " + p.description() + " (" + p.techStack() + ")")
                         .collect(Collectors.joining("\n"));
 
-        return """
+        String prompt = """
             You are an expert at writing job application emails for tech positions.
 
             Write an email following the rules below.
@@ -235,6 +235,17 @@ public class EmailGenerationService implements GenerateEmailUseCase, GetEmailDra
             """.formatted(tone, resumeExcerpt, String.join(", ", profile.skills()),
                 projectsText, job.title(), job.company(),
                 matchedSkills, missingSkills, analysis.summary());
+
+        // Preferences context (preferences-scoring spec). Empty when the profile
+        // has no meaningful preference → prompt stays byte-identical to pre-feature.
+        String preferencesBlock = PreferencesPromptFormatter.block(profile.preferences());
+        if (!preferencesBlock.isEmpty()) {
+            prompt += "\n\n" + preferencesBlock + """
+
+
+                Rule 12. If the job clearly conflicts with an explicit preference above (excluded company, incompatible work model, or salary below the floor), do NOT write an email — respond with exactly one line: NO_APPLY: [one-line reason in English].""";
+        }
+        return prompt;
     }
 
     /**
