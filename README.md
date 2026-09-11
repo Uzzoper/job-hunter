@@ -10,7 +10,7 @@
 ![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript)
 ![License](https://img.shields.io/badge/license-GPL--3.0-blue)
 
-A Spring Boot application (REST API) + Node.js/Playwright scraper microservice + Rust CLI/TUI client that automates the search for junior developer job listings, analyzes each one with AI, and generates a personalized application email — ready to send.
+A Spring Boot backend (REST API) + Node.js/Playwright scraper microservice + Rust CLI/TUI client + Hermes agent bot (`jobhunter-bot`) that hunts junior developer jobs across Gupy, LinkedIn and InfoJobs, scores each one with AI against your work preferences, drafts personalized application emails, and applies with confirmation gates and verified submits.
 
 ---
 
@@ -68,9 +68,10 @@ flowchart TB
    The bot lane uses a static service token instead: `X-Bot-Token: <secret>` (no `Bearer`) — see `bot.service` in `application-local.yaml` and `scripts/setup-bot-access.sh`. CLI/webapp keep JWT login.
 1. The scraper fetches job listings from Gupy, InfoJobs, and LinkedIn, filtered by keywords.
 2. Each listing is saved to SQLite (`./data/jobhunter.db`) — duplicates are skipped by URL.
-3. On demand, the AI analyzes the listing against your profile and returns a match score (0–100), matched/missing skills, and company tone.
+3. On demand, the AI analyzes the listing against your profile and returns a match score (0–100), matched/missing skills, and company tone. The score also reflects your saved work preferences (remote/hybrid/onsite, salary floor, excluded companies) — deterministically and in the prompt.
 4. The AI then generates a personalized application email in Brazilian Portuguese, tailored to the company tone and mentioning a relevant portfolio project.
 5. Optionally, the auto-send scheduler sends emails in priority order (highest matchScore first) — high-scoring jobs use a template email (no AI), low-scoring ones get an AI-personalized draft. Requires manual approval by default and respects a daily cap of 50/user.
+6. Alternatively, the `jobhunter-bot` Hermes profile applies for you conversationally: it picks top-scored jobs from the API, drives the portal (Gupy/InfoJobs) through a Playwright MCP loop with confirmation checkpoints, and records `applied` only after a verified submit — never on plan time.
 
 ---
 
