@@ -94,6 +94,26 @@ for skill_dir in "${SKILLS_SRC}"/*/; do
         chmod +x "${dest}/$(basename "${helper}")"
         echo "  $(basename "${helper}") -> ${dest}/ (chmod +x)"
     done
+
+    # Sync subdirectories needed at runtime (e.g. portals/, helpers/).
+    # Test files (*_test.py) and caches are never installed to the bot profile.
+    for subdir in "${skill_dir}"/*/; do
+        [ -d "${subdir}" ] || continue
+        subname="$(basename "${subdir}")"
+        [ "${subname}" = "__pycache__" ] && continue
+        mkdir -p "${dest}/${subname}"
+        for subfile in "${subdir}"*; do
+            [ -f "${subfile}" ] || continue
+            case "$(basename "${subfile}")" in
+                *_test.py) echo "  skip test file: ${subname}/$(basename "${subfile}")"; continue ;;
+            esac
+            cp "${subfile}" "${dest}/${subname}/"
+            case "${subfile}" in
+                *.py|*.sh) chmod +x "${dest}/${subname}/$(basename "${subfile}")" ;;
+            esac
+            echo "  ${subname}/$(basename "${subfile}") -> ${dest}/${subname}/"
+        done
+    done
     installed=$((installed + 1))
 done
 
