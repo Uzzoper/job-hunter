@@ -1,5 +1,6 @@
 package com.juanperuzzo.job_hunter.unit.infrastructure.scraper.provider;
 
+import com.juanperuzzo.job_hunter.application.port.out.UserRepository;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.normalizer.DateParser;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.normalizer.JobNormalizer;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.provider.ProviderRegistry;
@@ -14,6 +15,7 @@ import java.time.Duration;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.mock;
 
 @DisplayName("ProviderRegistry tests")
 class ProviderRegistryTest {
@@ -33,7 +35,7 @@ class ProviderRegistryTest {
         var retry = new ExponentialBackoffRetry(2, Duration.ofMillis(1), Duration.ofMillis(10), Duration.ofMillis(2));
         var parser = new DateParser();
         var normalizer = new JobNormalizer(parser, List.of("java"), List.of(), List.of(), 90,
-                java.time.Clock.systemUTC());
+                java.time.Clock.systemUTC(), mock(UserRepository.class));
 
         ExtractionStrategy strategy = new ExtractionStrategy() {
             @Override public String providerId() { return "test"; }

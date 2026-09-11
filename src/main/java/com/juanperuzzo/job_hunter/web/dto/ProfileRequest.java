@@ -36,7 +36,10 @@ public record ProfileRequest(
     String githubUrl,
 
     @Size(max = 500, message = "linkedinUrl must be at most 500 characters")
-    String linkedinUrl
+    String linkedinUrl,
+
+    @Valid
+    PreferencesRequest preferences
 ) {
     public ProfileRequest {
         if (projects == null) projects = List.of();

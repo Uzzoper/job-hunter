@@ -33,12 +33,14 @@ public class EmailGenerationService implements GenerateEmailUseCase, GetEmailDra
     private final JobRepository jobRepository;
     private final JobAnalysisRepository jobAnalysisRepository;
     private final TemplateEmailService templateEmailService;
+    private final BotMemorySyncService botMemorySyncService;
     private final int minMatchScore;
 
     public EmailGenerationService(AiPort aiPort, EmailDraftRepository emailDraftRepository,
                                   UserProfileRepository userProfileRepository,
                                   JobRepository jobRepository, JobAnalysisRepository jobAnalysisRepository,
                                   TemplateEmailService templateEmailService,
+                                  BotMemorySyncService botMemorySyncService,
                                   int minMatchScore) {
         this.aiPort = aiPort;
         this.emailDraftRepository = emailDraftRepository;
@@ -46,6 +48,7 @@ public class EmailGenerationService implements GenerateEmailUseCase, GetEmailDra
         this.jobRepository = jobRepository;
         this.jobAnalysisRepository = jobAnalysisRepository;
         this.templateEmailService = templateEmailService;
+        this.botMemorySyncService = botMemorySyncService;
         this.minMatchScore = minMatchScore;
     }
 
@@ -62,6 +65,13 @@ public class EmailGenerationService implements GenerateEmailUseCase, GetEmailDra
 
         UserProfile profile = userProfileRepository.findByUserId(userId)
                 .orElseThrow(() -> new AiException("User profile not found for userId: " + userId));
+
+        var existingSent = emailDraftRepository.findByJobIdAndUserId(job.id(), userId)
+                .filter(draft -> draft.status() == EmailStatus.SENT);
+        if (existingSent.isPresent()) {
+            log.debug("Skipping generation, job {} already applied (SENT) for user {}", job.id(), userId);
+            return existingSent.get();
+        }
 
         if (job.contactEmail() != null) {
             var alreadySent = emailDraftRepository.findSentByJobIdAndRecipientEmail(job.id(), job.contactEmail());
@@ -82,7 +92,11 @@ public class EmailGenerationService implements GenerateEmailUseCase, GetEmailDra
                     .map(EmailDraft::id)
                     .orElse(null);
             EmailDraft draft = parseEmailDraft(existingId, job.id(), userId, response, job.contactEmail());
-            return emailDraftRepository.save(draft);
+            EmailDraft saved = emailDraftRepository.save(draft);
+            if (saved.status() == EmailStatus.REJECTED) {
+                writeRefusalReasonBestEffort(userId, job.id(), response);
+            }
+            return saved;
         } catch (AiException e) {
             throw e;
         } catch (Exception e) {
@@ -90,12 +104,48 @@ public class EmailGenerationService implements GenerateEmailUseCase, GetEmailDra
         }
     }
 
+    /**
+     * Best-effort write-back of the AI refusal reason to the bot memory, so the bot
+     * learns why a job was skipped. Never fails the rejection flow: any failure is
+     * logged as a WARN and swallowed.
+     */
+    private void writeRefusalReasonBestEffort(Long userId, Long jobId, String aiResponse) {
+        try {
+            botMemorySyncService.writeMemoryEntry(userId, refusalReason(aiResponse));
+        } catch (Exception e) {
+            log.warn("Could not write refusal reason to bot memory for user {} job {}: {}",
+                    userId, jobId, e.getMessage());
+        }
+    }
+
+    /** Extracts the reason text after the {@code NO_APPLY:} prefix (falls back to the whole response). */
+    private static String refusalReason(String aiResponse) {
+        String response = aiResponse.trim();
+        String prefix = "NO_APPLY:";
+        if (response.startsWith(prefix)) {
+            String reason = response.substring(prefix.length()).trim();
+            return reason.isEmpty() ? response : reason;
+        }
+        return response;
+    }
+
     private EmailDraft generateFromTemplate(Job job, Long userId) {
         var template = templateEmailService.generate(job);
         var existingId = emailDraftRepository.findByJobIdAndUserId(job.id(), userId)
                 .map(EmailDraft::id)
                 .orElse(null);
-        var draft = new EmailDraft(existingId, job.id(), userId, template.subject(), template.body(),
+        String body = template.body().trim();
+        if (body.startsWith("NO_APPLY:")) {
+            // Template results carrying the refusal marker follow the same contract as the
+            // AI path: never persist a sendable PENDING draft, and write the reason back
+            // to bot memory best-effort so the bot learns why the job was skipped.
+            var refused = new EmailDraft(existingId, job.id(), userId, template.subject(), body,
+                    EmailStatus.REJECTED, LocalDateTime.now(), null, job.contactEmail());
+            EmailDraft saved = emailDraftRepository.save(refused);
+            writeRefusalReasonBestEffort(userId, job.id(), body);
+            return saved;
+        }
+        var draft = new EmailDraft(existingId, job.id(), userId, template.subject(), body,
                 EmailStatus.PENDING, LocalDateTime.now(), null, job.contactEmail());
         return emailDraftRepository.save(draft);
     }
@@ -121,7 +171,7 @@ public class EmailGenerationService implements GenerateEmailUseCase, GetEmailDra
                         .map(p -> "- " + p.name() + ": " + p.description() + " (" + p.techStack() + ")")
                         .collect(Collectors.joining("\n"));
 
-        return """
+        String prompt = """
             You are an expert at writing job application emails for tech positions.
 
             Write an email following the rules below.
@@ -185,6 +235,17 @@ public class EmailGenerationService implements GenerateEmailUseCase, GetEmailDra
             """.formatted(tone, resumeExcerpt, String.join(", ", profile.skills()),
                 projectsText, job.title(), job.company(),
                 matchedSkills, missingSkills, analysis.summary());
+
+        // Preferences context (preferences-scoring spec). Empty when the profile
+        // has no meaningful preference → prompt stays byte-identical to pre-feature.
+        String preferencesBlock = PreferencesPromptFormatter.block(profile.preferences());
+        if (!preferencesBlock.isEmpty()) {
+            prompt += "\n\n" + preferencesBlock + """
+
+
+                Rule 12. If the job clearly conflicts with an explicit preference above (excluded company, incompatible work model, or salary below the floor), do NOT write an email — respond with exactly one line: NO_APPLY: [one-line reason in English].""";
+        }
+        return prompt;
     }
 
     /**

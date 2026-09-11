@@ -93,7 +93,7 @@ com.juanperuzzo.job_hunter
 │   │       ├── JobRepository.java
 │   │       ├── NormalizerPort.java
 │   │       ├── PasswordHasher.java
-│   │       ├── ScraperPort.java                         (legacy — see ADR)
+│   │       ├── ScraperPort.java
 │   │       ├── SourceFetchPort.java
 │   │       ├── TokenProvider.java
 │   │       ├── UserProfileRepository.java
@@ -322,3 +322,53 @@ scraper:
 
   # No automatic scheduler — manual trigger via POST /api/jobs/fetch
 ```
+
+## Two modules, one repo
+
+The backend (Java) and the bot (Hermes profile) are two logical modules with
+their own conventions, versioned and deployed from this single repository.
+The backend follows Clean Architecture (`AGENTS.md`); the bot profile follows
+the Hermes conventions (canonical skills tree, one-screen SOUL, split
+memories, human gates). Neither is a separate repo because every feature
+touches both sides and ships atomically.
+
+```mermaid
+flowchart LR
+    subgraph Backend["Backend Java — Clean Architecture"]
+        direction TB
+        W["web<br/>controllers + DTOs"]
+        A["application<br/>use cases + ports"]
+        D["domain<br/>pure models"]
+        I["infrastructure<br/>ai · email · botmemory · scraper · security"]
+        W --> A --> D
+        I --> A
+    end
+    subgraph BotProfile["Bot profile — Hermes conventions"]
+        direction TB
+        S["SOUL.md<br/>one screen"]
+        K["skills/<name>/<br/>SKILL.md + helpers"]
+        M["memories/ + memails/<br/>free text + JSON"]
+        S --> K --> M
+    end
+    G["Hermes gateway<br/>:9119 /v1"]
+    C["CLI Rust (TUI)<br/>jh-cli"]
+    N["LinkedIn scraper<br/>Node + Playwright :3000"]
+    K -- "REST API + X-Bot-Token" --> W
+    M -- "sections + JSON (volume)" --> I
+    I -- "chat/completions" --> G
+    G -- "jobhunter-bot" --> K
+    C -- "REST API + JWT" --> W
+    I -- "scraper HTTP API" --> N
+```
+
+Seams (contracts between the modules):
+
+| Seam | Contract | Direction |
+|---|---|---|
+| Job data | `GET /api/jobs`, `GET /api/jobs/{id}`, `POST /fetch` + `X-Bot-Token` | bot → backend |
+| Applied record | `POST /api/jobs/{id}/applied` (idempotent) | bot → backend |
+| Memory sync | `§` sections + JSON records via mounted profile dir | both ways |
+| AI + email | OpenAI-compatible `POST /v1/chat/completions` | backend → gateway → bot |
+| Skills install | `scripts/install-bot-skills.sh` (copy + render-if-absent) | repo → profile |
+| CLI access | REST API + JWT login (`jh-cli`) | CLI → backend |
+| LinkedIn scraping | scraper HTTP API on :3000 (Playwright service, Jsoup fallback) | backend → Node service |

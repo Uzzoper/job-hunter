@@ -3,6 +3,7 @@ package com.juanperuzzo.job_hunter.infrastructure.persistence;
 import com.juanperuzzo.job_hunter.application.port.out.UserProfileRepository;
 import com.juanperuzzo.job_hunter.domain.model.CompanyTone;
 import com.juanperuzzo.job_hunter.domain.model.Project;
+import com.juanperuzzo.job_hunter.domain.model.UserPreferences;
 import com.juanperuzzo.job_hunter.domain.model.UserProfile;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
@@ -56,6 +57,7 @@ public class UserProfilePersistenceAdapter implements UserProfileRepository {
     }
 
     private UserProfileEntity toEntity(UserProfile profile) {
+        var prefs = profile.preferences();
         return new UserProfileEntity(
                 profile.id(),
                 profile.userId(),
@@ -66,7 +68,11 @@ public class UserProfilePersistenceAdapter implements UserProfileRepository {
                 profile.contactEmail(),
                 profile.portfolioUrl(),
                 profile.githubUrl(),
-                profile.linkedinUrl()
+                profile.linkedinUrl(),
+                prefs != null ? prefs.workPreference() : null,
+                prefs != null ? prefs.salaryFloor() : null,
+                prefs != null && !prefs.excludedCompanies().isEmpty()
+                        ? prefs.excludedCompanies().toArray(new String[0]) : null
         );
     }
 
@@ -75,6 +81,9 @@ public class UserProfilePersistenceAdapter implements UserProfileRepository {
                 ? Arrays.asList(entity.getSkills())
                 : List.of();
         CompanyTone tone = CompanyTone.valueOf(entity.getTone());
+
+        UserPreferences preferences = buildPreferences(entity);
+
         return new UserProfile(
                 entity.getId(),
                 entity.getUserId(),
@@ -86,7 +95,25 @@ public class UserProfilePersistenceAdapter implements UserProfileRepository {
                 entity.getContactEmail(),
                 entity.getPortfolioUrl(),
                 entity.getGithubUrl(),
-                entity.getLinkedinUrl()
+                entity.getLinkedinUrl(),
+                preferences
         );
+    }
+
+    private UserPreferences buildPreferences(UserProfileEntity entity) {
+        // workPreference comes pre-parsed through WorkPreferenceConverter, which
+        // already degrades poisoned values (unknown type, malformed JSON, invalid
+        // variant shape) to null with a WARN log.
+        var workPreference = entity.getWorkPreference();
+        Integer salaryFloor = entity.getSalaryFloor();
+        List<String> excludedCompanies = entity.getExcludedCompanies() != null
+                ? Arrays.asList(entity.getExcludedCompanies()) : null;
+
+        // Only build if at least one field is set
+        if (workPreference == null && salaryFloor == null
+                && (excludedCompanies == null || excludedCompanies.isEmpty())) {
+            return null;
+        }
+        return new UserPreferences(workPreference, salaryFloor, excludedCompanies);
     }
 }
