@@ -72,6 +72,29 @@ _BARE_SUBMIT_NAMES = frozenset(
     {"enviar", "confirmar", "finalizar", "concluir", "candidatar", "submit"}
 )
 
+# Resume/continue button names -> review (in-progress application step).
+# Substring match per button; kept disjoint from _START_APPLY_NAMES so a
+# "Candidatar-se" nav leftover never outranks an explicit "Continuar".
+_CONTINUE_BUTTON_NAMES = (
+    "Continuar", "Continuar candidatura", "Continuar inscrição",
+    "Retomar", "Retomar candidatura", "Continue", "Resume",
+    "Resume application",
+)
+
+# Resume phrases in the page text -> review (e.g. Gupy's
+# "Olá <nome>, vamos continuar sua candidatura?").
+_CONTINUATION_PHRASES = (
+    "vamos continuar",
+    "continue sua candidatura",
+    "retomar candidatura",
+    "continue your application",
+    "resume your application",
+)
+
+# In-progress application flow URL segments (e.g. Gupy's
+# /candidates/applications/<id>/steps/<id>/...) -> review lean.
+_APPLICATION_FLOW_SEGMENTS = ("applications", "steps")
+
 # Login intents -> auth even when the URL is not an auth path.
 _LOGIN_BUTTON_NAMES = frozenset(
     {"entrar", "login", "log in", "sign in", "signin", "acessar"}
@@ -174,15 +197,20 @@ def _credential_signal(roles: List[Tuple[str, str]]) -> Optional[str]:
     return None
 
 
-def _success_url_signal(url: Optional[str]) -> Optional[str]:
-    """Return the success path segment of the URL, or None."""
+def _url_segment(url: Optional[str], segments: Tuple[str, ...]) -> Optional[str]:
+    """Return the first URL path segment found in segments, or None."""
     if not url:
         return None
     from urllib.parse import urlparse  # local import keeps helpers tiny
     for segment in urlparse(url).path.lower().split("/"):
-        if segment and segment in SUCCESS_URL_SEGMENTS:
+        if segment and segment in segments:
             return segment
     return None
+
+
+def _success_url_signal(url: Optional[str]) -> Optional[str]:
+    """Return the success path segment of the URL, or None."""
+    return _url_segment(url, SUCCESS_URL_SEGMENTS)
 
 
 # ---------------------------------------------------------------------------
@@ -238,12 +266,34 @@ def classify_page(url: Optional[str],
     editable = any(role in _EDITABLE_ROLES for role, _ in roles)
     questions = any(role in _QUESTION_ROLES for role, _ in roles)
 
-    # 4. review — summary page (no inputs) with a final apply button.
+    # 4. review — summary page (no inputs) with a final apply button, OR an
+    # in-progress application resume page (e.g. Gupy's "vamos continuar sua
+    # candidatura?" with a "Continuar" button on a /candidates/applications/
+    # .../steps/... URL). Resume pages must never be start: start would
+    # re-enter the flow and risk a duplicate application.
     final_name = _name_contains(" ".join(names), _REVIEW_FINAL_NAMES)
     bare_submit = any(name.strip().lower() in _BARE_SUBMIT_NAMES for name in names)
-    if not editable and not questions and (final_name is not None or bare_submit):
+    continue_button = next(
+        (
+            _name_contains(name, _CONTINUE_BUTTON_NAMES)
+            for role, name in roles
+            if role == "button" and _name_contains(name, _CONTINUE_BUTTON_NAMES) is not None
+        ),
+        None,
+    )
+    continuation_phrase = _has_any(text, _CONTINUATION_PHRASES)
+    flow_segment = _url_segment(url, _APPLICATION_FLOW_SEGMENTS)
+    if not editable and not questions and (
+        final_name is not None
+        or bare_submit
+        or continue_button is not None
+        or continuation_phrase is not None
+        or flow_segment is not None
+    ):
         signals.append(
             f"final_apply_button:{final_name or 'bare-submit'}"
+            if (final_name is not None or bare_submit)
+            else f"continue_step:{continue_button or continuation_phrase or flow_segment}"
         )
         return {"page": REVIEW, "signals": signals}
 

@@ -73,6 +73,30 @@ class ClassifyPageTests(unittest.TestCase):
         result = classify.classify_page(JOB_URL, ax)
         self.assertEqual(result["page"], "review")
 
+    def test_continuation_page_detected_as_review(self):
+        # Real Gupy case: in-progress application resume page
+        # (button "Continuar", no inputs) must never be start —
+        # start would re-enter the flow and risk a duplicate application.
+        ax = [
+            node("heading", "Olá Juan, vamos continuar sua candidatura?"),
+            node("staticText", "Você está se candidatando para a vaga Programador Junior na empresa Benner."),
+            node("button", "Continuar"),
+            node("link", "Candidatar-se"),  # stray nav link, must not win
+        ]
+        url = "https://vemserbenner.gupy.io/candidates/applications/755694375/steps/4247166184/curriculum"
+        result = classify.classify_page(url, ax)
+        self.assertEqual(result["page"], "review")
+
+    def test_multistep_form_with_continue_stays_form(self):
+        # A form page whose next-step button says "Continuar" is still form
+        # when it carries editable fields.
+        ax = [
+            node("textbox", "Nome completo"),
+            node("button", "Continuar"),
+        ]
+        result = classify.classify_page(JOB_URL, ax)
+        self.assertEqual(result["page"], "form")
+
     def test_sucesso_text_detected(self):
         ax = [node("heading", "Inscrição realizada com sucesso")]
         result = classify.classify_page(JOB_URL, ax)
