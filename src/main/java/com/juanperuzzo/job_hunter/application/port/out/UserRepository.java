@@ -1,6 +1,7 @@
 package com.juanperuzzo.job_hunter.application.port.out;
 
 import com.juanperuzzo.job_hunter.domain.model.User;
+import java.util.List;
 import java.util.Optional;
 
 public interface UserRepository {
@@ -8,4 +9,6 @@ public interface UserRepository {
     Optional<User> findById(Long id);
     Optional<User> findByEmail(String email);
     boolean existsByEmail(String email);
+    List<String> findAllEmails();
+    List<User> findAll();
 }

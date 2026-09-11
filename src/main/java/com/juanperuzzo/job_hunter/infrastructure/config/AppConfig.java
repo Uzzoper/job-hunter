@@ -11,6 +11,7 @@ import com.juanperuzzo.job_hunter.application.port.out.NormalizerPort;
 import com.juanperuzzo.job_hunter.application.port.out.PdfRendererPort;
 import com.juanperuzzo.job_hunter.application.port.out.ScraperPort;
 import com.juanperuzzo.job_hunter.application.port.out.SourceFetchPort;
+import com.juanperuzzo.job_hunter.application.port.out.UserRepository;
 import com.juanperuzzo.job_hunter.application.service.AiAnalysisService;
 import com.juanperuzzo.job_hunter.application.service.CompanyEnrichmentService;
 import com.juanperuzzo.job_hunter.application.service.EmailGenerationService;
@@ -21,6 +22,8 @@ import com.juanperuzzo.job_hunter.application.service.ResumeTailoringService;
 import com.juanperuzzo.job_hunter.infrastructure.ai.HermesAgentClient;
 import com.juanperuzzo.job_hunter.infrastructure.ai.OllamaClient;
 import com.juanperuzzo.job_hunter.infrastructure.ai.OpenRouterClient;
+import com.juanperuzzo.job_hunter.infrastructure.botmemory.FileSystemBotMemoryAdapter;
+import com.juanperuzzo.job_hunter.infrastructure.botmemory.BotMemoryStartupSync;
 import com.juanperuzzo.job_hunter.infrastructure.email.HermesBotEmailSender;
 import com.juanperuzzo.job_hunter.infrastructure.pdf.ResumePdfRenderer;
 import com.juanperuzzo.job_hunter.infrastructure.scheduler.AutoSendScheduler;
@@ -29,7 +32,10 @@ import com.juanperuzzo.job_hunter.application.port.out.TokenProvider;
 import com.juanperuzzo.job_hunter.application.port.out.UserRepository;
 import com.juanperuzzo.job_hunter.application.port.out.JobAnalysisRepository;
 import com.juanperuzzo.job_hunter.application.port.out.UserProfileRepository;
+import com.juanperuzzo.job_hunter.application.port.out.BotMemoryPort;
+import com.juanperuzzo.job_hunter.application.service.BotMemorySyncService;
 import com.juanperuzzo.job_hunter.application.service.ApproveDraftService;
+import com.juanperuzzo.job_hunter.application.service.RecordExternalApplyService;
 import com.juanperuzzo.job_hunter.application.service.AuthService;
 import com.juanperuzzo.job_hunter.application.service.AutoSendEligibilityService;
 import com.juanperuzzo.job_hunter.application.service.ResumeUploadService;
@@ -57,11 +63,13 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
 import java.util.regex.Pattern;
+import java.nio.file.Path;
 
 import com.juanperuzzo.job_hunter.infrastructure.scraper.adapter.ProviderBasedScraperAdapter;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.enricher.CompanySiteEnricher;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.normalizer.DateParser;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.normalizer.JobNormalizer;
+import com.juanperuzzo.job_hunter.infrastructure.scraper.normalizer.OwnerEmailGuard;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.client.LinkedInScraperClient;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.provider.GupyProvider;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.provider.InfoJobsProvider;
@@ -155,10 +163,17 @@ public class AppConfig {
     }
 
     @Bean
+    public OwnerEmailGuard ownerEmailGuard(UserRepository userRepository) {
+        // Shared by the company-site enricher (the normalizers build their own internally).
+        return new OwnerEmailGuard(userRepository);
+    }
+
+    @Bean
     public CompanySiteEnricher companySiteEnricher(
             RestClient scraperRestClient,
             ExponentialBackoffRetry exponentialBackoffRetry,
             @Qualifier("enricherRateLimiter") RateLimiter enricherRateLimiter,
+            OwnerEmailGuard ownerEmailGuard,
             @Value("${scraper.enricher.enabled:true}") boolean enabled,
             @Value("${scraper.enricher.concurrency:2}") int concurrency,
             @Value("${scraper.enricher.max-pages-per-company:2}") int maxPages,
@@ -172,27 +187,32 @@ public class AppConfig {
                 concurrency,
                 maxPages,
                 Duration.ofHours(cacheTtlHours),
-                contactPaths);
+                contactPaths,
+                ownerEmailGuard);
     }
 
     @Bean
     public JobNormalizer jobNormalizer(
             DateParser dateParser,
+            UserRepository userRepository,
             @Value("#{'${scraper.gupy.keywords}'.split(',')}") List<String> keywords,
             @Value("${scraper.normalizer.max-age-days}") int maxAgeDays) {
         var excludePatterns = List.of(
                 Pattern.compile("(?i)\\b(s[eê]nior|senior|sr\\.?|especialista|lead|coordenador|manager|bdr)\\b"));
-        return new JobNormalizer(dateParser, keywords, excludePatterns, List.of(), maxAgeDays, Clock.systemUTC());
+        return new JobNormalizer(dateParser, keywords, excludePatterns, List.of(), maxAgeDays, Clock.systemUTC(),
+                userRepository);
     }
 
     @Bean
     public JobNormalizer linkedinJobNormalizer(
             DateParser dateParser,
+            UserRepository userRepository,
             @Value("#{'${scraper.linkedin.keywords}'.split(',')}") List<String> keywords,
             @Value("${scraper.normalizer.max-age-days}") int maxAgeDays) {
         var excludePatterns = List.of(
                 Pattern.compile("(?i)\\b(s[eê]nior|senior|sr\\.?|especialista|lead|coordenador|manager|bdr)\\b"));
-        return new JobNormalizer(dateParser, keywords, excludePatterns, List.of(), maxAgeDays, Clock.systemUTC());
+        return new JobNormalizer(dateParser, keywords, excludePatterns, List.of(), maxAgeDays, Clock.systemUTC(),
+                userRepository);
     }
 
     @Bean
@@ -318,8 +338,9 @@ public class AppConfig {
     }
 
     @Bean
-    public FetchJobsService fetchJobsService(ScraperPort scraperPort, JobRepository jobRepository) {
-        return new FetchJobsService(scraperPort, jobRepository);
+    public FetchJobsService fetchJobsService(ScraperPort scraperPort, JobRepository jobRepository, EmailDraftRepository emailDraftRepository,
+                                             JobAnalysisRepository jobAnalysisRepository) {
+        return new FetchJobsService(scraperPort, jobRepository, emailDraftRepository, jobAnalysisRepository);
     }
 
     @Bean
@@ -346,9 +367,10 @@ public class AppConfig {
                                                          UserProfileRepository userProfileRepository,
                                                          JobRepository jobRepository, JobAnalysisRepository jobAnalysisRepository,
                                                          TemplateEmailService templateEmailService,
+                                                         BotMemorySyncService botMemorySyncService,
                                                          @Value("${email.standard-template.min-match-score:60}") int minMatchScore) {
         return new EmailGenerationService(aiPort, emailDraftRepository, userProfileRepository, jobRepository,
-                jobAnalysisRepository, templateEmailService, minMatchScore);
+                jobAnalysisRepository, templateEmailService, botMemorySyncService, minMatchScore);
     }
 
     @Bean
@@ -452,5 +474,40 @@ public class AppConfig {
     @Bean
     public ApproveDraftService approveDraftService(EmailDraftRepository emailDraftRepository) {
         return new ApproveDraftService(emailDraftRepository);
+    }
+
+    @Bean
+    public RecordExternalApplyService recordExternalApplyService(
+            EmailDraftRepository emailDraftRepository,
+            JobRepository jobRepository) {
+        return new RecordExternalApplyService(emailDraftRepository, jobRepository);
+    }
+
+    @Bean
+    public BotMemoryPort botMemoryPort() {
+        return new FileSystemBotMemoryAdapter();
+    }
+
+    @Bean
+    public BotMemorySyncService botMemorySyncService(
+            BotMemoryPort botMemoryPort,
+            UserProfileRepository userProfileRepository,
+            @Value("${bot.memory.dir}") String memoryDir,
+            @Value("${bot.memory.memory-file:memories/MEMORY.md}") String memoryFileName,
+            @Value("${bot.memory.user-file:memories/USER.md}") String userFileName) {
+        return new BotMemorySyncService(
+                botMemoryPort,
+                userProfileRepository,
+                Path.of(memoryDir),
+                memoryFileName,
+                userFileName);
+    }
+
+    @Bean
+    public BotMemoryStartupSync botMemoryStartupSync(
+            BotMemorySyncService botMemorySyncService,
+            UserRepository userRepository,
+            @Value("${bot.memory.dir}") String memoryDir) {
+        return new BotMemoryStartupSync(botMemorySyncService, userRepository, Path.of(memoryDir));
     }
 }

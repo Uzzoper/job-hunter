@@ -10,8 +10,11 @@ import com.juanperuzzo.job_hunter.application.port.in.FetchSourceJobsUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.GenerateEmailUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.GetEmailDraftUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.GetJobUseCase;
+import com.juanperuzzo.job_hunter.application.port.in.JobWithDraftStatus;
 import com.juanperuzzo.job_hunter.application.port.in.ListJobsUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.ProviderFetchStats;
+import com.juanperuzzo.job_hunter.application.port.in.RecordExternalApplyResult;
+import com.juanperuzzo.job_hunter.application.port.in.RecordExternalApplyUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.SendEmailUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.TailorResumeUseCase;
 import com.juanperuzzo.job_hunter.application.port.out.TokenProvider;
@@ -56,6 +59,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.nullValue;
 
 @WebMvcTest(controllers = JobController.class, excludeAutoConfiguration = SecurityAutoConfiguration.class)
 @AutoConfigureMockMvc(addFilters = false)
@@ -100,6 +104,9 @@ class JobControllerTest {
 
     @MockitoBean
     private CompanyEnrichmentUseCase companyEnrichmentUseCase;
+
+    @MockitoBean
+    private RecordExternalApplyUseCase recordExternalApplyUseCase;
 
     @MockitoBean
     private TokenProvider tokenProvider;
@@ -199,15 +206,19 @@ class JobControllerTest {
     }
 
     @Test
-    @DisplayName("getAllJobs should return 200 with list of jobs")
+    @DisplayName("getAllJobs should return 200 with list of jobs carrying draftStatus")
     void getAllJobs_whenJobsExist_shouldReturn200() throws Exception {
         authenticateAs(1L);
 
         var jobs = List.of(
-                new Job(1L, "Java Dev", "Acme", "https://acme.com/job1", "Description 1", LocalDate.now(), "test"),
-                new Job(2L, "React Dev", "Beta", "https://beta.com/job2", "Description 2", LocalDate.now(), "test")
+                new JobWithDraftStatus(
+                        new Job(1L, "Java Dev", "Acme", "https://acme.com/job1", "Description 1", LocalDate.now(), "test"),
+                        EmailStatus.SENT, 85),
+                new JobWithDraftStatus(
+                        new Job(2L, "React Dev", "Beta", "https://beta.com/job2", "Description 2", LocalDate.now(), "test"),
+                        null, null)
         );
-        when(listJobsUseCase.findAll()).thenReturn(jobs);
+        when(listJobsUseCase.findAllWithDraftStatus(1L, null, null, null)).thenReturn(jobs);
 
         mockMvc.perform(get("/api/jobs"))
                 .andExpect(status().isOk())
@@ -215,10 +226,14 @@ class JobControllerTest {
                 .andExpect(jsonPath("$.length()").value(2))
                 .andExpect(jsonPath("$[0].title").value("Java Dev"))
                 .andExpect(jsonPath("$[0].company").value("Acme"))
+                .andExpect(jsonPath("$[0].draftStatus").value("SENT"))
+                .andExpect(jsonPath("$[0].matchScore").value(85))
                 .andExpect(jsonPath("$[1].title").value("React Dev"))
-                .andExpect(jsonPath("$[1].company").value("Beta"));
+                .andExpect(jsonPath("$[1].company").value("Beta"))
+                .andExpect(jsonPath("$[1].draftStatus").value(nullValue()))
+                .andExpect(jsonPath("$[1].matchScore").value(nullValue()));
 
-        verify(listJobsUseCase).findAll();
+        verify(listJobsUseCase).findAllWithDraftStatus(1L, null, null, null);
     }
 
     @Test
@@ -226,14 +241,44 @@ class JobControllerTest {
     void getAllJobs_whenNoJobs_shouldReturn200EmptyList() throws Exception {
         authenticateAs(1L);
 
-        when(listJobsUseCase.findAll()).thenReturn(List.of());
+        when(listJobsUseCase.findAllWithDraftStatus(1L, null, null, null)).thenReturn(List.of());
 
         mockMvc.perform(get("/api/jobs"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$").isArray())
                 .andExpect(jsonPath("$.length()").value(0));
 
-        verify(listJobsUseCase).findAll();
+        verify(listJobsUseCase).findAllWithDraftStatus(1L, null, null, null);
+    }
+
+    @Test
+    @DisplayName("getAllJobs should pass excludeApplied=true to the use case and drop applied jobs")
+    void getAllJobs_whenExcludeAppliedTrue_shouldPassExcludeAppliedToUseCase() throws Exception {
+        authenticateAs(1L);
+
+        when(listJobsUseCase.findAllWithDraftStatus(1L, null, true, null)).thenReturn(List.of());
+
+        mockMvc.perform(get("/api/jobs").param("excludeApplied", "true"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$").isArray())
+                .andExpect(jsonPath("$.length()").value(0));
+
+        verify(listJobsUseCase).findAllWithDraftStatus(1L, null, true, null);
+    }
+
+    @Test
+    @DisplayName("getAllJobs should combine hasEmail and excludeApplied query params")
+    void getAllJobs_whenHasEmailAndExcludeApplied_shouldPassBothToUseCase() throws Exception {
+        authenticateAs(1L);
+
+        when(listJobsUseCase.findAllWithDraftStatus(1L, true, true, null)).thenReturn(List.of());
+
+        mockMvc.perform(get("/api/jobs").param("hasEmail", "true").param("excludeApplied", "true"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$").isArray())
+                .andExpect(jsonPath("$.length()").value(0));
+
+        verify(listJobsUseCase).findAllWithDraftStatus(1L, true, true, null);
     }
 
     @Test
@@ -250,7 +295,8 @@ class JobControllerTest {
                 .andExpect(jsonPath("$.title").value("Java Dev"))
                 .andExpect(jsonPath("$.company").value("Acme"))
                 .andExpect(jsonPath("$.url").value("https://acme.com/job"))
-                .andExpect(jsonPath("$.description").value("Description"));
+                .andExpect(jsonPath("$.description").value("Description"))
+                .andExpect(jsonPath("$.draftStatus").value(nullValue()));
 
         verify(getJobUseCase).getById(1L);
     }
@@ -512,6 +558,139 @@ class JobControllerTest {
                 .andExpect(jsonPath("$.checked").value(0));
 
         verify(companyEnrichmentUseCase).enrichMissingEmails(50);
+    }
+
+    @Test
+    @DisplayName("recordExternalApply should return 201 Created with jobId and SENT status when recorded for the first time")
+    void recordExternalApply_whenCreated_shouldReturn201WithJobIdAndStatus() throws Exception {
+        authenticateAs(1L);
+
+        var marker = new EmailDraft(
+                null, JOB_ID, 1L,
+                "Subject: [Aplicação externa]",
+                "Inscrição realizada diretamente no portal da vaga. Nenhum e-mail foi enviado.",
+                EmailStatus.SENT, LocalDateTime.now(), LocalDateTime.now());
+        when(recordExternalApplyUseCase.record(1L, JOB_ID))
+                .thenReturn(new RecordExternalApplyResult(marker, true));
+
+        mockMvc.perform(post("/api/jobs/{id}/applied", JOB_ID))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.jobId").value(JOB_ID))
+                .andExpect(jsonPath("$.status").value("SENT"));
+
+        verify(recordExternalApplyUseCase).record(1L, JOB_ID);
+    }
+
+    @Test
+    @DisplayName("recordExternalApply should return 200 with the existing SENT status when already applied")
+    void recordExternalApply_whenReplay_shouldReturn200WithSameJobId() throws Exception {
+        authenticateAs(1L);
+
+        var marker = new EmailDraft(
+                12L, JOB_ID, 1L,
+                "Subject: [Aplicação externa]",
+                "Inscrição realizada diretamente no portal da vaga. Nenhum e-mail foi enviado.",
+                EmailStatus.SENT, LocalDateTime.now(), LocalDateTime.now());
+        when(recordExternalApplyUseCase.record(1L, JOB_ID))
+                .thenReturn(new RecordExternalApplyResult(marker, false));
+
+        mockMvc.perform(post("/api/jobs/{id}/applied", JOB_ID))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.jobId").value(JOB_ID))
+                .andExpect(jsonPath("$.status").value("SENT"));
+
+        verify(recordExternalApplyUseCase).record(1L, JOB_ID);
+    }
+
+    @Test
+    @DisplayName("recordExternalApply should return 404 when the job does not exist")
+    void recordExternalApply_whenJobMissing_shouldReturn404() throws Exception {
+        authenticateAs(1L);
+
+        when(recordExternalApplyUseCase.record(1L, JOB_ID))
+                .thenThrow(new JobNotFoundException("Job not found with id: 10"));
+
+        mockMvc.perform(post("/api/jobs/{id}/applied", JOB_ID))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.message").value("Job not found with id: 10"));
+    }
+
+    @Test
+    @DisplayName("recordExternalApply should return 401 when the user is not authenticated")
+    void recordExternalApply_withoutAuthentication_shouldReturn401() throws Exception {
+        mockMvc.perform(post("/api/jobs/{id}/applied", JOB_ID))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @DisplayName("getAllJobs should pass minScore to the use case")
+    void getAllJobs_whenMinScore_shouldPassMinScoreToUseCase() throws Exception {
+        authenticateAs(1L);
+
+        when(listJobsUseCase.findAllWithDraftStatus(1L, null, null, 60)).thenReturn(List.of());
+
+        mockMvc.perform(get("/api/jobs").param("minScore", "60"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$").isArray())
+                .andExpect(jsonPath("$.length()").value(0));
+
+        verify(listJobsUseCase).findAllWithDraftStatus(1L, null, null, 60);
+    }
+
+    @Test
+    @DisplayName("getAllJobs should return matchScore in JSON response")
+    void getAllJobs_shouldReturnMatchScoreInJson() throws Exception {
+        authenticateAs(1L);
+
+        var jobs = List.of(
+                new JobWithDraftStatus(
+                        new Job(1L, "Java Dev", "Acme", "https://acme.com/job1", "Description 1", LocalDate.now(), "test"),
+                        EmailStatus.SENT, 85),
+                new JobWithDraftStatus(
+                        new Job(2L, "React Dev", "Beta", "https://beta.com/job2", "Description 2", LocalDate.now(), "test"),
+                        null, null)
+        );
+        when(listJobsUseCase.findAllWithDraftStatus(1L, null, null, null)).thenReturn(jobs);
+
+        mockMvc.perform(get("/api/jobs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].matchScore").value(85))
+                .andExpect(jsonPath("$[1].matchScore").value(nullValue()));
+
+        verify(listJobsUseCase).findAllWithDraftStatus(1L, null, null, null);
+    }
+
+    @Test
+    @DisplayName("getJobById should return matchScore as null on detail endpoint")
+    void getJobById_shouldReturnNullMatchScore() throws Exception {
+        authenticateAs(1L);
+
+        var job = new Job(1L, "Java Dev", "Acme", "https://acme.com/job", "Description", LocalDate.now(), "test");
+        when(getJobUseCase.getById(1L)).thenReturn(job);
+
+        mockMvc.perform(get("/api/jobs/{id}", 1L))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.matchScore").value(nullValue()));
+
+        verify(getJobUseCase).getById(1L);
+    }
+
+    @Test
+    @DisplayName("getAllJobs should combine minScore with hasEmail and excludeApplied")
+    void getAllJobs_whenMinScoreAndHasEmailAndExcludeApplied_shouldPassAll() throws Exception {
+        authenticateAs(1L);
+
+        when(listJobsUseCase.findAllWithDraftStatus(1L, true, true, 50)).thenReturn(List.of());
+
+        mockMvc.perform(get("/api/jobs")
+                        .param("hasEmail", "true")
+                        .param("excludeApplied", "true")
+                        .param("minScore", "50"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$").isArray())
+                .andExpect(jsonPath("$.length()").value(0));
+
+        verify(listJobsUseCase).findAllWithDraftStatus(1L, true, true, 50);
     }
 
     private void authenticateAs(Long userId) {

@@ -7,7 +7,9 @@ import com.juanperuzzo.job_hunter.domain.exception.InvalidResumeTextException;
 import com.juanperuzzo.job_hunter.domain.exception.UserNotFoundException;
 import com.juanperuzzo.job_hunter.domain.model.CompanyTone;
 import com.juanperuzzo.job_hunter.domain.model.User;
+import com.juanperuzzo.job_hunter.domain.model.UserPreferences;
 import com.juanperuzzo.job_hunter.domain.model.UserProfile;
+import com.juanperuzzo.job_hunter.domain.model.WorkPreference;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -22,6 +24,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -60,9 +63,9 @@ class UserProfileServiceTest {
     void saveProfile_whenProfileDoesNotExist_shouldCreateProfile() {
         var resume = validResume();
         var input = new UserProfile(null, 1L, resume, List.of("Java", "Spring"), CompanyTone.FORMAL, List.of(),
-                null, null, null, null, null);
+                null, null, null, null, null, null);
         var saved = new UserProfile(10L, 1L, resume, List.of("Java", "Spring"), CompanyTone.FORMAL, List.of(),
-                null, null, null, null, null);
+                null, null, null, null, null, null);
 
         when(userRepository.findById(1L)).thenReturn(Optional.of(user()));
         when(userProfileRepository.findByUserId(1L)).thenReturn(Optional.empty());
@@ -78,16 +81,16 @@ class UserProfileServiceTest {
     void saveProfile_whenProfileExists_shouldUpdateProfile() {
         var resume = validResume();
         var existing = new UserProfile(10L, 1L, "Old resume with enough content to be valid for this test.",
-                List.of("Java"), CompanyTone.CASUAL, List.of(), null, null, null, null, null);
+                List.of("Java"), CompanyTone.CASUAL, List.of(), null, null, null, null, null, null);
         var input = new UserProfile(null, 1L, resume, List.of("Java", "PostgreSQL"), CompanyTone.STARTUP, List.of(),
-                null, null, null, null, null);
+                null, null, null, null, null, null);
         var saved = new UserProfile(10L, 1L, resume, List.of("Java", "PostgreSQL"), CompanyTone.STARTUP, List.of(),
-                null, null, null, null, null);
+                null, null, null, null, null, null);
 
         when(userRepository.findById(1L)).thenReturn(Optional.of(user()));
         when(userProfileRepository.findByUserId(1L)).thenReturn(Optional.of(existing));
         when(userProfileRepository.save(new UserProfile(10L, 1L, resume, List.of("Java", "PostgreSQL"), CompanyTone.STARTUP, List.of(),
-                null, null, null, null, null)))
+                null, null, null, null, null, null)))
                 .thenReturn(saved);
 
         var profile = userProfileService.saveProfile(1L, input);
@@ -100,7 +103,7 @@ class UserProfileServiceTest {
     void saveProfile_whenResumeIsTooShort_shouldThrowInvalidResumeTextException() {
         when(userRepository.findById(1L)).thenReturn(Optional.of(user()));
         var input = new UserProfile(null, 1L, "short", List.of("Java"), CompanyTone.FORMAL, List.of(),
-                null, null, null, null, null);
+                null, null, null, null, null, null);
 
         assertThrows(InvalidResumeTextException.class,
                 () -> userProfileService.saveProfile(1L, input));
@@ -123,10 +126,10 @@ class UserProfileServiceTest {
 
         var input = new UserProfile(null, 1L, resume, List.of("Java"), CompanyTone.FORMAL, List.of(),
                 "(42) 99999-0000", "me@example.com", "https://me.dev",
-                "https://github.com/me", "https://linkedin.com/in/me");
+                "https://github.com/me", "https://linkedin.com/in/me", null);
         var saved = new UserProfile(10L, 1L, resume, List.of("Java"), CompanyTone.FORMAL, List.of(),
                 "(42) 99999-0000", "me@example.com", "https://me.dev",
-                "https://github.com/me", "https://linkedin.com/in/me");
+                "https://github.com/me", "https://linkedin.com/in/me", null);
         when(userProfileRepository.save(input)).thenReturn(saved);
 
         var profile = userProfileService.saveProfile(1L, input);
@@ -143,7 +146,7 @@ class UserProfileServiceTest {
     void getProfile_shouldReturnContactFields() {
         when(userRepository.findById(1L)).thenReturn(Optional.of(user()));
         var stored = new UserProfile(10L, 1L, validResume(), List.of("Java"), CompanyTone.FORMAL, List.of(),
-                null, "stored@example.com", "https://stored.dev", null, null);
+                null, "stored@example.com", "https://stored.dev", null, null, null);
         when(userProfileRepository.findByUserId(1L)).thenReturn(Optional.of(stored));
 
         var profile = userProfileService.getProfile(1L);
@@ -151,6 +154,71 @@ class UserProfileServiceTest {
         assertEquals("stored@example.com", profile.contactEmail());
         assertEquals("https://stored.dev", profile.portfolioUrl());
         assertNull(profile.githubUrl());
+    }
+
+    @Test
+    @DisplayName("saveProfile when incoming preferences is null should preserve existing preferences")
+    void saveProfile_whenPreferencesNull_shouldPreserveExisting() {
+        var resume = validResume();
+        var existingPrefs = new UserPreferences(new WorkPreference.Hybrid(List.of("Curitiba")), 3000, List.of("Acme"));
+        var existing = new UserProfile(10L, 1L, "Old resume with enough content to be valid for this test.",
+                List.of("Java"), CompanyTone.CASUAL, List.of(), null, null, null, null, null, existingPrefs);
+        var input = new UserProfile(null, 1L, resume, List.of("Java", "PostgreSQL"), CompanyTone.STARTUP, List.of(),
+                null, null, null, null, null, null);
+        var saved = new UserProfile(10L, 1L, resume, List.of("Java", "PostgreSQL"), CompanyTone.STARTUP, List.of(),
+                null, null, null, null, null, existingPrefs);
+
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user()));
+        when(userProfileRepository.findByUserId(1L)).thenReturn(Optional.of(existing));
+        when(userProfileRepository.save(any(UserProfile.class))).thenReturn(saved);
+
+        var profile = userProfileService.saveProfile(1L, input);
+
+        assertEquals(new WorkPreference.Hybrid(List.of("Curitiba")), profile.preferences().workPreference());
+        assertEquals(3000, profile.preferences().salaryFloor());
+        assertEquals(List.of("Acme"), profile.preferences().excludedCompanies());
+    }
+
+    @Test
+    @DisplayName("saveProfile when incoming preferences is present should use them (authoritative override)")
+    void saveProfile_whenPreferencesPresent_shouldOverride() {
+        var resume = validResume();
+        var existingPrefs = new UserPreferences(new WorkPreference.Hybrid(List.of("Curitiba")), 3000, List.of("Acme"));
+        var existing = new UserProfile(10L, 1L, "Old resume with enough content to be valid for this test.",
+                List.of("Java"), CompanyTone.CASUAL, List.of(), null, null, null, null, null, existingPrefs);
+        var newPrefs = new UserPreferences(new WorkPreference.Remote(), 6000, List.of());
+        var input = new UserProfile(null, 1L, resume, List.of("Java", "PostgreSQL"), CompanyTone.STARTUP, List.of(),
+                null, null, null, null, null, newPrefs);
+        var saved = new UserProfile(10L, 1L, resume, List.of("Java", "PostgreSQL"), CompanyTone.STARTUP, List.of(),
+                null, null, null, null, null, newPrefs);
+
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user()));
+        when(userProfileRepository.findByUserId(1L)).thenReturn(Optional.of(existing));
+        when(userProfileRepository.save(any(UserProfile.class))).thenReturn(saved);
+
+        var profile = userProfileService.saveProfile(1L, input);
+
+        assertEquals(new WorkPreference.Remote(), profile.preferences().workPreference());
+        assertEquals(6000, profile.preferences().salaryFloor());
+        assertTrue(profile.preferences().excludedCompanies().isEmpty());
+    }
+
+    @Test
+    @DisplayName("saveProfile when no existing profile and null preferences should keep preferences null")
+    void saveProfile_whenNoExistingProfileAndNullPrefs_shouldKeepNull() {
+        var resume = validResume();
+        var input = new UserProfile(null, 1L, resume, List.of("Java"), CompanyTone.FORMAL, List.of(),
+                null, null, null, null, null, null);
+        var saved = new UserProfile(10L, 1L, resume, List.of("Java"), CompanyTone.FORMAL, List.of(),
+                null, null, null, null, null, null);
+
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user()));
+        when(userProfileRepository.findByUserId(1L)).thenReturn(Optional.empty());
+        when(userProfileRepository.save(any(UserProfile.class))).thenReturn(saved);
+
+        var profile = userProfileService.saveProfile(1L, input);
+
+        assertNull(profile.preferences());
     }
 
     private User user() {

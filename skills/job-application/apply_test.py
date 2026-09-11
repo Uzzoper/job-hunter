@@ -1,0 +1,1848 @@
+#!/usr/bin/env python3
+"""
+apply_test.py — issue #37 tests for apply.py (structured Gupy application planning).
+
+Plain unittest (pytest-compatible). apply.py is pure orchestration: it never
+touches a browser or the network, so CLI-level tests run via subprocess and the
+YAML mini-parser/helpers are tested by direct import.
+
+Run:
+    python3 apply_test.py
+    python3 -m pytest apply_test.py
+"""
+
+import http.server
+import io
+import json
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+import threading
+import unittest
+import unittest.mock
+from contextlib import redirect_stdout
+from pathlib import Path
+
+# Allow direct import when running from the skill dir or the repo root.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+import apply  # noqa: E402  (RED phase: module does not exist yet)
+
+APPLY_PATH = Path(__file__).resolve().parent / "apply.py"
+PORTAL = "gupy"
+GUPY_URL = "https://jobs.gupy.io/jobs/12345-desenvolvedor-java"
+JOB_ID = "12345-desenvolvedor-java"
+
+VALID_PROFILE = {
+    "name": "Juan Antonio Peruzzo",
+    "email": "juan@example.com",
+    "phone": "+55 42 99833-1363",
+    "cv_path": "/home/juan/cv.pdf",
+    "cover_text": "Olá! Gostaria de me candidatar à vaga de desenvolvedor.",
+}
+
+
+class _MockCdpHandler(http.server.BaseHTTPRequestHandler):
+    """Minimal fake CDP endpoint: responds 200 to /json/version.
+
+    Lets CLI subprocess tests exercise the issue #39 browser-recovery path
+    without a real browser: ensure_browser() sees CDP as reachable and reports
+    status "ready", so the action plan is produced normally.
+    """
+
+    def do_GET(self):
+        if self.path == "/json/version":
+            body = json.dumps({"Browser": "Chrome/0.0.0.0 (mock CDP)"}).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        else:
+            self.send_response(404)
+            self.end_headers()
+
+    def log_message(self, *args):  # keep test output clean
+        pass
+
+
+def _start_mock_cdp():
+    """Start a mock CDP HTTP server on an ephemeral port; return (server, port)."""
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _MockCdpHandler)
+    port = server.server_address[1]
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    return server, port
+
+
+# Header/driver helper: the browser-recovery check in CLI subprocesses targets
+# this mock CDP endpoint so no real browser is ever launched during tests.
+MOCK_CDP_SERVER, MOCK_CDP_PORT = _start_mock_cdp()
+MOCK_CDP_URL = f"http://127.0.0.1:{MOCK_CDP_PORT}"
+# A port we can rely on being closed (reserved range; never bound by the server).
+CLOSED_CDP_URL = "http://localhost:19222"
+
+
+# ---------------------------------------------------------------------------
+# Mock CDP daemon (issue #44): /health reports cdp_connected, POST /jobs works.
+# Lets tests exercise the --daemon-url delegation path without a real daemon.
+# ---------------------------------------------------------------------------
+
+class _MockDaemonHandler(http.server.BaseHTTPRequestHandler):
+    """Tiny fake daemon: GET /health -> cdp_connected True; POST /jobs -> id."""
+
+    def do_GET(self):
+        if self.path == "/health":
+            self._json(200, {"cdp_connected": True, "queue_depth": 0})
+        else:
+            self._json(404, {"error": "not_found"})
+
+    def do_POST(self):
+        length = int(self.headers.get("Content-Length", 0) or 0)
+        if length:
+            self.rfile.read(length)
+        if self.path == "/jobs":
+            self._json(200, {"job_id": "job-99"})
+        else:
+            self._json(404, {"error": "not_found"})
+
+    def _json(self, status, obj):
+        body = json.dumps(obj).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, *args):  # keep the test output clean
+        pass
+
+
+def _start_mock_daemon():
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _MockDaemonHandler)
+    port = server.server_address[1]
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    return server, port
+
+
+MOCK_DAEMON_SERVER, MOCK_DAEMON_PORT = _start_mock_daemon()
+MOCK_DAEMON_URL = f"http://127.0.0.1:{MOCK_DAEMON_PORT}"
+CLOSED_DAEMON_URL = "http://localhost:19333"
+
+
+
+class RunResult:
+    """Thin wrapper around a subprocess run (exit code + parsed JSON stdout)."""
+
+    def __init__(self, code: int, data):
+        self.code = code
+        self.data = data
+
+
+def write_profile(memory_dir, profile=None):
+    """Write a profile JSON into the given dir and return its path."""
+    path = Path(memory_dir) / "profile.json"
+    data = profile if profile is not None else VALID_PROFILE
+    path.write_text(json.dumps(data), encoding="utf-8")
+    return str(path)
+
+
+def run_cli(memory_dir, profile_path, *args, portal=PORTAL, url=GUPY_URL,
+            cdp_url=MOCK_CDP_URL):
+    """Run apply.py via subprocess with the given port flags and parse stdout.
+
+    ``cdp_url`` defaults to the in-process mock CDP server so the issue #39
+    browser check reports "ready" and the action plan path is reached. Pass
+    ``cdp_url=None`` (or an explicit ``--cdp-url`` in *args) to override.
+    """
+    cmd = [
+        sys.executable, str(APPLY_PATH),
+        "--job-url", url,
+        "--portal", portal,
+        "--memory-dir", str(memory_dir),
+        "--profile", profile_path,
+    ]
+    if cdp_url:
+        cmd += ["--cdp-url", cdp_url]
+    cmd.extend(args)
+    proc = subprocess.run(cmd, capture_output=True, text=True)
+    try:
+        data = json.loads(proc.stdout)
+    except json.JSONDecodeError:
+        data = {"raw_stdout": proc.stdout}
+    return RunResult(proc.returncode, data)
+
+
+# ---------------------------------------------------------------------------
+# YAML mini-parser
+# ---------------------------------------------------------------------------
+
+class YamlParserTests(unittest.TestCase):
+    """parse_yaml_flat / nest_dotted robustness."""
+
+    def test_flat_key_value(self):
+        d = apply.parse_yaml_flat("a: 1\nb: hello\n")
+        self.assertEqual(d, {"a": "1", "b": "hello"})
+
+    def test_quoted_value_keeps_colon(self):
+        d = apply.parse_yaml_flat('k: "v: with colon"\n')
+        self.assertEqual(d["k"], "v: with colon")
+
+    def test_unquoted_url_value(self):
+        d = apply.parse_yaml_flat("url: https://a.com/x\n")
+        self.assertEqual(d["url"], "https://a.com/x")
+
+    def test_trailing_comment_stripped(self):
+        d = apply.parse_yaml_flat("a: value # comment\n")
+        self.assertEqual(d["a"], "value")
+
+    def test_comment_line_skipped(self):
+        d = apply.parse_yaml_flat("# full comment\na: 1\n")
+        self.assertNotIn("#", d)
+        self.assertEqual(d["a"], "1")
+
+    def test_escaped_quotes_unescaped(self):
+        d = apply.parse_yaml_flat('k: "say \\"hi\\""\n')
+        self.assertEqual(d["k"], 'say "hi"')
+
+    def test_single_quoted_value_keeps_colon(self):
+        d = apply.parse_yaml_flat("k: 'a: b'\n")
+        self.assertEqual(d["k"], "a: b")
+
+    def test_dotted_key_nesting(self):
+        d = apply.nest_dotted(
+            {"field.name.selector": "x", "field.name.type": "fill"}
+        )
+        self.assertEqual(d["field"]["name"]["selector"], "x")
+        self.assertEqual(d["field"]["name"]["type"], "fill")
+
+    def test_load_gupy_portal(self):
+        cfg = apply.load_portal("gupy")
+        self.assertIsNotNone(cfg)
+        self.assertEqual(cfg["portal"], "gupy")
+        fields = apply.portal_fields(cfg)
+        names = [f["name"] for f in fields]
+        self.assertEqual(
+            names,
+            ["name", "email", "phone", "cv_upload", "cover_letter", "submit"],
+        )
+        by_name = {f["name"]: f for f in fields}
+        self.assertEqual(by_name["name"]["selector"], "input[name='name']")
+        self.assertEqual(by_name["cv_upload"]["type"], "upload")
+        self.assertEqual(by_name["cover_letter"]["source"], "cover_text")
+        self.assertEqual(
+            cfg.get("form_url_pattern"),
+            "https://jobs.gupy.io/jobs/{job_id}",
+        )
+        self.assertEqual(cfg.get("cdp_url"), "http://localhost:9222")
+
+
+# ---------------------------------------------------------------------------
+# Portal loading
+# ---------------------------------------------------------------------------
+
+class PortalTests(unittest.TestCase):
+    """Unknown portals must error cleanly."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.mem = Path(self.tmp.name)
+        self.profile_path = write_profile(self.mem)
+
+    def test_unknown_portal_errors_cleanly(self):
+        result = run_cli(self.mem, self.profile_path, portal="linkedin")
+        self.assertEqual(result.code, 1)
+        self.assertEqual(result.data["error"], "unknown_portal")
+        self.assertIn("linkedin", result.data["detail"])
+
+    def test_load_portal_returns_none_for_unknown(self):
+        self.assertIsNone(apply.load_portal("linkedin"))
+        self.assertIsNone(apply.load_portal(""))
+
+
+# ---------------------------------------------------------------------------
+# Profile validation
+# ---------------------------------------------------------------------------
+
+class ProfileValidationTests(unittest.TestCase):
+    """Missing/invalid profile inputs produce invalid_profile JSON errors."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.mem = Path(self.tmp.name)
+
+    def test_missing_phone_field(self):
+        profile = {k: v for k, v in VALID_PROFILE.items() if k != "phone"}
+        path = write_profile(self.mem, profile)
+        result = run_cli(self.mem, path)
+        self.assertEqual(result.code, 1)
+        self.assertEqual(result.data["error"], "invalid_profile")
+        self.assertIn("phone", result.data["detail"])
+
+    def test_empty_cover_text_rejected(self):
+        profile = dict(VALID_PROFILE, cover_text="")
+        path = write_profile(self.mem, profile)
+        result = run_cli(self.mem, path)
+        self.assertEqual(result.code, 1)
+        self.assertEqual(result.data["error"], "invalid_profile")
+        self.assertIn("cover_text", result.data["detail"])
+
+    def test_profile_file_not_found(self):
+        missing = Path(self.mem) / "does-not-exist.json"
+        result = run_cli(self.mem, str(missing))
+        self.assertEqual(result.code, 1)
+        self.assertEqual(result.data["error"], "invalid_profile")
+        self.assertIn("not found", result.data["detail"])
+
+    def test_profile_invalid_json(self):
+        path = Path(self.mem) / "bad.json"
+        path.write_text("not json at all {", encoding="utf-8")
+        result = run_cli(self.mem, str(path))
+        self.assertEqual(result.code, 1)
+        self.assertEqual(result.data["error"], "invalid_profile")
+
+    def test_invalid_profile_error_has_screenshot_hint(self):
+        profile = {k: v for k, v in VALID_PROFILE.items() if k != "phone"}
+        path = write_profile(self.mem, profile)
+        result = run_cli(self.mem, path)
+        self.assertIn("screenshot_path", result.data)
+
+
+# ---------------------------------------------------------------------------
+# Refusal guardrail (#28)
+# ---------------------------------------------------------------------------
+
+class RefusalTests(unittest.TestCase):
+    """NO_APPLY / refusal markers must block planning entirely."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.mem = Path(self.tmp.name)
+
+    def test_no_apply_flag_blocks(self):
+        profile = dict(VALID_PROFILE, no_apply=True)
+        path = write_profile(self.mem, profile)
+        result = run_cli(self.mem, path)
+        self.assertEqual(result.code, 1)
+        self.assertEqual(result.data["error"], "refusal_draft_blocked")
+
+    def test_cover_text_refusal_marker_blocks(self):
+        profile = dict(VALID_PROFILE, cover_text="NO_APPLY: stack mismatch")
+        path = write_profile(self.mem, profile)
+        result = run_cli(self.mem, path)
+        self.assertEqual(result.code, 1)
+        self.assertEqual(result.data["error"], "refusal_draft_blocked")
+
+    def test_plain_cover_not_blocked(self):
+        path = write_profile(self.mem)
+        result = run_cli(self.mem, path)
+        self.assertEqual(result.code, 0)
+        self.assertTrue(result.data["ok"])
+        self.assertNotIn("error", result.data)
+
+
+# ---------------------------------------------------------------------------
+# Confirm gate
+# ---------------------------------------------------------------------------
+
+class ConfirmGateTests(unittest.TestCase):
+    """No submit step without --confirmed; plan stops at confirm_checkpoint."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.mem = Path(self.tmp.name)
+        self.profile_path = write_profile(self.mem)
+
+    def step_types(self, result):
+        return [s["type"] for s in result.data["steps"]]
+
+    def test_without_confirmed_has_no_submit(self):
+        result = run_cli(self.mem, self.profile_path)
+        self.assertEqual(result.code, 0)
+        types = self.step_types(result)
+        self.assertNotIn("submit", types)
+        self.assertIn("confirm_checkpoint", types)
+        self.assertIn("screenshot", types)
+        # The unconfirmed plan must stop at the confirmation checkpoint.
+        self.assertEqual(types[-1], "confirm_checkpoint")
+        self.assertTrue(result.data["confirmationRequired"])
+
+    def test_with_confirmed_has_submit_step(self):
+        result = run_cli(self.mem, self.profile_path, "--confirmed")
+        self.assertEqual(result.code, 0)
+        types = self.step_types(result)
+        self.assertEqual(types.count("submit"), 1)
+        self.assertEqual(types[-1], "submit")
+        self.assertFalse(result.data["confirmationRequired"])
+
+    def test_submit_step_uses_yaml_selector(self):
+        result = run_cli(self.mem, self.profile_path, "--confirmed")
+        submit = next(s for s in result.data["steps"] if s["type"] == "submit")
+        self.assertEqual(submit["selector"], "button[type='submit']")
+
+
+# ---------------------------------------------------------------------------
+# Action-plan content
+# ---------------------------------------------------------------------------
+
+class PlanContentTests(unittest.TestCase):
+    """The emitted plan carries selectors, values, and job metadata."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.mem = Path(self.tmp.name)
+        self.profile_path = write_profile(self.mem)
+        self.result = run_cli(self.mem, self.profile_path)
+
+    def test_plan_ok_and_portal(self):
+        self.assertTrue(self.result.data["ok"])
+        self.assertEqual(self.result.data["portal"], "gupy")
+        self.assertEqual(self.result.data["jobId"], JOB_ID)
+        self.assertEqual(self.result.data["jobUrl"], GUPY_URL)
+
+    # With issue #42 the per-field fill/upload steps are consolidated into a
+    # single fill_form batch step carrying every non-submit field in portal order.
+    def test_fill_form_single_batch_step(self):
+        steps = self.result.data["steps"]
+        fill_form = [s for s in steps if s["type"] == "fill_form"]
+        self.assertEqual(len(fill_form), 1)
+        self.assertEqual(fill_form[0]["action"], "fill_form")
+        # No per-field fill/upload steps remain.
+        self.assertNotIn("fill", [s["type"] for s in steps])
+        self.assertNotIn("upload", [s["type"] for s in steps])
+
+    def test_fill_form_fields_preserve_portal_order(self):
+        fill_form = next(s for s in self.result.data["steps"] if s["type"] == "fill_form")
+        self.assertEqual(
+            [f["name"] for f in fill_form["fields"]],
+            ["name", "email", "phone", "cv_upload", "cover_letter"],
+        )
+
+    def test_fill_form_fields_carry_types(self):
+        fill_form = next(s for s in self.result.data["steps"] if s["type"] == "fill_form")
+        by_name = {f["name"]: f for f in fill_form["fields"]}
+        self.assertEqual(by_name["name"]["type"], "fill")
+        self.assertEqual(by_name["cv_upload"]["type"], "upload")
+        self.assertEqual(by_name["cover_letter"]["type"], "fill")
+
+    def test_fill_form_fields_carry_selectors_and_profile_values(self):
+        fill_form = next(s for s in self.result.data["steps"] if s["type"] == "fill_form")
+        by_name = {f["name"]: f for f in fill_form["fields"]}
+        self.assertEqual(by_name["name"]["selector"], "input[name='name']")
+        self.assertEqual(by_name["name"]["value"], VALID_PROFILE["name"])
+        self.assertEqual(by_name["email"]["value"], VALID_PROFILE["email"])
+        self.assertEqual(by_name["cv_upload"]["value"], VALID_PROFILE["cv_path"])
+        self.assertEqual(
+            by_name["cover_letter"]["value"], VALID_PROFILE["cover_text"]
+        )
+
+    def test_screenshot_path_lives_under_memory_dir(self):
+        steps = self.result.data["steps"]
+        shot = next(s for s in steps if s["type"] == "screenshot")
+        self.assertTrue(shot["path"].startswith(str(self.mem)))
+        self.assertTrue(shot["path"].endswith(f"{JOB_ID}.png"))
+
+    def test_form_url_pattern_expanded(self):
+        self.assertEqual(
+            self.result.data["form_url"],
+            "https://jobs.gupy.io/jobs/12345-desenvolvedor-java",
+        )
+
+
+# ---------------------------------------------------------------------------
+# fill_form batch step (issue #42)
+# ---------------------------------------------------------------------------
+
+class FillFormTests(unittest.TestCase):
+    """The fill_form step is emitted for every plan mode (unconfirmed,
+    confirmed, auto-apply) as a single batch step preserving portal order."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.mem = Path(self.tmp.name)
+        self.profile_path = write_profile(self.mem)
+
+    def step_types(self, result):
+        return [s["type"] for s in result.data["steps"]]
+
+    def _fill_form(self, result):
+        return next(s for s in result.data["steps"] if s["type"] == "fill_form")
+
+    def test_confirmed_plan_uses_fill_form(self):
+        result = run_cli(self.mem, self.profile_path, "--confirmed")
+        self.assertEqual(result.code, 0)
+        ff = self._fill_form(result)
+        self.assertEqual(ff["action"], "fill_form")
+        self.assertEqual(
+            [f["name"] for f in ff["fields"]],
+            ["name", "email", "phone", "cv_upload", "cover_letter"],
+        )
+        self.assertEqual(result.data["steps"][-1]["type"], "submit")
+
+    def test_fill_form_excludes_submit_field(self):
+        result = run_cli(self.mem, self.profile_path)
+        ff = self._fill_form(result)
+        names = [f["name"] for f in ff["fields"]]
+        self.assertNotIn("submit", names)
+        self.assertEqual(len(ff["fields"]), 5)
+
+
+# ---------------------------------------------------------------------------
+# --verify-with (issue #43) — replace screenshot verification with AX tree
+# ---------------------------------------------------------------------------
+
+class VerifyWithTests(unittest.TestCase):
+    """--verify-with {screenshot,ax} controls the verification metadata on the
+    fill_form / submit steps; default screenshot keeps behavior unchanged; an
+    invalid mode errors cleanly."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.mem = Path(self.tmp.name)
+        self.profile_path = write_profile(self.mem)
+
+    def _fill_form(self, result):
+        return next(s for s in result.data["steps"] if s["type"] == "fill_form")
+
+    def _submit(self, result):
+        return next(s for s in result.data["steps"] if s["type"] == "submit")
+
+    def test_default_mode_is_screenshot(self):
+        result = run_cli(self.mem, self.profile_path, "--confirmed")
+        self.assertEqual(result.code, 0)
+        self.assertEqual(self._fill_form(result)["verification"],
+                         {"method": "screenshot", "ax_query": None})
+        self.assertEqual(self._submit(result)["verification"],
+                         {"method": "screenshot", "ax_query": None})
+
+    def test_verify_with_ax_emits_ax_metadata(self):
+        result = run_cli(self.mem, self.profile_path,
+                         "--verify-with", "ax", "--confirmed")
+        self.assertEqual(result.code, 0)
+        ff = self._fill_form(result)["verification"]
+        self.assertEqual(ff["method"], "ax")
+        self.assertIsNotNone(ff["ax_query"])
+        submit = self._submit(result)["verification"]
+        self.assertEqual(submit["method"], "ax")
+        self.assertIsNotNone(submit["ax_query"])
+
+    def test_verify_with_ax_fill_form_query(self):
+        result = run_cli(self.mem, self.profile_path, "--verify-with", "ax")
+        ff = self._fill_form(result)["verification"]
+        self.assertEqual(ff["method"], "ax")
+        self.assertIn("role", ff["ax_query"])
+
+    def test_invalid_verify_with_errors_cleanly(self):
+        result = run_cli(self.mem, self.profile_path, "--verify-with", "banana")
+        self.assertEqual(result.code, 2)
+        self.assertEqual(result.data["error"], "usage")
+        self.assertIn("banana", result.data["detail"])
+
+    def test_parse_args_verify_with_default_screenshot(self):
+        args = apply.parse_args([])
+        self.assertEqual(args.verify_with, "screenshot")
+
+    def test_parse_args_verify_with_ax(self):
+        args = apply.parse_args(["--verify-with", "ax"])
+        self.assertEqual(args.verify_with, "ax")
+
+
+# ---------------------------------------------------------------------------
+# --daemon-url (issue #44): delegate execution via POST /jobs when the daemon
+# /health reports cdp_connected; otherwise fall back to a direct plan.
+# ---------------------------------------------------------------------------
+
+class DaemonExecutionTests(unittest.TestCase):
+    """Issue #44 --daemon-url thin integration. Absent flag keeps the plan
+    unchanged; reachable+connected daemon adds "executor" metadata while still
+    printing the plan; unreachable daemon falls back with a warning field."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.mem = Path(self.tmp.name)
+        self.profile_path = write_profile(self.mem)
+
+    def test_no_daemon_url_keeps_plan_unchanged(self):
+        result = run_cli(self.mem, self.profile_path)
+        self.assertEqual(result.code, 0)
+        self.assertNotIn("executor", result.data)
+        self.assertNotIn("daemon_fallback", result.data)
+
+    def test_daemon_reachable_adds_executor_metadata(self):
+        result = run_cli(self.mem, self.profile_path,
+                         "--daemon-url", MOCK_DAEMON_URL)
+        self.assertEqual(result.code, 0)
+        self.assertEqual(result.data["executor"]["via"], "cdp-daemon")
+        self.assertEqual(result.data["executor"]["daemon_url"], MOCK_DAEMON_URL)
+        # the plan is still printed (the bot decides)
+        self.assertTrue(result.data["ok"])
+        self.assertIn("fill_form", [s["type"] for s in result.data["steps"]])
+
+    def test_daemon_submits_job_and_reports_id(self):
+        result = run_cli(self.mem, self.profile_path,
+                         "--daemon-url", MOCK_DAEMON_URL)
+        self.assertEqual(result.code, 0)
+        self.assertEqual(result.data["executor"]["job_id"], "job-99")
+
+    def test_daemon_unreachable_falls_back_with_warning(self):
+        result = run_cli(self.mem, self.profile_path,
+                         "--daemon-url", CLOSED_DAEMON_URL)
+        self.assertEqual(result.code, 0)
+        self.assertNotIn("executor", result.data)
+        self.assertIn("daemon_fallback", result.data)
+        self.assertEqual(result.data["daemon_fallback"]["reason"], "unreachable")
+        # direct plan still emitted (bot can still act)
+        self.assertTrue(result.data["ok"])
+
+    def test_parse_args_daemon_url_default_none(self):
+        args = apply.parse_args([])
+        self.assertIsNone(args.daemon_url)
+
+    def test_parse_args_daemon_url_parsed(self):
+        args = apply.parse_args(["--daemon-url", "http://localhost:19999"])
+        self.assertEqual(args.daemon_url, "http://localhost:19999")
+
+
+# ---------------------------------------------------------------------------
+# Issue #46 — API-first flow: Job Hunter API as the primary job source
+# (--job-id detail prefill / --from-api top-scored job / 401 clean JSON).
+# ---------------------------------------------------------------------------
+
+class ApiFirstTests(unittest.TestCase):
+    """apply.py API-first wiring (issue #46). The network boundary (job_api
+    functions) is mocked — never a real HTTP call. The classic --job-url flow
+    must stay untouched otherwise."""
+
+    API_JOB = {
+        "id": 7,
+        "title": "Desenvolvedor Java Pleno",
+        "company": "Acme Corp",
+        "url": "https://jobs.gupy.io/jobs/777-java-pleno",
+        "description": "Backend Java 21, Spring Boot",
+        "postedAt": "2026-09-01",
+        "source": "gupy",
+        "contactEmail": "rh@acme.example",
+    }
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.mem = Path(self.tmp.name)
+        self.profile_path = write_profile(self.mem)
+
+    def _run_api(self, *args):
+        """Run apply.run() in-process with the standard API-first flags and
+        capture (exit_code, stdout). --dry-run keeps the run off the browser."""
+        cmd = list(args) + [
+            "--profile", self.profile_path,
+            "--memory-dir", str(self.mem),
+            "--portal", "gupy",
+            "--dry-run",
+        ]
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            code = apply.run(cmd)
+        return code, buf.getvalue()
+
+    @unittest.mock.patch("apply.job_api.api_get_job")
+    @unittest.mock.patch("apply.job_api.resolve_token")
+    def test_job_id_prefills_url_title_company(self, mock_token, mock_get):
+        """--job-id fetches the detail and pre-fills jobUrl/title/company."""
+        mock_token.return_value = "tok-1"
+        mock_get.return_value = self.API_JOB
+        code, out = self._run_api("--job-id", "7")
+        self.assertEqual(code, 0)
+        plan = json.loads(out)
+        self.assertTrue(plan["ok"])
+        self.assertEqual(plan["jobUrl"], self.API_JOB["url"])
+        self.assertEqual(plan["jobTitle"], self.API_JOB["title"])
+        self.assertEqual(plan["jobCompany"], self.API_JOB["company"])
+        self.assertEqual(plan["jobId"], "777-java-pleno")
+        mock_get.assert_called_once()
+        base, token, jid = mock_get.call_args[0]
+        self.assertEqual(base, "http://localhost:8080")
+        self.assertEqual(token, "tok-1")
+        self.assertEqual(jid, 7)
+
+    @unittest.mock.patch("apply.job_api.pick_jobs_for_apply")
+    @unittest.mock.patch("apply.job_api.resolve_token")
+    def test_from_api_selects_top_job(self, mock_token, mock_pick):
+        """--from-api plans from the top-scored job returned by the API."""
+        mock_token.return_value = "tok-1"
+        jobs = [
+            {**self.API_JOB, "id": 8, "url": "https://jobs.gupy.io/jobs/888-a",
+             "matchScore": 90},
+            {**self.API_JOB, "id": 7, "url": "https://jobs.gupy.io/jobs/777-b",
+             "matchScore": 70},
+        ]
+        mock_pick.return_value = jobs
+        code, out = self._run_api("--from-api")
+        self.assertEqual(code, 0)
+        plan = json.loads(out)
+        self.assertTrue(plan["ok"])
+        self.assertEqual(plan["jobUrl"], jobs[0]["url"])
+        self.assertEqual(plan["jobTitle"], jobs[0]["title"])
+        self.assertEqual(plan["jobCompany"], jobs[0]["company"])
+        self.assertEqual(plan["jobId"], "888-a")
+        mock_pick.assert_called_once()
+        kwargs = mock_pick.call_args.kwargs
+        self.assertEqual(kwargs.get("fetch_if_empty"), True)
+        self.assertEqual(kwargs.get("portal"), "gupy")
+        self.assertIsNone(kwargs.get("min_score"))
+
+    @unittest.mock.patch("apply.job_api.pick_jobs_for_apply")
+    @unittest.mock.patch("apply.job_api.resolve_token")
+    def test_from_api_min_score_and_no_fetch_flags_forwarded(self, mock_token, mock_pick):
+        """--min-score and --no-fetch-if-empty are passed through to the picker."""
+        mock_token.return_value = "tok-1"
+        mock_pick.return_value = [self.API_JOB]
+        code, out = self._run_api(
+            "--from-api", "--min-score", "60", "--no-fetch-if-empty"
+        )
+        self.assertEqual(code, 0)
+        kwargs = mock_pick.call_args.kwargs
+        self.assertEqual(kwargs.get("min_score"), 60)
+        self.assertFalse(kwargs.get("fetch_if_empty"))
+
+    @unittest.mock.patch("apply.job_api.pick_jobs_for_apply")
+    @unittest.mock.patch("apply.job_api.resolve_token")
+    def test_from_api_custom_base_url_and_token(self, mock_token, mock_pick):
+        """--api-base-url and --api-token are forwarded to the picker."""
+        mock_token.return_value = "flag-tok"
+        mock_pick.return_value = [self.API_JOB]
+        code, out = self._run_api(
+            "--from-api", "--api-base-url", "http://10.0.0.1:9000",
+            "--api-token", "flag-tok",
+        )
+        self.assertEqual(code, 0)
+        kwargs = mock_pick.call_args.kwargs
+        self.assertEqual(kwargs.get("base_url"), "http://10.0.0.1:9000")
+        self.assertEqual(kwargs.get("token"), "flag-tok")
+
+    @unittest.mock.patch("apply.job_api.pick_jobs_for_apply")
+    @unittest.mock.patch("apply.job_api.resolve_token")
+    def test_401_maps_to_clean_json_exit_1(self, mock_token, mock_pick):
+        """401 → {"error": "unauthorized"} printed as clean JSON, exit 1."""
+        mock_token.return_value = "tok-1"
+        mock_pick.return_value = {
+            "error": "unauthorized", "detail": "401 Unauthorized",
+        }
+        code, out = self._run_api("--from-api")
+        self.assertEqual(code, 1)
+        data = json.loads(out)
+        self.assertEqual(data["error"], "unauthorized")
+
+    @unittest.mock.patch("apply.job_api.resolve_token")
+    def test_missing_api_token_clean_json_exit_1(self, mock_token):
+        """Missing token → {"error": "missing_api_token"} clean JSON, exit 1."""
+        mock_token.return_value = {
+            "error": "missing_api_token",
+            "detail": "Token da API do Job Hunter não encontrado.",
+        }
+        code, out = self._run_api("--from-api")
+        self.assertEqual(code, 1)
+        data = json.loads(out)
+        self.assertEqual(data["error"], "missing_api_token")
+
+    @unittest.mock.patch("apply.job_api.resolve_token")
+    def test_classic_job_url_flow_does_not_call_api(self, mock_token):
+        """No API flags → behavior unchanged, job_api is never touched."""
+        code, out = self._run_api("--job-url", GUPY_URL)
+        self.assertEqual(code, 0)
+        plan = json.loads(out)
+        self.assertEqual(plan["jobUrl"], GUPY_URL)
+        self.assertNotIn("jobTitle", plan)
+        self.assertNotIn("jobCompany", plan)
+        mock_token.assert_not_called()
+
+    def test_from_api_requires_profile(self):
+        """API-first still requires --profile (the apply data)."""
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            code = apply.run(["--from-api"])
+        self.assertEqual(code, 2)
+        data = json.loads(buf.getvalue())
+        self.assertEqual(data["error"], "usage")
+
+    def test_parse_args_api_defaults(self):
+        args = apply.parse_args([])
+        self.assertIsNone(args.job_id)
+        self.assertIsNone(args.api_token)
+        self.assertIsNone(args.profile_dir)
+        self.assertIsNone(args.min_score)
+        self.assertEqual(args.api_base_url, "http://localhost:8080")
+        self.assertTrue(args.fetch_if_empty)
+        self.assertFalse(args.from_api)
+
+    def test_parse_args_api_flags_parsed(self):
+        args = apply.parse_args([
+            "--job-id", "42",
+            "--api-base-url", "http://10.0.0.1:9000",
+            "--api-token", "abc",
+            "--profile-dir", "/tmp/prof",
+            "--min-score", "60",
+            "--from-api",
+        ])
+        self.assertEqual(args.job_id, "42")
+        self.assertEqual(args.api_base_url, "http://10.0.0.1:9000")
+        self.assertEqual(args.api_token, "abc")
+        self.assertEqual(args.profile_dir, "/tmp/prof")
+        self.assertEqual(args.min_score, 60)
+        self.assertTrue(args.from_api)
+
+    def test_parse_args_no_fetch_if_empty(self):
+        args = apply.parse_args(["--no-fetch-if-empty"])
+        self.assertFalse(args.fetch_if_empty)
+
+
+# ---------------------------------------------------------------------------
+# Issue #48 — Record-back: backend canonical record after a confirmed local write
+# ---------------------------------------------------------------------------
+
+class ApiRecordBackTests(unittest.TestCase):
+    """After a confirmed local apply record, apply.py POSTs it to the backend.
+
+    The backend record is best-effort: a backend failure must NOT fail the
+    local record (it only warns in the output JSON as ``backend_record`` and
+    leaves the exit code unchanged). Nothing is sent on dry-run / unconfirmed /
+    expired-session / refusal paths. All network I/O and the browser are mocked
+    — never a real HTTP call.
+    """
+
+    API_JOB = {
+        "id": 7,
+        "title": "Desenvolvedor Java Pleno",
+        "company": "Acme Corp",
+        "url": "https://jobs.gupy.io/jobs/777-java-pleno",
+        "description": "Backend Java 21, Spring Boot",
+        "postedAt": "2026-09-01",
+        "source": "gupy",
+        "contactEmail": "rh@acme.example",
+    }
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.mem = Path(self.tmp.name)
+        self.profile_path = write_profile(self.mem)
+        self.record_path = self.mem / "applications" / "777-java-pleno.json"
+
+    def _run(self, *args):
+        """Run apply.run() in api_mode (--job-id 7) with the browser mocked.
+
+        Non-dry runs reach the record path; ensure_browser is patched to
+        report "ready" so no real Chromium/CDP interaction ever happens.
+        """
+        cmd = list(args) + [
+            "--job-id", "7",
+            "--profile", self.profile_path,
+            "--memory-dir", str(self.mem),
+            "--portal", "gupy",
+        ]
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            code = apply.run(cmd)
+        return code, buf.getvalue()
+
+    def _patches(self, token="tok-1", backend=None):
+        """A set of context-manager patches returning the apply/record mocks."""
+        token_patch = unittest.mock.patch("apply.job_api.resolve_token")
+        token_mock = token_patch.start()
+        token_mock.return_value = token
+
+        get_patch = unittest.mock.patch("apply.job_api.api_get_job")
+        get_mock = get_patch.start()
+        get_mock.return_value = self.API_JOB
+
+        rec_patch = unittest.mock.patch("apply.job_api.api_record_applied")
+        rec_mock = rec_patch.start()
+        rec_mock.return_value = backend if backend is not None else {
+            "jobId": 7, "status": "applied"
+        }
+
+        browser_patch = unittest.mock.patch("apply.ensure_browser")
+        browser_mock = browser_patch.start()
+        browser_mock.return_value = {"status": "ready"}
+
+        def stop():
+            for p in (token_patch, get_patch, rec_patch, browser_patch):
+                p.stop()
+            return rec_mock
+
+        return token_mock, get_mock, stop
+
+    def test_posts_after_confirmed_record_with_token(self):
+        """--record-applied with a resolvable token POSTs the backend, keeps local."""
+        token, get, stop = self._patches()
+        try:
+            code, out = self._run("--record-applied")
+        finally:
+            rec = stop()
+        self.assertEqual(code, 0)
+        plan = json.loads(out)
+        # local record still written
+        self.assertTrue(self.record_path.is_file())
+        self.assertEqual(plan["recorded"]["status"], "applied")
+        # backend POST used the numeric job id + token + default base URL
+        rec.assert_called_once()
+        args = rec.call_args[0]
+        self.assertEqual(args[0], "http://localhost:8080")
+        self.assertEqual(args[1], "tok-1")
+        self.assertEqual(args[2], 7)
+        self.assertTrue(plan["backend_record"]["ok"])
+        self.assertEqual(plan["backend_record"]["jobId"], 7)
+
+    def test_posts_after_auto_apply(self):
+        """--auto-apply (confirmed submit path) also POSTs the backend."""
+        token, get, stop = self._patches()
+        try:
+            code, out = self._run("--auto-apply")
+        finally:
+            rec = stop()
+        self.assertEqual(code, 0)
+        plan = json.loads(out)
+        self.assertTrue(self.record_path.is_file())
+        rec.assert_called_once()
+        self.assertTrue(plan["backend_record"]["ok"])
+
+    def test_local_record_kept_when_backend_unreachable(self):
+        """Backend failure warns + keeps local record; exit code unchanged (0)."""
+        token, get, stop = self._patches(
+            backend={"error": "api_error",
+                     "detail": "URLError: connection refused"},
+        )
+        try:
+            code, out = self._run("--record-applied")
+        finally:
+            rec = stop()
+        self.assertEqual(code, 0)
+        plan = json.loads(out)
+        # local record still written and exit unchanged
+        self.assertTrue(self.record_path.is_file())
+        self.assertEqual(plan["recorded"]["status"], "applied")
+        # backend warning present, ok=false, error surfaced
+        self.assertIn("backend_record", plan)
+        self.assertFalse(plan["backend_record"]["ok"])
+        self.assertEqual(plan["backend_record"]["error"], "api_error")
+
+    def test_backend_404_warns_but_keeps_local_record(self):
+        """A 404 (unknown job upstream) warns; local record is still written."""
+        token, get, stop = self._patches(backend={"error": "not_found"})
+        try:
+            code, out = self._run("--record-applied")
+        finally:
+            rec = stop()
+        self.assertEqual(code, 0)
+        plan = json.loads(out)
+        self.assertTrue(self.record_path.is_file())
+        self.assertIn("backend_record", plan)
+        self.assertFalse(plan["backend_record"]["ok"])
+        self.assertEqual(plan["backend_record"]["error"], "not_found")
+
+    def test_backend_401_warns_but_keeps_local_record(self):
+        """A 401 (bad token) warns; local record is still written."""
+        token, get, stop = self._patches(backend={"error": "unauthorized"})
+        try:
+            code, out = self._run("--record-applied")
+        finally:
+            rec = stop()
+        self.assertEqual(code, 0)
+        self.assertTrue(self.record_path.is_file())
+        plan = json.loads(out)
+        self.assertIn("backend_record", plan)
+        self.assertFalse(plan["backend_record"]["ok"])
+        self.assertEqual(plan["backend_record"]["error"], "unauthorized")
+
+    def test_classic_flow_without_numeric_id_skips_backend(self):
+        """Classic --job-url flow (no numeric backend id) never POSTs back.
+
+        Even with a resolvable token, the backend can only be recorded for a
+        job that came from the API (it has a numeric id). The classic flow has
+        only a URL slug, so record-back is skipped and the local record stays.
+        """
+        with unittest.mock.patch("apply.job_api.api_record_applied") as mock_rec, \
+             unittest.mock.patch("apply.job_api.resolve_token") as mock_token, \
+             unittest.mock.patch("apply.ensure_browser") as mock_browser:
+            mock_token.return_value = "tok-1"
+            mock_browser.return_value = {"status": "ready"}
+            cmd = [
+                "--job-url", GUPY_URL,
+                "--profile", self.profile_path,
+                "--memory-dir", str(self.mem),
+                "--portal", "gupy",
+                "--record-applied",
+            ]
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                code = apply.run(cmd)
+        self.assertEqual(code, 0)
+        plan = json.loads(buf.getvalue())
+        # local record still written (classic, slug id)
+        self.assertTrue((self.mem / "applications" / f"{JOB_ID}.json").is_file())
+        self.assertEqual(plan["recorded"]["status"], "applied")
+        mock_rec.assert_not_called()
+        self.assertNotIn("backend_record", plan)
+
+    def test_nothing_sent_on_dry_run(self):
+        """--dry-run: no local record, no backend POST."""
+        token, get, stop = self._patches()
+        try:
+            code, out = self._run("--record-applied", "--dry-run")
+        finally:
+            rec = stop()
+        self.assertEqual(code, 0)
+        plan = json.loads(out)
+        self.assertFalse(self.record_path.exists())
+        self.assertNotIn("recorded", plan)
+        rec.assert_not_called()
+        self.assertNotIn("backend_record", plan)
+
+    def test_nothing_sent_on_unconfirmed(self):
+        """No record flags → not confirmed → no local record, no backend POST."""
+        token, get, stop = self._patches()
+        try:
+            code, out = self._run()
+        finally:
+            rec = stop()
+        self.assertEqual(code, 0)
+        plan = json.loads(out)
+        self.assertFalse(self.record_path.exists())
+        rec.assert_not_called()
+        self.assertNotIn("backend_record", plan)
+
+    def test_nothing_sent_on_expired_session(self):
+        """Expired session returns before the record block — no POST."""
+        token, get, stop = self._patches()
+        try:
+            code, out = self._run("--record-applied",
+                                  "--current-url", "https://jobs.gupy.io/login")
+        finally:
+            rec = stop()
+        self.assertEqual(code, 0)
+        plan = json.loads(out)
+        self.assertTrue(plan["sessionExpired"])
+        self.assertFalse(self.record_path.exists())
+        rec.assert_not_called()
+        self.assertNotIn("backend_record", plan)
+
+    def test_nothing_sent_on_refusal(self):
+        """Refusal profile → clean error; no local record, no backend POST."""
+        refusal = dict(VALID_PROFILE, no_apply=True)
+        path = write_profile(self.mem, refusal)
+        cmd = [
+            "--job-id", "7",
+            "--profile", path,
+            "--memory-dir", str(self.mem),
+            "--portal", "gupy",
+            "--record-applied",
+        ]
+        with unittest.mock.patch("apply.job_api.resolve_token") as mock_token, \
+             unittest.mock.patch("apply.job_api.api_get_job") as mock_get, \
+             unittest.mock.patch("apply.job_api.api_record_applied") as mock_rec:
+            mock_token.return_value = "tok-1"
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                code = apply.run(cmd)
+        self.assertEqual(code, 1)
+        data = json.loads(buf.getvalue())
+        self.assertEqual(data["error"], "refusal_draft_blocked")
+        mock_rec.assert_not_called()
+        self.assertFalse(self.record_path.exists())
+
+
+# ---------------------------------------------------------------------------
+# --auto-apply (issue #42)
+# ---------------------------------------------------------------------------
+
+class AutoApplyTests(unittest.TestCase):
+    """--auto-apply implies confirmed (submit), skips the confirm_checkpoint,
+    keeps screenshot + record for the audit trail, and NEVER bypasses the
+    safety guardrails (#27 idempotency, #28 refusal, #41 session gate)."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.mem = Path(self.tmp.name)
+        self.profile_path = write_profile(self.mem)
+        self.record_path = self.mem / "applications" / f"{JOB_ID}.json"
+
+    def step_types(self, result):
+        return [s["type"] for s in result.data["steps"]]
+
+    def test_auto_apply_has_submit_and_no_confirm_checkpoint(self):
+        result = run_cli(self.mem, self.profile_path, "--auto-apply")
+        self.assertEqual(result.code, 0)
+        self.assertTrue(result.data["ok"])
+        self.assertFalse(result.data["confirmationRequired"])
+        types = self.step_types(result)
+        self.assertIn("submit", types)
+        self.assertNotIn("confirm_checkpoint", types)
+        self.assertEqual(types[-1], "submit")
+
+    def test_auto_apply_keeps_screenshot_and_fill_form(self):
+        result = run_cli(self.mem, self.profile_path, "--auto-apply")
+        types = self.step_types(result)
+        self.assertIn("screenshot", types)
+        self.assertIn("fill_form", types)
+        self.assertIn("verify_session", types)
+
+    def test_auto_apply_records_applied(self):
+        result = run_cli(self.mem, self.profile_path, "--auto-apply")
+        self.assertEqual(result.code, 0)
+        self.assertTrue(self.record_path.is_file())
+        record = json.loads(self.record_path.read_text(encoding="utf-8"))
+        self.assertEqual(record["status"], "applied")
+        self.assertEqual(record["job_id"], JOB_ID)
+
+    def test_auto_apply_no_confirm_checkpoint_in_dry_run(self):
+        # dry-run + auto-apply: still no confirm_checkpoint, and nothing recorded.
+        result = run_cli(self.mem, self.profile_path, "--auto-apply", "--dry-run")
+        self.assertEqual(result.code, 0)
+        types = self.step_types(result)
+        self.assertNotIn("confirm_checkpoint", types)
+        self.assertFalse(self.record_path.exists())
+
+    def test_auto_apply_still_blocked_by_already_applied(self):
+        # Safety #27: auto-apply must NOT bypass idempotency.
+        run_cli(self.mem, self.profile_path, "--auto-apply")
+        second = run_cli(self.mem, self.profile_path, "--auto-apply")
+        self.assertEqual(second.code, 1)
+        self.assertEqual(second.data["error"], "already_applied")
+
+    def test_auto_apply_still_blocked_by_refusal(self):
+        # Safety #28: auto-apply must NOT bypass the refusal block.
+        profile = dict(VALID_PROFILE, no_apply=True)
+        path = write_profile(self.mem, profile)
+        result = run_cli(self.mem, path, "--auto-apply")
+        self.assertEqual(result.code, 1)
+        self.assertEqual(result.data["error"], "refusal_draft_blocked")
+
+    def test_auto_apply_still_blocked_by_expired_session(self):
+        # Safety #41: even in auto mode an expired session stops at the login
+        # confirm checkpoint — no fill/submit may happen.
+        result = run_cli(self.mem, self.profile_path, "--auto-apply",
+                         "--current-url", "https://jobs.gupy.io/login")
+        self.assertEqual(result.code, 0)
+        self.assertTrue(result.data["sessionExpired"])
+        # The plan still records the requested mode...
+        self.assertTrue(result.data["autoApply"])
+        # ...but the safety gate wins: stop at the login checkpoint.
+        types = self.step_types(result)
+        self.assertEqual(types, ["verify_session", "confirm_checkpoint"])
+        self.assertNotIn("submit", types)
+
+    def test_auto_apply_marks_auto_apply_in_plan(self):
+        result = run_cli(self.mem, self.profile_path, "--auto-apply")
+        self.assertTrue(result.data["autoApply"])
+
+    def test_build_action_plan_auto_apply_direct_call(self):
+        plan = apply.build_action_plan(
+            VALID_PROFILE, apply.load_portal("gupy"), JOB_ID, GUPY_URL,
+            confirmed=False, memory_dir=self.mem, dry_run=False,
+            session_check_enabled=False, auto_apply=True,
+        )
+        self.assertTrue(plan["autoApply"])
+        self.assertFalse(plan["confirmationRequired"])
+        types = [s["type"] for s in plan["steps"]]
+        self.assertIn("submit", types)
+        self.assertNotIn("confirm_checkpoint", types)
+        self.assertEqual(types[-1], "submit")
+
+
+# ---------------------------------------------------------------------------
+# Session expiry gate (issue #41)
+# ---------------------------------------------------------------------------
+
+class SessionCheckTests(unittest.TestCase):
+    """verify_session step is emitted first; expired sessions stop at the login
+    confirm_checkpoint without any fill/upload/submit step."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.mem = Path(self.tmp.name)
+        self.profile_path = write_profile(self.mem)
+
+    def step_types(self, result):
+        return [s["type"] for s in result.data["steps"]]
+
+    def test_verify_session_step_is_first_in_plan(self):
+        result = run_cli(self.mem, self.profile_path)
+        self.assertEqual(result.code, 0)
+        first = result.data["steps"][0]
+        self.assertEqual(first["type"], "verify_session")
+        self.assertEqual(first["action"], "verify_session")
+        self.assertEqual(first["url"], GUPY_URL)
+        self.assertEqual(first["expect"], "not_auth_page")
+        self.assertEqual(first["on_expired"], "ask_login_and_confirm")
+        self.assertTrue(result.data["sessionCheck"])
+        self.assertFalse(result.data["sessionExpired"])
+
+    def test_active_session_still_emits_fill_form(self):
+        result = run_cli(self.mem, self.profile_path)
+        types = self.step_types(result)
+        self.assertIn("fill_form", types)
+        self.assertNotIn("fill", types)
+        self.assertNotIn("upload", types)
+        self.assertEqual(types[-1], "confirm_checkpoint")
+
+    def test_login_current_url_produces_expired_plan(self):
+        result = run_cli(self.mem, self.profile_path,
+                         "--current-url", "https://jobs.gupy.io/login")
+        self.assertEqual(result.code, 0)
+        self.assertTrue(result.data["ok"])
+        self.assertTrue(result.data["sessionExpired"])
+        self.assertTrue(result.data["confirmationRequired"])
+        types = self.step_types(result)
+        self.assertEqual(types, ["verify_session", "confirm_checkpoint"])
+
+    def test_expired_plan_has_ptbr_confirm_note(self):
+        result = run_cli(self.mem, self.profile_path,
+                         "--current-url", "https://jobs.gupy.io/login")
+        checkpoint = result.data["steps"][1]
+        self.assertIn("Sessão expirada", checkpoint["note"])
+        self.assertIn("Faça login no Gupy e digite confirmar", checkpoint["note"])
+
+    def test_expired_plan_carries_login_url(self):
+        result = run_cli(self.mem, self.profile_path,
+                         "--current-url", "https://jobs.gupy.io/login")
+        checkpoint = result.data["steps"][1]
+        self.assertEqual(checkpoint["login_url"], GUPY_URL)
+
+    def test_expired_plan_has_no_fill_upload_or_submit(self):
+        result = run_cli(self.mem, self.profile_path,
+                         "--current-url", "https://jobs.gupy.io/candidates/auth")
+        types = self.step_types(result)
+        for banned in ("fill", "upload", "fill_form", "submit", "screenshot"):
+            self.assertNotIn(banned, types)
+
+    def test_skip_session_check_omits_verify_step(self):
+        result = run_cli(self.mem, self.profile_path, "--skip-session-check")
+        self.assertEqual(result.code, 0)
+        self.assertFalse(result.data["sessionCheck"])
+        self.assertFalse(result.data["sessionExpired"])
+        types = self.step_types(result)
+        self.assertNotIn("verify_session", types)
+        self.assertIn("fill_form", types)
+
+    def test_skip_session_check_keeps_auth_guard(self):
+        # Skipping the session check must not disable the #38 auth/loop guard.
+        result = run_cli(self.mem, self.profile_path, "--skip-session-check",
+                         "--current-url", "https://jobs.gupy.io/login")
+        self.assertEqual(result.code, 1)
+        self.assertEqual(result.data["error"], "auth_required")
+
+    def test_dry_run_omits_session_check(self):
+        result = run_cli(self.mem, self.profile_path, "--dry-run")
+        self.assertEqual(result.code, 0)
+        self.assertFalse(result.data["sessionCheck"])
+        types = self.step_types(result)
+        self.assertNotIn("verify_session", types)
+        self.assertTrue(result.data["dryRun"])
+
+    def test_build_action_plan_expired_direct_call(self):
+        plan = apply.build_action_plan(
+            VALID_PROFILE, apply.load_portal("gupy"), JOB_ID, GUPY_URL,
+            confirmed=False, memory_dir=self.mem, dry_run=False,
+            session_check_enabled=True, session_expired=True,
+            login_url=GUPY_URL,
+        )
+        self.assertTrue(plan["sessionExpired"])
+        self.assertTrue(plan["sessionCheck"])
+        types = [s["type"] for s in plan["steps"]]
+        self.assertEqual(types, ["verify_session", "confirm_checkpoint"])
+        self.assertEqual(plan["steps"][1]["login_url"], GUPY_URL)
+
+    def test_build_action_plan_skip_direct_call(self):
+        plan = apply.build_action_plan(
+            VALID_PROFILE, apply.load_portal("gupy"), JOB_ID, GUPY_URL,
+            confirmed=True, memory_dir=self.mem, dry_run=False,
+            session_check_enabled=False,
+        )
+        self.assertFalse(plan["sessionCheck"])
+        types = [s["type"] for s in plan["steps"]]
+        self.assertNotIn("verify_session", types)
+        self.assertEqual(types[-1], "submit")
+
+
+# ---------------------------------------------------------------------------
+# Job-id derivation
+# ---------------------------------------------------------------------------
+
+class JobIdTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+
+    def test_derive_job_id_variants(self):
+        self.assertEqual(
+            apply.derive_job_id("https://jobs.gupy.io/jobs/123-dev"), "123-dev"
+        )
+        self.assertEqual(
+            apply.derive_job_id("https://acme.gupy.io/jobs/456-front/"),
+            "456-front",
+        )
+        self.assertEqual(
+            apply.derive_job_id("https://jobs.gupy.io/jobs/789-x?ref=1"),
+            "789-x",
+        )
+        self.assertIsNone(apply.derive_job_id("https://example.com"))
+        self.assertIsNone(apply.derive_job_id(""))
+
+    def test_invalid_job_url_errors(self):
+        path = write_profile(Path(self.tmp.name))
+        result = run_cli(Path(self.tmp.name), path, url="https://example.com")
+        self.assertEqual(result.code, 1)
+        self.assertEqual(result.data["error"], "invalid_job_url")
+
+
+# ---------------------------------------------------------------------------
+# Idempotency (#27) — memory record round-trip
+# ---------------------------------------------------------------------------
+
+class IdempotencyTests(unittest.TestCase):
+    """already_applied short-circuit and record round-trip in a tmp dir."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.mem = Path(self.tmp.name)
+        self.profile_path = write_profile(self.mem)
+        self.record_path = self.mem / "applications" / f"{JOB_ID}.json"
+
+    def test_cli_record_round_trip_then_blocked(self):
+        first = run_cli(self.mem, self.profile_path, "--record-applied")
+        self.assertEqual(first.code, 0)
+        self.assertTrue(self.record_path.is_file())
+        record = json.loads(self.record_path.read_text(encoding="utf-8"))
+        self.assertEqual(record["status"], "applied")
+        self.assertEqual(record["job_id"], JOB_ID)
+        self.assertEqual(record["contact_email"], VALID_PROFILE["email"])
+        self.assertEqual(record["portal"], "gupy")
+        self.assertIn("applied_at", record)
+        self.assertIn("screenshot_path", record)
+
+        second = run_cli(self.mem, self.profile_path)
+        self.assertEqual(second.code, 1)
+        self.assertEqual(second.data["error"], "already_applied")
+
+    def test_confirmed_run_writes_record(self):
+        run_cli(self.mem, self.profile_path, "--confirmed")
+        self.assertTrue(self.record_path.is_file())
+
+    def test_dry_run_writes_nothing(self):
+        run_cli(self.mem, self.profile_path, "--record-applied", "--dry-run")
+        self.assertFalse(self.record_path.exists())
+        dry = run_cli(self.mem, self.profile_path, "--confirmed", "--dry-run")
+        self.assertTrue(dry.data["ok"])
+        self.assertFalse(self.record_path.exists())
+
+    def test_existing_applied_record_short_circuits(self):
+        self.record_path.parent.mkdir(parents=True, exist_ok=True)
+        self.record_path.write_text(
+            json.dumps(
+                {
+                    "job_id": JOB_ID,
+                    "contact_email": VALID_PROFILE["email"],
+                    "portal": "gupy",
+                    "applied_at": "2026-01-01T00:00:00+00:00",
+                    "screenshot_path": None,
+                    "status": "applied",
+                }
+            ),
+            encoding="utf-8",
+        )
+        result = run_cli(self.mem, self.profile_path)
+        self.assertEqual(result.code, 1)
+        self.assertEqual(result.data["error"], "already_applied")
+
+    def test_record_written_by_module_round_trips(self):
+        rec = apply.write_applied_record(
+            self.mem, "abc-xyz", VALID_PROFILE, "gupy",
+            str(self.mem / "screenshots" / "abc-xyz.png"),
+        )
+        self.assertEqual(rec["status"], "applied")
+        self.assertEqual(rec["contact_email"], VALID_PROFILE["email"])
+        loaded = apply.check_idempotency(self.mem, "abc-xyz")
+        self.assertIsNotNone(loaded)
+        self.assertEqual(loaded["status"], "applied")
+        self.assertEqual(loaded["job_id"], "abc-xyz")
+
+
+# ---------------------------------------------------------------------------
+# Usage / CLI
+# ---------------------------------------------------------------------------
+
+class UsageTests(unittest.TestCase):
+    def test_missing_required_args_emits_usage_json(self):
+        proc = subprocess.run(
+            [sys.executable, str(APPLY_PATH)], capture_output=True, text=True
+        )
+        self.assertEqual(proc.returncode, 2)
+        data = json.loads(proc.stdout)
+        self.assertEqual(data["error"], "usage")
+
+    def test_parse_args_returns_defaults(self):
+        args = apply.parse_args([])
+        self.assertIsNone(args.job_url)
+        self.assertIsNone(args.profile)
+        self.assertEqual(args.portal, "gupy")  # issue #45: --portal defaults to gupy
+        self.assertIsNone(args.memory_dir)
+        self.assertFalse(args.dry_run)
+        self.assertFalse(args.confirmed)
+        self.assertFalse(args.record_applied)
+        self.assertIsNone(args.cdp_url)
+        self.assertIsNone(args.user_data_dir)
+        self.assertFalse(args.check_browser)
+        self.assertFalse(args.skip_session_check)
+        self.assertFalse(args.auto_apply)
+
+
+# ---------------------------------------------------------------------------
+# Browser recovery (issue #39)
+# ---------------------------------------------------------------------------
+
+class CheckCdpTests(unittest.TestCase):
+    """check_cdp: CDP endpoint reachability."""
+
+    @unittest.mock.patch("urllib.request.urlopen")
+    def test_reachable_returns_true(self, mock_urlopen):
+        """CDP endpoint responds → check_cdp returns True."""
+        mock_urlopen.return_value = unittest.mock.MagicMock(status=200)
+        self.assertTrue(apply.check_cdp("http://localhost:9222"))
+
+    @unittest.mock.patch("urllib.request.urlopen")
+    def test_connection_refused_returns_false(self, mock_urlopen):
+        """CDP endpoint unreachable → check_cdp returns False."""
+        mock_urlopen.side_effect = ConnectionRefusedError("connection refused")
+        self.assertFalse(apply.check_cdp("http://localhost:9222"))
+
+    @unittest.mock.patch("urllib.request.urlopen")
+    def test_timeout_returns_false(self, mock_urlopen):
+        """CDP endpoint times out → check_cdp returns False."""
+        mock_urlopen.side_effect = TimeoutError("timed out")
+        self.assertFalse(apply.check_cdp("http://localhost:9222", timeout=5))
+
+    @unittest.mock.patch("urllib.request.urlopen")
+    def test_timeout_kwarg_forwarded(self, mock_urlopen):
+        """Timeout parameter is forwarded to urlopen."""
+        mock_urlopen.side_effect = OSError("fail")
+        apply.check_cdp("http://localhost:9222", timeout=7)
+        _, kwargs = mock_urlopen.call_args
+        self.assertEqual(kwargs.get("timeout"), 7)
+
+
+class StartChromiumTests(unittest.TestCase):
+    """start_chromium: launch command construction."""
+
+    @unittest.mock.patch("subprocess.Popen")
+    @unittest.mock.patch("os.makedirs")
+    def test_launches_chromium_with_correct_args(self, mock_makedirs, mock_popen):
+        """start_chromium calls subprocess.Popen with correct flags."""
+        mock_popen.return_value = unittest.mock.MagicMock()
+        apply.start_chromium("~/.chromium-profile-cdp")
+        cmd = mock_popen.call_args[0][0]
+        self.assertEqual(cmd[0], "chromium")
+        self.assertIn("--remote-debugging-port=9222", cmd)
+        self.assertIn("--no-first-run", cmd)
+        expanded = os.path.expanduser("~/.chromium-profile-cdp")
+        self.assertTrue(any(expanded in arg for arg in cmd))
+
+    @unittest.mock.patch("subprocess.Popen")
+    @unittest.mock.patch("os.makedirs")
+    def test_expands_user_data_dir(self, mock_makedirs, mock_popen):
+        """Tilde in user_data_dir is expanded."""
+        mock_popen.return_value = unittest.mock.MagicMock()
+        apply.start_chromium("~/my-profile")
+        expanded = os.path.expanduser("~/my-profile")
+        mock_makedirs.assert_called_once_with(expanded, exist_ok=True)
+
+    @unittest.mock.patch("subprocess.Popen")
+    @unittest.mock.patch("os.makedirs")
+    def test_custom_port(self, mock_makedirs, mock_popen):
+        """Custom remote_debugging_port is forwarded."""
+        mock_popen.return_value = unittest.mock.MagicMock()
+        apply.start_chromium("~/profile", remote_debugging_port=9333)
+        cmd = mock_popen.call_args[0][0]
+        self.assertIn("--remote-debugging-port=9333", cmd)
+
+
+class EnsureBrowserTests(unittest.TestCase):
+    """ensure_browser: orchestration logic."""
+
+    @unittest.mock.patch("urllib.request.urlopen")
+    def test_cdp_already_ready(self, mock_urlopen):
+        """CDP reachable on first check → status ready."""
+        mock_urlopen.return_value = unittest.mock.MagicMock(status=200)
+        result = apply.ensure_browser()
+        self.assertEqual(result["status"], "ready")
+
+    @unittest.mock.patch("time.sleep")
+    @unittest.mock.patch("subprocess.Popen")
+    @unittest.mock.patch("os.makedirs")
+    @unittest.mock.patch("urllib.request.urlopen")
+    def test_cdp_down_chromium_starts_needs_login(self, mock_urlopen, mock_makedirs, mock_popen, mock_sleep):
+        """CDP down + Chromium starts + re-check ok → needs_login."""
+        responses = [OSError("refused"), unittest.mock.MagicMock(status=200)]
+        mock_urlopen.side_effect = responses
+        mock_popen.return_value = unittest.mock.MagicMock()
+        result = apply.ensure_browser()
+        self.assertEqual(result["status"], "needs_login")
+        mock_popen.assert_called_once()
+        mock_sleep.assert_called_once_with(3)
+
+    @unittest.mock.patch("time.sleep")
+    @unittest.mock.patch("subprocess.Popen")
+    @unittest.mock.patch("os.makedirs")
+    @unittest.mock.patch("urllib.request.urlopen")
+    def test_chromium_fails_to_start(self, mock_urlopen, mock_makedirs, mock_popen, mock_sleep):
+        """Chromium fails to start → browser_unavailable."""
+        mock_urlopen.side_effect = OSError("refused")
+        mock_popen.side_effect = FileNotFoundError("chromium not found")
+        result = apply.ensure_browser()
+        self.assertEqual(result["status"], "browser_unavailable")
+        self.assertIn("detail", result)
+
+    @unittest.mock.patch("time.sleep")
+    @unittest.mock.patch("subprocess.Popen")
+    @unittest.mock.patch("os.makedirs")
+    @unittest.mock.patch("urllib.request.urlopen")
+    def test_chromium_starts_but_cdp_still_down(self, mock_urlopen, mock_makedirs, mock_popen, mock_sleep):
+        """Chromium started but CDP still unreachable → browser_unavailable."""
+        mock_urlopen.side_effect = OSError("refused")
+        mock_popen.return_value = unittest.mock.MagicMock()
+        result = apply.ensure_browser()
+        self.assertEqual(result["status"], "browser_unavailable")
+
+    @unittest.mock.patch("time.sleep")
+    @unittest.mock.patch("subprocess.Popen")
+    @unittest.mock.patch("os.makedirs")
+    @unittest.mock.patch("urllib.request.urlopen")
+    def test_needs_login_message_is_ptbr(self, mock_urlopen, mock_makedirs, mock_popen, mock_sleep):
+        """needs_login detail must be in PT-BR."""
+        responses = [OSError("refused"), unittest.mock.MagicMock(status=200)]
+        mock_urlopen.side_effect = responses
+        mock_popen.return_value = unittest.mock.MagicMock()
+        result = apply.ensure_browser()
+        self.assertIn("Navegador", result["detail"])
+        self.assertIn("Chromium", result["detail"])
+
+    @unittest.mock.patch("time.sleep")
+    @unittest.mock.patch("subprocess.Popen")
+    @unittest.mock.patch("os.makedirs")
+    @unittest.mock.patch("urllib.request.urlopen")
+    def test_ensure_browser_uses_custom_cdp_url(self, mock_urlopen, mock_makedirs, mock_popen, mock_sleep):
+        """Custom CDP URL is forwarded to check_cdp."""
+        mock_urlopen.return_value = unittest.mock.MagicMock(status=200)
+        result = apply.ensure_browser(cdp_url="http://10.0.0.1:9333")
+        self.assertEqual(result["status"], "ready")
+        call_url = mock_urlopen.call_args[0][0]
+        self.assertIn("10.0.0.1:9333", call_url)
+
+    @unittest.mock.patch("time.sleep")
+    @unittest.mock.patch("subprocess.Popen")
+    @unittest.mock.patch("os.makedirs")
+    @unittest.mock.patch("urllib.request.urlopen")
+    def test_ensure_browser_forwards_custom_port_to_start_chromium(self, mock_urlopen, mock_makedirs, mock_popen, mock_sleep):
+        """Custom remote_debugging_port is forwarded to start_chromium."""
+        responses = [OSError("refused"), unittest.mock.MagicMock(status=200)]
+        mock_urlopen.side_effect = responses
+        mock_popen.return_value = unittest.mock.MagicMock()
+        apply.ensure_browser(remote_debugging_port=9333)
+        cmd = mock_popen.call_args[0][0]
+        self.assertIn("--remote-debugging-port=9333", cmd)
+
+
+class CheckBrowserCliTests(unittest.TestCase):
+    """--check-browser flag: JSON output and exit codes."""
+
+    def _run_check_browser(self):
+        """Run apply.run(['--check-browser']) in-process; return (code, parsed JSON)."""
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            code = apply.run(["--check-browser", "--cdp-url", "http://127.0.0.1:9333"])
+        return code, json.loads(buf.getvalue())
+
+    @unittest.mock.patch("urllib.request.urlopen")
+    def test_ready_status_json(self, mock_urlopen):
+        """CDP reachable → --check-browser prints status ready with exit 0."""
+        mock_urlopen.return_value = unittest.mock.MagicMock(status=200)
+        code, data = self._run_check_browser()
+        self.assertEqual(code, 0)
+        self.assertEqual(data["status"], "ready")
+        self.assertNotIn("steps", data)
+
+    @unittest.mock.patch("time.sleep")
+    @unittest.mock.patch("subprocess.Popen")
+    @unittest.mock.patch("os.makedirs")
+    @unittest.mock.patch("urllib.request.urlopen")
+    def test_needs_login_status_json_exit_zero(self, mock_urlopen, mock_makedirs, mock_popen, mock_sleep):
+        """CDP down + Chromium starts → needs_login with exit code 0."""
+        mock_urlopen.side_effect = [OSError("refused"), unittest.mock.MagicMock(status=200)]
+        mock_popen.return_value = unittest.mock.MagicMock()
+        code, data = self._run_check_browser()
+        self.assertEqual(code, 0)
+        self.assertEqual(data["status"], "needs_login")
+
+    @unittest.mock.patch("os.makedirs")
+    @unittest.mock.patch("subprocess.Popen")
+    @unittest.mock.patch("urllib.request.urlopen")
+    def test_browser_unavailable_status_json_exit_one(self, mock_urlopen, mock_popen, mock_makedirs):
+        """Chromium fails to start → browser_unavailable with exit code 1."""
+        mock_urlopen.side_effect = OSError("refused")
+        mock_popen.side_effect = FileNotFoundError("chromium not found")
+        code, data = self._run_check_browser()
+        self.assertEqual(code, 1)
+        self.assertEqual(data["status"], "browser_unavailable")
+        self.assertIn("detail", data)
+
+    @unittest.mock.patch("urllib.request.urlopen")
+    def test_check_browser_output_is_json_not_plan(self, mock_urlopen):
+        """--check-browser output is a status JSON, never an action plan."""
+        mock_urlopen.return_value = unittest.mock.MagicMock(status=200)
+        code, data = self._run_check_browser()
+        self.assertNotIn("steps", data)
+        self.assertNotIn("portal", data)
+
+    @unittest.skipIf(shutil.which("chromium") is not None,
+                     "would launch a real Chromium browser")
+    def test_check_browser_closed_port_valid_json(self):
+        """CLI smoke: --check-browser against closed port returns valid JSON."""
+        proc = subprocess.run(
+            [sys.executable, str(APPLY_PATH), "--check-browser",
+             "--cdp-url", CLOSED_CDP_URL],
+            capture_output=True, text=True
+        )
+        data = json.loads(proc.stdout)
+        self.assertIn("status", data)
+        self.assertEqual(data["status"], "browser_unavailable")
+        self.assertEqual(proc.returncode, 1)
+
+
+class UserDataDirDefaultTests(unittest.TestCase):
+    """user-data-dir default expansion."""
+
+    def test_default_starts_with_tilde(self):
+        """DEFAULT_USER_DATA_DIR uses tilde for home expansion."""
+        self.assertTrue(apply.DEFAULT_USER_DATA_DIR.startswith("~"))
+
+    def test_default_expands_to_absolute_path(self):
+        """Expanding the default user-data-dir yields an absolute path."""
+        expanded = os.path.expanduser(apply.DEFAULT_USER_DATA_DIR)
+        self.assertTrue(os.path.isabs(expanded))
+        self.assertFalse(expanded.startswith("~"))
+
+    def test_default_contains_chromium_profile(self):
+        """Default user-data-dir references chromium-profile-cdp."""
+        self.assertIn("chromium-profile-cdp", apply.DEFAULT_USER_DATA_DIR)
+
+
+class DryRunSkipsBrowserCheckTests(unittest.TestCase):
+    """--dry-run must skip ensure_browser entirely."""
+
+    def test_dry_run_skips_browser_check(self):
+        """With --dry-run, no browser check occurs even on closed port."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            mem = Path(tmpdir)
+            profile_path = write_profile(mem)
+            result = run_cli(mem, profile_path, "--dry-run",
+                             "--cdp-url", CLOSED_CDP_URL)
+            self.assertEqual(result.code, 0)
+            self.assertTrue(result.data["ok"])
+            self.assertTrue(result.data["dryRun"])
+
+
+class CdpUrlFlagTests(unittest.TestCase):
+    """--cdp-url flag is accepted and forwarded."""
+
+    def test_parse_args_has_cdp_url(self):
+        """parse_args recognizes --cdp-url."""
+        args = apply.parse_args(["--cdp-url", "http://10.0.0.1:9222"])
+        self.assertEqual(args.cdp_url, "http://10.0.0.1:9222")
+
+    def test_parse_args_has_user_data_dir(self):
+        """parse_args recognizes --user-data-dir."""
+        args = apply.parse_args(["--user-data-dir", "/tmp/test-profile"])
+        self.assertEqual(args.user_data_dir, "/tmp/test-profile")
+
+    def test_parse_args_has_check_browser(self):
+        """parse_args recognizes --check-browser."""
+        args = apply.parse_args(["--check-browser"])
+        self.assertTrue(args.check_browser)
+
+    def test_parse_args_has_skip_session_check(self):
+        """parse_args recognizes --skip-session-check (issue #41)."""
+        args = apply.parse_args(["--skip-session-check"])
+        self.assertTrue(args.skip_session_check)
+
+    def test_parse_args_has_auto_apply(self):
+        """parse_args recognizes --auto-apply (issue #42)."""
+        args = apply.parse_args(["--auto-apply"])
+        self.assertTrue(args.auto_apply)
+
+
+# ---------------------------------------------------------------------------
+# Planner-intent emission (mcp-apply-loop, phase 3) — --emit-intent
+# ---------------------------------------------------------------------------
+
+class IntentEmissionTests(unittest.TestCase):
+    """--emit-intent outputs the selector-free intent JSON; legacy path intact."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.mem = Path(self.tmp.name)
+        self.profile_path = write_profile(self.mem)
+        self.record_path = self.mem / "applications" / f"{JOB_ID}.json"
+
+    def test_parse_args_has_emit_intent(self):
+        args = apply.parse_args(["--emit-intent"])
+        self.assertTrue(args.emit_intent)
+
+    def test_parse_args_has_max_steps(self):
+        args = apply.parse_args(["--max-steps", "10"])
+        self.assertEqual(args.max_steps, 10)
+
+    def test_emit_intent_shape(self):
+        result = run_cli(self.mem, self.profile_path, "--emit-intent", "--dry-run")
+        self.assertEqual(result.code, 0)
+        data = result.data
+        self.assertEqual(set(data.keys()),
+                         {"intent_id", "job_id", "job_url", "portal",
+                          "profile", "policy", "dry_run"})
+        self.assertEqual(data["job_id"], JOB_ID)
+        self.assertEqual(data["job_url"], GUPY_URL)
+        self.assertEqual(data["portal"], "gupy")
+        self.assertTrue(data["dry_run"])
+        # Profile carries the applicant data with the intent's resume_path key.
+        self.assertEqual(set(data["profile"].keys()),
+                         {"name", "email", "phone", "resume_path", "cover_text"})
+        self.assertEqual(data["profile"]["resume_path"], VALID_PROFILE["cv_path"])
+        # Policy block, never individual intent->selector fields.
+        self.assertEqual(data["policy"],
+                         {"require_confirmation_before_final_submit": True,
+                          "never_fill_credentials": True,
+                          "stop_on_auth_url": True,
+                          "max_steps": 25})
+        # Legacy --job-url mode has no backend metadata to carry.
+        self.assertNotIn("metadata", data)
+        self.assertNotIn("steps", data)
+        self.assertNotIn("fill_form", data)
+
+    def test_emit_intent_has_no_selector_fields(self):
+        result = run_cli(self.mem, self.profile_path, "--emit-intent", "--dry-run")
+        text = json.dumps(result.data).lower()
+        for forbidden in ("selector", "input[", "button[", "xpath", "fill_form"):
+            self.assertNotIn(forbidden, text,
+                             f"intent must not carry the {forbidden!r} selector hint")
+
+    def test_emit_intent_confirmed_flips_policy(self):
+        confirmed = run_cli(self.mem, self.profile_path, "--emit-intent",
+                            "--dry-run", "--confirmed")
+        self.assertFalse(
+            confirmed.data["policy"]["require_confirmation_before_final_submit"])
+        auto = run_cli(self.mem, self.profile_path, "--emit-intent",
+                       "--dry-run", "--auto-apply")
+        self.assertFalse(
+            auto.data["policy"]["require_confirmation_before_final_submit"])
+        # The hard gates never change.
+        plain = run_cli(self.mem, self.profile_path, "--emit-intent", "--dry-run")
+        self.assertTrue(plain.data["policy"]["never_fill_credentials"])
+        self.assertTrue(plain.data["policy"]["stop_on_auth_url"])
+
+    def test_emit_intent_max_steps_flag(self):
+        default = run_cli(self.mem, self.profile_path, "--emit-intent", "--dry-run")
+        self.assertEqual(default.data["policy"]["max_steps"], 25)
+        tuned = run_cli(self.mem, self.profile_path, "--emit-intent", "--dry-run",
+                        "--max-steps", "10")
+        self.assertEqual(tuned.data["policy"]["max_steps"], 10)
+
+    def test_emit_intent_never_writes_records(self):
+        # Even a non-dry-run intent (browser mock reached) must not write the
+        # applied record — verdict.py is the sole writer.
+        result = run_cli(self.mem, self.profile_path, "--emit-intent",
+                         "--record-applied")
+        self.assertEqual(result.code, 0)
+        self.assertFalse(self.record_path.exists())
+
+    def test_emit_intent_refusal_still_blocks(self):
+        profile = dict(VALID_PROFILE, no_apply=True)
+        path = write_profile(self.mem, profile)
+        result = run_cli(self.mem, path, "--emit-intent", "--dry-run")
+        self.assertEqual(result.code, 1)
+        self.assertEqual(result.data["error"], "refusal_draft_blocked")
+
+    def test_emit_intent_already_applied_still_blocks(self):
+        self.record_path.parent.mkdir(parents=True, exist_ok=True)
+        self.record_path.write_text(
+            json.dumps({"job_id": JOB_ID, "status": "applied"}), encoding="utf-8"
+        )
+        result = run_cli(self.mem, self.profile_path, "--emit-intent", "--dry-run")
+        self.assertEqual(result.code, 1)
+        self.assertEqual(result.data["error"], "already_applied")
+
+    def test_build_intent_carries_metadata(self):
+        intent = apply.build_intent(
+            intent_id="test-uuid",
+            job_id=JOB_ID,
+            job_url=GUPY_URL,
+            portal="gupy",
+            profile=VALID_PROFILE,
+            require_confirmation=True,
+            job_title="Back-end Developer Jr",
+            job_company="ACME Tech",
+            backend_job_id=7,
+            api_base_url="http://localhost:8080",
+        )
+        self.assertEqual(intent["metadata"]["job_title"], "Back-end Developer Jr")
+        self.assertEqual(intent["metadata"]["job_company"], "ACME Tech")
+        self.assertEqual(intent["metadata"]["backend_job_id"], 7)
+        self.assertEqual(intent["metadata"]["api_base_url"], "http://localhost:8080")
+        self.assertNotIn("dry_run", intent)
+
+    def test_emit_intent_api_mode_carries_metadata(self):
+        # API-first mode (--job-id) prefills title/company/backend_id into the
+        # intent metadata (issue #46 bridge into the mcp-apply-loop intent).
+        with redirect_stdout(io.StringIO()) as buf:
+            with unittest.mock.patch("job_api.resolve_token", return_value="tok"), \
+                    unittest.mock.patch("job_api.api_get_job", return_value={
+                        "id": 7,
+                        "url": GUPY_URL,
+                        "title": "Back-end Developer Jr",
+                        "company": "ACME Tech",
+                    }):
+                code = apply.run([
+                    "--profile", str(self.profile_path),
+                    "--memory-dir", str(self.mem),
+                    "--job-id", "7",
+                    "--api-base-url", "http://localhost:8080",
+                    "--emit-intent",
+                    "--dry-run",
+                ])
+        self.assertEqual(code, 0)
+        data = json.loads(buf.getvalue())
+        self.assertEqual(data["metadata"]["job_title"], "Back-end Developer Jr")
+        self.assertEqual(data["metadata"]["job_company"], "ACME Tech")
+        self.assertEqual(data["metadata"]["backend_job_id"], 7)
+        self.assertEqual(data["metadata"]["api_base_url"], "http://localhost:8080")
+
+    def test_legacy_plan_path_unchanged(self):
+        result = run_cli(self.mem, self.profile_path, "--dry-run")
+        self.assertEqual(result.code, 0)
+        self.assertIn("steps", result.data)
+        self.assertNotIn("intent_id", result.data)
+
+
+if __name__ == "__main__":
+    unittest.main()

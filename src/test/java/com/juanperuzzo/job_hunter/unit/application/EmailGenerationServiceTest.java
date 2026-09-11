@@ -7,13 +7,16 @@ import com.juanperuzzo.job_hunter.application.port.out.JobRepository;
 import com.juanperuzzo.job_hunter.application.port.out.UserProfileRepository;
 import com.juanperuzzo.job_hunter.application.service.EmailGenerationService;
 import com.juanperuzzo.job_hunter.application.service.TemplateEmailService;
+import com.juanperuzzo.job_hunter.application.service.BotMemorySyncService;
 import com.juanperuzzo.job_hunter.domain.exception.AiException;
 import com.juanperuzzo.job_hunter.domain.model.CompanyTone;
 import com.juanperuzzo.job_hunter.domain.model.EmailDraft;
 import com.juanperuzzo.job_hunter.domain.model.EmailStatus;
 import com.juanperuzzo.job_hunter.domain.model.Job;
 import com.juanperuzzo.job_hunter.domain.model.JobAnalysis;
+import com.juanperuzzo.job_hunter.domain.model.UserPreferences;
 import com.juanperuzzo.job_hunter.domain.model.UserProfile;
+import com.juanperuzzo.job_hunter.domain.model.WorkPreference;
 
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
@@ -21,6 +24,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -30,6 +34,9 @@ import java.util.List;
 
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -57,12 +64,15 @@ class EmailGenerationServiceTest {
     @Mock
     private TemplateEmailService templateEmailService;
 
+    @Mock
+    private BotMemorySyncService botMemorySyncService;
+
     private EmailGenerationService emailGenerationService;
 
     @BeforeEach
     void setUp() {
         emailGenerationService = new EmailGenerationService(aiPort, emailDraftRepository, userProfileRepository,
-                jobRepository, jobAnalysisRepository, templateEmailService, 60);
+                jobRepository, jobAnalysisRepository, templateEmailService, botMemorySyncService, 60);
     }
 
     @Nested
@@ -90,7 +100,7 @@ class EmailGenerationServiceTest {
                 "Experienced Java developer with Spring Boot expertise.",
                 List.of("Java", "Spring Boot", "PostgreSQL"),
                 CompanyTone.FORMAL,
-                List.of(), null, null, null, null, null);
+                List.of(), null, null, null, null, null, null);
             when(userProfileRepository.findByUserId(any())).thenReturn(Optional.of(validProfile));
 
             Long jobId = 1L;
@@ -141,7 +151,7 @@ class EmailGenerationServiceTest {
                 "Experienced Java developer with Spring Boot expertise.",
                 List.of("Java", "Spring Boot", "PostgreSQL"),
                 CompanyTone.FORMAL,
-                List.of(), null, null, null, null, null);
+                List.of(), null, null, null, null, null, null);
             when(userProfileRepository.findByUserId(any())).thenReturn(Optional.of(validProfile));
 
             Long jobId = 2L;
@@ -190,7 +200,7 @@ class EmailGenerationServiceTest {
                 "Experienced Java developer with Spring Boot expertise.",
                 List.of("Java", "Spring Boot", "PostgreSQL"),
                 CompanyTone.FORMAL,
-                List.of(), null, null, null, null, null);
+                List.of(), null, null, null, null, null, null);
             when(userProfileRepository.findByUserId(any())).thenReturn(Optional.of(validProfile));
 
             Long jobId = 3L;
@@ -236,7 +246,7 @@ class EmailGenerationServiceTest {
                 "Experienced Java developer with Spring Boot expertise.",
                 List.of("Java", "Spring Boot", "PostgreSQL"),
                 CompanyTone.FORMAL,
-                List.of(), null, null, null, null, null);
+                List.of(), null, null, null, null, null, null);
             when(userProfileRepository.findByUserId(any())).thenReturn(Optional.of(validProfile));
 
             Long jobId = 4L;
@@ -270,7 +280,7 @@ class EmailGenerationServiceTest {
                 "Experienced Java developer with Spring Boot expertise.",
                 List.of("Java", "Spring Boot", "PostgreSQL"),
                 CompanyTone.FORMAL,
-                List.of(), null, null, null, null, null);
+                List.of(), null, null, null, null, null, null);
             when(userProfileRepository.findByUserId(any())).thenReturn(Optional.of(validProfile));
 
             Long jobId = 5L;
@@ -306,7 +316,7 @@ class EmailGenerationServiceTest {
                     "Java developer position");
             UserProfile profile = new UserProfile(null, 1L,
                     "Resume text", List.of("Java"), CompanyTone.FORMAL, List.of(),
-                    null, null, null, null, null);
+                    null, null, null, null, null, null);
 
             when(jobRepository.findById(jobId)).thenReturn(Optional.of(job));
             when(jobAnalysisRepository.findByJobIdAndUserId(jobId, 1L)).thenReturn(Optional.of(analysis));
@@ -327,6 +337,74 @@ class EmailGenerationServiceTest {
             assertTrue(draft.body().contains("EmpresaX"));
             assertEquals(EmailStatus.PENDING, draft.status());
             verify(aiPort, never()).complete(any());
+        }
+
+        @Test
+        @DisplayName("generate should write the NO_APPLY reason to bot memory when the template result carries a refusal marker")
+        void generate_whenTemplateCarriesNoApplyMarker_shouldWriteRefusalReason() {
+            Long jobId = 7L;
+            Job job = new Job(jobId, "Desenvolvedor Java", "EmpresaX",
+                    "https://example.com/job/7", "Description", LocalDate.now(), "test");
+            JobAnalysis analysis = new JobAnalysis(null, null, null, 75,
+                    List.of("Java"), List.of(),
+                    CompanyTone.FORMAL,
+                    "Java developer position");
+            UserProfile profile = new UserProfile(null, 1L,
+                    "Resume text", List.of("Java"), CompanyTone.FORMAL, List.of(),
+                    null, null, null, null, null, null);
+
+            when(jobRepository.findById(jobId)).thenReturn(Optional.of(job));
+            when(jobAnalysisRepository.findByJobIdAndUserId(jobId, 1L)).thenReturn(Optional.of(analysis));
+            when(userProfileRepository.findByUserId(any())).thenReturn(Optional.of(profile));
+            when(emailDraftRepository.findByJobIdAndUserId(jobId, 1L)).thenReturn(Optional.empty());
+            when(emailDraftRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+            // The template result body carries the same NO_APPLY refusal marker the
+            // AI path uses — it must be handled identically: REJECTED + write-back.
+            when(templateEmailService.generate(job)).thenReturn(
+                    new TemplateEmailService.TemplateResult(
+                            "Candidatura — Desenvolvedor Java na EmpresaX",
+                            "NO_APPLY: template flagged no fit"));
+
+            EmailDraft draft = emailGenerationService.generate(1L, jobId);
+
+            assertEquals(EmailStatus.REJECTED, draft.status());
+            verify(botMemorySyncService).writeMemoryEntry(1L, "template flagged no fit");
+        }
+
+        @Test
+        @DisplayName("generate should keep the REJECTED template flow when the refusal write-back fails (best-effort)")
+        void generate_whenTemplateRefusalWriteBackFails_shouldKeepNormalFlow() {
+            Long jobId = 8L;
+            Job job = new Job(jobId, "Desenvolvedor Java", "EmpresaY",
+                    "https://example.com/job/8", "Description", LocalDate.now(), "test");
+            JobAnalysis analysis = new JobAnalysis(null, null, null, 80,
+                    List.of("Java"), List.of(),
+                    CompanyTone.FORMAL,
+                    "Java developer position");
+            UserProfile profile = new UserProfile(null, 1L,
+                    "Resume text", List.of("Java"), CompanyTone.FORMAL, List.of(),
+                    null, null, null, null, null, null);
+
+            when(jobRepository.findById(jobId)).thenReturn(Optional.of(job));
+            when(jobAnalysisRepository.findByJobIdAndUserId(jobId, 1L)).thenReturn(Optional.of(analysis));
+            when(userProfileRepository.findByUserId(any())).thenReturn(Optional.of(profile));
+            when(emailDraftRepository.findByJobIdAndUserId(jobId, 1L)).thenReturn(Optional.empty());
+            when(emailDraftRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            when(templateEmailService.generate(job)).thenReturn(
+                    new TemplateEmailService.TemplateResult(
+                            "Candidatura — Desenvolvedor Java na EmpresaY",
+                            "NO_APPLY: no fit for template"));
+            doThrow(new RuntimeException("disk full"))
+                    .when(botMemorySyncService).writeMemoryEntry(eq(1L), anyString());
+
+            // writeMemoryEntry fails → the refusal flow must NOT fail with it
+            EmailDraft draft = assertDoesNotThrow(() -> emailGenerationService.generate(1L, jobId));
+
+            assertNotNull(draft);
+            assertEquals(EmailStatus.REJECTED, draft.status());
+            assertEquals("NO_APPLY: no fit for template", draft.body());
+            verify(emailDraftRepository).save(draft);
         }
     }
 
@@ -363,7 +441,7 @@ class EmailGenerationServiceTest {
                 "Experienced Java developer with Spring Boot expertise.",
                 List.of("Java", "Spring Boot", "PostgreSQL"),
                 CompanyTone.FORMAL,
-                List.of(), null, null, null, null, null);
+                List.of(), null, null, null, null, null, null);
             when(userProfileRepository.findByUserId(any())).thenReturn(Optional.of(validProfile));
 
             Long jobId = 7L;
@@ -398,7 +476,7 @@ class EmailGenerationServiceTest {
                 "Experienced Java developer with Spring Boot expertise.",
                 List.of("Java", "Spring Boot", "PostgreSQL"),
                 CompanyTone.FORMAL,
-                List.of(), null, null, null, null, null);
+                List.of(), null, null, null, null, null, null);
             when(userProfileRepository.findByUserId(any())).thenReturn(Optional.of(validProfile));
 
             Long jobId = 8L;
@@ -426,7 +504,7 @@ class EmailGenerationServiceTest {
                 "Experienced Java developer with Spring Boot expertise.",
                 List.of("Java", "Spring Boot"),
                 CompanyTone.FORMAL,
-                List.of(), null, null, null, null, null);
+                List.of(), null, null, null, null, null, null);
             when(userProfileRepository.findByUserId(any())).thenReturn(Optional.of(validProfile));
 
             Long jobId = 9L;
@@ -465,7 +543,7 @@ class EmailGenerationServiceTest {
                     "Developer role");
             UserProfile profile = new UserProfile(null, 1L,
                     "Experienced Java developer.", List.of("Java"), CompanyTone.FORMAL, List.of(),
-                    null, null, null, null, null);
+                    null, null, null, null, null, null);
 
             var existingSent = new EmailDraft(100L, jobId, 1L, "Subject", "Body",
                     EmailStatus.SENT, LocalDateTime.now(), LocalDateTime.now());
@@ -486,6 +564,39 @@ class EmailGenerationServiceTest {
         }
 
         @Test
+        @DisplayName("generate should return the existing SENT marker and persist nothing when the job was applied on the portal (recipientEmail is null)")
+        void generate_whenExternalApplyMarkerSent_shouldSkipRegeneration() {
+            Long jobId = 12L;
+            Job job = new Job(jobId, "Developer", "MTP",
+                    "https://example.com/job/12", "Description", LocalDate.now(), "test");
+            JobAnalysis analysis = new JobAnalysis(null, null, null, 10,
+                    List.of(), List.of("Java"),
+                    CompanyTone.FORMAL,
+                    "Developer role");
+            UserProfile profile = new UserProfile(null, 1L,
+                    "Experienced Java developer.", List.of("Java"), CompanyTone.FORMAL, List.of(),
+                    null, null, null, null, null, null);
+
+            var externalApplyMarker = new EmailDraft(200L, jobId, 1L,
+                    "Subject: [Aplicação externa]",
+                    "Inscrição realizada diretamente no portal da vaga. Nenhum e-mail foi enviado.",
+                    EmailStatus.SENT, LocalDateTime.now(), LocalDateTime.now());
+
+            when(jobRepository.findById(jobId)).thenReturn(Optional.of(job));
+            when(jobAnalysisRepository.findByJobIdAndUserId(jobId, 1L)).thenReturn(Optional.of(analysis));
+            when(userProfileRepository.findByUserId(any())).thenReturn(Optional.of(profile));
+            when(emailDraftRepository.findByJobIdAndUserId(jobId, 1L)).thenReturn(Optional.of(externalApplyMarker));
+
+            EmailDraft result = emailGenerationService.generate(1L, jobId);
+
+            assertEquals(externalApplyMarker.id(), result.id());
+            assertEquals(EmailStatus.SENT, result.status());
+            verify(aiPort, never()).complete(any());
+            verify(templateEmailService, never()).generate(any());
+            verify(emailDraftRepository, never()).save(any());
+        }
+
+        @Test
         @DisplayName("generate should proceed normally to PENDING when no SENT pair exists for the contact email")
         void generate_whenDifferentEmailForSameJob_shouldGenerateNormally() {
             Long jobId = 11L;
@@ -497,7 +608,7 @@ class EmailGenerationServiceTest {
                     "Developer role");
             UserProfile profile = new UserProfile(null, 1L,
                     "Experienced Java developer.", List.of("Java"), CompanyTone.FORMAL, List.of(),
-                    null, null, null, null, null);
+                    null, null, null, null, null, null);
 
             when(jobRepository.findById(jobId)).thenReturn(Optional.of(job));
             when(jobAnalysisRepository.findByJobIdAndUserId(jobId, 1L)).thenReturn(Optional.of(analysis));
@@ -512,6 +623,209 @@ class EmailGenerationServiceTest {
             assertEquals(EmailStatus.PENDING, draft.status());
             verify(aiPort).complete(any());
             verify(emailDraftRepository).save(any());
+        }
+    }
+
+    @Nested
+    @DisplayName("Scenario 9: refusal reason written back to bot memory")
+    class RefusalMemoryWritebackTests {
+
+        @Test
+        @DisplayName("generate should write the NO_APPLY reason to bot memory when a refusal is finalized")
+        void generate_whenNoApplyRefusal_shouldWriteReasonToBotMemory() {
+            when(aiPort.complete(any())).thenReturn("NO_APPLY: stack entirely outside candidate");
+            when(emailDraftRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            UserProfile profile = new UserProfile(null, 1L,
+                    "Experienced Java developer.", List.of("Java"), CompanyTone.FORMAL, List.of(),
+                    null, null, null, null, null, null);
+            when(userProfileRepository.findByUserId(any())).thenReturn(Optional.of(profile));
+
+            Long jobId = 20L;
+            Job job = new Job(jobId, "COBOL Dev", "CompanyM",
+                    "https://example.com/job/20", "Description", LocalDate.now(), "test");
+            JobAnalysis analysis = new JobAnalysis(null, null, null, 5,
+                    List.of(), List.of("Java"),
+                    CompanyTone.FORMAL,
+                    "Mainframe role");
+
+            when(jobRepository.findById(jobId)).thenReturn(Optional.of(job));
+            when(jobAnalysisRepository.findByJobIdAndUserId(jobId, 1L)).thenReturn(Optional.of(analysis));
+
+            EmailDraft draft = emailGenerationService.generate(1L, jobId);
+
+            assertEquals(EmailStatus.REJECTED, draft.status());
+            verify(botMemorySyncService).writeMemoryEntry(1L, "stack entirely outside candidate");
+        }
+
+        @Test
+        @DisplayName("generate should still return the REJECTED draft when the memory write fails")
+        void generate_whenMemoryWriteFails_shouldStillReturnRejectedDraft() {
+            when(aiPort.complete(any())).thenReturn("NO_APPLY: sales role, non-tech");
+            when(emailDraftRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            doThrow(new RuntimeException("disk full"))
+                    .when(botMemorySyncService).writeMemoryEntry(eq(1L), anyString());
+            UserProfile profile = new UserProfile(null, 1L,
+                    "Experienced Java developer.", List.of("Java"), CompanyTone.FORMAL, List.of(),
+                    null, null, null, null, null, null);
+            when(userProfileRepository.findByUserId(any())).thenReturn(Optional.of(profile));
+
+            Long jobId = 21L;
+            Job job = new Job(jobId, "Sales Analyst", "CompanyN",
+                    "https://example.com/job/21", "Description", LocalDate.now(), "test");
+            JobAnalysis analysis = new JobAnalysis(null, null, null, 5,
+                    List.of(), List.of("Java"),
+                    CompanyTone.FORMAL,
+                    "Non-tech role");
+
+            when(jobRepository.findById(jobId)).thenReturn(Optional.of(job));
+            when(jobAnalysisRepository.findByJobIdAndUserId(jobId, 1L)).thenReturn(Optional.of(analysis));
+
+            EmailDraft draft = emailGenerationService.generate(1L, jobId);
+
+            assertNotNull(draft);
+            assertEquals(EmailStatus.REJECTED, draft.status());
+            assertEquals("NO_APPLY: sales role, non-tech", draft.body());
+            verify(emailDraftRepository).save(draft);
+        }
+    }
+
+    @Nested
+    @DisplayName("Scenario 10: preferences consumed in the generation prompt")
+    class PreferencesPromptTests {
+
+        @Test
+        @DisplayName("generate should include the preferences block and rule 12 in the prompt when preferences are set")
+        void generate_whenPreferencesSet_shouldIncludePreferencesInPrompt() {
+            String aiResponse = """
+                Subject: Application for Java Developer Position
+
+                Olá.
+
+                Eu me candidato à vaga.
+
+                Atenciosamente,
+                Juan Peruzzo
+                """;
+
+            when(emailDraftRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            UserProfile prefProfile = new UserProfile(null, 1L,
+                    "Experienced Java developer with Spring Boot expertise.",
+                    List.of("Java", "Spring Boot", "PostgreSQL"),
+                    CompanyTone.FORMAL,
+                    List.of(), null, null, null, null, null,
+                    new UserPreferences(new WorkPreference.Remote(), 5000, List.of("Acme Corp")));
+            when(userProfileRepository.findByUserId(any())).thenReturn(Optional.of(prefProfile));
+
+            Long jobId = 30L;
+            Job job = new Job(jobId, "Java Developer", "CompanyX",
+                    "https://example.com/job/30", "Description", LocalDate.now(), "test");
+            JobAnalysis analysis = new JobAnalysis(null, null, null, 40,
+                    List.of("Java", "Spring Boot"),
+                    List.of("Kubernetes"),
+                    CompanyTone.FORMAL,
+                    "Java developer position");
+
+            when(jobRepository.findById(jobId)).thenReturn(Optional.of(job));
+            when(jobAnalysisRepository.findByJobIdAndUserId(jobId, 1L)).thenReturn(Optional.of(analysis));
+
+            ArgumentCaptor<String> promptCaptor = ArgumentCaptor.forClass(String.class);
+            when(aiPort.complete(promptCaptor.capture())).thenReturn(aiResponse);
+            emailGenerationService.generate(1L, jobId);
+
+            String prompt = promptCaptor.getValue();
+            assertTrue(prompt.contains("Candidate preferences"));
+            assertTrue(prompt.contains("Work model: Remote"));
+            assertTrue(prompt.contains("Salary floor: R$ 5000"));
+            assertTrue(prompt.contains("Acme Corp"));
+            assertTrue(prompt.contains("NO_APPLY"));
+        }
+
+        @Test
+        @DisplayName("generate should NOT include the preferences block in the prompt when preferences are absent")
+        void generate_whenNoPreferences_shouldNotIncludePreferencesBlock() {
+            String aiResponse = """
+                Subject: Application for Java Developer Position
+
+                Olá.
+
+                Eu me candidato à vaga.
+
+                Atenciosamente,
+                Juan Peruzzo
+                """;
+
+            UserProfile plainProfile = new UserProfile(null, 1L,
+                    "Experienced Java developer with Spring Boot expertise.",
+                    List.of("Java", "Spring Boot", "PostgreSQL"),
+                    CompanyTone.FORMAL,
+                    List.of(), null, null, null, null, null, null);
+            when(userProfileRepository.findByUserId(any())).thenReturn(Optional.of(plainProfile));
+
+            Long jobId = 31L;
+            Job job = new Job(jobId, "Java Developer", "CompanyX",
+                    "https://example.com/job/31", "Description", LocalDate.now(), "test");
+            JobAnalysis analysis = new JobAnalysis(null, null, null, 40,
+                    List.of("Java", "Spring Boot"),
+                    List.of("Kubernetes"),
+                    CompanyTone.FORMAL,
+                    "Java developer position");
+
+            when(jobRepository.findById(jobId)).thenReturn(Optional.of(job));
+            when(jobAnalysisRepository.findByJobIdAndUserId(jobId, 1L)).thenReturn(Optional.of(analysis));
+
+            ArgumentCaptor<String> promptCaptor = ArgumentCaptor.forClass(String.class);
+            when(aiPort.complete(promptCaptor.capture())).thenReturn(aiResponse);
+            when(emailDraftRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+            emailGenerationService.generate(1L, jobId);
+
+            String prompt = promptCaptor.getValue();
+            assertFalse(prompt.contains("Candidate preferences"));
+        }
+
+        @Test
+        @DisplayName("generate should NOT include the preferences block when preferences are non-null but semantically blank (UserPreferences.empty())")
+        void generate_whenEmptyPreferences_shouldNotIncludePreferencesBlock() {
+            String aiResponse = """
+                Subject: Application for Java Developer Position
+
+                Olá.
+
+                Eu me candidato à vaga.
+
+                Atenciosamente,
+                Juan Peruzzo
+                """;
+
+            UserProfile emptyPrefsProfile = new UserProfile(null, 1L,
+                    "Experienced Java developer with Spring Boot expertise.",
+                    List.of("Java", "Spring Boot", "PostgreSQL"),
+                    CompanyTone.FORMAL,
+                    List.of(), null, null, null, null, null,
+                    UserPreferences.empty());
+            when(userProfileRepository.findByUserId(any())).thenReturn(Optional.of(emptyPrefsProfile));
+
+            Long jobId = 32L;
+            Job job = new Job(jobId, "Java Developer", "CompanyX",
+                    "https://example.com/job/32", "Description", LocalDate.now(), "test");
+            JobAnalysis analysis = new JobAnalysis(null, null, null, 40,
+                    List.of("Java", "Spring Boot"),
+                    List.of("Kubernetes"),
+                    CompanyTone.FORMAL,
+                    "Java developer position");
+
+            when(jobRepository.findById(jobId)).thenReturn(Optional.of(job));
+            when(jobAnalysisRepository.findByJobIdAndUserId(jobId, 1L)).thenReturn(Optional.of(analysis));
+
+            ArgumentCaptor<String> promptCaptor = ArgumentCaptor.forClass(String.class);
+            when(aiPort.complete(promptCaptor.capture())).thenReturn(aiResponse);
+            when(emailDraftRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+            emailGenerationService.generate(1L, jobId);
+
+            String prompt = promptCaptor.getValue();
+            assertFalse(prompt.contains("Candidate preferences"),
+                    "UserPreferences.empty() must not inject a preferences block");
         }
     }
 }
