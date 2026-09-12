@@ -272,9 +272,13 @@ public class InfoJobsProvider implements ExtractionStrategy {
      * Try HTML selectors for the full description, then JSON-LD, then fall back to
      * the existing card snippet.
      *
-     * <p>The CSS selector targets the live detail-page structure (verified against
-     * real pages in 2026-09): the rendered description body is the first
-     * {@code <p class="... text-break ...">} inside {@code div.js_vacancyDataPanels}.
+     * <p>The CSS selector targets the live detail-page structure:
+     * the rendered description body is the first {@code <p class="... text-break ...">}
+     * inside {@code div.js_vacancyDataPanels}.
+     * Live-proof: {@code div.js_vacancyDataPanels} was verified in 2026-09 against live
+     * InfoJobs detail pages (direct HTTP 200 fetches) — the selector matched the real
+     * description, while the previously used selectors ({@code [data-testid=job-description]},
+     * {@code .description}, {@code .job-description}) matched nothing.
      * JSON-LD stays as the documented official fallback — a {@code JobPosting} block
      * is always present on the live site.
      */

@@ -1,8 +1,8 @@
-# Spec: Filter jobs list by contact email presence + per-job draft status + matchScore
+# Spec: Filter jobs list by contact email presence + per-job draft status + matchScore + remoteOnly
 
 > **Layer:** `application` / `web`
-> **Implementation:** `JobController`, `FetchJobsService`, `JobPersistenceAdapter`, `JobJpaRepository`, `JobResponse`, `JobWithDraftStatus`, `JobAnalysisRepository`
-> **Tests:** `JobControllerTest`, `FetchJobsServiceTest`
+> **Implementation:** `JobController`, `FetchJobsService`, `WorkModelSignals`, `JobPersistenceAdapter`, `JobJpaRepository`, `JobResponse`, `JobWithDraftStatus`, `JobAnalysisRepository`
+> **Tests:** `JobControllerTest`, `FetchJobsServiceTest`, `WorkModelSignalsTest`
 
 ---
 
@@ -64,13 +64,32 @@
 - When `minScore` is omitted or `null`, no score filtering occurs.
 
 ### Scenario 9: `minScore` combined with other filters
-- **GIVEN** `GET /api/jobs?minScore=60&hasEmail=true&excludeApplied=true`
+- **GIVEN** `GET /api/jobs?minScore=60&hasEmail=true&excludeApplied=true&remoteOnly=true`
 - **WHEN** the endpoint is called
 - **THEN** filters are applied in this order:
   1. `hasEmail` (base query selection)
   2. `excludeApplied` (drop SENT-draft jobs)
-  3. `minScore` (drop below-threshold / unanalyzed jobs)
+  3. `remoteOnly` (drop jobs without an explicit remote signal — see Scenario 10)
+  4. `minScore` (drop below-threshold / unanalyzed jobs)
 - Final list is sorted by `matchScore` descending (nulls last).
+
+### Scenario 10: `remoteOnly` — explicit remote signal only
+- **GIVEN** `GET /api/jobs?remoteOnly=true`
+- **WHEN** the endpoint is called
+- **THEN** only jobs whose `title` or `description` carries an **explicit remote
+  signal** are returned; jobs with an onsite, hybrid or negated-remote signal are
+  dropped. Jobs with **no work-model signal at all** (silent/ambiguous
+  description) are **always dropped** when `remoteOnly` is specified — the
+  exclusion of unanalyzed jobs follows the same rule as `minScore` (Scenario 8).
+- Detection uses the single shared work-model vocabulary
+  (`application/service/WorkModelSignals`), the same one consumed by
+  `JobPreferenceScorer`: provider labels (`home office`, `híbrido`, `presencial`,
+  `onsite`, ...) plus the scorer terms. Matching folds diacritics before
+  comparison, so accented and unaccented forms resolve to the same canonical
+  term, and terms are anchored at word boundaries so embedded spellings never
+  false-positive. The negation variants (`não é remoto`, `nao remoto`,
+  `sem remoto`, `not a remote position`, ...) always clear the remote signal.
+- When `remoteOnly` is omitted or `false`, no work-model filtering occurs.
 
 ### User scoping
 - Draft lookups are always scoped to the current authenticated user via
@@ -94,7 +113,7 @@
 ## API
 
 ```
-GET /api/jobs?hasEmail=true&excludeApplied=true&minScore=60
+GET /api/jobs?hasEmail=true&excludeApplied=true&minScore=60&remoteOnly=true
 ```
 
 | Parameter | Type | Required | Description |
@@ -102,6 +121,7 @@ GET /api/jobs?hasEmail=true&excludeApplied=true&minScore=60
 | `hasEmail` | `boolean` | no | Filter by contact email presence. Omit for all jobs. |
 | `excludeApplied` | `boolean` | no | Drop jobs the current user already applied to (SENT draft for the `(jobId, userId)` pair). Omit to keep them. |
 | `minScore` | `integer` | no | Drop jobs whose user-scoped matchScore is below this threshold. Unanalyzed jobs (null score) are also dropped when specified. Omit to include all. |
+| `remoteOnly` | `boolean` | no | Keep only jobs with an explicit remote work-model signal in title/description. Silent/ambiguous jobs are dropped when specified (same rule as `minScore`, Scenario 10). Omit to include all. |
 
 Response list items gain:
 - `draftStatus` field (`null` when the user has no draft; the draft `EmailStatus` otherwise).
@@ -111,17 +131,20 @@ The fields are also present on `GET /api/jobs/{id}` as `null` (detail endpoint d
 ## Data flow
 
 ```
-GET /api/jobs?hasEmail=true&excludeApplied=true&minScore=60
+GET /api/jobs?hasEmail=true&excludeApplied=true&minScore=60&remoteOnly=true
   → JobController.getAllJobs(@RequestParam(required = false) Boolean hasEmail,
                              @RequestParam(required = false) Boolean excludeApplied,
-                             @RequestParam(required = false) Integer minScore)
+                             @RequestParam(required = false) Integer minScore,
+                             @RequestParam(required = false) Boolean remoteOnly)
     → currentUserService.getCurrentUserId()
-    → FetchJobsService.findAllWithDraftStatus(userId, hasEmail, excludeApplied, minScore)
+    → FetchJobsService.findAllWithDraftStatus(userId, hasEmail, excludeApplied, minScore, remoteOnly)
       → list = findAll(hasEmail)                 // existing repository filter
       → for each job:
           → emailDraftRepository.findByJobIdAndUserId(jobId, userId)  → draftStatus
           → jobAnalysisRepository.findByJobIdAndUserId(jobId, userId) → matchScore
       → if excludeApplied == true → drop entries with draftStatus == SENT
+      → if remoteOnly == true → drop entries whose title/description has no
+        explicit remote signal (shared vocabulary: application/service/WorkModelSignals)
       → if minScore != null → drop entries where matchScore is null or matchScore < minScore
       → sort: scored jobs descending by matchScore, unanalyzed (null) last
     → JobController maps JobWithScore → JobResponse (job fields + draftStatus + matchScore)
@@ -141,10 +164,16 @@ Optional<EmailDraft> findByJobIdAndUserId(Long jobId, Long userId);
 Optional<JobAnalysis> findByJobIdAndUserId(Long jobId, Long userId);
 
 // application/port/in/JobWithDraftStatus — extended value object
-record JobWithDraftStatus(Job job, EmailStatus draftStatus, Integer matchScore)
+record JobWithDraftStatus(Job job, EmailStatus draftStatus, Integer matchScore, ApplicationLifecycle lifecycleState)
 
 // ListJobsUseCase (inbound port) — extended signature
-List<JobWithDraftStatus> findAllWithDraftStatus(Long userId, Boolean hasEmail, Boolean excludeApplied, Integer minScore);
+List<JobWithDraftStatus> findAllWithDraftStatus(Long userId, Boolean hasEmail, Boolean excludeApplied, Integer minScore, Boolean remoteOnly);
+
+// application/service/WorkModelSignals — shared work-model vocabulary + matcher
+boolean isRemote(String titleAndDescription);    // negation-aware
+boolean isOnsite(String titleAndDescription);
+boolean isHybrid(String titleAndDescription);
+boolean isRemoteOnly(String titleAndDescription); // explicit remote, no onsite/hybrid/negation conflict
 
 // web/dto/JobResponse — gains one component
 Integer matchScore   // nullable; null = no analysis for the current user
@@ -159,6 +188,7 @@ Integer matchScore   // nullable; null = no analysis for the current user
 | `hasEmail` is not a boolean | 400 | `"hasEmail must be a boolean value"` (Spring handles this automatically) |
 | `excludeApplied` is not a boolean | 400 | `"excludeApplied must be a boolean value"` (Spring handles this automatically) |
 | `minScore` is not an integer | 400 | `"minScore must be an integer value"` (Spring handles this automatically) |
+| `remoteOnly` is not a boolean | 400 | `"remoteOnly must be a boolean value"` (Spring handles this automatically) |
 
 ---
 
