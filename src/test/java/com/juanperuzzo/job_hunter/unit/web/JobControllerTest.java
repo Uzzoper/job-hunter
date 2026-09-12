@@ -18,6 +18,7 @@ import com.juanperuzzo.job_hunter.application.port.in.RecordExternalApplyUseCase
 import com.juanperuzzo.job_hunter.application.port.in.SendEmailUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.TailorResumeUseCase;
 import com.juanperuzzo.job_hunter.application.port.out.TokenProvider;
+import com.juanperuzzo.job_hunter.domain.model.ApplicationLifecycle;
 import com.juanperuzzo.job_hunter.domain.model.CompanyTone;
 import com.juanperuzzo.job_hunter.domain.model.EmailDraft;
 import com.juanperuzzo.job_hunter.domain.model.EmailStatus;
@@ -213,10 +214,10 @@ class JobControllerTest {
         var jobs = List.of(
                 new JobWithDraftStatus(
                         new Job(1L, "Java Dev", "Acme", "https://acme.com/job1", "Description 1", LocalDate.now(), "test"),
-                        EmailStatus.SENT, 85),
+                        EmailStatus.SENT, 85, ApplicationLifecycle.SUBMITTED),
                 new JobWithDraftStatus(
                         new Job(2L, "React Dev", "Beta", "https://beta.com/job2", "Description 2", LocalDate.now(), "test"),
-                        null, null)
+                        null, null, null)
         );
         when(listJobsUseCase.findAllWithDraftStatus(1L, null, null, null)).thenReturn(jobs);
 
@@ -228,10 +229,12 @@ class JobControllerTest {
                 .andExpect(jsonPath("$[0].company").value("Acme"))
                 .andExpect(jsonPath("$[0].draftStatus").value("SENT"))
                 .andExpect(jsonPath("$[0].matchScore").value(85))
+                .andExpect(jsonPath("$[0].lifecycleState").value("SUBMITTED"))
                 .andExpect(jsonPath("$[1].title").value("React Dev"))
                 .andExpect(jsonPath("$[1].company").value("Beta"))
                 .andExpect(jsonPath("$[1].draftStatus").value(nullValue()))
-                .andExpect(jsonPath("$[1].matchScore").value(nullValue()));
+                .andExpect(jsonPath("$[1].matchScore").value(nullValue()))
+                .andExpect(jsonPath("$[1].lifecycleState").value(nullValue()));
 
         verify(listJobsUseCase).findAllWithDraftStatus(1L, null, null, null);
     }
@@ -645,17 +648,19 @@ class JobControllerTest {
         var jobs = List.of(
                 new JobWithDraftStatus(
                         new Job(1L, "Java Dev", "Acme", "https://acme.com/job1", "Description 1", LocalDate.now(), "test"),
-                        EmailStatus.SENT, 85),
+                        EmailStatus.SENT, 85, ApplicationLifecycle.SUBMITTED),
                 new JobWithDraftStatus(
                         new Job(2L, "React Dev", "Beta", "https://beta.com/job2", "Description 2", LocalDate.now(), "test"),
-                        null, null)
+                        null, null, null)
         );
         when(listJobsUseCase.findAllWithDraftStatus(1L, null, null, null)).thenReturn(jobs);
 
         mockMvc.perform(get("/api/jobs"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].matchScore").value(85))
-                .andExpect(jsonPath("$[1].matchScore").value(nullValue()));
+                .andExpect(jsonPath("$[0].lifecycleState").value("SUBMITTED"))
+                .andExpect(jsonPath("$[1].matchScore").value(nullValue()))
+                .andExpect(jsonPath("$[1].lifecycleState").value(nullValue()));
 
         verify(listJobsUseCase).findAllWithDraftStatus(1L, null, null, null);
     }

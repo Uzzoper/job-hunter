@@ -11,6 +11,7 @@ import com.juanperuzzo.job_hunter.application.port.out.JobAnalysisRepository;
 import com.juanperuzzo.job_hunter.application.port.out.JobRepository;
 import com.juanperuzzo.job_hunter.application.port.out.ScraperPort;
 import com.juanperuzzo.job_hunter.domain.exception.JobNotFoundException;
+import com.juanperuzzo.job_hunter.domain.model.ApplicationLifecycle;
 import com.juanperuzzo.job_hunter.domain.model.EmailDraft;
 import com.juanperuzzo.job_hunter.domain.model.EmailStatus;
 import com.juanperuzzo.job_hunter.domain.model.Job;
@@ -93,7 +94,11 @@ public class FetchJobsService implements FetchJobsUseCase, ListJobsUseCase, GetJ
         // At the current job-list scale this is negligible and keeps the change
         // reuse-only; a single bulk lookup replaces this if the list grows.
         var entries = findAll(hasEmail).stream()
-                .map(job -> new JobWithDraftStatus(job, draftStatus(job, userId), matchScore(job, userId)))
+                .map(job -> {
+                    var status = draftStatus(job, userId);
+                    var lifecycle = ApplicationLifecycle.fromEmailStatus(status).orElse(null);
+                    return new JobWithDraftStatus(job, status, matchScore(job, userId), lifecycle);
+                })
                 .filter(entry -> !Boolean.TRUE.equals(excludeApplied) || entry.draftStatus() != EmailStatus.SENT)
                 .toList();
 
