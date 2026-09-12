@@ -274,6 +274,19 @@ The executor runs **observe → classify → act → verify** against each **liv
 - React-controlled inputs ignore direct `.value` assignment: dispatch native
   `input`/`change` events (bubbles) and always re-read field values afterwards.
 
+### Post-final-action evidence (learned in production)
+
+- After the apply-final click, take a FRESH snapshot before evaluating: never
+  reuse pre-submit evidence. The record must reflect the post-submit page.
+- Records are written ONLY by calling `verdict.py` — never hand-compose the
+  `applications/<job_id>.json` JSON.
+- Known Gupy interstitial: the "Apresente-se!" modal (buttons "Personalizar
+  candidatura" / "Finalizar candidatura") means NOT submitted — a pending
+  "Finalizar" button is proof the flow is incomplete.
+- Gupy may render success inline on the same URL (SPA, no `/success` change):
+  the AX success text ("Candidatura finalizada!") is the primary signal,
+  the URL segment only a bonus.
+
 Policy gates: `never_fill_credentials` and `stop_on_auth_url` are always `true` and cannot
 be disabled from the CLI; `require_confirmation_before_final_submit` flips to `false` via
 `--confirmed` / `--auto-apply`.
