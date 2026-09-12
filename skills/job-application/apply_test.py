@@ -36,6 +36,26 @@ PORTAL = "gupy"
 GUPY_URL = "https://jobs.gupy.io/jobs/12345-desenvolvedor-java"
 JOB_ID = "12345-desenvolvedor-java"
 
+
+def _write_applied_record(apps: Path, key: str, backend_id) -> Path:
+    """Test fixture: write an applied verdict record under applications/.
+
+    Mirrors verdict.write_applied_record's record shape (status applied +
+    backend_job_id). backend_id is written as-is, so the type-safe reader
+    comparison is exercised with either an int or a str.
+    """
+    apps.mkdir(parents=True, exist_ok=True)
+    record = apps / f"{key}.json"
+    record.write_text(
+        json.dumps({
+            "job_id": key,
+            "status": "applied",
+            "backend_job_id": backend_id,
+        }),
+        encoding="utf-8",
+    )
+    return record
+
 VALID_PROFILE = {
     "name": "Juan Antonio Peruzzo",
     "email": "juan@example.com",
@@ -414,13 +434,7 @@ class ApiFirstTests(unittest.TestCase):
         }
         # The record lives under a DIFFERENT slug (base64 key) but carries the
         # same backend id — the reader's backend_job_id fallback must find it.
-        apps = self.mem / "applications"
-        apps.mkdir(parents=True, exist_ok=True)
-        (apps / "base64-other-key.json").write_text(
-            json.dumps({"job_id": "base64-other-key", "status": "applied",
-                        "backend_job_id": 42}),
-            encoding="utf-8",
-        )
+        _write_applied_record(self.mem / "applications", "base64-other-key", 42)
         code, out = self._run_api("--job-id", "42")
         self.assertEqual(code, 1)
         data = json.loads(out)
@@ -433,13 +447,7 @@ class ApiFirstTests(unittest.TestCase):
         mock_token.return_value = "tok-1"
         mock_get.return_value = self.API_JOB  # id 7, url .../jobs/777-java-pleno
         # A record for a DIFFERENT backend id must not false-positive.
-        apps = self.mem / "applications"
-        apps.mkdir(parents=True, exist_ok=True)
-        (apps / "some-other.json").write_text(
-            json.dumps({"job_id": "some-other", "status": "applied",
-                        "backend_job_id": 99}),
-            encoding="utf-8",
-        )
+        _write_applied_record(self.mem / "applications", "some-other", 99)
         code, out = self._run_api("--job-id", "7")
         self.assertEqual(code, 0)
         data = json.loads(out)
@@ -565,6 +573,25 @@ class JobIdHardeningTests(unittest.TestCase):
             "https://portal.gupy.io/jobs",  # bare /jobs directory, no slug
         ):
             self.assertIsNone(apply.derive_job_id(url), f"expected None for {url}")
+
+    def test_steps_without_curriculum_still_refuses(self):
+        # PR #61 finding: a numbered steps/<n> hop is in-flow BY ITSELF — the
+        # trailing /curriculum segment is not required. .../steps/1 must never
+        # mint the step index "1" as a job slug.
+        self.assertIsNone(apply.derive_job_id(
+            "https://portal.gupy.io/candidates/steps/1"))
+        self.assertIsNone(apply.derive_job_id(
+            "https://mtpbrasil.gupy.io/candidates/steps/1/"))
+        self.assertIsNone(apply.derive_job_id(
+            "https://portal.gupy.io/candidates/steps/1/curriculum"))
+
+    def test_step_singular_numeric_segment_refuses(self):
+        # PR #61 finding: the singular "step/<n>" hop is in-flow too — both
+        # .../step/1/curriculum and a bare .../step/1 hold no job slug.
+        self.assertIsNone(apply.derive_job_id(
+            "https://portal.gupy.io/candidates/step/1/curriculum"))
+        self.assertIsNone(apply.derive_job_id(
+            "https://portal.gupy.io/candidates/step/1"))
 
     def test_legal_non_gupy_detail_with_candidates_segment_derives(self):
         # PR #60 fallout: a legal detail URL whose path contains a lone
@@ -732,15 +759,7 @@ class IdempotencyTests(unittest.TestCase):
         # numeric/base64 key mismatch for the same real job still kills the
         # plan instead of re-applying.
         apps = self.mem / "applications"
-        apps.mkdir(parents=True, exist_ok=True)
-        (apps / "base64-other-key.json").write_text(
-            json.dumps({
-                "job_id": "base64-other-key",
-                "status": "applied",
-                "backend_job_id": 42,
-            }),
-            encoding="utf-8",
-        )
+        _write_applied_record(apps, "base64-other-key", 42)
         hit = apply.check_idempotency(self.mem, "wanted-slug", backend_job_id=42)
         self.assertIsNotNone(hit)
         self.assertEqual(hit["job_id"], "base64-other-key")
@@ -749,6 +768,23 @@ class IdempotencyTests(unittest.TestCase):
             apply.check_idempotency(self.mem, "wanted-slug", backend_job_id=99))
         self.assertIsNone(apply.check_idempotency(self.mem, "wanted-slug"))
         self.assertFalse((apps / "wanted-slug.json").exists())
+
+    def test_backend_id_scan_str_record_matches_int_query(self):
+        # PR #61 finding: the record body may hold the id as a str while the
+        # caller queries with the api int — both sides must compare as str.
+        apps = self.mem / "applications"
+        _write_applied_record(apps, "base64-other-key", "42")
+        hit = apply.check_idempotency(self.mem, "wanted-slug", backend_job_id=42)
+        self.assertIsNotNone(hit)
+        self.assertEqual(hit["job_id"], "base64-other-key")
+
+    def test_backend_id_scan_int_record_matches_str_query(self):
+        # PR #61 finding: the reverse direction — record int, caller str.
+        apps = self.mem / "applications"
+        _write_applied_record(apps, "base64-other-key", 42)
+        hit = apply.check_idempotency(self.mem, "wanted-slug", backend_job_id="42")
+        self.assertIsNotNone(hit)
+        self.assertEqual(hit["job_id"], "base64-other-key")
 
     def test_numeric_slug_round_trips_to_single_json_file(self):
         # Extension hygiene (PR #60 fallout): derive strips one trailing .json,
