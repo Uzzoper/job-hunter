@@ -89,7 +89,7 @@ public class FetchJobsService implements FetchJobsUseCase, ListJobsUseCase, GetJ
     }
 
     @Override
-    public List<JobWithDraftStatus> findAllWithDraftStatus(Long userId, Boolean hasEmail, Boolean excludeApplied, Integer minScore) {
+    public List<JobWithDraftStatus> findAllWithDraftStatus(Long userId, Boolean hasEmail, Boolean excludeApplied, Integer minScore, Boolean remoteOnly) {
         // Deliberately per-job lookups (1 draft + 1 analysis query per listed job, i.e. 2N+1).
         // At the current job-list scale this is negligible and keeps the change
         // reuse-only; a single bulk lookup replaces this if the list grows.
@@ -100,6 +100,8 @@ public class FetchJobsService implements FetchJobsUseCase, ListJobsUseCase, GetJ
                     return new JobWithDraftStatus(job, status, matchScore(job, userId), lifecycle);
                 })
                 .filter(entry -> !Boolean.TRUE.equals(excludeApplied) || entry.draftStatus() != EmailStatus.SENT)
+                .filter(entry -> !Boolean.TRUE.equals(remoteOnly)
+                        || WorkModelSignals.isRemoteOnly(workModelSignalText(entry.job())))
                 .toList();
 
         // minScore filter: drop jobs below threshold or unanalyzed (null score)
@@ -115,6 +117,13 @@ public class FetchJobsService implements FetchJobsUseCase, ListJobsUseCase, GetJ
                         (JobWithDraftStatus e) -> e.matchScore() != null ? e.matchScore() : Integer.MIN_VALUE)
                         .reversed())
                 .toList();
+    }
+
+    /** Text source for the query-time work-model signal: title + description. */
+    private static String workModelSignalText(Job job) {
+        var title = job.title() == null ? "" : job.title();
+        var description = job.description() == null ? "" : job.description();
+        return (title + " " + description).trim();
     }
 
     private EmailStatus draftStatus(Job job, Long userId) {

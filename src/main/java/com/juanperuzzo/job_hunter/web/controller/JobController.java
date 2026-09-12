@@ -82,9 +82,10 @@ public class JobController {
     public ResponseEntity<List<JobResponse>> getAllJobs(
             @RequestParam(required = false) Boolean hasEmail,
             @RequestParam(required = false) Boolean excludeApplied,
-            @RequestParam(required = false) Integer minScore) {
+            @RequestParam(required = false) Integer minScore,
+            @RequestParam(required = false) Boolean remoteOnly) {
         Long userId = currentUserService.getCurrentUserId();
-        List<JobResponse> response = listJobsUseCase.findAllWithDraftStatus(userId, hasEmail, excludeApplied, minScore).stream()
+        List<JobResponse> response = listJobsUseCase.findAllWithDraftStatus(userId, hasEmail, excludeApplied, minScore, remoteOnly).stream()
                 .map(this::toJobResponse)
                 .collect(Collectors.toList());
         return ResponseEntity.ok(response);
