@@ -104,20 +104,21 @@ JOB_SLUG_RE = re.compile(r"/jobs/([^/?#]+)")
 def _is_application_flow_path(segments: List[str]) -> bool:
     """True when the path is an application-flow page, never a job detail.
 
-    Detail-shape matching (PR #60 fallout): a LONE keyword segment is a legal
-    detail path and derives normally (e.g. ``/candidates/<id>`` or a slug
-    literally named "steps"). Only in-flow SHAPES refuse:
+    Detail-shape matching (PR #60/#61 fallouts): a LONE keyword segment is a
+    legal detail path and derives normally (e.g. ``/candidates/<id>`` or a slug
+    literally named "steps"). Only in-flow SHAPES refuse, anywhere in the path:
       * any path under /applications/ (the list and per-application pages);
-      * the step-chain shape ``.../steps/<step>/curriculum``.
+      * any numbered step hop ``steps/<n>`` or ``step/<n>`` (the numbered
+        curriculum chain, recognized whether or not the trailing /curriculum
+        segment is present).
     """
     lowered = [segment.lower() for segment in segments]
     if "applications" in lowered:
         return True
-    try:
-        i_steps = lowered.index("steps")
-    except ValueError:
-        return False
-    return "curriculum" in lowered[i_steps + 1:]
+    for i, segment in enumerate(lowered[:-1]):
+        if segment in ("steps", "step") and lowered[i + 1].isdigit():
+            return True
+    return False
 
 
 def _strip_json_suffix(slug: str) -> str:
@@ -361,7 +362,11 @@ def check_idempotency(memory_dir: Path, job_id: str,
                     record = json.loads(candidate.read_text(encoding="utf-8"))
                 except Exception:
                     continue
-                if record.get("backend_job_id") == backend_job_id:
+                # Type-safe fallback (PR #61 finding): record bodies may hold
+                # the id as a str while the caller queries with the api int
+                # (or vice versa) — compare both sides normalized to str.
+                candidate_id = record.get("backend_job_id")
+                if candidate_id is not None and str(candidate_id) == str(backend_job_id):
                     return record
     return None
 
