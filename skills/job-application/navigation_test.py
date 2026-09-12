@@ -294,8 +294,10 @@ class NavigationGuardTests(unittest.TestCase):
 # ---------------------------------------------------------------------------
 
 class ApplyIntegrationTests(unittest.TestCase):
-    """apply.py surfaces the session expiry gate (#41) and the #38 auth/loop
-    guard via --current-url / --visited-urls, keeping the planner stateless."""
+    """apply.py surfaces the session expiry gate (#41) via --current-url and
+    keeps accepting the legacy #38 flags (--visited-urls) without interference
+    (cutover pkg 3: the deterministic auth/loop guard is retired for the loop —
+    the executor enforces those stops at runtime)."""
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -321,58 +323,30 @@ class ApplyIntegrationTests(unittest.TestCase):
             data = {"raw_stdout": proc.stdout}
         return proc.returncode, data
 
-    def test_auth_current_url_yields_expired_session_plan(self):
-        # Issue #41 supersedes the old auth_required exit for the default flow:
-        # a login page now produces an expired-session plan (exit 0) that stops
-        # at the confirm checkpoint without any fill/submit steps.
+    def test_auth_current_url_yields_session_expired_error(self):
+        # Issue #41 — pre-flight gate (cutover pkg 3): a login page stops the
+        # planner with the session_expired error (exit 0 — ask the human to
+        # authenticate); no intent is emitted.
         code, data = self.run_cli("--current-url", "https://jobs.gupy.io/login")
         self.assertEqual(code, 0)
-        self.assertTrue(data["ok"])
-        self.assertTrue(data["sessionExpired"])
-        types = [s["type"] for s in data["steps"]]
-        self.assertEqual(types, ["verify_session", "confirm_checkpoint"])
+        self.assertEqual(data["error"], "session_expired")
+        self.assertIn("login_url", data)
+        self.assertNotIn("intent", data)
 
-    def test_auth_required_when_session_check_skipped(self):
-        # With --skip-session-check the issue #38 guard still fires auth_required
-        # for login/auth URLs.
-        code, data = self.run_cli(
-            "--current-url", "https://jobs.gupy.io/login", "--skip-session-check"
-        )
-        self.assertEqual(code, 1)
-        self.assertEqual(data["error"], "auth_required")
-        self.assertIn("manual_url", data)
-        self.assertEqual(data["manual_url"], GUPY_URL)
-        self.assertIn("screenshot_path", data)
-
-    def test_navigation_loop_error(self):
-        code, data = self.run_cli(
-            "--visited-urls", ",".join([GUPY_URL, GUPY_URL, GUPY_URL])
-        )
-        self.assertEqual(code, 1)
-        self.assertEqual(data["error"], "navigation_loop")
-        self.assertIn("manual_url", data)
-        self.assertEqual(data["manual_url"], GUPY_URL)
-        self.assertIn("screenshot_path", data)
-
-    def test_two_visits_is_not_a_loop(self):
-        code, data = self.run_cli(
-            "--visited-urls", ",".join([GUPY_URL, GUPY_URL])
-        )
-        self.assertEqual(code, 0)
-        self.assertTrue(data["ok"])
-
-    def test_no_guard_flags_is_normal_plan(self):
+    def test_no_guard_flags_emits_intent(self):
         code, data = self.run_cli()
         self.assertEqual(code, 0)
-        self.assertTrue(data["ok"])
+        self.assertIn("intent", data)
+        self.assertNotIn("steps", data)
 
-    def test_partial_failure_of_old_flags_still_works(self):
-        # Adding the new flags must not disturb the existing confirm/record flow.
+    def test_legacy_flags_still_accepted(self):
+        # The old #38 flags stay accepted (verdict-input / executor flags); they
+        # no longer trigger auth_required / navigation_loop errors.
         code, data = self.run_cli(
             "--current-url", GUPY_URL, "--visited-urls", GUPY_URL
         )
         self.assertEqual(code, 0)
-        self.assertTrue(data["ok"])
+        self.assertIn("intent", data)
 
 
 if __name__ == "__main__":
