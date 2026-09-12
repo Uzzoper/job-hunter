@@ -9,6 +9,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 
@@ -74,6 +75,9 @@ class RecordExternalApplyConcurrencyTest {
     @Autowired
     private EmailDraftJpaRepository emailDraftJpaRepository;
 
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
+
     @Test
     @DisplayName("ten simultaneous records should leave one row, all succeed, one created, zero 409")
     void record_whenTenCallersRace_shouldLeaveOneRowAndSucceedForAll() throws Exception {
@@ -100,6 +104,10 @@ class RecordExternalApplyConcurrencyTest {
             assertThat(results.stream().filter(RecordExternalApplyResult::created).count()).isEqualTo(1);
             assertThat(results.stream().map(r -> r.draft().status().name()).distinct().toList())
                     .containsExactly("SENT");
+            // Issue #56 write path: the persisted marker carries SUBMITTED lifecycle state.
+            var states = jdbcTemplate.queryForList(
+                    "SELECT lifecycle_state FROM email_drafts WHERE job_id = ?", String.class, job.id());
+            assertThat(states).containsExactly("SUBMITTED");
         } finally {
             pool.shutdownNow();
         }
