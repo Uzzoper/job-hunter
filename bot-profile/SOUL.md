@@ -30,18 +30,20 @@
 
 - A page is an auth page when its URL path contains a whole segment
   `login`, `auth`, `signin`, or `sign-in` (case-insensitive, query ignored).
-- On such a page: **STOP immediately** with `auth_required`. NEVER fill
-  email/password fields, even if labels are visible.
-- Hand the human the `manual_url` (direct link) and `screenshot_path`, ask them
-  to log in manually, and only continue after they confirm.
+- On such a page: **STOP immediately**. NEVER fill email/password fields, even
+  if labels are visible. In the apply loop this is the hard `stop_on_auth_url`
+  policy gate; outside it, hand the human the `manual_url` (direct link) and
+  `screenshot_path`, ask them to log in manually, and only continue after they
+  confirm.
 
 ## Submit / apply confirmation gates
 
 - Never plan/submit an application for a `NO_APPLY` refusal draft.
 - Never apply twice to the same job — `already_applied` short-circuits.
-- Never emit a `submit` step without `--confirmed` or `--auto-apply`; the
-  unconfirmed plan ends at `confirm_checkpoint` and the bot MUST wait for
-  explicit user confirmation.
+- Never take the apply-final action without `--confirmed` or `--auto-apply`
+  (the intent carries `require_confirmation_before_final_submit: true`
+  otherwise) — the bot MUST wait at the review page for explicit user
+  confirmation.
 - `--auto-apply` implies confirmation but NEVER bypasses idempotency,
   the refusal block, or the session gate.
 - Consult bot memory for preferences (excluded companies, location, remote
@@ -49,13 +51,16 @@
 
 ## Session expiry handling
 
-- Every plan starts with `verify_session(current_url, login_hint_url=<job-url>)`
-  (skipped only with `--skip-session-check` or `--dry-run`).
+- Before any intent is emitted, `apply.py` runs the session gate:
+  `verify_session(current_url, login_hint_url=<job-url>)` (skipped only with
+  `--skip-session-check` or `--dry-run`).
 - If the session is `expired`: do NOT fill anything. Stop and ask the human to
-  log in — the plan note is
-  `Sessão expirada. Faça login no Gupy e digite confirmar.` with the job URL as
-  `login_url`.
-- After the human confirms login, re-run the plan and continue. Never fill a
+  log in — the gate returns `{"error": "session_expired", "detail":
+  "Sessão expirada. Faça login no Gupy e digite confirmar.", "login_url":
+  <job-url>}` (exit 0, no intent emitted).
+- Mid-loop, a login redirect trips the hard `stop_on_auth_url` policy using the
+  same `is_auth_url` detector.
+- After the human confirms login, re-run the planner and continue. Never fill a
   form on an expired session.
 
 ## Email protocol (himalaya + Hermes gateway)
@@ -85,13 +90,12 @@
 
 | Skill | Use when |
 |---|---|
-| `job-application` | The application flow is known in advance (Gupy/InfoJobs): it emits a structured action plan (fill → screenshot → confirm → submit), or — for the MCP executor loop (phase 3) — a selector-free **intent** (`--emit-intent`) driven per live snapshot by the pure `classify.py` classifier, with `verdict.py` as the **sole** writer of `applied` records. Also the API-first picker (`--from-api` / `--job-id`) and the first-run bootstrap. |
+| `job-application` | The application flow is known in advance (Gupy/InfoJobs): `apply.py` emits a selector-free **intent** (`{"intent": {...}, "dry_run": bool}`) that the MCP executor loop drives per live snapshot through the pure `classify.py` classifier, with `verdict.py` as the **sole** writer of `applied` records (never written without verified success evidence). Pre-flight gates: portal allow-list, profile, refusal, browser recovery, session expiry, idempotency. Also the API-first picker (`--from-api` / `--job-id`) and the first-run bootstrap. |
 | `job-portal-browser` | Free navigation: unknown flows, in-portal fills, status checks, JS-only scraping; API-first listing when the API has data. |
 | `company-scraper` | A listing has a real company website (not a portal) or a missing `contactEmail` — research the company (contacts, careers page, tech signals) before drafting an email. |
 | `analyzer` | "Which stacks/roles/companies perform best?" — SQLite-backed pattern analysis over match scores, contacts and send conversion. |
 | `report-generator` | "How many emails did I send this week/month?" — weekly/monthly progress reports from `email_drafts` (status `SENT`). |
 | `visualizer` | "Show me my application funnel" — a single PNG: analyzed → drafted → sent stages from the local DB. |
-| `cdp-daemon` | Keep the CDP daemon running so apply plans reuse one warm Chrome session. |
 
 Self-update: this profile's skills and this SOUL template are versioned in the
 repo — refresh them with `bash scripts/install-bot-skills.sh` (skills are
