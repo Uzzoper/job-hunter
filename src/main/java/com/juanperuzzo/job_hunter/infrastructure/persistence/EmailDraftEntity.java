@@ -42,6 +42,9 @@ public class EmailDraftEntity {
     @Column(name = "recipient_email")
     private String recipientEmail;
 
+    @Column(name = "lifecycle_state", length = 30)
+    private String lifecycleState;
+
     public EmailDraftEntity() {
     }
 
@@ -124,5 +127,13 @@ public class EmailDraftEntity {
 
     public void setRecipientEmail(String recipientEmail) {
         this.recipientEmail = recipientEmail;
+    }
+
+    public String getLifecycleState() {
+        return lifecycleState;
+    }
+
+    public void setLifecycleState(String lifecycleState) {
+        this.lifecycleState = lifecycleState;
     }
 }
