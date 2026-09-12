@@ -16,10 +16,12 @@ Cutover packages 2-3 retired the legacy execution paths from this module:
     helpers/*.py, build_action_plan, load_portal/load_helper and the whole
     skills/cdp-daemon skill were deleted. --emit-intent is now the default
     output (kept as an accepted flag for backward compatibility).
-`--record-applied` / `--confirmed` / `--auto-apply` / `--verify-with` /
-`--visited-urls` / `--current-url` remain accepted as verdict-input / executor
-flags; apply.py itself NEVER writes applications/ records and never calls
-job_api.api_record_applied.
+`--confirmed` / `--auto-apply` / `--verify-with` / `--visited-urls` /
+`--current-url` remain accepted as verdict-input / executor flags; apply.py
+itself NEVER writes applications/ records and never calls
+job_api.api_record_applied. (`--record-applied` was removed — dead flag, the
+verdict stage is the sole recorder; passing it now fails as an unrecognized
+argument, exit 2.)
 
 Pre-flight gates, enforced before any intent is emitted:
   * portal allow-list — intent.is_supported_portal (gupy, infojobs, case-
@@ -44,7 +46,7 @@ No pip dependencies.
 
 Usage:
     python3 apply.py --job-url <url> --profile <profile.json> [--portal gupy|infojobs] \\
-        [--memory-dir <dir>] [--dry-run] [--confirmed] [--record-applied]
+        [--memory-dir <dir>] [--dry-run] [--confirmed]
         [--skip-session-check] [--auto-apply] [--emit-intent] [--max-steps N]
     python3 apply.py --job-id <id> --profile <profile.json> [--api-token <token>]
     python3 apply.py --check-browser [--cdp-url <url>] [--user-data-dir <dir>]
@@ -344,14 +346,11 @@ def parse_args(argv: Optional[List[str]]):
     parser.add_argument("--memory-dir")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--confirmed", action="store_true")
-    # Cutover pkg 2 (spec l.287): --record-applied / --confirmed / --auto-apply
-    # are KEPT as verdict-input flags for the MCP executor. apply.py itself no
-    # longer writes applications/ records — verdict.py is the sole writer.
-    parser.add_argument("--record-applied", action="store_true",
-                        help="verdict-input flag (mcp-apply-loop): kept for the executor/verdict stage; apply.py itself no longer writes records")
     # Issue #42 — auto-apply: implies --confirmed for the executor/verdict stage
     # (require_confirmation_before_final_submit False). Never bypasses
-    # idempotency/refusal/session safety.
+    # idempotency/refusal/session safety. (PR #58 review: --record-applied was
+    # removed — it was a dead flag; verdict.py is the sole recorder, and passing
+    # the flag must fail loudly as an unrecognized argument, exit 2.)
     parser.add_argument("--auto-apply", action="store_true",
                         help="implied confirmed for the executor/verdict stage (never bypasses idempotency/refusal/session safety)")
     # Issue #38 flags kept for the executor. The deterministic guard
