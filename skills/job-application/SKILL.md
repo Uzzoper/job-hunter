@@ -264,6 +264,16 @@ The executor runs **observe → classify → act → verify** against each **liv
 5. **Record (strictly via verdict.py)** — an application is marked `applied` ONLY by
    `verdict.write_applied_record` after verified success evidence. The intent never writes.
 
+### Fill provenance and verification (learned in production)
+
+- Fill screening answers ONLY from declared values — intent `profile` or bot
+  memory — and cite the source (memory section/key) when reporting. Values with
+  no declared source are asked to the human (dictated), never invented.
+- A fill counts ONLY when the next snapshot shows the values in the fields.
+  Reporting a fill without re-snapshot evidence is a defect, not progress.
+- React-controlled inputs ignore direct `.value` assignment: dispatch native
+  `input`/`change` events (bubbles) and always re-read field values afterwards.
+
 Policy gates: `never_fill_credentials` and `stop_on_auth_url` are always `true` and cannot
 be disabled from the CLI; `require_confirmation_before_final_submit` flips to `false` via
 `--confirmed` / `--auto-apply`.
