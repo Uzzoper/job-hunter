@@ -184,7 +184,7 @@ The **verdict stage** (`verdict.py`) is the single point of truth. It runs after
 
 1. **Success signal** on the post-`apply-final` page:
    - **success text** — the AX snapshot contains a substring match (case-insensitive) of one of the configured success phrases:
-     `Inscrição realizada`, `Candidatura enviada`, `Candidatura realizada`, `Você se candidatou`, `Aplicação enviada`, `Application submitted`, `You have applied`; **or**
+     `Inscrição realizada`, `Inscrição concluída`, `Candidatura enviada`, `Candidatura realizada`, `Candidatura finalizada`, `Você se candidatou`, `Aplicação enviada`, `Application submitted`, `You have applied`; **or**
    - **success URL** — a path segment of the final URL matches one of `sucesso`, `success`, `confirmacao`, `obrigado`, `applied`.
 2. **Post-submit screenshot** — captured after `apply-final` and saved to `<memory>/screenshots/<job_id>-<ts>.png`.
 

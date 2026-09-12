@@ -119,7 +119,7 @@ bash scripts/install-bot-skills.sh                # install skills into the bot 
 bash scripts/setup-bot-access.sh --owner-id <id>  # service-token setup (X-Bot-Token)
 ```
 
-Skills: `company-scraper` (company contact research), `job-application` (Gupy + InfoJobs apply planner), `job-portal-browser` (browser fallback), `report-generator` + `analyzer` + `visualizer` (progress reports and funnel charts), `cdp-daemon` (persistent Chrome session for batch applies). Standing-instructions template: `bot-profile/SOUL.md` (installed once, never overwritten).
+Skills: `company-scraper` (company contact research), `job-application` (Gupy + InfoJobs apply planner — emits a selector-free intent that the MCP executor loop drives, `verdict.py` is the sole writer of applied records), `job-portal-browser` (browser fallback), `report-generator` + `analyzer` + `visualizer` (progress reports and funnel charts). Standing-instructions template: `bot-profile/SOUL.md` (installed once, never overwritten).
 
 ---
 
