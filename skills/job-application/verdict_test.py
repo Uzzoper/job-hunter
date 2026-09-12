@@ -391,7 +391,7 @@ class VerdictRoutingTests(unittest.TestCase):
         # body for later reconciliation, while the file key stays the portal
         # slug — the backend numeric id must never reach a filename.
         record = verdict.write_applied_record(
-            self.memory_dir, "755694375.json",
+            self.memory_dir, "755694375",
             portal="infojobs",
             contact_email=CONTACT_EMAIL,
             applied_at=ENDED_AT,
@@ -401,16 +401,18 @@ class VerdictRoutingTests(unittest.TestCase):
             backend_job_id=42,
         )
         self.assertEqual(record["backend_job_id"], 42)
-        # The file key stays the portal slug (writer + reader both append .json,
-        # so the InfoJobs numeric slug 755694375.json → 755694375.json.json) —
-        # the backend numeric id never reaches a filename.
+        # The file key stays the portal slug — derived ids carry no trailing
+        # .json (apply.derive_job_id strips it), so the file is
+        # applications/755694375.json, never the doubled .json.json.
         slug_record = (
-            self.memory_dir / "applications" / "755694375.json.json"
+            self.memory_dir / "applications" / "755694375.json"
         )
         self.assertTrue(slug_record.is_file())
         on_disk = json.loads(slug_record.read_text(encoding="utf-8"))
         self.assertEqual(on_disk["backend_job_id"], 42)
-        # No "42.json" sibling is ever created from the backend id.
+        # Neither a doubled-extension nor a "42.json" backend-id sibling exists.
+        self.assertFalse(
+            (self.memory_dir / "applications" / "755694375.json.json").exists())
         self.assertFalse((self.memory_dir / "applications" / "42.json").exists())
 
 
