@@ -29,18 +29,6 @@ public final class JobPreferenceScorer {
     /** Hard skip for excluded companies — below the 60 template threshold and the "majority fit" AI band. */
     private static final int EXCLUDED_COMPANY_SCORE_CAP = 15;
 
-    private static final List<String> REMOTE_TERMS = List.of(
-            "remoto", "remota", "remotos", "remotas", "remote", "remotamente",
-            "home office", "homeoffice", "work from home", "fully remote",
-            "anywhere", "qualquer lugar");
-    private static final List<String> REMOTE_NEGATION_TERMS = List.of(
-            "não é remoto", "nao e remoto", "não é home office", "nao e home office",
-            "not a remote position", "not remote");
-    private static final List<String> ONSITE_TERMS = List.of(
-            "presencial", "onsite", "on-site");
-    private static final List<String> HYBRID_TERMS = List.of(
-            "hibrido", "híbrido", "hybrid");
-
     private JobPreferenceScorer() {
     }
 
@@ -64,9 +52,10 @@ public final class JobPreferenceScorer {
      * Deterministic work-model fit modifier (formula documented in
      * {@code docs/specs/preferences-scoring.md}).
      *
-     * <p>Only <em>explicit</em> signals are penalized: silent/unknown
-     * descriptions never lose points. The Remote negation guard clears the
-     * remote signal for "não é remoto" / "not remote" phrasing, so
+     * <p>Signal detection delegates to the single shared vocabulary in
+     * {@link WorkModelSignals}. Only <em>explicit</em> signals are penalized:
+     * silent/unknown descriptions never lose points. The negation guard clears
+     * the remote signal for "não é remoto" / "not remote" phrasing, so
      * "100% presencial — não é remoto" is detected as onsite.
      */
     private static int workModelModifier(String description, WorkPreference workPreference) {
@@ -74,9 +63,9 @@ public final class JobPreferenceScorer {
             return 0;
         }
         String d = description.toLowerCase(Locale.ROOT);
-        boolean r = containsAny(d, REMOTE_TERMS) && !containsAny(d, REMOTE_NEGATION_TERMS);
-        boolean s = containsAny(d, ONSITE_TERMS);
-        boolean h = containsAny(d, HYBRID_TERMS);
+        boolean r = WorkModelSignals.isRemote(description);
+        boolean s = WorkModelSignals.isOnsite(description);
+        boolean h = WorkModelSignals.isHybrid(description);
 
         return switch (workPreference) {
             case WorkPreference.Remote() -> remoteModifier(r, s, h);
@@ -114,10 +103,6 @@ public final class JobPreferenceScorer {
 
     private static boolean mentionsAnyCity(String description, List<String> cities) {
         return cities.stream().anyMatch(city -> description.contains(city.toLowerCase(Locale.ROOT)));
-    }
-
-    private static boolean containsAny(String text, List<String> terms) {
-        return terms.stream().anyMatch(text::contains);
     }
 
     private static boolean isExcludedCompany(String company, List<String> excludedCompanies) {
