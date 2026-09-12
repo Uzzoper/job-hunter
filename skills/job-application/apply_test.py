@@ -36,6 +36,26 @@ PORTAL = "gupy"
 GUPY_URL = "https://jobs.gupy.io/jobs/12345-desenvolvedor-java"
 JOB_ID = "12345-desenvolvedor-java"
 
+
+def _write_applied_record(apps: Path, key: str, backend_id) -> Path:
+    """Test fixture: write an applied verdict record under applications/.
+
+    Mirrors verdict.write_applied_record's record shape (status applied +
+    backend_job_id). backend_id is written as-is, so the type-safe reader
+    comparison is exercised with either an int or a str.
+    """
+    apps.mkdir(parents=True, exist_ok=True)
+    record = apps / f"{key}.json"
+    record.write_text(
+        json.dumps({
+            "job_id": key,
+            "status": "applied",
+            "backend_job_id": backend_id,
+        }),
+        encoding="utf-8",
+    )
+    return record
+
 VALID_PROFILE = {
     "name": "Juan Antonio Peruzzo",
     "email": "juan@example.com",
@@ -401,6 +421,39 @@ class ApiFirstTests(unittest.TestCase):
         self.assertNotIn("metadata", data["intent"])
         mock_token.assert_not_called()
 
+    @unittest.mock.patch("apply.job_api.api_get_job")
+    @unittest.mock.patch("apply.job_api.resolve_token")
+    def test_already_applied_via_backend_id_fallback(self, mock_token, mock_get):
+        """Miss-by-slug + hit-by-backend-id → already_applied, exit 1."""
+        mock_token.return_value = "tok-1"
+        mock_get.return_value = {
+            "id": 42,
+            "url": "https://jobs.gupy.io/jobs/numeric-key-42",
+            "title": "Dev",
+            "company": "Acme",
+        }
+        # The record lives under a DIFFERENT slug (base64 key) but carries the
+        # same backend id — the reader's backend_job_id fallback must find it.
+        _write_applied_record(self.mem / "applications", "base64-other-key", 42)
+        code, out = self._run_api("--job-id", "42")
+        self.assertEqual(code, 1)
+        data = json.loads(out)
+        self.assertEqual(data["error"], "already_applied")
+
+    @unittest.mock.patch("apply.job_api.api_get_job")
+    @unittest.mock.patch("apply.job_api.resolve_token")
+    def test_miss_both_ways_still_plans(self, mock_token, mock_get):
+        """Slug file absent AND no matching backend id → normal planning."""
+        mock_token.return_value = "tok-1"
+        mock_get.return_value = self.API_JOB  # id 7, url .../jobs/777-java-pleno
+        # A record for a DIFFERENT backend id must not false-positive.
+        _write_applied_record(self.mem / "applications", "some-other", 99)
+        code, out = self._run_api("--job-id", "7")
+        self.assertEqual(code, 0)
+        data = json.loads(out)
+        self.assertIn("intent", data)
+        self.assertEqual(data["intent"]["job_id"], "777-java-pleno")
+
     def test_from_api_requires_profile(self):
         """API-first still requires --profile (the apply data)."""
         buf = io.StringIO()
@@ -487,10 +540,11 @@ class JobIdHardeningTests(unittest.TestCase):
     """
 
     def test_numeric_slug_stable(self):
-        # Legacy InfoJobs numeric slug format — unchanged, still a legal key.
+        # Legacy InfoJobs numeric slug format — one trailing .json is stripped
+        # (extension hygiene) so the record key is 755694375, never .json.json.
         self.assertEqual(
             apply.derive_job_id("https://www.infojobs.com.br/vaga/755694375.json"),
-            "755694375.json",
+            "755694375",
         )
 
     def test_base64_slug_stable(self):
@@ -508,17 +562,74 @@ class JobIdHardeningTests(unittest.TestCase):
             "https://mtpbrasil.gupy.io/candidates/applications/xyz/steps/123/curriculum"
         ))
 
-    def test_flow_directory_segments_return_none(self):
-        # Each application-flow path keyword, used as the trailing segment,
-        # must yield None (explicit unknown), never a wrong key.
+    def test_flow_shapes_return_none(self):
+        # Application-flow SHAPES (the applications area, the steps→curriculum
+        # chain, and the bare /jobs directory) must yield None — never a wrong
+        # key. Lone keyword segments are handled by the legal-detail tests.
         for url in (
-            "https://mtpbrasil.gupy.io/candidates",
             "https://mtpbrasil.gupy.io/candidates/applications",
             "https://mtpbrasil.gupy.io/candidates/applications/xyz/steps",
             "https://mtpbrasil.gupy.io/candidates/applications/xyz/steps/1/curriculum",
             "https://portal.gupy.io/jobs",  # bare /jobs directory, no slug
         ):
             self.assertIsNone(apply.derive_job_id(url), f"expected None for {url}")
+
+    def test_steps_without_curriculum_still_refuses(self):
+        # PR #61 finding: a numbered steps/<n> hop is in-flow BY ITSELF — the
+        # trailing /curriculum segment is not required. .../steps/1 must never
+        # mint the step index "1" as a job slug.
+        self.assertIsNone(apply.derive_job_id(
+            "https://portal.gupy.io/candidates/steps/1"))
+        self.assertIsNone(apply.derive_job_id(
+            "https://mtpbrasil.gupy.io/candidates/steps/1/"))
+        self.assertIsNone(apply.derive_job_id(
+            "https://portal.gupy.io/candidates/steps/1/curriculum"))
+
+    def test_step_singular_numeric_segment_refuses(self):
+        # PR #61 finding: the singular "step/<n>" hop is in-flow too — both
+        # .../step/1/curriculum and a bare .../step/1 hold no job slug.
+        self.assertIsNone(apply.derive_job_id(
+            "https://portal.gupy.io/candidates/step/1/curriculum"))
+        self.assertIsNone(apply.derive_job_id(
+            "https://portal.gupy.io/candidates/step/1"))
+
+    def test_legal_non_gupy_detail_with_candidates_segment_derives(self):
+        # PR #60 fallout: a legal detail URL whose path contains a lone
+        # /candidates/<id> segment is NOT an application-flow page — it must
+        # still derive its slug. Only in-flow segment SEQUENCES refuse.
+        self.assertEqual(
+            apply.derive_job_id("https://company.example/candidates/12345"),
+            "12345",
+        )
+        self.assertEqual(
+            apply.derive_job_id("https://www.infojobs.com.br/candidates/888-front/"),
+            "888-front",
+        )
+
+    def test_slug_literally_named_steps_derives(self):
+        # PR #60 fallout: a slug literally named "steps" is legal — only the
+        # in-flow steps→curriculum SHAPE refuses, never the lone keyword.
+        self.assertEqual(
+            apply.derive_job_id("https://www.infojobs.com.br/vaga/steps"),
+            "steps",
+        )
+        self.assertEqual(apply.derive_job_id("https://jobs.gupy.io/jobs/steps"), "steps")
+
+    def test_json_suffix_stripped_once_case_insensitive(self):
+        # Extension hygiene (PR #60 fallout): strip ONE trailing .json from the
+        # derived id regardless of case before the reader appends .json; any
+        # non-.json slug is untouched.
+        for ext in (".json", ".JSON", ".Json"):
+            self.assertEqual(
+                apply.derive_job_id(
+                    f"https://www.infojobs.com.br/vaga/755694375{ext}"),
+                "755694375",
+            )
+        self.assertEqual(
+            apply.derive_job_id("https://jobs.gupy.io/jobs/123-dev"), "123-dev")
+        self.assertEqual(
+            apply.derive_job_id("https://jobs.gupy.io/jobs/planilha-2026.xls"),
+            "planilha-2026.xls")
 
     def test_query_and_fragment_strip_to_same_slug(self):
         bare = "https://jobs.gupy.io/jobs/789-x"
@@ -558,6 +669,7 @@ class JobIdIdempotencyKeyTests(unittest.TestCase):
         )
         self.assertIsNotNone(numeric)
         self.assertIsNotNone(base64)
+        self.assertEqual(numeric, "755694375")  # extension hygiene: no .json in the id
         self.assertNotEqual(numeric, base64)
         self.assertNotEqual(f"{numeric}.json", f"{base64}.json")
 
@@ -640,6 +752,65 @@ class IdempotencyTests(unittest.TestCase):
         )
         self.assertEqual(result.code, 1)
         self.assertEqual(result.data["error"], "already_applied")
+
+    def test_check_idempotency_backend_id_fallback(self):
+        # PR #60 fallout: the verdict record carries backend_job_id (write
+        # side); the reader must fall back to it on a slug-file miss, so a
+        # numeric/base64 key mismatch for the same real job still kills the
+        # plan instead of re-applying.
+        apps = self.mem / "applications"
+        _write_applied_record(apps, "base64-other-key", 42)
+        hit = apply.check_idempotency(self.mem, "wanted-slug", backend_job_id=42)
+        self.assertIsNotNone(hit)
+        self.assertEqual(hit["job_id"], "base64-other-key")
+        # A different backend id (or none) must not false-positive on the scan.
+        self.assertIsNone(
+            apply.check_idempotency(self.mem, "wanted-slug", backend_job_id=99))
+        self.assertIsNone(apply.check_idempotency(self.mem, "wanted-slug"))
+        self.assertFalse((apps / "wanted-slug.json").exists())
+
+    def test_backend_id_scan_str_record_matches_int_query(self):
+        # PR #61 finding: the record body may hold the id as a str while the
+        # caller queries with the api int — both sides must compare as str.
+        apps = self.mem / "applications"
+        _write_applied_record(apps, "base64-other-key", "42")
+        hit = apply.check_idempotency(self.mem, "wanted-slug", backend_job_id=42)
+        self.assertIsNotNone(hit)
+        self.assertEqual(hit["job_id"], "base64-other-key")
+
+    def test_backend_id_scan_int_record_matches_str_query(self):
+        # PR #61 finding: the reverse direction — record int, caller str.
+        apps = self.mem / "applications"
+        _write_applied_record(apps, "base64-other-key", 42)
+        hit = apply.check_idempotency(self.mem, "wanted-slug", backend_job_id="42")
+        self.assertIsNotNone(hit)
+        self.assertEqual(hit["job_id"], "base64-other-key")
+
+    def test_numeric_slug_round_trips_to_single_json_file(self):
+        # Extension hygiene (PR #60 fallout): derive strips one trailing .json,
+        # so a legacy InfoJobs URL keys applications/755694375.json — never a
+        # doubled .json.json name. Writer and reader both see the same key.
+        job_id = apply.derive_job_id(
+            "https://www.infojobs.com.br/vaga/755694375.json"
+        )
+        self.assertEqual(job_id, "755694375")
+        verdict.write_applied_record(
+            self.mem, job_id,
+            portal="infojobs",
+            contact_email=VALID_PROFILE["email"],
+            applied_at="2026-01-01T00:00:00+00:00",
+            screenshot_path=None,
+            verdict=verdict.SUBMIT_OK,
+            evidence={"method": "success_text", "found": "Inscrição realizada"},
+            backend_job_id=42,
+        )
+        single = self.mem / "applications" / "755694375.json"
+        doubled = self.mem / "applications" / "755694375.json.json"
+        self.assertTrue(single.is_file())
+        self.assertFalse(doubled.exists())
+        loaded = apply.check_idempotency(self.mem, job_id)
+        self.assertIsNotNone(loaded)
+        self.assertEqual(loaded["status"], "applied")
 
 
 # ---------------------------------------------------------------------------

@@ -100,15 +100,37 @@ CDP_RECHECK_DELAY = 3  # seconds to wait after starting Chromium before re-check
 # Gupy job URLs look like https://<portal>.gupy.io/jobs/<id-slug>
 JOB_SLUG_RE = re.compile(r"/jobs/([^/?#]+)")
 
-# Application-flow path segments that must NEVER mint an idempotency key.
-# Gupy's apply-in-progress URLs live under /candidates/applications/<job>/steps/
-# <n>/curriculum — falling back to one of these trailing segments would silently
-# alias every in-progress application under a single wrong filename. These URLs
-# are unknown job-detail shapes: derive_job_id returns None and the caller
-# refuses to plan. "jobs" is also excluded (a bare /jobs directory, no slug).
-FLOW_PATH_SEGMENTS = frozenset({
-    "candidates", "applications", "steps", "step", "curriculum", "jobs",
-})
+
+def _is_application_flow_path(segments: List[str]) -> bool:
+    """True when the path is an application-flow page, never a job detail.
+
+    Detail-shape matching (PR #60/#61 fallouts): a LONE keyword segment is a
+    legal detail path and derives normally (e.g. ``/candidates/<id>`` or a slug
+    literally named "steps"). Only in-flow SHAPES refuse, anywhere in the path:
+      * any path under /applications/ (the list and per-application pages);
+      * any numbered step hop ``steps/<n>`` or ``step/<n>`` (the numbered
+        curriculum chain, recognized whether or not the trailing /curriculum
+        segment is present).
+    """
+    lowered = [segment.lower() for segment in segments]
+    if "applications" in lowered:
+        return True
+    for i, segment in enumerate(lowered[:-1]):
+        if segment in ("steps", "step") and lowered[i + 1].isdigit():
+            return True
+    return False
+
+
+def _strip_json_suffix(slug: str) -> str:
+    """Drop one trailing ``.json`` (case-insensitive) from a derived slug.
+
+    The idempotency writer/reader both append ``.json`` to the derived id;
+    without this strip, the legacy InfoJobs format (``.../vaga/755694375.json``)
+    would produce a doubled ``755694375.json.json`` record name.
+    """
+    if slug.lower().endswith(".json"):
+        return slug[:-len(".json")]
+    return slug
 
 
 # ---------------------------------------------------------------------------
@@ -268,20 +290,25 @@ def derive_job_id(url: str) -> Optional[str]:
     The primary shape is ``/jobs/<slug>`` (Gupy, including the new base64url
     slugs), matched verbatim. The trailing-segment fallback covers layouts that
     put the job id at the last path segment (e.g. InfoJobs ``/vaga/755694375.json``
-    — the legacy numeric slug). Query and fragment parts are always stripped, so
-    tracking URLs resolve to the same key as the bare detail URL.
+    — the legacy numeric slug; one trailing ``.json`` is stripped, so the record
+    key is 755694375, never the doubled ``.json.json``). Query and fragment
+    parts are always stripped, so tracking URLs resolve to the same key as the
+    bare detail URL.
 
-    Unknown shapes return ``None`` — never a wrong key:
-    application-flow URLs (``/candidates/applications/.../curriculum``) and
-    bare directory keywords are not job-detail pages, so the caller refuses to
-    plan instead of aliasing distinct jobs under one filename. Old numeric and
-    new base64 slugs coexist as legal, distinct keys.
+    Unknown shapes return ``None`` — never a wrong key. Only in-flow page
+    SHAPES refuse (``_is_application_flow_path``): application-flow URLs
+    (``/candidates/applications/.../curriculum``) and the bare ``/jobs``
+    directory are not job-detail pages, so the caller refuses to plan instead
+    of aliasing distinct jobs under one filename. A lone keyword such as
+    ``/candidates/<id>`` or a slug named "steps" is a legal detail path and
+    derives normally. Old numeric and new base64 slugs coexist as legal,
+    distinct keys.
     """
     if not url:
         return None
     match = JOB_SLUG_RE.search(url)
     if match:
-        return match.group(1)
+        return _strip_json_suffix(match.group(1))
     try:
         path = urllib.parse.urlparse(url).path
     except Exception:
@@ -292,9 +319,12 @@ def derive_job_id(url: str) -> Optional[str]:
     segments = [s for s in path.split("/") if s]
     if not segments:
         return None
-    if any(segment.lower() in FLOW_PATH_SEGMENTS for segment in segments):
+    if _is_application_flow_path(segments):
         return None
-    return segments[-1]
+    slug = segments[-1]
+    if slug.lower() == "jobs":  # bare /jobs directory — never a slug
+        return None
+    return _strip_json_suffix(slug)
 
 
 # ---------------------------------------------------------------------------
@@ -307,15 +337,38 @@ def applications_dir(memory_dir: Path) -> Path:
     return Path(memory_dir) / APPLICATIONS_SUBDIR
 
 
-def check_idempotency(memory_dir: Path, job_id: str) -> Optional[Dict[str, Any]]:
-    """Return the stored application record for job_id, or None."""
+def check_idempotency(memory_dir: Path, job_id: str,
+                      backend_job_id: Optional[int] = None) -> Optional[Dict[str, Any]]:
+    """Return the stored application record for job_id, or None.
+
+    Primary lookup is the slug-keyed file ``{job_id}.json``. On a miss, and only
+    when a ``backend_job_id`` is supplied, every record body in the applications
+    dir is scanned for that id (verdict.write_applied_record persists it) — so a
+    slug-format miss (numeric vs base64 key for the same real job) still
+    short-circuits as already_applied instead of re-applying. The scan is
+    read-only: it never writes and never mints filenames from backend ids.
+    """
     path = applications_dir(memory_dir) / f"{job_id}.json"
-    if not path.is_file():
-        return None
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        return None
+    if path.is_file():
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            return None
+    if backend_job_id is not None:
+        apps_dir = applications_dir(memory_dir)
+        if apps_dir.is_dir():
+            for candidate in apps_dir.glob("*.json"):
+                try:
+                    record = json.loads(candidate.read_text(encoding="utf-8"))
+                except Exception:
+                    continue
+                # Type-safe fallback (PR #61 finding): record bodies may hold
+                # the id as a str while the caller queries with the api int
+                # (or vice versa) — compare both sides normalized to str.
+                candidate_id = record.get("backend_job_id")
+                if candidate_id is not None and str(candidate_id) == str(backend_job_id):
+                    return record
+    return None
 
 
 
@@ -607,7 +660,7 @@ def run(argv: Optional[List[str]] = None) -> int:
             )))
             return 0
 
-    existing = check_idempotency(memory_dir, job_id)
+    existing = check_idempotency(memory_dir, job_id, backend_job_id=backend_job_id)
     if existing and existing.get("status") == APPLIED_STATUS:
         print(json.dumps(build_error(
             "already_applied",
