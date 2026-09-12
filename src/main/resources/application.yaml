@@ -85,7 +85,7 @@ scraper:
     # Honored by the dedicated infojobsDetailRestClient bean (5s) for InfoJobs detail-page
     # fetches; search pages keep the shared 10s scraper.rest-client.timeout-seconds.
     detail-timeout-seconds: 5
-    max-detail-fetch: 20
+    max-detail-fetch: 100
   enricher:
     enabled: true
     timeout-seconds: 5

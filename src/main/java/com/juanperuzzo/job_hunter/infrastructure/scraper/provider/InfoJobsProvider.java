@@ -27,7 +27,7 @@ public class InfoJobsProvider implements ExtractionStrategy {
 
     private static final int DEFAULT_DETAIL_CONCURRENCY = 2;
     private static final int DEFAULT_DETAIL_TIMEOUT_SECONDS = 5;
-    private static final int DEFAULT_MAX_DETAIL_FETCH = 20;
+    private static final int DEFAULT_MAX_DETAIL_FETCH = 100;
     private static final String DETAIL_RATE_LIMIT_KEY = "infojobs-detail";
 
     private final String providerId;
@@ -271,9 +271,15 @@ public class InfoJobsProvider implements ExtractionStrategy {
     /**
      * Try HTML selectors for the full description, then JSON-LD, then fall back to
      * the existing card snippet.
+     *
+     * <p>The CSS selector targets the live detail-page structure (verified against
+     * real pages in 2026-09): the rendered description body is the first
+     * {@code <p class="... text-break ...">} inside {@code div.js_vacancyDataPanels}.
+     * JSON-LD stays as the documented official fallback — a {@code JobPosting} block
+     * is always present on the live site.
      */
     private String extractDetailDescription(Document doc, RawJob job) {
-        for (var selector : List.of("[data-testid=job-description]", ".description", ".job-description")) {
+        for (var selector : List.of("div.js_vacancyDataPanels p.text-break")) {
             var element = first(doc, selector);
             if (element.isPresent()) {
                 var text = clean(element.get().text());
