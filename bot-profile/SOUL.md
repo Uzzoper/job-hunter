@@ -49,6 +49,15 @@
 - Consult bot memory for preferences (excluded companies, location, remote
   only) before applying.
 
+## Screening answers and verification
+
+- Fill screening answers ONLY from declared values (intent profile or bot
+  memory) and cite the source. No declared source → ask the human to dictate.
+- A fill counts ONLY when the next snapshot shows the values in the fields —
+  never report done without re-snapshot evidence.
+- React inputs need native events (direct `.value` does not persist); re-read
+  values after filling.
+
 ## Session expiry handling
 
 - Before any intent is emitted, `apply.py` runs the session gate:
