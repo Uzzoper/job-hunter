@@ -95,7 +95,7 @@ for skill_dir in "${SKILLS_SRC}"/*/; do
         echo "  $(basename "${helper}") -> ${dest}/ (chmod +x)"
     done
 
-    # Sync subdirectories needed at runtime (e.g. portals/, helpers/).
+    # Sync subdirectories needed at runtime (generic per-skill subdirs).
     # Test files (*_test.py) and caches are never installed to the bot profile.
     for subdir in "${skill_dir}"/*/; do
         [ -d "${subdir}" ] || continue
@@ -210,33 +210,7 @@ else
 fi
 echo ""
 
-# Install CDP daemon systemd unit (opt-in service — copied, never auto-enabled)
-echo "=== CDP daemon unit ==="
-SYSTEMD_USER_DIR="${SYSTEMD_USER_DIR:-$HOME/.config/systemd/user}"
-DAEMON_UNIT_SRC="${SKILLS_SRC}/cdp-daemon/jobhunter-cdp-daemon.service"
-DAEMON_UNIT_DEST="${SYSTEMD_USER_DIR}/jobhunter-cdp-daemon.service"
-if [ -f "${DAEMON_UNIT_SRC}" ]; then
-    mkdir -p "${SYSTEMD_USER_DIR}"
-    cp "${DAEMON_UNIT_SRC}" "${DAEMON_UNIT_DEST}"
-    echo "  unit -> ${DAEMON_UNIT_DEST}"
-    if command -v systemctl &>/dev/null; then
-        if systemctl --user daemon-reload 2>/dev/null; then
-            echo "  daemon-reload: OK"
-        else
-            echo "  daemon-reload: skipped (no user systemd running)"
-        fi
-    else
-        echo "  systemctl not found — skipping daemon-reload"
-    fi
-    echo "  enable when needed (opt-in, NOT automatic):"
-    echo "    systemctl --user enable --now jobhunter-cdp-daemon.service"
-else
-    echo "  (no daemon unit in repo — skipping)"
-fi
-echo ""
-
 echo "=== Done ==="
 echo "Skills installed under: ${SKILLS_DEST}/<skill-name>/ (per-skill layout)"
 echo "Memory files will be written to: ${MEMORY_DIR}/"
 echo "Standing instructions installed at: ${SOUL_DEST}"
-echo "CDP daemon unit installed at: ${SYSTEMD_USER_DIR}/jobhunter-cdp-daemon.service (enable with: systemctl --user enable --now jobhunter-cdp-daemon.service)"

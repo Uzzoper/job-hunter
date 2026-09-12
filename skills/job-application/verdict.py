@@ -59,8 +59,10 @@ ATTEMPTS_SUBDIR = "attempts"
 # flattened AX snapshot) is satisfied when ANY phrase matches.
 SUCCESS_PHRASES = (
     "Inscrição realizada",
+    "Inscrição concluída",
     "Candidatura enviada",
     "Candidatura realizada",
+    "Candidatura finalizada",
     "Você se candidatou",
     "Aplicação enviada",
     "Application submitted",

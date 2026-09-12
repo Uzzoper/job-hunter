@@ -126,6 +126,40 @@ class VerifyEvidenceTests(unittest.TestCase):
         self.assertEqual(result["verdict"], verdict.SUBMIT_DONE_NO_EVIDENCE)
         self.assertIsNone(result["evidence"])
 
+    def test_gupy_finalizada_heading_on_same_url_is_evidence(self):
+        # Real MTP case: success renders inline (SPA, no /success URL change).
+        # Heading "Candidatura finalizada!" must count as Tier-1 text evidence.
+        ax = [
+            {"role": "heading", "name": "Candidatura finalizada!"},
+            {"role": "paragraph", "name": "Agora a empresa vai analisar sua compatibilidade"},
+            {"role": "button", "name": "Acompanhar candidatura"},
+            {"role": "button", "name": "Encontrar vagas similares"},
+        ]
+        result = verdict.evaluate_submit(
+            "https://mtpbrasil.gupy.io/candidates/applications/756128925/steps/4250180021/curriculum",
+            ax,
+            SCREENSHOT,
+        )
+        self.assertEqual(result["verdict"], verdict.SUBMIT_OK)
+        self.assertEqual(result["evidence"]["method"], "success_text")
+
+    def test_apresente_se_modal_is_no_evidence(self):
+        # Gupy "Apresente-se!" interstitial: "Finalizar candidatura" still
+        # pending means NOT submitted, even with prior steps done.
+        ax = [
+            {"role": "heading", "name": "Apresente-se!"},
+            {"role": "paragraph", "name": "A personalização é válida exclusivamente para esta vaga."},
+            {"role": "button", "name": "Personalizar candidatura"},
+            {"role": "button", "name": "Finalizar candidatura"},
+        ]
+        result = verdict.evaluate_submit(
+            "https://mtpbrasil.gupy.io/candidates/applications/756128925/steps/4250180021/curriculum",
+            ax,
+            SCREENSHOT,
+        )
+        self.assertEqual(result["verdict"], verdict.SUBMIT_DONE_NO_EVIDENCE)
+        self.assertIsNone(result["evidence"])
+
 
 class VerdictRoutingTests(unittest.TestCase):
     """decide() — outcome -> record routing is the single point of truth."""
