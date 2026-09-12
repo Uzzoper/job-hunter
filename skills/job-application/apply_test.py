@@ -486,31 +486,22 @@ class IdempotencyTests(unittest.TestCase):
         self.profile_path = write_profile(self.mem)
         self.record_path = self.mem / "applications" / f"{JOB_ID}.json"
 
-    def test_record_flag_writes_no_record(self):
-        # Cutover pkg 2 (spec l.287): --record-applied / --confirmed / --auto-apply
-        # are verdict-input flags; apply.py itself NEVER writes applications/.
-        first = run_cli(self.mem, self.profile_path, "--record-applied")
-        self.assertEqual(first.code, 0)
+    def test_record_applied_flag_rejected(self):
+        # PR #58 review finding: --record-applied is dead — verdict.py is the
+        # sole recorder, so the flag was removed and must fail loudly
+        # (unrecognized argument, exit 2) instead of being accepted as a no-op.
+        result = run_cli(self.mem, self.profile_path, "--record-applied")
+        self.assertEqual(result.code, 2)
+        self.assertEqual(result.data["error"], "usage")
+        # Nothing was recorded on disk either (apply.py never writes records).
         self.assertFalse(self.record_path.exists())
-        confirmed = run_cli(self.mem, self.profile_path, "--confirmed")
-        self.assertEqual(confirmed.code, 0)
-        self.assertFalse(self.record_path.exists())
-        auto = run_cli(self.mem, self.profile_path, "--auto-apply")
-        self.assertEqual(auto.code, 0)
-        self.assertFalse(self.record_path.exists())
-        # Nothing was recorded on disk, so a plain re-run still plans (0), not
-        # already_applied (1).
-        rerun = run_cli(self.mem, self.profile_path)
-        self.assertEqual(rerun.code, 0)
 
     def test_confirmed_run_writes_no_record(self):
         run_cli(self.mem, self.profile_path, "--confirmed")
-        run_cli(self.mem, self.profile_path, "--record-applied")
         self.assertFalse(self.record_path.exists())
 
     def test_dry_run_writes_nothing(self):
-        run_cli(self.mem, self.profile_path, "--record-applied", "--dry-run")
-        self.assertFalse(self.record_path.exists())
+        run_cli(self.mem, self.profile_path, "--dry-run")
         dry = run_cli(self.mem, self.profile_path, "--confirmed", "--dry-run")
         self.assertIn("intent", dry.data)
         self.assertFalse(self.record_path.exists())
@@ -582,7 +573,6 @@ class UsageTests(unittest.TestCase):
         self.assertIsNone(args.memory_dir)
         self.assertFalse(args.dry_run)
         self.assertFalse(args.confirmed)
-        self.assertFalse(args.record_applied)
         self.assertIsNone(args.cdp_url)
         self.assertIsNone(args.user_data_dir)
         self.assertFalse(args.check_browser)
@@ -956,9 +946,10 @@ class IntentEmissionTests(unittest.TestCase):
 
     def test_emit_intent_never_writes_records(self):
         # Even a non-dry-run intent (browser mock reached) must not write the
-        # applied record — verdict.py is the sole writer.
+        # applied record — verdict.py is the sole writer. --confirmed is the
+        # strongest case: approved by the human, still no planner write.
         result = run_cli(self.mem, self.profile_path, "--emit-intent",
-                         "--record-applied")
+                         "--confirmed")
         self.assertEqual(result.code, 0)
         self.assertFalse(self.record_path.exists())
 

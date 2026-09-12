@@ -170,7 +170,7 @@ New flags (all optional): `--job-id`, `--from-api`, `--api-base-url` (default
 | profile | `--profile` | JSON file path | yes | `{name, email, phone, cv_path, cover_text}` (+ optional `no_apply: true`) |
 | portal | `--portal` | string | no (default `gupy`) | `gupy` \| `infojobs` (allow-list in `intent.py`; unknown values error cleanly — **`linkedin` is NOT supported, by design**) |
 | memory dir | `--memory-dir` | dir path | no | Base for idempotency records; default `~/.hermes/profiles/jobhunter-bot/memails` |
-| affinity flags | `--confirmed`, `--auto-apply`, `--record-applied`, `--dry-run` | flags | no | See Confirmation protocol + Recording below |
+| affinity flags | `--confirmed`, `--auto-apply`, `--dry-run` | flags | no | See Confirmation protocol + Recording below |
 | session/guard flags | `--current-url`, `--visited-urls`, `--skip-session-check` | string / flag | no | Issue #41: current page (session expiry pre-flight gate) and visited history (kept for the executor); `--skip-session-check` skips the gate (also skipped on `--dry-run`) |
 | browser recovery | `--cdp-url`, `--user-data-dir` | URL / dir path | no | Issue #39: CDP endpoint (default `http://localhost:9222`, also the endpoint the Playwright MCP server attaches to via `--cdp-endpoint`) and persistent Chromium profile dir (default `~/.chromium-profile-cdp`) |
 | status check | `--check-browser` | flag | no | Issue #39: print browser status as JSON and exit — no intent emitted |
@@ -398,8 +398,6 @@ detector. `--skip-session-check` / `--dry-run` skip the planner-side check only.
   the user before the final confirmation.
 - `--auto-apply` is the **only** path that skips that confirmation — it implies
   explicit pre-authorization (policy flips to `false`) but never the safety gates.
-- `--record-applied` is a verdict-input flag for the executor stage, never a
-  planner write trigger.
 
 ---
 
@@ -428,9 +426,26 @@ Records live at:
   after verified success evidence (`verdict.write_applied_record` with
   `verdict.SUBMIT_OK`). `apply.py` never writes records and never calls the
   backend record API — the executor passes the outcome + evidence to the
-  verdict stage (`--confirmed` / `--auto-apply` / `--record-applied` are
-  verdict-input flags conveying that the run is authorized/committed).
+  verdict stage (`--confirmed` / `--auto-apply` are verdict-input flags
+  conveying that the run is authorized/committed).
 - `--dry-run` never writes records.
+
+### Quarantine (pinned path)
+
+Non-verified attempts that need human review — `SUBMIT_DONE_NO_EVIDENCE`,
+`INCOMPLETE` stalls, auth stops, errors — are quarantined at the **exact**
+location (after enrichment/`classify.py` triage):
+
+    <memory-dir>/attempts/quarantine/            # per-attempt JSONs
+    <memory-dir>/attempts/quarantine/MANIFEST.md # human-readable index
+
+With the default `<memory-dir>`, that is
+`~/.hermes/profiles/jobhunter-bot/memails/attempts/quarantine/` +
+`MANIFEST.md`. Attempt/applied records **never** live anywhere else — in
+particular **never** at the profile root
+(`~/.hermes/profiles/jobhunter-bot/`): the only record trees under `memails`
+are `applications/`, `attempts/` and `screenshots/`. Violating this path
+breaks the idempotency gate (#27) and the human-review flow.
 
 ---
 
