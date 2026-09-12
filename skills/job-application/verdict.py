@@ -192,11 +192,18 @@ def write_applied_record(memory_dir: Path, job_id: str, *,
                          screenshot_path: Optional[str],
                          verdict: str,
                          evidence: Dict[str, Any],
-                         backend_record: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+                         backend_record: Optional[Dict[str, Any]] = None,
+                         backend_job_id: Optional[int] = None) -> Dict[str, Any]:
     """Persist the official applied record with evidence + verdict fields.
 
     Called ONLY on SUBMIT_OK (verified evidence + confirmation). applied_at is
     the verdict (post-submit) timestamp, never the plan time.
+
+    Idempotency-key chain hardening: the FILE key stays the portal slug
+    ({job_id}.json — numeric and base64 slugs coexist); the numeric backend id,
+    when known, is embedded in the record BODY (backend_job_id) so a slug-miss
+    can reconcile against the backend id — the backend numeric id never reaches
+    a filename. The key is omitted entirely when backend_job_id is None.
     """
     record: Dict[str, Any] = {
         "job_id": job_id,
@@ -210,6 +217,8 @@ def write_applied_record(memory_dir: Path, job_id: str, *,
     }
     if backend_record is not None:
         record["backend_record"] = backend_record
+    if backend_job_id is not None:
+        record["backend_job_id"] = backend_job_id
 
     out_dir = _applications_dir(memory_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -383,6 +392,7 @@ def decide(memory_dir: Path, *,
             verdict=SUBMIT_OK,
             evidence=evidence,
             backend_record=backend_record,
+            backend_job_id=backend_job_id,
         )
         results["written_applied"] = True
         results["applied_record"] = applied_record

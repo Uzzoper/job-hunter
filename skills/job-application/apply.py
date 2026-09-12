@@ -100,6 +100,16 @@ CDP_RECHECK_DELAY = 3  # seconds to wait after starting Chromium before re-check
 # Gupy job URLs look like https://<portal>.gupy.io/jobs/<id-slug>
 JOB_SLUG_RE = re.compile(r"/jobs/([^/?#]+)")
 
+# Application-flow path segments that must NEVER mint an idempotency key.
+# Gupy's apply-in-progress URLs live under /candidates/applications/<job>/steps/
+# <n>/curriculum — falling back to one of these trailing segments would silently
+# alias every in-progress application under a single wrong filename. These URLs
+# are unknown job-detail shapes: derive_job_id returns None and the caller
+# refuses to plan. "jobs" is also excluded (a bare /jobs directory, no slug).
+FLOW_PATH_SEGMENTS = frozenset({
+    "candidates", "applications", "steps", "step", "curriculum", "jobs",
+})
+
 
 # ---------------------------------------------------------------------------
 # Issue #39 — Browser recovery: check / start / orchestrate
@@ -253,21 +263,38 @@ def check_refusal(profile: Dict[str, Any]) -> bool:
 # ---------------------------------------------------------------------------
 
 def derive_job_id(url: str) -> Optional[str]:
-    """Derive a job id (URL slug) from a Gupy job URL, or None if impossible."""
+    """Derive the portal job slug (idempotency key) from a job URL.
+
+    The primary shape is ``/jobs/<slug>`` (Gupy, including the new base64url
+    slugs), matched verbatim. The trailing-segment fallback covers layouts that
+    put the job id at the last path segment (e.g. InfoJobs ``/vaga/755694375.json``
+    — the legacy numeric slug). Query and fragment parts are always stripped, so
+    tracking URLs resolve to the same key as the bare detail URL.
+
+    Unknown shapes return ``None`` — never a wrong key:
+    application-flow URLs (``/candidates/applications/.../curriculum``) and
+    bare directory keywords are not job-detail pages, so the caller refuses to
+    plan instead of aliasing distinct jobs under one filename. Old numeric and
+    new base64 slugs coexist as legal, distinct keys.
+    """
     if not url:
         return None
     match = JOB_SLUG_RE.search(url)
     if match:
         return match.group(1)
     try:
-        path = urllib.parse.urlparse(url).path.rstrip("/")
+        path = urllib.parse.urlparse(url).path
     except Exception:
         return None
-    if path:
-        segment = path.rsplit("/", 1)[-1]
-        if segment:
-            return segment
-    return None
+    path = path.rstrip("/")
+    if not path:
+        return None
+    segments = [s for s in path.split("/") if s]
+    if not segments:
+        return None
+    if any(segment.lower() in FLOW_PATH_SEGMENTS for segment in segments):
+        return None
+    return segments[-1]
 
 
 # ---------------------------------------------------------------------------
