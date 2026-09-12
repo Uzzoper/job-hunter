@@ -15,7 +15,10 @@ public interface ListJobsUseCase {
      * entries whose {@code draftStatus} is {@code SENT} (the user already
      * applied) are dropped. When {@code minScore} is specified, entries whose
      * {@code matchScore} is {@code null} or below the threshold are dropped.
+     * When {@code remoteOnly} is {@code true}, only entries whose title or
+     * description carries an explicit remote work-model signal (with no onsite,
+     * hybrid or negation conflict) are kept — silent/ambiguous jobs are dropped.
      * Results are sorted by matchScore descending (null scores last).
      */
-    List<JobWithDraftStatus> findAllWithDraftStatus(Long userId, Boolean hasEmail, Boolean excludeApplied, Integer minScore);
+    List<JobWithDraftStatus> findAllWithDraftStatus(Long userId, Boolean hasEmail, Boolean excludeApplied, Integer minScore, Boolean remoteOnly);
 }

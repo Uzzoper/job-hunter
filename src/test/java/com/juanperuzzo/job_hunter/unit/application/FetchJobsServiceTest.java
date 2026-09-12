@@ -221,7 +221,7 @@ class FetchJobsServiceTest {
                     .thenReturn(Optional.of(draft(1L, EmailStatus.SENT)));
             when(emailDraftRepository.findByJobIdAndUserId(2L, USER_ID)).thenReturn(Optional.empty());
 
-            var result = fetchJobsService.findAllWithDraftStatus(USER_ID, null, false, null);
+            var result = fetchJobsService.findAllWithDraftStatus(USER_ID, null, false, null, null);
 
             assertEquals(2, result.size());
             assertEquals(EmailStatus.SENT, result.get(0).draftStatus());
@@ -238,7 +238,7 @@ class FetchJobsServiceTest {
                     .thenReturn(Optional.of(draft(1L, EmailStatus.SENT)));
             when(emailDraftRepository.findByJobIdAndUserId(2L, USER_ID)).thenReturn(Optional.empty());
 
-            var result = fetchJobsService.findAllWithDraftStatus(USER_ID, null, true, null);
+            var result = fetchJobsService.findAllWithDraftStatus(USER_ID, null, true, null, null);
 
             assertEquals(1, result.size());
             assertEquals(2L, result.get(0).job().id());
@@ -258,7 +258,7 @@ class FetchJobsServiceTest {
                     .thenReturn(Optional.of(draft(2L, EmailStatus.APPROVED)));
             when(emailDraftRepository.findByJobIdAndUserId(3L, USER_ID)).thenReturn(Optional.empty());
 
-            var result = fetchJobsService.findAllWithDraftStatus(USER_ID, null, true, null);
+            var result = fetchJobsService.findAllWithDraftStatus(USER_ID, null, true, null, null);
 
             assertEquals(3, result.size());
             assertEquals(Arrays.asList(EmailStatus.PENDING, EmailStatus.APPROVED, null),
@@ -275,7 +275,7 @@ class FetchJobsServiceTest {
             // neither marked as applied nor excluded.
             when(emailDraftRepository.findByJobIdAndUserId(1L, USER_ID)).thenReturn(Optional.empty());
 
-            var result = fetchJobsService.findAllWithDraftStatus(USER_ID, null, true, null);
+            var result = fetchJobsService.findAllWithDraftStatus(USER_ID, null, true, null, null);
 
             assertEquals(1, result.size());
             assertNull(result.get(0).draftStatus());
@@ -290,7 +290,7 @@ class FetchJobsServiceTest {
             when(emailDraftRepository.findByJobIdAndUserId(1L, USER_ID))
                     .thenReturn(Optional.of(draft(1L, EmailStatus.SENT)));
 
-            var result = fetchJobsService.findAllWithDraftStatus(USER_ID, true, true, null);
+            var result = fetchJobsService.findAllWithDraftStatus(USER_ID, true, true, null, null);
 
             assertTrue(result.isEmpty());
             verify(jobRepository).findAllByContactEmailIsNotNull();
@@ -331,7 +331,7 @@ class FetchJobsServiceTest {
                     .thenReturn(Optional.of(analysis(1L, 85)));
             when(jobAnalysisRepository.findByJobIdAndUserId(2L, USER_ID)).thenReturn(Optional.empty());
 
-            var result = fetchJobsService.findAllWithDraftStatus(USER_ID, null, false, null);
+            var result = fetchJobsService.findAllWithDraftStatus(USER_ID, null, false, null, null);
 
             assertEquals(2, result.size());
             assertEquals(85, result.get(0).matchScore());
@@ -352,7 +352,7 @@ class FetchJobsServiceTest {
                     .thenReturn(Optional.of(analysis(2L, 90)));
             when(jobAnalysisRepository.findByJobIdAndUserId(3L, USER_ID)).thenReturn(Optional.empty());
 
-            var result = fetchJobsService.findAllWithDraftStatus(USER_ID, null, false, null);
+            var result = fetchJobsService.findAllWithDraftStatus(USER_ID, null, false, null, null);
 
             assertEquals(3, result.size());
             assertEquals(90, result.get(0).matchScore());
@@ -375,7 +375,7 @@ class FetchJobsServiceTest {
             when(jobAnalysisRepository.findByJobIdAndUserId(2L, USER_ID))
                     .thenReturn(Optional.of(analysis(2L, 40)));
 
-            var result = fetchJobsService.findAllWithDraftStatus(USER_ID, null, false, 60);
+            var result = fetchJobsService.findAllWithDraftStatus(USER_ID, null, false, 60, null);
 
             assertEquals(1, result.size());
             assertEquals(80, result.get(0).matchScore());
@@ -393,7 +393,7 @@ class FetchJobsServiceTest {
                     .thenReturn(Optional.of(analysis(1L, 70)));
             when(jobAnalysisRepository.findByJobIdAndUserId(2L, USER_ID)).thenReturn(Optional.empty());
 
-            var result = fetchJobsService.findAllWithDraftStatus(USER_ID, null, false, 50);
+            var result = fetchJobsService.findAllWithDraftStatus(USER_ID, null, false, 50, null);
 
             assertEquals(1, result.size());
             assertEquals("Scored", result.get(0).job().title());
@@ -419,10 +419,95 @@ class FetchJobsServiceTest {
                     .thenReturn(Optional.of(analysis(3L, 30)));
 
             // excludeApplied removes job1 (SENT), minScore >= 60 removes job3
-            var result = fetchJobsService.findAllWithDraftStatus(USER_ID, null, true, 60);
+            var result = fetchJobsService.findAllWithDraftStatus(USER_ID, null, true, 60, null);
 
             assertEquals(1, result.size());
             assertEquals("Fresh", result.get(0).job().title());
+            assertEquals(75, result.get(0).matchScore());
+        }
+    }
+
+    @Nested
+    @DisplayName("Scenario 20: remoteOnly work-model filter")
+    class RemoteOnlyFilterTests {
+
+        private static final long USER_ID = 7L;
+
+        private Job job(long id, String title, String description) {
+            return new Job(id, title, "Company", "https://example.com/job/" + id,
+                    description, LocalDate.now(), "gupy");
+        }
+
+        @Test
+        @DisplayName("findAllWithDraftStatus with remoteOnly=true should keep only jobs with explicit remote signals")
+        void findAllWithDraftStatus_whenRemoteOnlyTrue_shouldKeepOnlyExplicitRemoteJobs() {
+            var remoteJob = job(1L, "Dev Remoto", "Vaga 100% home office para todo o Brasil");
+            var onsiteJob = job(2L, "Dev Presencial", "Vaga presencial em São Paulo, SP");
+            var hybridJob = job(3L, "Dev Hibrido", "Modelo híbrido: 3 dias no escritório");
+            var silentJob = job(4L, "Dev Geral", "Vaga para time de plataforma, sem sinal de modelo");
+            when(jobRepository.findAll()).thenReturn(List.of(remoteJob, onsiteJob, hybridJob, silentJob));
+            when(emailDraftRepository.findByJobIdAndUserId(anyLong(), eq(USER_ID))).thenReturn(Optional.empty());
+            when(jobAnalysisRepository.findByJobIdAndUserId(anyLong(), eq(USER_ID))).thenReturn(Optional.empty());
+
+            var result = fetchJobsService.findAllWithDraftStatus(USER_ID, null, false, null, true);
+
+            assertEquals(1, result.size());
+            assertEquals("Dev Remoto", result.get(0).job().title());
+        }
+
+        @Test
+        @DisplayName("findAllWithDraftStatus with remoteOnly=false should not filter by work model")
+        void findAllWithDraftStatus_whenRemoteOnlyFalse_shouldKeepAllJobs() {
+            var remoteJob = job(1L, "Dev Remoto", "Vaga 100% home office para todo o Brasil");
+            var onsiteJob = job(2L, "Dev Presencial", "Vaga presencial em São Paulo, SP");
+            when(jobRepository.findAll()).thenReturn(List.of(remoteJob, onsiteJob));
+            when(emailDraftRepository.findByJobIdAndUserId(anyLong(), eq(USER_ID))).thenReturn(Optional.empty());
+            when(jobAnalysisRepository.findByJobIdAndUserId(anyLong(), eq(USER_ID))).thenReturn(Optional.empty());
+
+            var result = fetchJobsService.findAllWithDraftStatus(USER_ID, null, false, null, false);
+
+            assertEquals(2, result.size());
+        }
+
+        @Test
+        @DisplayName("findAllWithDraftStatus with remoteOnly=true should drop jobs with negated remote phrasing")
+        void findAllWithDraftStatus_whenRemoteOnlyAndNegatedRemote_shouldDropJob() {
+            var negatedJob = job(1L, "Dev Onsite", "100% presencial — não é remoto");
+            when(jobRepository.findAll()).thenReturn(List.of(negatedJob));
+            when(emailDraftRepository.findByJobIdAndUserId(anyLong(), eq(USER_ID))).thenReturn(Optional.empty());
+            when(jobAnalysisRepository.findByJobIdAndUserId(anyLong(), eq(USER_ID))).thenReturn(Optional.empty());
+
+            var result = fetchJobsService.findAllWithDraftStatus(USER_ID, null, false, null, true);
+
+            assertTrue(result.isEmpty());
+        }
+
+        @Test
+        @DisplayName("findAllWithDraftStatus should combine remoteOnly with minScore and excludeApplied")
+        void findAllWithDraftStatus_whenRemoteOnlyMinScoreAndExcludeApplied_shouldApplyAll() {
+            var appliedRemote = job(1L, "Remoto Aplicado", "Trabalho 100% remoto, home office");
+            var freshRemote = job(2L, "Remoto Fresh", "Home office em todo o Brasil, flexível");
+            var onsiteLow = job(3L, "Presencial Baixo", "Vaga presencial");
+            when(jobRepository.findAll()).thenReturn(List.of(appliedRemote, freshRemote, onsiteLow));
+            when(emailDraftRepository.findByJobIdAndUserId(1L, USER_ID))
+                    .thenReturn(Optional.of(new EmailDraft(101L, 1L, USER_ID, "Subject", "Body",
+                            EmailStatus.SENT, LocalDateTime.now())));
+            when(emailDraftRepository.findByJobIdAndUserId(2L, USER_ID)).thenReturn(Optional.empty());
+            when(emailDraftRepository.findByJobIdAndUserId(3L, USER_ID)).thenReturn(Optional.empty());
+            when(jobAnalysisRepository.findByJobIdAndUserId(1L, USER_ID))
+                    .thenReturn(Optional.of(new JobAnalysis(201L, 1L, USER_ID, 90,
+                            List.of("Java"), List.of(), null, "summary")));
+            when(jobAnalysisRepository.findByJobIdAndUserId(2L, USER_ID))
+                    .thenReturn(Optional.of(new JobAnalysis(202L, 2L, USER_ID, 75,
+                            List.of("Java"), List.of(), null, "summary")));
+            when(jobAnalysisRepository.findByJobIdAndUserId(3L, USER_ID))
+                    .thenReturn(Optional.of(new JobAnalysis(203L, 3L, USER_ID, 30,
+                            List.of("Java"), List.of(), null, "summary")));
+
+            var result = fetchJobsService.findAllWithDraftStatus(USER_ID, null, true, 60, true);
+
+            assertEquals(1, result.size());
+            assertEquals("Remoto Fresh", result.get(0).job().title());
             assertEquals(75, result.get(0).matchScore());
         }
     }
