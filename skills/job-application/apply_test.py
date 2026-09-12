@@ -473,6 +473,96 @@ class JobIdTests(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
+# Job-id derivation hardening (idempotency-key chain)
+# ---------------------------------------------------------------------------
+
+class JobIdHardeningTests(unittest.TestCase):
+    """derive_job_id: only recognized job-detail shapes mint a key.
+
+    Old numeric slugs (InfoJobs, e.g. 755694375.json) and the new base64 Gupy
+    slugs are both legal, coexisting keys. Application-flow URLs
+    (candidates/applications/.../curriculum) and query/fragment-only garbage
+    must NEVER become a key: unknown shapes return None so the planner refuses
+    to plan instead of aliasing thousands of distinct jobs under one filename.
+    """
+
+    def test_numeric_slug_stable(self):
+        # Legacy InfoJobs numeric slug format — unchanged, still a legal key.
+        self.assertEqual(
+            apply.derive_job_id("https://www.infojobs.com.br/vaga/755694375.json"),
+            "755694375.json",
+        )
+
+    def test_base64_slug_stable(self):
+        # New Gupy base64url slug format — unchanged, still a legal key.
+        slug = "eyJpZCI6Ijc1NTY5NDM3NSIsInRpdGxlIjoiZGVzZW52b2x2ZWRvci1qYXZhIn0"
+        self.assertEqual(
+            apply.derive_job_id(f"https://jobs.gupy.io/jobs/{slug}"),
+            slug,
+        )
+
+    def test_candidates_flow_url_returns_none(self):
+        # The apply-in-progress URL must never fall back to a garbage key like
+        # "/curriculum" — that would alias every in-progress application.
+        self.assertIsNone(apply.derive_job_id(
+            "https://mtpbrasil.gupy.io/candidates/applications/xyz/steps/123/curriculum"
+        ))
+
+    def test_flow_directory_segments_return_none(self):
+        # Each application-flow path keyword, used as the trailing segment,
+        # must yield None (explicit unknown), never a wrong key.
+        for url in (
+            "https://mtpbrasil.gupy.io/candidates",
+            "https://mtpbrasil.gupy.io/candidates/applications",
+            "https://mtpbrasil.gupy.io/candidates/applications/xyz/steps",
+            "https://mtpbrasil.gupy.io/candidates/applications/xyz/steps/1/curriculum",
+            "https://portal.gupy.io/jobs",  # bare /jobs directory, no slug
+        ):
+            self.assertIsNone(apply.derive_job_id(url), f"expected None for {url}")
+
+    def test_query_and_fragment_strip_to_same_slug(self):
+        bare = "https://jobs.gupy.io/jobs/789-x"
+        self.assertEqual(apply.derive_job_id(bare + "?ref=share"), "789-x")
+        self.assertEqual(apply.derive_job_id(bare + "#secao-candidatura"), "789-x")
+        self.assertEqual(
+            apply.derive_job_id(bare + "?utm_source=linkedin&utm_campaign=bot#top"),
+            "789-x",
+        )
+
+
+class JobIdIdempotencyKeyTests(unittest.TestCase):
+    """Cross-format key resolution: deterministic per format, coexisting across."""
+
+    def test_same_job_resolves_consistently(self):
+        # The same detail URL always yields the same idempotency key, with or
+        # without tracking query/fragment parts.
+        url = "https://jobs.gupy.io/jobs/abc-xyz"
+        self.assertEqual(apply.derive_job_id(url), "abc-xyz")
+        self.assertEqual(apply.derive_job_id(url + "?ref=1#top"), "abc-xyz")
+        self.assertEqual(
+            apply.derive_job_id(url),
+            apply.derive_job_id(url + "?ref=1#top"),
+        )
+
+    def test_numeric_and_base64_slugs_are_distinct_legal_keys(self):
+        # Both formats exist in production and both resolve — they are
+        # intentionally DIFFERENT memory keys (different filenames); that is
+        # documented and legal. The verdict record body carries backend_job_id
+        # so a slug-miss can still reconcile against the backend id.
+        numeric = apply.derive_job_id(
+            "https://www.infojobs.com.br/vaga/755694375.json"
+        )
+        base64 = apply.derive_job_id(
+            "https://jobs.gupy.io/jobs/"
+            "eyJpZCI6Ijc1NTY5NDM3NSIsInRpdGxlIjoiZGVzZW52b2x2ZWRvci1qYXZhIn0"
+        )
+        self.assertIsNotNone(numeric)
+        self.assertIsNotNone(base64)
+        self.assertNotEqual(numeric, base64)
+        self.assertNotEqual(f"{numeric}.json", f"{base64}.json")
+
+
+# ---------------------------------------------------------------------------
 # Idempotency (#27) — memory record round-trip
 # ---------------------------------------------------------------------------
 
