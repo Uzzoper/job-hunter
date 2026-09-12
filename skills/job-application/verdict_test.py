@@ -361,6 +361,58 @@ class VerdictRoutingTests(unittest.TestCase):
         self.assertEqual(record["applied_at"], ENDED_AT)
         self.assertEqual(result["applied_record"]["applied_at"], ENDED_AT)
 
+    # Test 9 — idempotency-key hardening: backend_job_id rides in the record BODY
+    def test_applied_record_carries_backend_job_id(self):
+        # The verdict record embeds the numeric backend id so a slug-miss
+        # (numeric vs base64 key) can reconcile against the backend id. The
+        # FILE key stays the portal slug — the backend numeric id never reaches
+        # a filename.
+        result = verdict.decide(
+            **make_attempt(memory_dir=self.memory_dir, confirmed=True,
+                           backend_job_id=42)
+        )
+        self.assertTrue(self.applied_path.is_file())
+        record = json.loads(self.applied_path.read_text(encoding="utf-8"))
+        self.assertEqual(record["backend_job_id"], 42)
+        self.assertEqual(self.applied_path.name, f"{JOB_ID}.json")
+
+    def test_applied_record_omits_backend_job_id_when_none(self):
+        # The classic --job-url flow has no backend id (backend_job_id=None):
+        # the record must not carry a null/empty backend_job_id key.
+        result = verdict.decide(
+            **make_attempt(memory_dir=self.memory_dir, confirmed=True)
+        )
+        self.assertTrue(self.applied_path.is_file())
+        record = json.loads(self.applied_path.read_text(encoding="utf-8"))
+        self.assertNotIn("backend_job_id", record)
+
+    def test_write_applied_record_persists_backend_id_but_keeps_slug_key(self):
+        # Direct writer contract: backend_job_id is persisted in the record
+        # body for later reconciliation, while the file key stays the portal
+        # slug — the backend numeric id must never reach a filename.
+        record = verdict.write_applied_record(
+            self.memory_dir, "755694375.json",
+            portal="infojobs",
+            contact_email=CONTACT_EMAIL,
+            applied_at=ENDED_AT,
+            screenshot_path=SCREENSHOT,
+            verdict=verdict.SUBMIT_OK,
+            evidence=success_evidence(),
+            backend_job_id=42,
+        )
+        self.assertEqual(record["backend_job_id"], 42)
+        # The file key stays the portal slug (writer + reader both append .json,
+        # so the InfoJobs numeric slug 755694375.json → 755694375.json.json) —
+        # the backend numeric id never reaches a filename.
+        slug_record = (
+            self.memory_dir / "applications" / "755694375.json.json"
+        )
+        self.assertTrue(slug_record.is_file())
+        on_disk = json.loads(slug_record.read_text(encoding="utf-8"))
+        self.assertEqual(on_disk["backend_job_id"], 42)
+        # No "42.json" sibling is ever created from the backend id.
+        self.assertFalse((self.memory_dir / "applications" / "42.json").exists())
+
 
 if __name__ == "__main__":
     unittest.main()
