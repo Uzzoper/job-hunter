@@ -7,13 +7,24 @@
 
 ## Purpose
 
-Plan a job application as an ordered, machine-readable **action plan** that the bot executes through its browser tool. The plan is produced by `apply.py` (stdlib-only Python), which validates inputs, enforces apply guardrails, and emits steps (fill / upload / screenshot / confirm_checkpoint / submit) with CSS selectors loaded from `portals/<portal>.yaml`. Domain-specific portal helpers in `helpers/<portal>.py` (issue #45) build the per-portal flow (`click_apply_button` → `fill_form` → `handle_cover_letter` → always-gated `submit`).
+Plan a job application as a **selector-free executor INTENT** that the bot executes
+through its browser tool against live page snapshots. The intent is produced by
+`apply.py` (stdlib-only Python), which validates inputs, enforces apply
+guardrails, and emits `{intent_id, job_id, job_url, portal, profile, policy,
+metadata}` — no steps, no CSS selectors, no `fill_form`. The MCP executor derives
+every action from live AX snapshots via `classify.py` and records the outcome
+via `verdict.py` (the sole writer of the applied record).
+
+The legacy selector layer (portals `YAML`, `helpers/` Python modules) and the
+CDP daemon were retired in cutover package 3 (`docs/specs/mcp-apply-loop.md`,
+l.291-299): the intent contract is portal-neutral, so both portals share one
+loop.
 
 This is the **structured counterpart** to the free-form `job-portal-browser` navigation skill:
 
 | Situation | Skill |
 |---|---|
-| Application flow known in advance (Gupy form fields are stable, predictable) | `job-application` (this skill) — planner emits steps, bot executes |
+| Application flow known in advance (Gupy form fields are stable, predictable) | `job-application` (this skill) — planner emits intent, executor loop drives the browser |
 | Unknown / free navigation, status checking, JS-only listing boards | `job-portal-browser` — bot drives freely |
 
 ---
@@ -23,8 +34,8 @@ This is the **structured counterpart** to the free-form `job-portal-browser` nav
 **The Job Hunter REST API is the PRIMARY job source.** Instead of receiving a
 job URL from elsewhere, `apply.py` can pick the job straight from the backend:
 top-scored from `GET /api/jobs` (`--from-api`) or by id from
-`GET /api/jobs/{id}` (`--job-id <id>`, which prefills `jobUrl` +
-`jobTitle`/`jobCompany` metadata into the plan).
+`GET /api/jobs/{id}` (`--job-id <id>`, which prefills `job_url` +
+`job_title`/`job_company`/`backend_job_id` metadata into the intent).
 
 ### One-time service-token setup (never store credentials in the repo)
 
@@ -110,7 +121,7 @@ python3 skills/job-application/apply.py --from-api \
   --profile profile.json --portal gupy --memory-dir <memails-dir> \
   [--min-score 60] [--no-fetch-if-empty] [--api-base-url http://localhost:8080]
 
-# Plan from a specific job id (prefills job_url/title/company into the plan):
+# Plan from a specific job id (prefills job_url/title/company into the intent):
 python3 skills/job-application/apply.py --job-id 7 \
   --profile profile.json --portal gupy --memory-dir <memails-dir>
 ```
@@ -124,7 +135,8 @@ New flags (all optional): `--job-id`, `--from-api`, `--api-base-url` (default
 - `--min-score` is forwarded as the real `minScore` query param; `hasEmail=true`
   is always sent by default (only jobs with a contact email are considered).
 - `--job-id` takes precedence when both `--job-id` and `--from-api` are given.
-- The classic `--job-url` flow is unchanged when no API flag is supplied.
+- The classic `--job-url` flow emits the same intent envelope when no API flag
+  is supplied (no `metadata` block is attached).
 - Every API failure (missing token, 401, unknown job, unreachable host) prints
   clean JSON and exits 1 — never a traceback. A 401 maps to
   `{"error": "unauthorized"}`.
@@ -141,8 +153,8 @@ New flags (all optional): `--job-id`, `--from-api`, `--api-base-url` (default
 ### When NOT to use
 
 - The application is sent **by email** — use the himalaya email tool / `company-scraper` skill instead.
-- The flow is unknown, multi-step/paginated, or needs login/session as the normal path (v2 assumes logged-in; if a login page appears mid-flow, the bot stops with `auth_required` and hands off to the human — it does **not** silently retry). Use `job-portal-browser` for unknown/free navigation.
-- The portal is **not** Gupy or InfoJobs — `apply.py` errors cleanly (`unknown_portal`). **LinkedIn is explicitly OUT of scope for automation**: LinkedIn applications are done **manually** by the human only; the separate LinkedIn scraper microservice (Node.js) only *reads* listings and never submits applications. There is deliberately **no** `portals/linkedin.yaml` and **no** `helpers/linkedin.py` — requesting `--portal linkedin` errors cleanly.
+- The flow is unknown, multi-step/paginated, or needs login/session as the normal path (the loop assumes logged-in; a login page stops the loop with the hard `stop_on_auth_url` policy and hands off to the human — it does **not** silently retry). Use `job-portal-browser` for unknown/free navigation.
+- The portal is **not** Gupy or InfoJobs — `apply.py` errors cleanly (`unknown_portal`). **LinkedIn is explicitly OUT of scope for automation**: LinkedIn applications are done **manually** by the human only; the separate LinkedIn scraper microservice (Node.js) only *reads* listings and never submits applications. There is deliberately **no** `linkedin` portal in the allow-list — requesting `--portal linkedin` errors cleanly.
 - The paired draft is a `NO_APPLY` refusal — the bot must refuse to plan (guardrail #28).
 
 ---
@@ -152,20 +164,18 @@ New flags (all optional): `--job-id`, `--from-api`, `--api-base-url` (default
 | Parameter | Via flag | Type | Required | Description |
 |---|---|---|---|---|
 | `job-url` | `--job-url` | string | no * | Job URL (id derived from the portal's URL pattern). Required only when no API flag is used |
-| API source | `--from-api` / `--job-id <id>` | flag / int | no | Issue #46: pick the top-scored job from the Job Hunter API, or a specific job detail (`GET /api/jobs/{id}` — prefills `jobUrl` + `jobTitle`/`jobCompany`) |
+| API source | `--from-api` / `--job-id <id>` | flag / int | no | Issue #46: pick the top-scored job from the Job Hunter API, or a specific job detail (`GET /api/jobs/{id}` — prefills `job_url` + `job_title`/`job_company`/`backend_job_id` metadata) |
 | API config | `--api-base-url` / `--api-token` / `--profile-dir` | string | no | Issue #46: backend base URL (default `http://localhost:8080`), token flag, and bot profile dir holding `api-token.txt` (default `~/.hermes/profiles/jobhunter-bot`) |
 | API filters | `--min-score` / `--fetch-if-empty` | int / flag | no | Issue #46: `minScore` query filter; trigger a fetch (default gupy) when the list is empty — `--no-fetch-if-empty` disables it |
 | profile | `--profile` | JSON file path | yes | `{name, email, phone, cv_path, cover_text}` (+ optional `no_apply: true`) |
-| portal | `--portal` | string | no (default `gupy`) | `gupy` \| `infojobs` (issue #45; unknown values error cleanly — **`linkedin` is NOT supported, by design**) |
+| portal | `--portal` | string | no (default `gupy`) | `gupy` \| `infojobs` (allow-list in `intent.py`; unknown values error cleanly — **`linkedin` is NOT supported, by design**) |
 | memory dir | `--memory-dir` | dir path | no | Base for idempotency records; default `~/.hermes/profiles/jobhunter-bot/memails` |
-| checkpoints | `--confirmed`, `--record-applied`, `--dry-run` | flags | no | See Confirmation protocol + Recording below |
-| auto apply | `--auto-apply` | flag | no | Issue #42: implies `--confirmed` (submit emitted), omits the `confirm_checkpoint`, keeps `screenshot` + record. NEVER bypasses idempotency (#27), refusal (#28), or the session gate (#41) |
-| auth/loop guard | `--current-url`, `--visited-urls` | string / comma-separated | no | Issues #38 + #41: current page + visited history so `apply.py` can detect auth/loop conditions and an expired session (see Step 4) |
-| session expiry | `--skip-session-check` | flag | no | Issue #41: skip the session expiry gate (also skipped on `--dry-run`) |
-| browser recovery | `--cdp-url`, `--user-data-dir` | URL / dir path | no | Issue #39: CDP endpoint (default `http://localhost:9222`, also from `portals/gupy.yaml` `cdp_url` key) and persistent Chromium profile dir (default `~/.chromium-profile-cdp`) |
-| status check | `--check-browser` | flag | no | Issue #39: print browser status as JSON and exit — no action plan required |
-| verification | `--verify-with` | string | no (default `screenshot`) | Issue #43: `screenshot` (default) or `ax` — how the executor verifies `fill_form`/`submit` steps. Invalid modes error cleanly |
-| intent mode | `--emit-intent`, `--max-steps` | flag / int | no | Phase 3 (mcp-apply-loop): emit the selector-free executor intent (profile + policy gates, **no steps/selectors**) and exit; `--max-steps` caps the executor loop budget (default `25`) |
+| affinity flags | `--confirmed`, `--auto-apply`, `--record-applied`, `--dry-run` | flags | no | See Confirmation protocol + Recording below |
+| session/guard flags | `--current-url`, `--visited-urls`, `--skip-session-check` | string / flag | no | Issue #41: current page (session expiry pre-flight gate) and visited history (kept for the executor); `--skip-session-check` skips the gate (also skipped on `--dry-run`) |
+| browser recovery | `--cdp-url`, `--user-data-dir` | URL / dir path | no | Issue #39: CDP endpoint (default `http://localhost:9222`, also the endpoint the Playwright MCP server attaches to via `--cdp-endpoint`) and persistent Chromium profile dir (default `~/.chromium-profile-cdp`) |
+| status check | `--check-browser` | flag | no | Issue #39: print browser status as JSON and exit — no intent emitted |
+| verification | `--verify-with` | string | no (default `screenshot`) | Issue #43: kept as an accepted executor hint (`screenshot` or `ax`); invalid modes error cleanly |
+| intent mode | `--emit-intent`, `--max-steps` | flag / int | no | mcp-apply-loop: explicit intent-emission switch (already the **default** output); `--max-steps` caps the executor loop budget (default `25`) |
 
 Profile JSON:
 
@@ -183,57 +193,60 @@ Profile JSON:
 
 ## Steps
 
-1. **Plan** — the bot runs `apply.py` with the job URL, profile, and portal:
+1. **Plan** — the bot runs `apply.py` with the job URL (or API flags), profile, and portal:
    ```
    python3 skills/job-application/apply.py \
      --job-url "https://jobs.gupy.io/jobs/<id-slug>" \
      --profile profile.json --portal gupy --memory-dir <memails-dir>
    ```
-2. **Validate** — apply.py checks portal YAML, required profile fields, and the guardrails (#28 refusal, #27 idempotency). Any failure returns a JSON error.
-3. **Receive the action plan** — a JSON list of steps with CSS selectors (schema below).
-4. **Execute step by step** — the bot opens the form URL and executes each step (below). The plan begins with a `verify_session` step (issue #41): before any fill, navigate to the step's `url` and call `verify_session(current_url, login_hint_url=<job-url>)`.
+2. **Validate** — apply.py runs the pre-flight gates (order below): portal allow-list → profile validation (`name`, `email`, `phone`, `cv_path`, `cover_text`) → refusal #28 → API resolution → browser recovery #39 (skipped on `--dry-run`) → session expiry #41 → idempotency #27. Any failure returns a JSON error.
+3. **Receive the intent envelope** — `{"intent": {...}, "dry_run": true}` (the `--dry-run` hint lives OUTSIDE the intent object, spec l.111). The intent carries `{intent_id, job_id, job_url, portal, profile, policy, metadata?}` — no steps, no selectors.
+4. **Execute the MCP loop** — snapshot-driven against live AX trees (see "MCP executor apply loop" below).
 
-   **The `fill_form` batch step (issue #42) — ONE browser call:**
-   - All non-submit fields are consolidated into a single `{"type": "fill_form", "action": "fill_form", "fields": [...]}` step preserving portal order (`name`, `email`, `phone`, `cv_upload`, `cover_letter`).
-   - The bot fills/attaches every field in `fields` in a **single browser call** (no page reload between fields). Each entry is `{name, selector, type, value}` where `type` is `fill` (text) or `upload` (file attachment).
-   - Do NOT split `fill_form` into per-field steps.
+Pre-flight gate order in `apply.py` (cutover pkg 3 — the deterministic #38
+guard and the legacy session-expired *plan* are gone; the executor enforces
+auth/loop stops per step at runtime):
 
-   **Session expiry gate (issue #41):**
-   - **Verify the session first** — every plan starts with `{"type": "verify_session", "expect": "not_auth_page", "on_expired": "ask_login_and_confirm"}`. The bot executes it by checking `is_auth_url(current_url)` on the job page.
-   - **Stop on expiry** — if the result is `{"session": "expired"}` the bot must **not** fill anything: the plan only contains the `verify_session` step + a `confirm_checkpoint` whose note is `Sessão expirada. Faça login no Gupy e digite confirmar.` and whose `login_url` is the job link. Ask the human to log in, then re-run.
-   - **`--skip-session-check`** — removes the `verify_session` step (also removed on `--dry-run`); used when the bot already knows the session is alive.
-
-   **Before every navigation, also run the auth/loop guard (`navigation.py`, issue #38):**
-   - **Check auth first** — call `is_auth_url(current_url)`. If the current URL's path contains `/login`, `/auth`, `/signin`, or `/candidates/auth` (case-insensitive), the bot is being redirected to a login page and **must stop immediately** (`auth_required`).
-   - **Track visited URLs** — keep a list of every page visited during this application and pass it as `--visited-urls` (comma-separated) with the current page as `--current-url` on each re-invocation of `apply.py`.
-   - **Abort after 3 visits** — if the same (normalized) URL has been visited 3+ times, the bot is stuck in a navigation loop an **must abort** (`navigation_loop`).
-   - **Ask the human** — on either stop, output the JSON error (which carries `manual_url` — the direct link to the job where the user can finish by hand — and `screenshot_path` for debugging) and hand off to the user.
-
-   Both guards keep the planner **stateless**: visited history and the current URL are supplied by the bot as arguments each call; `navigation.py` never stores state itself.
-
-5. **Screenshot + pause (interactive mode)** — at `screenshot`, the bot captures the filled form to the given path; at `confirm_checkpoint`, the bot stops and asks the user to confirm every value. In `--auto-apply` mode the `confirm_checkpoint` is omitted — the user pre-authorized the run.
-6. **Submit (only after confirmation)** — the bot re-runs with `--confirmed` (or `--auto-apply`) to obtain the `submit` step, OR the user confirms the checkpoint and the bot proceeds with the confirmed plan; the `submit` step is executed last.
-7. **Record** — after the browser submit, the bot calls `apply.py --record-applied` (or the confirmed/`--auto-apply` run already recorded it) so future runs short-circuit with `already_applied`.
+```
+portal allow-list (intent.is_supported_portal)
+  → profile validation
+  → refusal (#28)
+  → browser recovery (#39, non --dry-run)
+  → session expiry (#41)     ← expired → session_expired error (exit 0)
+  → idempotency (#27)
+  → intent emission
+```
 
 ---
 
-## MCP executor apply loop (planner-intent mode, phase 3)
+## MCP executor apply loop (planner-intent mode)
 
-For the MCP executor loop (snapshot-driven), `apply.py` emits a **selector-free intent**
-instead of the selector-based plan:
+The planner emits a **selector-free intent** — the ONLY output since cutover
+package 3:
 
+```json
+{
+  "intent": {
+    "intent_id": "<uuid>",
+    "job_id": "<id-slug>",
+    "job_url": "https://jobs.gupy.io/jobs/<id-slug>",
+    "portal": "gupy",
+    "profile": {"name": "...", "email": "...", "phone": "...", "resume_path": "...", "cover_text": "..."},
+    "policy": {
+      "require_confirmation_before_final_submit": true,
+      "never_fill_credentials": true,
+      "stop_on_auth_url": true,
+      "max_steps": 25
+    }
+  },
+  "dry_run": false
+}
 ```
-python3 skills/job-application/apply.py --job-url <url> --profile profile.json \
-  --emit-intent [--max-steps 25]
-```
 
-The intent JSON carries **no CSS selectors and no steps** — just
-`{intent_id, job_id, job_url, portal, profile{name, email, phone, resume_path, cover_text},
-policy{require_confirmation_before_final_submit, never_fill_credentials, stop_on_auth_url,
-max_steps}, metadata{...}?, dry_run?}`. All pre-flight guardrails still run (profile
-validation, refusal #28, idempotency #27); the legacy session-expired *plan* and the
-navigation-guard early exits are skipped because the loop enforces auth/page stops per step
-at runtime (the session check itself is still computed).
+API-first mode adds a `metadata` block: `{job_title, job_company,
+backend_job_id, api_base_url}` (bridged from `job_api.py`, issue #46). The
+`--emit-intent` flag stays accepted for backward compatibility — intent
+emission is now the default output.
 
 The executor runs **observe → classify → act → verify** against each **live AX snapshot**
 (`classify.py` is stdlib-only and pure):
@@ -253,83 +266,13 @@ The executor runs **observe → classify → act → verify** against each **liv
 
 Policy gates: `never_fill_credentials` and `stop_on_auth_url` are always `true` and cannot
 be disabled from the CLI; `require_confirmation_before_final_submit` flips to `false` via
-`--confirmed` / `--auto-apply` (same gates the legacy plan enforces).
-
----
-
-## Portal helpers (issue #45)
-
-Each portal maps to a YAML config (`portals/<portal>.yaml`) **and** a Python helper module (`helpers/<portal>.py`). `apply.py` loads both by name (`--portal`); either missing on disk means `unknown_portal`.
-
-### Layout
-
-```
-skills/job-application/
-├── portals/
-│   ├── gupy.yaml          # Gupy selector mapping (input[name='name'], ...)
-│   └── infojobs.yaml      # InfoJobs selector mapping (BEST-EFFORT)
-└── helpers/
-    ├── __init__.py        # shared non_submit_fields(); must NOT import portal modules
-    ├── gupy.py            # Gupy flow builder (same interface as infojobs.py)
-    └── infojobs.py        # InfoJobs flow builder
-```
-
-### Per-portal interface (identical for both portals)
-
-All helper functions are **pure** (return action dicts; no browser/network I/O) and take the portal mapping as `portal_cfg`:
-
-| Function | Returns | Notes |
-|---|---|---|
-| `click_apply_button(portal_cfg, url)` | `{"type": "click", "action": "click_apply_button", "selector": <apply_button_selector>, "url": <job url>}` | Selector from `portal_cfg["apply_button_selector"]` or a portal best-effort default |
-| `fill_form(profile, portal_cfg)` | `{"type": "fill_form", "action": "fill_form", "fields": [{name, selector, type, value}...]}` | All non-submit fields in portal order; same batch shape as the plan's `fill_form` step (issue #42) |
-| `handle_cover_letter(profile, portal_cfg)` | `{"type": "fill", "action": "handle_cover_letter", "field": "cover_letter", "selector": <...>, "value": profile["cover_text"]}` | |
-| `submit(portal_cfg, confirmed=False)` | `{"type": "submit", "action": "submit", "selector": <submit selector>}` | **Raises ValueError unless `confirmed=True`** — never called without explicit confirmation |
-| `apply(job_url, profile, portal_cfg, confirmed=False)` | `[click_apply_button, fill_form, handle_cover_letter, submit]` | Orchestration; a `confirmed=False` run raises via `submit` |
-
-Signature parity between `gupy.py` and `infojobs.py` is enforced by `helpers_test.py`. The `helpers` package imports lazily: `import helpers` never pulls in a portal module.
-
-> **LinkedIn is deliberately absent** (no `helpers/linkedin.py`, no `portals/linkedin.yaml`). Applications on LinkedIn are manual-only; the LinkedIn scraper microservice is read-only. `--portal linkedin` → `unknown_portal`.
-
----
-
-## Verification hierarchy (issue #43)
-
-After a `fill_form` / `submit` step, the executor verifies the page state instead of relying on an LLM-vision screenshot by default. `apply.py` emits a `"verification"` object on each `fill_form` and `submit` step telling the executor how (and, for AX, what) to check:
-
-```json
-{"verification": {"method": "screenshot", "ax_query": null}}
-{"verification": {"method": "ax", "ax_query": {"role": "button", "name": "Enviar"}}}
-```
-
-- **`--verify-with screenshot` (default)** — behavior unchanged: the executor captures a screenshot. `ax_query` is `null`.
-- **`--verify-with ax`** — the executor verifies via the **accessibility tree** (fast, no LLM vision cost). The `ax_query` is a best-effort hint interpreted against the tree:
-  - `fill_form` → `{"role": "textbox"}` (at least one editable field present)
-  - `submit` → `{"role": "button", "name": "Enviar"}` (confirm control present before submitting)
-
-### `ax_tree.py` (new module, issue #43)
-
-`ax_tree.py` (stdlib: `urllib`, `json`, `typing` only — separate from `navigation.py`, which stays stateless by design and never touches the network) provides:
-
-| Function | Purpose |
-|---|---|
-| `fetch_ax_tree(cdp_url, timeout=5, cdp_post=None)` | Fetch + normalize the AX tree via an **injected** `cdp_post(method, params)` transport. No transport → `{"error": "cdp_transport_required"}`; transport failure → `{"error": "ax_fetch_failed", "detail": ...}`; success → `{"nodes": [...]}` |
-| `snapshot_from_cdp_response(payload)` | Pure parser: flatten a CDP `Accessibility.getFullAXTree` payload into `[{role, name, value, backendNodeId, ignored}]`, **skipping ignored nodes** |
-| `find_in_ax_tree(nodes, query)` | Pure search: case-insensitive substring over `role`+`name`+`value`. `query` is a string or a dict like `{"role": "button", "name": "Enviar"}`. Empty/no-match → `[]` |
-
-Because stdlib has no WebSocket client, this module does **not** own a CDP session: the bot (which has a real CDP/WebSocket transport) injects `cdp_post`, and tests inject fakes. The exposed `getFullAXTree` is the CDP HTTP-readable surface stub; in practice the transport is bot-side.
-
-### Hierarchy
-
-1. **AX tree first (primary)** — fast, no LLM vision cost, deterministic. Preferred for routine `fill_form` / `submit` verification.
-2. **Screenshot (fallback only)** — used for **errors, CAPTCHA, unexpected layout, and the final user confirmation**, where a human/LLM must visually confirm. Screenshot *steps* (the audit-trail capture before `confirm_checkpoint`, issue #42) are unchanged and independent of the verification method.
-
-> **Note:** the "50%+ faster" acceptance metric is measured on the bot host (manual benchmarking), not provable by unit tests. The unit suite here proves the AX parsing/searching and the plan metadata wiring only.
+`--confirmed` / `--auto-apply`.
 
 ---
 
 ## Browser recovery (issue #39)
 
-Before generating the action plan (skipped on `--dry-run`), `apply.py` makes sure
+Before emitting the intent (skipped on `--dry-run`), `apply.py` makes sure
 the browser session is alive. The whole flow is stdlib-only (`urllib`,
 `subprocess`, `time`, `os`) and never needs a login secret: Chromium is launched
 with a persistent profile so its session survives restarts.
@@ -356,14 +299,14 @@ wait 3s ─────────────► re-check CDP
 
 ### What the bot must do
 
-1. Run `apply.py` (without `--dry-run`). If the plan comes back, CDP was reachable — proceed normally.
-2. If the output is `needs_login`, **stop and ask the human to log into Gupy in the launched Chromium window, then confirm**. Do **not** retry the action plan until the user confirms the login.
+1. Run `apply.py` (without `--dry-run`). If the intent comes back, CDP was reachable — proceed normally.
+2. If the output is `needs_login`, **stop and ask the human to log into Gupy in the launched Chromium window, then confirm**. Do **not** retry the intent until the user confirms the login.
 3. If the output is `browser_unavailable`, report the failure and stop — do not keep retrying.
 
 ### `--check-browser` flag
 
 Checks the browser state and exits without requiring `--job-url` / `--profile`
-and without emitting an action plan:
+and without emitting an intent:
 
 ```
 python3 skills/job-application/apply.py --check-browser [--cdp-url <url>] [--user-data-dir <dir>]
@@ -376,7 +319,7 @@ with exit code 0 for `ready`/`needs_login` and 1 for `browser_unavailable`.
 
 | Setting | Default | Override |
 |---|---|---|
-| CDP endpoint | `http://localhost:9222` | `--cdp-url` flag, or `cdp_url:` key in `portals/gupy.yaml` |
+| CDP endpoint | `http://localhost:9222` | `--cdp-url` flag (also the endpoint the Playwright MCP server attaches to via `--cdp-endpoint`) |
 | Chromium user data dir | `~/.chromium-profile-cdp` (expanduser) | `--user-data-dir` flag |
 | Remote debugging port | `9222` | passed through to `start_chromium` |
 
@@ -401,124 +344,39 @@ result = verify_session(current_url, login_hint_url=job_url)
 #  "login_url": "<job-url or current-url>"}       → stop, ask the human to log in
 ```
 
-### Verify-then-fill flow
+### Pre-flight gate (cutover pkg 3)
+
+`apply.py` runs the check **before any intent is emitted** (skipped on
+`--skip-session-check` and `--dry-run`). An expired session stops the planner
+with a clean JSON error — exit 0 so the bot asks the human to authenticate and
+then re-runs:
 
 ```
-apply.py  ──► plan[0] = verify_session  (expect "not_auth_page")
-   │
-   ├─ verify_session(current, job_url)["session"] == "active"  ──► continue with fill/upload steps
-   └─ session == "expired"  ──► plan stops at confirm_checkpoint:
-                                note  = "Sessão expirada. Faça login no Gupy e digite confirmar."
-                                login_url = <job-url>
-                                (no fill / upload / submit steps at all — exit 0)
+apply.py  ──► verify_session(current, job_url)
+   ├─ session == "active"  ──► continue to idempotency + intent emission
+   └─ {"session": "expired"}  ──► {"error": "session_expired",
+                                    "detail": "Sessão expirada. Faça login no Gupy e digite confirmar.",
+                                    "login_url": <job-url>}   (exit 0, no intent)
 ```
 
-### Integration with the other guards
-
-- **Order in `apply.py`:** browser recovery (#39) → **session expiry gate (#41)** → auth/loop guard (#38) → idempotency (#27) → action plan.
-- An expired session supersedes the old `auth_required` error for the default flow: a login page now yields the expired plan above (exit 0) instead of an error. The #38 `auth_required` error still fires when the session check is disabled (`--skip-session-check`).
-- Both `--skip-session-check` and `--dry-run` skip the gate (no `verify_session` step, `"sessionCheck": false` in the plan).
-- The `login_url` hint is the job URL (where the human returns after authenticating); when no hint is given it falls back to the current URL.
-
----
-
-## Action-plan JSON schema
-
-```json
-{
-  "ok": true,
-  "portal": "gupy",
-  "jobId": "<id-slug>",
-  "jobUrl": "https://jobs.gupy.io/jobs/<id-slug>",
-  "form_url": "https://jobs.gupy.io/jobs/<id-slug>",
-  "confirmed": false,
-  "confirmationRequired": true,
-  "dryRun": false,
-  "sessionCheck": true,
-  "sessionExpired": false,
-  "autoApply": false,
-  "steps": [
-    {"step": 1, "type": "verify_session", "action": "verify_session", "url": "https://jobs.gupy.io/jobs/<id-slug>", "expect": "not_auth_page", "on_expired": "ask_login_and_confirm"},
-    {"step": 2, "type": "fill_form", "action": "fill_form", "fields": [
-        {"name": "name",          "selector": "input[name='name']",          "type": "fill",   "value": "Juan Antonio Peruzzo"},
-        {"name": "email",         "selector": "input[name='email']",         "type": "fill",   "value": "juan@example.com"},
-        {"name": "phone",         "selector": "input[name='phone']",         "type": "fill",   "value": "+55 42 99833-1363"},
-        {"name": "cv_upload",     "selector": "input[type='file']",          "type": "upload", "value": "/home/juan/cv.pdf"},
-        {"name": "cover_letter",  "selector": "textarea[name='coverLetter']", "type": "fill",   "value": "Olá! ..."}
-    ],
-     "verification": {"method": "screenshot", "ax_query": null}},   <!-- issue #43: {"method": "ax", "ax_query": {"role": "textbox"}} with --verify-with ax -->
-    {"step": 3, "type": "screenshot", "path": "<memory-dir>/screenshots/<id-slug>.png"},
-    {"step": 4, "type": "confirm_checkpoint", "screenshot_path": "<...png>",
-     "note": "PAUSE - do not continue until the user confirms every value and the screenshot"},
-    {"step": 5, "type": "submit", "selector": "button[type='submit']",
-     "verification": {"method": "screenshot", "ax_query": null}}   <!-- issue #43 -->
-  ]
-}
-```
-
-Step types: `verify_session` (issue #41, always first unless `--skip-session-check`), `fill_form` (issue #42 — single batch step for all non-submit fields; executor contract: **one browser call**), `screenshot`, `confirm_checkpoint`, `submit`. `fill_form` and `submit` carry a `"verification"` object (issue #43) controlling how the executor verifies the step — see "Verification hierarchy".
-
-### `--auto-apply` plan (issue #42)
-
-`apply.py --auto-apply` produces a plan where:
-- `submit` is emitted (same gate as `--confirmed`; `"confirmed": true`, `"confirmationRequired": false`),
-- the `confirm_checkpoint` step is **omitted** (the user pre-authorized the run),
-- `screenshot` and the applied record (`plan["recorded"]`) are kept for the audit trail,
-- `"autoApply": true` is set on the plan.
-
-**Safety guarantees (non-negotiable, always evaluated before plan emission):**
-- **#27 idempotency** — an existing `already_applied` record still short-circuits with `{"error": "already_applied"}`.
-- **#28 refusal** — a `NO_APPLY` / refusal profile still blocks with `{"error": "refusal_draft_blocked"}`.
-- **#41 session gate** — an expired session still yields the short expired plan (verify + login checkpoint, no fill/submit). Auto-apply skips the *user confirmation of a healthy flow*, never the safety checks.
-
-```json
-{
-  "ok": true, "portal": "gupy", "jobId": "<id-slug>", "jobUrl": "<...>",
-  "confirmed": true, "confirmationRequired": false, "dryRun": false,
-  "sessionCheck": true, "sessionExpired": false, "autoApply": true,
-  "steps": [
-    {"step": 1, "type": "verify_session", "action": "verify_session", "url": "<job-url>", "expect": "not_auth_page", "on_expired": "ask_login_and_confirm"},
-    {"step": 2, "type": "fill_form", "action": "fill_form", "fields": [{"name": "name", "selector": "input[name='name']", "type": "fill", "value": "..."}, ...], "verification": {"method": "screenshot", "ax_query": null}},
-    {"step": 3, "type": "screenshot", "path": "<memory-dir>/screenshots/<id-slug>.png"},
-    {"step": 4, "type": "submit", "selector": "button[type='submit']", "verification": {"method": "screenshot", "ax_query": null}}
-  ]
-}
-```
-
-### Expired-session plan (issue #41)
-
-When `verify_session` detects an expired session, `apply.py` returns exit 0 with a **short plan** — the bot must stop and ask the human to log in (never fill/submit):
-
-```json
-{
-  "ok": true,
-  "portal": "gupy",
-  "jobId": "<id-slug>",
-  "jobUrl": "https://jobs.gupy.io/jobs/<id-slug>",
-  "confirmed": false,
-  "confirmationRequired": true,
-  "dryRun": false,
-  "sessionCheck": true,
-  "sessionExpired": true,
-  "autoApply": false,
-  "steps": [
-    {"step": 1, "type": "verify_session", "action": "verify_session", "url": "https://jobs.gupy.io/jobs/<id-slug>", "expect": "not_auth_page", "on_expired": "ask_login_and_confirm"},
-    {"step": 2, "type": "confirm_checkpoint",
-     "note": "Sessão expirada. Faça login no Gupy e digite confirmar.",
-     "login_url": "https://jobs.gupy.io/jobs/<id-slug>",
-     "screenshot_path": "<memory-dir>/screenshots/<id-slug>.png"}
-  ]
-}
-```
+Mid-loop auth stops are handled at runtime by the executor: `stop_on_auth_url`
+is a hard policy gate a login redirect trips, using the same `is_auth_url`
+detector. `--skip-session-check` / `--dry-run` skip the planner-side check only.
 
 ---
 
 ## Confirmation protocol
 
-- **Submit is never emitted without `--confirmed` or `--auto-apply`.** An unconfirmed plan ends at `confirm_checkpoint` and sets `"confirmationRequired": true` — the bot MUST stop there and wait for explicit user confirmation.
-- All form fields are filled in a single `fill_form` batch call; after the screenshot the bot presents the captured form + all values to the user.
-- The bot **never** clicks submit without that explicit confirmation.
-- `--auto-apply` is the **only** path that skips the `confirm_checkpoint` — it implies explicit pre-authorization and still keeps the screenshot + record. Interactive (`--confirmed`) plans keep the checkpoint.
+- **The apply-final action is never taken without `--confirmed` or `--auto-apply`.**
+  The intent carries `require_confirmation_before_final_submit: true` unless one
+  of those flags is given — the executor MUST stop at the review page and wait
+  for explicit user confirmation.
+- After filling, the bot presents the captured form + screenshot + all values to
+  the user before the final confirmation.
+- `--auto-apply` is the **only** path that skips that confirmation — it implies
+  explicit pre-authorization (policy flips to `false`) but never the safety gates.
+- `--record-applied` is a verdict-input flag for the executor stage, never a
+  planner write trigger.
 
 ---
 
@@ -542,34 +400,14 @@ Records live at:
 ```
 
 - The default `<memory-dir>` follows the bot memory convention `~/.hermes/profiles/jobhunter-bot/memails`.
-- Before planning, apply.py checks `<memory-dir>/applications/<job_id>.json`; a record with `status: "applied"` short-circuits with `{"error": "already_applied"}` — the bot must never apply twice to the same job.
-- Recording triggers: `--confirmed`, `--auto-apply` (planner treats authorization as the commit point) or `--record-applied` (bot calls it **post-submit** after the real browser step succeeded). `--dry-run` never writes records.
-
-### Record-back (backend canonical record)
-
-The **local file is a fast pre-check**; the **backend is the canonical record**.
-After a confirmed local record is written (`--record-applied` or the
-`--auto-apply` submit path), apply.py ALSO posts an applied marker upstream:
-
-```
-POST <api-base-url>/api/jobs/<id>/applied      # empty JSON {} + X-Bot-Token
-```
-
-- Only for **API-sourced jobs** (`--job-id` / `--from-api`) — the numeric
-  backend id is known; the classic `--job-url` flow (slug only) never posts back.
-- Triggered only when the backend is reachable: `--api-base-url` set and a
-  token resolvable (`--api-token` / `JOBHUNTER_API_TOKEN` /
-  `<profile-dir>/api-token.txt`). Otherwise no `backend_record` field is emitted.
-- **Failure semantics:** the backend is best-effort. On success the echoed
-  `{jobId, status}` is attached as `"backend_record": {"ok": true, ...}`. On
-  failure (unreachable host, 401, 404, HTTP error) apply.py warns with
-  `"backend_record": {"ok": false, "error": <code>}` and **never** fails the
-  local record nor changes the exit code.
-- **Never sent** on `--dry-run`, an unconfirmed plan, an expired session, or a
-  refusal path — the same guards that block recording locally also prevent the
-  backend POST.
-- The backend endpoint is idempotent: re-posting the marker returns the
-  existing applied record instead of failing.
+- Before emitting an intent, apply.py checks `<memory-dir>/applications/<job_id>.json`; a record with `status: "applied"` short-circuits with `{"error": "already_applied"}` — the bot must never apply twice to the same job.
+- **verdict.py is the SOLE writer** (cutover pkg 2): records are written only
+  after verified success evidence (`verdict.write_applied_record` with
+  `verdict.SUBMIT_OK`). `apply.py` never writes records and never calls the
+  backend record API — the executor passes the outcome + evidence to the
+  verdict stage (`--confirmed` / `--auto-apply` / `--record-applied` are
+  verdict-input flags conveying that the run is authorized/committed).
+- `--dry-run` never writes records.
 
 ---
 
@@ -578,8 +416,8 @@ POST <api-base-url>/api/jobs/<id>/applied      # empty JSON {} + X-Bot-Token
 | `error` code | Meaning | Bot behavior |
 |---|---|---|
 | `usage` | Missing/invalid CLI arguments | Fix invocation |
-| `unknown_portal` | Portal YAML/helper absent (v2: gupy + infojobs; `linkedin` NOT supported by design) | Do not plan; no YAML loaded |
-| `invalid_profile` | Profile file missing / bad JSON / missing required fields | Show detail; fix profile |
+| `unknown_portal` | Portal not in the allow-list (v2: gupy + infojobs; `linkedin` NOT supported by design) | Do not plan |
+| `invalid_profile` | Profile file missing / bad JSON / missing required fields (`name`, `email`, `phone`, `cv_path`, `cover_text`) | Show detail; fix profile |
 | `refusal_draft_blocked` | Profile marks `no_apply` or cover text carries `NO_APPLY` (guardrail #28) | Stop — never send a refusal as an application |
 | `invalid_job_url` | No `/jobs/<slug>` segment derivable | Show detail |
 | `missing_api_token` | No Job Hunter API service token found (issue #46) — try `--api-token`, `JOBHUNTER_API_TOKEN`, or `<profile-dir>/api-token.txt` | Show the one-time service-token setup + save step (PT-BR) |
@@ -587,11 +425,10 @@ POST <api-base-url>/api/jobs/<id>/applied      # empty JSON {} + X-Bot-Token
 | `api_error` | Job Hunter API unreachable / unexpected response (issue #46) | Show detail; check `--api-base-url` and the backend |
 | `no_jobs` | API list empty after fetch-if-empty (issue #46) | Nothing to apply to — stop |
 | `already_applied` | Record exists with `status: applied` (guardrail #27) | Stop — duplicate apply refused |
-| `auth_required` | Current URL is a login/auth/signin page while the session check is disabled (issue #38, reached with `--skip-session-check`) | Stop immediately — ask the human; report `manual_url` + `screenshot_path` |
-| `navigation_loop` | Same URL visited 3+ times (issue #38) | Stop — ask the human; report `manual_url` + `screenshot_path` |
+| `session_expired` | Browser is on a login/auth page (guardrail #41, pre-flight) | Stop (exit 0) — ask the human to log in; `login_url` is the job link to return to |
 | `browser_unavailable` | Chromium failed to start, or CDP still unreachable after recovery (issue #39) | Stop — real error; user cannot complete the application without a browser session. The *recovery* status `needs_login` is **not** an error (exit 0) |
 
-Errors are always JSON: `{"error": <code>, "detail": <message>, "screenshot_path": <hint>}`. The `screenshot_path` hint tells the bot where to capture the current browser state on failure. Auth/loop errors additionally carry `manual_url` — the direct job link where the user can complete the application by hand.
+Errors are always JSON: `{"error": <code>, "detail": <message>, "screenshot_path": <hint>}`. The `screenshot_path` hint tells the bot where to capture the current browser state on failure.
 
 ---
 
@@ -600,28 +437,28 @@ Errors are always JSON: `{"error": <code>, "detail": <message>, "screenshot_path
 - **#27 idempotency** — never apply twice to the same job; memory record at `<memory-dir>/applications/<job_id>.json` gates re-applies.
 - **#28 refusal** — never plan/send an application from a `NO_APPLY` draft; profile flag or `NO_APPLY` marker in cover text blocks planning.
 - **#31 memory consultation** — records live under the bot memory convention so preferences/history are honoured before applying.
-- **#38 auth/loop guard** — never retry a login/auth redirect or a navigation loop; check `is_auth_url` before every navigation and abort after 3 visits, always handing a `manual_url` + `screenshot_path` back to the human.
-- **#41 session expiry gate** — never fill a form on an expired session: the plan always opens with `verify_session`; an expired session stops at the login `confirm_checkpoint` (PT-BR note + `login_url`) with no fill/upload/submit steps. Supersedes #38 for the default flow.
-- **#42 auto-apply / batch fill** — `--auto-apply` implies confirmation + skips the manual `confirm_checkpoint` but NEVER bypasses safety: idempotency (#27), refusal (#28), and the session gate (#41) still gate the plan. All form fields ship as one `fill_form` batch step (single executor browser call).
-- **Explicit confirmation** — no `submit` step without `--confirmed`; the bot never submits without user confirmation. `--auto-apply` (issue #42) IS that explicit pre-authorization — it implies `--confirmed` and skips only the manual `confirm_checkpoint`, never the safety gates.
+- **#38 auth/loop guard (retired for the apply loop)** — the deterministic planner guard was removed in cutover pkg 3; the executor loop re-checks the live page every step (`classify.py`): an auth page is a hard policy stop (`stop_on_auth_url`) and stalls burn the `max_steps` budget. `--visited-urls` / `--current-url` remain accepted flags.
+- **#41 session expiry gate** — never fill a form on an expired session: the pre-flight gate stops with the `session_expired` error before any intent is emitted, and `stop_on_auth_url` covers mid-loop redirects.
+- **#42 auto-apply / batch fill** — `--auto-apply` implies confirmation (policy flipped) and skips only the user confirmation of a healthy flow; it NEVER bypasses idempotency (#27), refusal (#28), or the session gate (#41). (The legacy `fill_form` batch step retired with the selector plan.)
+- **Explicit confirmation** — no apply-final action without user confirmation (`require_confirmation_before_final_submit` is `true` unless `--confirmed` / `--auto-apply` flipped it); the bot never submits without that authorization.
 
 ---
 
 ## Non-goals
 
 - **Email sending** — applications are form-based here; email delivery stays with the himalaya tool.
-- **Login / sessions** — the bot never authenticates by itself: issue #39 recovery starts Chromium and hands a fresh session back as `needs_login` (the user logs in manually once), issue #41 detects an expired session before any fill and stops at a login `confirm_checkpoint`, and a login redirect mid-flow stops cleanly rather than retrying.
+- **Login / sessions** — the bot never authenticates by itself: issue #39 recovery starts Chromium and hands a fresh session back as `needs_login` (the user logs in manually once), issue #41 detects an expired session as a pre-flight gate and stops, and a login redirect mid-loop hits the hard `stop_on_auth_url` policy rather than retrying.
 - **CAPTCHA** — out of scope; if the portal presents one, the bot reports and stops.
-- **Persistence of visited-URL history** — navigation history is passed per-invocation by the bot (`--visited-urls`); the guard never stores state across calls or to disk.
-- **Multi-step / paginated forms** — v2 is a single flat form per portal (fields defined in `portals/gupy.yaml` / `portals/infojobs.yaml`).
+- **Persistence of visited-URL history** — navigation history is passed per-invocation by the bot (`--visited-urls`); nothing stores state across calls or to disk.
+- **Multi-step / paginated forms** — the loop handles flat Gupy-style forms; unknown multi-page flows stay with `job-portal-browser`.
 - **Terminal / system operations** — out of scope for this skill.
-- **LinkedIn automation** — deliberately unsupported. Applications on LinkedIn are done **manually** only; the LinkedIn Node.js scraper microservice is read-only and never submits. No `linkedin` YAML/helper exists (`--portal linkedin` → `unknown_portal`).
-- **Other portals** — the YAML/helper loader errors cleanly (`unknown_portal`) instead of guessing.
+- **LinkedIn automation** — deliberately unsupported. Applications on LinkedIn are done **manually** only; the LinkedIn Node.js scraper microservice is read-only and never submits. `linkedin` is absent from the portal allow-list (`--portal linkedin` → `unknown_portal`).
+- **Other portals** — the allow-list errors cleanly (`unknown_portal`) instead of guessing.
 
 ---
 
 ## Limitations
 
-- Selectors are static in the per-portal YAML files; if a portal changes its markup, the YAML (not the bot) must be updated. **InfoJobs selectors are best-effort** and should be verified before heavy use — the markup can vary by region/over time.
-- The planner never performs browser actions itself — it relies on the bot's browser tool executing the plan.
-- Recording is best-effort: a confirmed/recorded run assumes the submit step actually succeeded in the browser; the bot should prefer `--record-applied` after confirming completion.
+- The planner never performs browser actions itself — it relies on the MCP executor loop deriving actions from live AX snapshots and executing them with the browser tool.
+- Recording is evidence-gated: a record is written only after verified success evidence via `verdict.py`; a stalled/incomplete loop ends `INCOMPLETE` without a record.
+- InfoJobs flows are **best-effort** under the shared loop — the markup can vary by region/over time, so the executor should confirm the `sucesso` page before any record is written.
