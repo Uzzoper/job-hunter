@@ -103,7 +103,8 @@ public class JobController {
                 job.source(),
                 job.contactEmail(),
                 null, // draft status is not resolved on the detail endpoint
-                null  // match score is not resolved on the detail endpoint
+                null, // match score is not resolved on the detail endpoint
+                null  // lifecycle state is not resolved on the detail endpoint
         );
         return ResponseEntity.ok(response);
     }
@@ -120,7 +121,8 @@ public class JobController {
                 job.source(),
                 job.contactEmail(),
                 entry.draftStatus(),
-                entry.matchScore()
+                entry.matchScore(),
+                entry.lifecycleState()
         );
     }
 
