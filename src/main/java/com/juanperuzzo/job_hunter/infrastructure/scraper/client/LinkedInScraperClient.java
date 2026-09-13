@@ -59,10 +59,15 @@ public class LinkedInScraperClient implements ExtractionStrategy {
         var uriBuilder = UriComponentsBuilder.fromPath(SEARCH_PATH)
                 .queryParam("keywords", keywords)
                 .queryParam("location", location);
+        // LinkedIn honors a single geoId per search; repeated values return an
+        // empty result page (verified live). First configured ID wins, mirroring
+        // the first-keyword / first-location convention.
         if (properties.geoIds() != null) {
             properties.geoIds().stream()
                     .filter(geoId -> geoId != null && !geoId.isBlank())
-                    .forEach(geoId -> uriBuilder.queryParam("geoId", geoId));
+                    .map(String::trim)
+                    .findFirst()
+                    .ifPresent(geoId -> uriBuilder.queryParam("geoId", geoId));
         }
         var uri = uriBuilder.build().encode().toUri();
 
