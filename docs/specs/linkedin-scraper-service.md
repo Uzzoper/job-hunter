@@ -65,9 +65,9 @@ Reports overall service health and browser connectivity.
 }
 ```
 
-### `GET /api/jobs?keywords=...&location=...`
+### `GET /api/jobs?keywords=...&location=...&geoId=...`
 
-Search LinkedIn for job listings matching keywords and optional location.
+Search LinkedIn for job listings matching keywords, optional location, and optional LinkedIn geographic IDs.
 
 **Query Parameters:**
 
@@ -75,6 +75,13 @@ Search LinkedIn for job listings matching keywords and optional location.
 |-------|----------|------|-------------|
 | `keywords` | Yes | string | Search terms (e.g., `java junior`) |
 | `location` | No | string | Location filter (e.g., `Brazil`, `São Paulo`) |
+| `geoId` | No | string, repeatable | LinkedIn geographic filter; each value is forwarded as a separate `geoId` parameter |
+
+Example with multiple geographic filters:
+
+```text
+GET /api/jobs?keywords=java%20junior&location=Brazil&geoId=106057199&geoId=102927786
+```
 
 **Response 200:**
 ```json
@@ -143,7 +150,7 @@ Fetch full details for a specific LinkedIn job.
 
 ### Search Flow
 
-1. Build search URL from keywords and optional location
+1. Build search URL from keywords, optional location, and each configured `geoId`
 2. Create isolated Playwright context with pt-BR locale and User-Agent Chrome 129
 3. Navigate to LinkedIn search URL (`waitUntil: "domcontentloaded"`, 30s timeout)
 4. Detect bot challenge (keyword check on page title + body text)
@@ -231,8 +238,9 @@ linkedin-scraper:
 
 ### Scenario 1: successful search
 - **GIVEN** LinkedIn search loads with job cards
-- **WHEN** `GET /api/jobs?keywords=java+junior&location=Brazil`
+- **WHEN** `GET /api/jobs?keywords=java+junior&location=Brazil&geoId=106057199&geoId=102927786`
 - **THEN** returns 200 with `JobCard[]`, each with id/title/company/location/postedAt populated
+- **AND** each `geoId` is forwarded to LinkedIn as a repeated query parameter
 
 ### Scenario 2: empty search
 - **GIVEN** no jobs match
@@ -291,10 +299,11 @@ linkedin-scraper:
 |------|---------------|---------|
 | `tests/app.test.ts` | Integration smoke tests | supertest + full app factory |
 | `tests/routes/health.test.ts` | Health endpoint | Router with mock BrowserManager |
-| `tests/routes/jobs.test.ts` | Validation + error mapping | Router with mock scrapers |
+| `tests/routes/jobs.test.ts` | Validation, geoId parsing + error mapping | Router with mock scrapers |
+| `tests/scrapers/search.test.ts` | LinkedIn URL construction, including repeated geoId filters | Pure URL builder |
 | `tests/services/browser.test.ts` | BrowserManager lifecycle | ESM import + Playwright mock |
 
-**Total**: 52 tests. Run with `npm test`.
+**Total**: 54 tests. Run with `npm test`.
 
 ---
 
