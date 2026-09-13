@@ -143,4 +143,12 @@ public class FetchJobsService implements FetchJobsUseCase, ListJobsUseCase, GetJ
         return jobRepository.findById(id)
                 .orElseThrow(() -> new JobNotFoundException("Job not found with id: " + id));
     }
+
+    @Override
+    public JobWithDraftStatus getByIdWithDraftStatus(Long userId, Long jobId) {
+        var job = getById(jobId);
+        var status = draftStatus(job, userId);
+        var lifecycle = ApplicationLifecycle.fromEmailStatus(status).orElse(null);
+        return new JobWithDraftStatus(job, status, matchScore(job, userId), lifecycle);
+    }
 }
