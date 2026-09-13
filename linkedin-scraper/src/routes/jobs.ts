@@ -125,9 +125,7 @@ export function createJobsRouter(
           : undefined;
       const geoIds = queryStringList(geoId);
 
-      const jobs = geoIds.length > 0
-        ? await searchScraper.search(keywords.trim(), locationStr, geoIds)
-        : await searchScraper.search(keywords.trim(), locationStr);
+      const jobs = await searchScraper.search(keywords.trim(), locationStr, geoIds);
 
       const body: ApiResponse<JobCard[]> = { success: true, data: jobs };
       res.json(body);

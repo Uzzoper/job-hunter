@@ -77,6 +77,7 @@ describe("GET /api/jobs", () => {
     expect(mockSearchScraper.search).toHaveBeenCalledWith(
       "java junior",
       undefined,
+      [],
     );
   });
 
@@ -87,7 +88,7 @@ describe("GET /api/jobs", () => {
       "/api/jobs?keywords=java&location=Brazil",
     );
 
-    expect(mockSearchScraper.search).toHaveBeenCalledWith("java", "Brazil");
+    expect(mockSearchScraper.search).toHaveBeenCalledWith("java", "Brazil", []);
   });
 
   it("should pass repeated geoId parameters as an ordered list", async () => {
