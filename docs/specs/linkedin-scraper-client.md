@@ -42,7 +42,7 @@ Spring Boot App
 FetchJobsService / POST /api/jobs/fetch
   → ProviderRegistry.fetch()
     → LinkedInScraperClient.extract()
-      → GET http://linkedin-scraper:3000/api/jobs?keywords=...&location=...
+      → GET http://linkedin-scraper:3000/api/jobs?keywords=...&location=...&geoId=...&geoId=...
       → Parse JSON response
       → Map to List<RawJob> with source="linkedin" and metadata
       → Return to ProviderRegistry
@@ -155,6 +155,7 @@ linkedinScraperClient.ifPresent(p -> registry.register(p, retry, rateLimiter, li
 - **GIVEN** the Node.js service returns a valid JSON response with jobs
 - **WHEN** `extract()` is called
 - **THEN** returns a list of `RawJob` objects with `source="linkedin"`
+- **AND** forwards every configured `geoId` as a repeated query parameter
 - **AND** each job has `title`, `company`, `url` (`https://www.linkedin.com/jobs/view/{id}`), `rawDate`, `location` populated
 - **AND** `metadata["jobId"]` contains the LinkedIn numeric job ID
 - **AND** `metadata` may include `requirements`, `jobType`, `seniority`, `salary`
@@ -239,6 +240,7 @@ linkedinScraperClient.ifPresent(p -> registry.register(p, retry, rateLimiter, li
 - Individual job mapping failures → log warning and skip (resilient)
 - `maxJobs` limits the result list size after mapping
 - First keyword and first location from config are used for search
+- All non-blank `geoIds` from config are forwarded as repeated `geoId` query parameters
 - Error responses from Node.js are parsed and wrapped in `ScraperException`
 
 ---
@@ -256,17 +258,18 @@ linkedinScraperClient.ifPresent(p -> registry.register(p, retry, rateLimiter, li
 
 | Test class | File | Scenarios | Tools |
 |------------|------|-----------|-------|
-| `LinkedInScraperClientTest` | `.../client/LinkedInScraperClientTest.java` | 8 scenarios | JUnit 5 + WireMock |
+| `LinkedInScraperClientTest` | `.../client/LinkedInScraperClientTest.java` | 9 scenarios | JUnit 5 + WireMock |
 
 **Scenarios covered:**
 1. Valid search response → mapped `RawJob` list with `source=linkedin`
-2. Empty search response → empty list
-3. HTTP 429 → `ScraperException`
-4. HTTP 503 → `ScraperException`
-5. Connection timeout → `ScraperException`
-6. Detail endpoint → `RawJob` with description
-7. Detail HTTP 404 → `ScraperException`
-8. `providerId()` → `"linkedin"`
+2. Configured geo IDs → all values forwarded to the service
+3. Empty search response → empty list
+4. HTTP 429 → `ScraperException`
+5. HTTP 503 → `ScraperException`
+6. Connection timeout → `ScraperException`
+7. Detail endpoint → `RawJob` with description
+8. Detail HTTP 404 → `ScraperException`
+9. `providerId()` → `"linkedin"`
 
 Test method naming: `methodName_scenario_expectedResult()`, e.g.:
 - `extract_whenValidResponse_shouldReturnRawJobs()`
