@@ -317,7 +317,7 @@ scraper:
     service-url: http://linkedin-scraper:3000
     keywords: "desenvolvedor junior,...,junior developer"
     locations: "Brazil,São Paulo,Remote"
-    max-jobs: 25
+    max-jobs: 60
     timeout-seconds: 30
 
   # No automatic scheduler — manual trigger via POST /api/jobs/fetch
