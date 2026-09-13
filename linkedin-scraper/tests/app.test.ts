@@ -8,7 +8,11 @@ import type { JobCard, JobDetail } from "../src/types.js";
 // ---------------------------------------------------------------------------
 
 const mockSearchScraper = {
-  search: jest.fn<(...args: string[]) => Promise<JobCard[]>>(),
+  search: jest.fn<(
+    keywords: string,
+    location?: string,
+    geoIds?: string[],
+  ) => Promise<JobCard[]>>(),
 };
 
 const mockDetailScraper = {

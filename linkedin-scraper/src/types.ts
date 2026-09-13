@@ -40,5 +40,6 @@ export interface ApiError {
 export interface SearchParams {
   keywords: string;
   location?: string;
+  geoIds?: string[];
   page?: number;
 }
