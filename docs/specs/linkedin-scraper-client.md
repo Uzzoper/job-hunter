@@ -104,11 +104,11 @@ scraper:
     base-url: https://www.linkedin.com
     keywords: "desenvolvedor junior,software engineer junior,backend junior,...,estagiario dev"
     locations: "Brazil,São Paulo,Rio de Janeiro,Curitiba,Remote"
-    geo-ids: "106057199,102927786,105972731,105906364"
+    geo-ids: "106057199"
     seniority: "entry_level"
     work-type: "remote,hybrid,on-site"
     time-range: "past_week"
-    max-jobs: 25
+    max-jobs: 60
     timeout-seconds: 30
     detail-fetch-delay-millis: 500
 ```

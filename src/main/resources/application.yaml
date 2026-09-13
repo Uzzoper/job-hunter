@@ -111,7 +111,7 @@ scraper:
     seniority: "entry_level"
     work-type: "remote,hybrid,on-site"
     time-range: "past_week"
-    max-jobs: 25
+    max-jobs: 60
     timeout-seconds: 30
     detail-fetch-delay-millis: 500
     base-job-url: https://www.linkedin.com/jobs/view/
