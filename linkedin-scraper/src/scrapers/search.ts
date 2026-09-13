@@ -13,8 +13,9 @@ export function buildSearchUrl(
     params.set("location", location);
   }
   for (const geoId of geoIds) {
-    if (geoId.trim().length > 0) {
-      params.append("geoId", geoId);
+    const trimmed = geoId.trim();
+    if (trimmed.length > 0) {
+      params.append("geoId", trimmed);
     }
   }
   return `https://www.linkedin.com/jobs/search?${params.toString()}`;
