@@ -54,15 +54,12 @@ class LinkedInScraperClientTest {
     class ValidSearchResponse {
 
         @Test
-        @DisplayName("extract should forward all configured geo IDs to the scraper service")
-        void extract_whenGeoIdsConfigured_shouldForwardAllGeoIds() {
+        @DisplayName("extract should forward only the first configured geo ID to the scraper service")
+        void extract_whenGeoIdsConfigured_shouldForwardOnlyFirstGeoId() {
             stubFor(get(urlPathEqualTo("/api/jobs"))
                     .withQueryParam("keywords", equalTo("desenvolvedor"))
                     .withQueryParam("location", equalTo("Brazil"))
                     .withQueryParam("geoId", equalTo("106057199"))
-                    .withQueryParam("geoId", equalTo("102927786"))
-                    .withQueryParam("geoId", equalTo("105972731"))
-                    .withQueryParam("geoId", equalTo("105906364"))
                     .willReturn(okJson("""
                         {
                           "success": true,
@@ -73,6 +70,8 @@ class LinkedInScraperClientTest {
             var jobs = client.extract();
 
             assertTrue(jobs.isEmpty());
+            verify(0, getRequestedFor(urlPathEqualTo("/api/jobs"))
+                    .withQueryParam("geoId", equalTo("102927786")));
         }
 
         @Test
