@@ -300,12 +300,13 @@ class JobControllerTest {
     }
 
     @Test
-    @DisplayName("getJobById should return 200 when job exists")
+    @DisplayName("getJobById should return 200 with draftStatus, matchScore and lifecycleState resolved")
     void getJobById_whenJobExists_shouldReturn200() throws Exception {
         authenticateAs(1L);
 
         var job = new Job(1L, "Java Dev", "Acme", "https://acme.com/job", "Description", LocalDate.now(), "test");
-        when(getJobUseCase.getById(1L)).thenReturn(job);
+        var enriched = new JobWithDraftStatus(job, EmailStatus.SENT, 85, ApplicationLifecycle.SUBMITTED);
+        when(getJobUseCase.getByIdWithDraftStatus(1L, 1L)).thenReturn(enriched);
 
         mockMvc.perform(get("/api/jobs/{id}", 1L))
                 .andExpect(status().isOk())
@@ -314,9 +315,11 @@ class JobControllerTest {
                 .andExpect(jsonPath("$.company").value("Acme"))
                 .andExpect(jsonPath("$.url").value("https://acme.com/job"))
                 .andExpect(jsonPath("$.description").value("Description"))
-                .andExpect(jsonPath("$.draftStatus").value(nullValue()));
+                .andExpect(jsonPath("$.draftStatus").value("SENT"))
+                .andExpect(jsonPath("$.matchScore").value(85))
+                .andExpect(jsonPath("$.lifecycleState").value("SUBMITTED"));
 
-        verify(getJobUseCase).getById(1L);
+        verify(getJobUseCase).getByIdWithDraftStatus(1L, 1L);
     }
 
     @Test
@@ -324,7 +327,8 @@ class JobControllerTest {
     void getJobById_whenJobNotFound_shouldReturn404() throws Exception {
         authenticateAs(1L);
 
-        when(getJobUseCase.getById(99L)).thenThrow(new JobNotFoundException("Job not found with id: 99"));
+        when(getJobUseCase.getByIdWithDraftStatus(1L, 99L))
+                .thenThrow(new JobNotFoundException("Job not found with id: 99"));
 
         mockMvc.perform(get("/api/jobs/{id}", 99L))
                 .andExpect(status().isNotFound())
@@ -332,7 +336,7 @@ class JobControllerTest {
                 .andExpect(jsonPath("$.error").value("Not Found"))
                 .andExpect(jsonPath("$.message").value("Job not found with id: 99"));
 
-        verify(getJobUseCase).getById(99L);
+        verify(getJobUseCase).getByIdWithDraftStatus(1L, 99L);
     }
 
     @Test
@@ -681,18 +685,21 @@ class JobControllerTest {
     }
 
     @Test
-    @DisplayName("getJobById should return matchScore as null on detail endpoint")
-    void getJobById_shouldReturnNullMatchScore() throws Exception {
+    @DisplayName("getJobById should return the current user's matchScore on the detail endpoint")
+    void getJobById_shouldReturnPopulatedMatchScore() throws Exception {
         authenticateAs(1L);
 
         var job = new Job(1L, "Java Dev", "Acme", "https://acme.com/job", "Description", LocalDate.now(), "test");
-        when(getJobUseCase.getById(1L)).thenReturn(job);
+        when(getJobUseCase.getByIdWithDraftStatus(1L, 1L))
+                .thenReturn(new JobWithDraftStatus(job, null, 72, null));
 
         mockMvc.perform(get("/api/jobs/{id}", 1L))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.matchScore").value(nullValue()));
+                .andExpect(jsonPath("$.matchScore").value(72))
+                .andExpect(jsonPath("$.draftStatus").value(nullValue()))
+                .andExpect(jsonPath("$.lifecycleState").value(nullValue()));
 
-        verify(getJobUseCase).getById(1L);
+        verify(getJobUseCase).getByIdWithDraftStatus(1L, 1L);
     }
 
     @Test

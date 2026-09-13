@@ -9,6 +9,8 @@ import com.juanperuzzo.job_hunter.application.port.out.ScraperPort;
 import com.juanperuzzo.job_hunter.application.port.out.ScraperResult;
 import com.juanperuzzo.job_hunter.application.service.FetchJobsService;
 import com.juanperuzzo.job_hunter.domain.exception.ScraperException;
+import com.juanperuzzo.job_hunter.domain.exception.JobNotFoundException;
+import com.juanperuzzo.job_hunter.domain.model.ApplicationLifecycle;
 import com.juanperuzzo.job_hunter.domain.model.EmailDraft;
 import com.juanperuzzo.job_hunter.domain.model.EmailStatus;
 import com.juanperuzzo.job_hunter.domain.model.Job;
@@ -29,6 +31,7 @@ import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
@@ -509,6 +512,71 @@ class FetchJobsServiceTest {
             assertEquals(1, result.size());
             assertEquals("Remoto Fresh", result.get(0).job().title());
             assertEquals(75, result.get(0).matchScore());
+        }
+    }
+
+    @Nested
+    @DisplayName("Scenario 21: job detail enrichment via getByIdWithDraftStatus")
+    class GetByIdWithDraftStatusTests {
+
+        private static final long USER_ID = 7L;
+
+        private Job job(long id) {
+            return new Job(id, "Java Dev", "Company", "https://example.com/job/" + id,
+                    "Description", LocalDate.now(), "gupy");
+        }
+
+        private EmailDraft draft(long jobId, EmailStatus status) {
+            return new EmailDraft(100L + jobId, jobId, USER_ID, "Subject", "Body",
+                    status, LocalDateTime.now());
+        }
+
+        private JobAnalysis analysis(long jobId, int matchScore) {
+            return new JobAnalysis(200L + jobId, jobId, USER_ID, matchScore,
+                    List.of("Java"), List.of(), null, "summary");
+        }
+
+        @Test
+        @DisplayName("getByIdWithDraftStatus should attach draftStatus, matchScore and lifecycleState for the user")
+        void getByIdWithDraftStatus_whenDraftAndAnalysisExist_shouldReturnEnrichedEntry() {
+            var job = job(1L);
+            when(jobRepository.findById(1L)).thenReturn(Optional.of(job));
+            when(emailDraftRepository.findByJobIdAndUserId(1L, USER_ID))
+                    .thenReturn(Optional.of(draft(1L, EmailStatus.SENT)));
+            when(jobAnalysisRepository.findByJobIdAndUserId(1L, USER_ID))
+                    .thenReturn(Optional.of(analysis(1L, 85)));
+
+            var entry = fetchJobsService.getByIdWithDraftStatus(USER_ID, 1L);
+
+            assertEquals(job, entry.job());
+            assertEquals(EmailStatus.SENT, entry.draftStatus());
+            assertEquals(85, entry.matchScore());
+            assertEquals(ApplicationLifecycle.SUBMITTED, entry.lifecycleState());
+        }
+
+        @Test
+        @DisplayName("getByIdWithDraftStatus should return null fields when the user has no draft and no analysis")
+        void getByIdWithDraftStatus_whenNoDraftAndNoAnalysis_shouldReturnNullFields() {
+            var job = job(1L);
+            when(jobRepository.findById(1L)).thenReturn(Optional.of(job));
+            when(emailDraftRepository.findByJobIdAndUserId(1L, USER_ID)).thenReturn(Optional.empty());
+            when(jobAnalysisRepository.findByJobIdAndUserId(1L, USER_ID)).thenReturn(Optional.empty());
+
+            var entry = fetchJobsService.getByIdWithDraftStatus(USER_ID, 1L);
+
+            assertEquals(job, entry.job());
+            assertNull(entry.draftStatus());
+            assertNull(entry.matchScore());
+            assertNull(entry.lifecycleState());
+        }
+
+        @Test
+        @DisplayName("getByIdWithDraftStatus should throw JobNotFoundException when the job does not exist")
+        void getByIdWithDraftStatus_whenJobMissing_shouldThrowJobNotFoundException() {
+            when(jobRepository.findById(99L)).thenReturn(Optional.empty());
+
+            assertThrows(JobNotFoundException.class,
+                    () -> fetchJobsService.getByIdWithDraftStatus(USER_ID, 99L));
         }
     }
 }

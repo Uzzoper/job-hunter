@@ -93,21 +93,9 @@ public class JobController {
 
     @GetMapping("/{id}")
     public ResponseEntity<JobResponse> getJobById(@PathVariable Long id) {
-        Job job = getJobUseCase.getById(id);
-        JobResponse response = new JobResponse(
-                job.id(),
-                job.title(),
-                job.company(),
-                job.url(),
-                job.description(),
-                job.postedAt(),
-                job.source(),
-                job.contactEmail(),
-                null, // draft status is not resolved on the detail endpoint
-                null, // match score is not resolved on the detail endpoint
-                null  // lifecycle state is not resolved on the detail endpoint
-        );
-        return ResponseEntity.ok(response);
+        Long userId = currentUserService.getCurrentUserId();
+        JobWithDraftStatus entry = getJobUseCase.getByIdWithDraftStatus(userId, id);
+        return ResponseEntity.ok(toJobResponse(entry));
     }
 
     private JobResponse toJobResponse(JobWithDraftStatus entry) {
