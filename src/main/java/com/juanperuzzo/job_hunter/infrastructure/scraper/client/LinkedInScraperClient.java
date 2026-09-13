@@ -10,9 +10,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.util.UriComponentsBuilder;
 
 import java.net.URI;
-import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -56,10 +56,15 @@ public class LinkedInScraperClient implements ExtractionStrategy {
         var keywords = properties.keywords().isEmpty() ? "desenvolvedor" : properties.keywords().get(0);
         var location = properties.locations().isBlank() ? "Brazil" : properties.locations().split(",")[0].trim();
 
-        var encodedKeywords = URLEncoder.encode(keywords, StandardCharsets.UTF_8);
-        var encodedLocation = URLEncoder.encode(location, StandardCharsets.UTF_8);
-
-        var uri = URI.create(SEARCH_PATH + "?keywords=" + encodedKeywords + "&location=" + encodedLocation);
+        var uriBuilder = UriComponentsBuilder.fromPath(SEARCH_PATH)
+                .queryParam("keywords", keywords)
+                .queryParam("location", location);
+        if (properties.geoIds() != null) {
+            properties.geoIds().stream()
+                    .filter(geoId -> geoId != null && !geoId.isBlank())
+                    .forEach(geoId -> uriBuilder.queryParam("geoId", geoId));
+        }
+        var uri = uriBuilder.build().encode().toUri();
 
         try {
             var response = restClient.get()
