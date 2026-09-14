@@ -164,7 +164,7 @@ Built from the profile placeholders resolver (`ProfilePlaceholders.factsBlock(us
 CANDIDATE FACTS:
 - Name: Juan Antonio Peruzzo
 - Email: juan@example.com
-- Phone: (42) 99833-1363
+- Phone: (42) 99999-0000
 - Portfolio: https://juanperuzzo.is-a.dev
 - GitHub: https://github.com/Uzzoper
 - LinkedIn: https://linkedin.com/in/juan
