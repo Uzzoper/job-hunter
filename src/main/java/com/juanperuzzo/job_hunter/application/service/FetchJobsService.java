@@ -94,11 +94,7 @@ public class FetchJobsService implements FetchJobsUseCase, ListJobsUseCase, GetJ
         // At the current job-list scale this is negligible and keeps the change
         // reuse-only; a single bulk lookup replaces this if the list grows.
         var entries = findAll(hasEmail).stream()
-                .map(job -> {
-                    var status = draftStatus(job, userId);
-                    var lifecycle = ApplicationLifecycle.fromEmailStatus(status).orElse(null);
-                    return new JobWithDraftStatus(job, status, matchScore(job, userId), lifecycle);
-                })
+                .map(job -> enrich(job, userId))
                 .filter(entry -> !Boolean.TRUE.equals(excludeApplied) || entry.draftStatus() != EmailStatus.SENT)
                 .filter(entry -> !Boolean.TRUE.equals(remoteOnly)
                         || WorkModelSignals.isRemoteOnly(workModelSignalText(entry.job())))
@@ -146,7 +142,11 @@ public class FetchJobsService implements FetchJobsUseCase, ListJobsUseCase, GetJ
 
     @Override
     public JobWithDraftStatus getByIdWithDraftStatus(Long userId, Long jobId) {
-        var job = getById(jobId);
+        return enrich(getById(jobId), userId);
+    }
+
+    /** Resolves the user's draft status, match score and lifecycle for a job. */
+    private JobWithDraftStatus enrich(Job job, Long userId) {
         var status = draftStatus(job, userId);
         var lifecycle = ApplicationLifecycle.fromEmailStatus(status).orElse(null);
         return new JobWithDraftStatus(job, status, matchScore(job, userId), lifecycle);
