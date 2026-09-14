@@ -58,6 +58,9 @@ impl CacheManager {
         }
 
         let conn = Connection::open(&db_path)?;
+        // Transient lock contention (parallel tests, concurrent CLI runs)
+        // waits instead of failing fast with "database is locked".
+        conn.busy_timeout(std::time::Duration::from_secs(5))?;
         conn.execute_batch("PRAGMA journal_mode=WAL;")?;
         conn.execute_batch(CREATE_TABLE_SQL)?;
 
