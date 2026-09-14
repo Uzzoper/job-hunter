@@ -7,6 +7,7 @@ import com.juanperuzzo.job_hunter.domain.exception.InvalidCredentialsException;
 import com.juanperuzzo.job_hunter.domain.exception.EmailAlreadyExistsException;
 import com.juanperuzzo.job_hunter.domain.exception.UserNotFoundException;
 import com.juanperuzzo.job_hunter.domain.exception.ProfileNotConfiguredException;
+import com.juanperuzzo.job_hunter.domain.exception.ProfileNotFoundException;
 import com.juanperuzzo.job_hunter.domain.exception.AnalysisNotFoundException;
 import com.juanperuzzo.job_hunter.domain.exception.DraftAlreadyApprovedException;
 import com.juanperuzzo.job_hunter.domain.exception.EmailAlreadySentException;
@@ -74,6 +75,11 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(ProfileNotConfiguredException.class)
     public ResponseEntity<Map<String, Object>> handleProfileNotConfigured(ProfileNotConfiguredException ex) {
+        return buildResponse(HttpStatus.BAD_REQUEST, ex.getMessage());
+    }
+
+    @ExceptionHandler(ProfileNotFoundException.class)
+    public ResponseEntity<Map<String, Object>> handleProfileNotFound(ProfileNotFoundException ex) {
         return buildResponse(HttpStatus.BAD_REQUEST, ex.getMessage());
     }
 

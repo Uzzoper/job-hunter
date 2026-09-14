@@ -3,7 +3,7 @@
 > **Layer:** `application` (service)  
 > **Implementation file:** `com.juanperuzzo.job_hunter.application.service.TemplateEmailService`  
 > **Corresponding test:** `TemplateEmailServiceTest.java`  
-> **Depends on:** `generate-email.md` (called by `EmailGenerationService` when `matchScore >= threshold`)
+> **Depends on:** `generate-email.md` (called by `EmailGenerationService` when `matchScore >= threshold`), `user-profile.md` (profile is the data source), `profile-placeholders.md` (placeholder resolution rules)
 
 ---
 
@@ -13,6 +13,8 @@ Jobs with `matchScore >= minMatchScore` (default: 60) do not need AI-personalize
 
 `TemplateEmailService` is a stateless builder — it returns a `TemplateResult` record with subject and body. Persistence is owned by `EmailGenerationService`, which calls this service and saves the draft through the same upsert path used by the AI branch.
 
+All candidate personal data (name, phone, portfolio, GitHub, LinkedIn, email, skills, projects) comes from the caller-provided `User` + `UserProfile` via `{{PLACEHOLDERS}}` — nothing is hardcoded in source.
+
 ---
 
 ## Template
@@ -20,7 +22,7 @@ Jobs with `matchScore >= minMatchScore` (default: 60) do not need AI-personalize
 ### Subject
 
 ```
-Candidatura — {JOB_TITLE} na {COMPANY}
+Candidatura — {{JOB_TITLE}} na {{COMPANY}}
 ```
 
 ### Body (Portuguese)
@@ -28,29 +30,43 @@ Candidatura — {JOB_TITLE} na {COMPANY}
 ```
 Olá. Tudo bem?
 
-Gostaria de me candidatar à vaga de {JOB_TITLE} na {COMPANY}.
+Gostaria de me candidatar à vaga de {{JOB_TITLE}} na {{COMPANY}}.
 
 Sou desenvolvedor back-end focado no ecossistema Java/Spring, com projetos em produção construídos com Java, Spring Boot, APIs REST, Git e bancos de dados relacionais.
 
+Além dos requisitos da vaga, trabalho também com {{SKILLS}}.
+
 Alguns destaques do meu portfólio:
 
-• Job Hunter — API desenvolvida com Spring Boot, Clean Architecture, TDD e integração com Inteligência Artificial.
-• LovLink (lovlink.com.br) — SaaS comercial em produção, banco de dados PostgreSQL, integração de pagamentos via Mercado Pago e arquitetura full stack moderna.
-• Jishuu (jishuu.vercel.app) — plataforma com autenticação OAuth 2.0 (Google), gerenciamento de usuários e persistência de dados utilizando PostgreSQL.
-
-Além dos requisitos da vaga, trabalho também com JavaScript, React, Node.js, Docker e testes automatizados.
+{{PROJECTS}}
 
 Segue meu currículo em anexo. Podemos agendar uma conversa para eu mostrar esses projetos rodando?
 
 Atenciosamente,
 
-Juan Antonio Peruzzo
-(42) 99833-1363
-Portfólio: https://juanperuzzo.is-a.dev
-GitHub: https://github.com/Uzzoper
+{{CANDIDATE_NAME}}
+{{PHONE}}
+E-mail: {{CANDIDATE_EMAIL}}
+Portfólio: {{PORTFOLIO_URL}}
+GitHub: {{GITHUB_URL}}
+LinkedIn: {{LINKEDIN_URL}}
 ```
 
-**Placeholders:** `{JOB_TITLE}` and `{COMPANY}` — both are substituted from `Job.title()` and `Job.company()`.
+### Placeholders
+
+| Placeholder | Source | Missing-data rule |
+|---|---|---|
+| `{{JOB_TITLE}}`, `{{COMPANY}}` | `Job.title()`, `Job.company()` | n/a (always present) |
+| `{{CANDIDATE_NAME}}` | `User.name()` | fail (profile missing → `ProfileNotFoundException`) |
+| `{{CANDIDATE_EMAIL}}` | `User.email()` | omit line |
+| `{{PHONE}}` | `UserProfile.phone()` | omit line |
+| `{{PORTFOLIO_URL}}` | `UserProfile.portfolioUrl()` | omit line |
+| `{{GITHUB_URL}}` | `UserProfile.githubUrl()` | omit line |
+| `{{LINKEDIN_URL}}` | `UserProfile.linkedinUrl()` | omit line |
+| `{{SKILLS}}` | `UserProfile.skills()` joined with `", "` | omit line |
+| `{{PROJECTS}}` | `UserProfile.projects()` rendered as `• name — description (techStack)` lines | omit block |
+
+**Global rule:** a rendered email must never contain a raw `{{...}}` token. Unresolvable placeholders drop their whole line (or block, for `{{PROJECTS}}`). The same tokenized body doubles as the AI prompt's reference example (`EmailGenerationService`), so the template and the prompt can never drift apart.
 
 ---
 
@@ -59,10 +75,10 @@ GitHub: https://github.com/Uzzoper
 ```java
 public record TemplateResult(String subject, String body) {}
 
-public TemplateResult generate(Job job);
+public TemplateResult generate(Job job, User user, UserProfile profile);
 ```
 
-- Takes a `Job` (not `EligibleDraft` — the service has no dependency on scheduler-only types)
+- Takes the `Job` (for title/company) plus the candidate's `User` and `UserProfile` (identity and contact resolution)
 - Returns `TemplateResult` with the built subject and body
 - Does **not** persist anything — caller (`EmailGenerationService`) owns persistence
 
@@ -70,14 +86,19 @@ public TemplateResult generate(Job job);
 
 ## Scenarios
 
-### Scenario 1: template generated for high-match job
-- **GIVEN** a `Job` with `title = "Desenvolvedor Java Júnior"` and `company = "Acme Corp"`
-- **WHEN** `generate(job)` is called
+### Scenario 1: template generated for high-match job with a full profile
+- **GIVEN** a `Job` with `title = "Desenvolvedor Java Júnior"` and `company = "Acme Corp"`, and a `User`/`UserProfile` with name, phone, URLs, skills and projects
+- **WHEN** `generate(job, user, profile)` is called
 - **THEN** returns a `TemplateResult` with:
   - `subject` containing both `"Desenvolvedor Java Júnior"` and `"Acme Corp"`
-  - `body` containing both `"Desenvolvedor Java Júnior"` and `"Acme Corp"`, portfolio links, and signature
+  - `body` containing both title and company, the resolved personal data, and no `{{...}}` token
 
-### Scenario 2: template used as AI reference (unchanged)
+### Scenario 2: missing optional fields omit their lines
+- **GIVEN** a profile with `phone = null` and `githubUrl` blank
+- **WHEN** `generate(job, user, profile)` is called
+- **THEN** the phone/GitHub signature lines are absent and no `{{PHONE}}` / `{{GITHUB_URL}}` leaks into the body
+
+### Scenario 3: template used as AI reference (unchanged)
 - **GIVEN** an email generation request for a low-match job (`matchScore < threshold`)
 - **WHEN** the AI prompt is built
-- **THEN** the template email is included as an example to guide the model's output format and tone
+- **THEN** the template email is included as a tokenized example to guide the model's output format and tone, followed by the `CANDIDATE FACTS` block with the resolved values

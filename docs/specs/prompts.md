@@ -80,9 +80,11 @@ Description: {{JOB_DESCRIPTION}}
 
 ## Prompt 2: Email generation
 
-**Used in:** `EmailGenerationService.generate(Job job, JobAnalysis analysis)`
+**Used in:** `EmailGenerationService.generate(Job job, JobAnalysis analysis)` with the candidate's `User` + `UserProfile`
 **Model:** MiniMax M2.5 via OpenRouter
 **Expected response:** text with subject on the first line followed by the body
+
+The reference example below is the **same template** used by `TemplateEmailService` (single source of truth): candidate identity/contact appears as `{{PLACEHOLDER}}` tokens, and the resolved values are supplied by the `CANDIDATE FACTS` block (built with `ProfilePlaceholders.factsBlock`). The model must read tokens in the example against the facts block.
 
 ```
 You are an expert at writing job application emails for tech positions.
@@ -91,30 +93,32 @@ Write an application email following the rules below.
 
 REFERENCE EXAMPLE — use this style, length, and level of personalization as a guide:
 
-Subject: Candidatura — Desenvolvedor Java Júnior
+Subject: Candidatura — {{JOB_TITLE}} na {{COMPANY}}
 
 Olá. Tudo bem?
 
-Gostaria de me candidatar à vaga de Desenvolvedor Java Júnior.
+Gostaria de me candidatar à vaga de {{JOB_TITLE}} na {{COMPANY}}.
 
 Sou desenvolvedor back-end focado no ecossistema Java/Spring, com projetos em produção construídos com Java, Spring Boot, APIs REST, Git e bancos de dados relacionais.
 
+Além dos requisitos da vaga, trabalho também com {{SKILLS}}.
+
 Alguns destaques do meu portfólio:
 
-• Job Hunter — API desenvolvida com Spring Boot, Clean Architecture, TDD e integração com Inteligência Artificial.
-• LovLink (lovlink.com.br) — SaaS comercial em produção, banco de dados PostgreSQL, integração de pagamentos via Mercado Pago e arquitetura full stack moderna.
-• Jishuu (jishuu.vercel.app) — plataforma com autenticação OAuth 2.0 (Google), gerenciamento de usuários e persistência de dados utilizando PostgreSQL.
-
-Além dos requisitos da vaga, trabalho também com JavaScript, React, Node.js, Docker e testes automatizados.
+{{PROJECTS}}
 
 Segue meu currículo em anexo. Podemos agendar uma conversa para eu mostrar esses projetos rodando?
 
 Atenciosamente,
 
-Juan Antonio Peruzzo
-(42) 99833-1363
-Portfólio: https://juanperuzzo.is-a.dev
-GitHub: https://github.com/Uzzoper
+{{CANDIDATE_NAME}}
+{{PHONE}}
+E-mail: {{CANDIDATE_EMAIL}}
+Portfólio: {{PORTFOLIO_URL}}
+GitHub: {{GITHUB_URL}}
+LinkedIn: {{LINKEDIN_URL}}
+
+{{CANDIDATE_FACTS}}
 
 MANDATORY RULES:
 1. The first line must be the subject, with the exact prefix "Subject: "
@@ -124,7 +128,7 @@ MANDATORY RULES:
 5. Be specific to the company and the role — generic text is not allowed
 6. Tone: {{COMPANY_TONE}}
 7. Language: Brazilian Portuguese
-8. End with the exact signature block from the example (name, phone, portfolio, GitHub)
+8. End with the exact signature block from the example (name, phone, portfolio, GitHub) — replace the {{...}} tokens with the matching CANDIDATE FACTS values
 9. Include the phrase "Segue meu currículo em anexo" before the signature
 10. Positioning: write as a professional developer who delivers working software — never use trainee phrasing ("em formação", "aprendendo", "buscando oportunidade", "venho me especializando"); education appears at most once as plain fact, never as the opening; close with a confident call to action, never with "fico à disposição"
 11. If the vacancy clearly has no fit with the candidate (non-tech role, stack entirely outside the candidate's, or level far below), DO NOT write an email. Respond with exactly one line: NO_APPLY: [one-line reason in English]. No subject, no body, no signature. (see `email-no-apply-refusal.md`)
@@ -137,13 +141,7 @@ Tone guide:
 - startup: energy and enthusiasm, mention culture and impact
 
 Available projects to mention (choose the most relevant for the job):
-- Jishuu: study organization platform (Next.js, React, TypeScript, Tailwind)
-- Flappy Naruu: full stack game (React, TypeScript, Canvas API, Java, Spring, Postgres)
-- ASCII Converter: client-side image processing tool (Next.js, React, TypeScript, Canvas API)
-- Thermometer of Ponta Grossa: real-time weather site (JavaScript, Weather API)
-- Job Hunter: job search automation API (Spring Boot, Clean Architecture, TDD, AI integration)
-- LovLink: commercial SaaS (PostgreSQL, Mercado Pago payments, full stack)
-- Portfolio: personal website (Next.js, React, TypeScript, Tailwind, shadcn/ui)
+{{PROJECTS_TEXT}}
 
 {{CANDIDATE_PROFILE}}
 
@@ -158,6 +156,23 @@ Job summary: {{JOB_SUMMARY}}
 Rule 12: if the job clearly conflicts with an explicit preference above (excluded company, incompatible work model, or salary below the floor), do NOT write an email — respond with exactly one line: NO_APPLY: [one-line reason in English]
 ```
 
+### CANDIDATE FACTS block
+
+Built from the profile placeholders resolver (`ProfilePlaceholders.factsBlock(user, profile)`) — the same resolver that fills the standard-template email. Present values only; missing fields omit their line.
+
+```
+CANDIDATE FACTS:
+- Name: Juan Antonio Peruzzo
+- Email: juan@example.com
+- Phone: (42) 99833-1363
+- Portfolio: https://juanperuzzo.is-a.dev
+- GitHub: https://github.com/Uzzoper
+- LinkedIn: https://linkedin.com/in/juan
+- Skills: Java, Spring Boot, PostgreSQL
+- Projects:
+  • Job Hunter — API desenvolvida com Spring Boot
+  • LovLink — SaaS comercial em produção
+
 ---
 
 ## Prompt variables
@@ -165,6 +180,7 @@ Rule 12: if the job clearly conflicts with an explicit preference above (exclude
 | Variable | Source | Example |
 |---|---|---|
 | `{{CANDIDATE_PROFILE}}` | Fixed (this file) | see section above |
+| `{{CANDIDATE_FACTS}}` | `ProfilePlaceholders.factsBlock(user, profile)` — same resolver the standard-template email uses (see `profile-placeholders.md`) | see `CANDIDATE FACTS block` below |
 | `{{PREFERENCES_CONTEXT}}` | `UserProfile.preferences` via `PreferencesPromptFormatter` (emitted only when preferences are set) | see block below |
 | `{{JOB_TITLE}}` | `job.title()` | "Junior Java Developer" |
 | `{{COMPANY}}` | `job.company()` | "CompanyX" |
@@ -173,6 +189,7 @@ Rule 12: if the job clearly conflicts with an explicit preference above (exclude
 | `{{COMPANY_TONE}}` | `analysis.companyTone().name().toLowerCase()` | "formal" |
 | `{{MATCHED_SKILLS}}` | `analysis.matchedSkills()` | "Java, Spring Boot, REST" |
 | `{{MISSING_SKILLS}}` | `analysis.missingSkills()` | "Kubernetes, AWS" |
+| `{{PROJECTS_TEXT}}` | `profile.projects()` rendered as `- name: description (techStack)` lines ("No projects available." when empty) | "Job Hunter: job search automation API (Spring Boot, ...)" |
 
 ### Preferences context block (Prompt 1 and Prompt 2)
 
@@ -353,4 +370,5 @@ Resume text:
 | v3.1 | 2026-08 | Prompt 3 gains the `contact` object (phone, email, portfolioUrl, githubUrl, linkedinUrl; null when not found) — profile auto-fill from resume upload |
 | v3.2 | 2026-08 | Prompt 2 repositioned as a professional developer: reference example rewritten without trainee phrasing ("em formação", "venho me especializando", "aprimorando habilidades"), new rule 10 (professional positioning, confident CTA instead of "fico à disposição"), missing skills addressed matter-of-factly |
 | v3.3 | 2026-09 | Prompts 1 and 2 gain the `{{PREFERENCES_CONTEXT}}` block (work model, salary floor, excluded companies) when set; Prompt 1 adds a preference-aware scoring directive, Prompt 2 adds rule 12 (preference conflicts → `NO_APPLY:`) — see `preferences-scoring.md` |
+| v4.0 | 2026-09 | Prompt 2 reference example is now the template itself with `{{...}}` tokens and gains the `{{CANDIDATE_FACTS}}` block (built by `ProfilePlaceholders` — same resolver as the standard-template email, no hardcoded personal data) — see `profile-placeholders.md` |
 ```

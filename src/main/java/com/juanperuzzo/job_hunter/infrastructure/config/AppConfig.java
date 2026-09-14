@@ -365,12 +365,13 @@ public class AppConfig {
     @Bean
     public EmailGenerationService emailGenerationService(AiPort aiPort, EmailDraftRepository emailDraftRepository,
                                                          UserProfileRepository userProfileRepository,
+                                                         UserRepository userRepository,
                                                          JobRepository jobRepository, JobAnalysisRepository jobAnalysisRepository,
                                                          TemplateEmailService templateEmailService,
                                                          BotMemorySyncService botMemorySyncService,
                                                          @Value("${email.standard-template.min-match-score:60}") int minMatchScore) {
-        return new EmailGenerationService(aiPort, emailDraftRepository, userProfileRepository, jobRepository,
-                jobAnalysisRepository, templateEmailService, botMemorySyncService, minMatchScore);
+        return new EmailGenerationService(aiPort, emailDraftRepository, userProfileRepository, userRepository,
+                jobRepository, jobAnalysisRepository, templateEmailService, botMemorySyncService, minMatchScore);
     }
 
     @Bean
