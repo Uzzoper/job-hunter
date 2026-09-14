@@ -20,7 +20,7 @@ This spec replaces hardcoded personal data with `{{PLACEHOLDERS}}` resolved from
 | Placeholder | Source | Missing-data rule |
 |---|---|---|
 | `{{JOB_TITLE}}`, `{{COMPANY}}` | `Job.title()`, `Job.company()` (unchanged behavior) | n/a (always present) |
-| `{{CANDIDATE_NAME}}` | `User.name()` | fail (name is required — see Scenarios) |
+| `{{CANDIDATE_NAME}}` | `User.name()` | omit line (`User.name` is `@NotBlank` at registration, so always present in practice) |
 | `{{CANDIDATE_EMAIL}}` | `User.email()` | omit line |
 | `{{PHONE}}` | `UserProfile.phone()` | omit line |
 | `{{PORTFOLIO_URL}}` | `UserProfile.portfolioUrl()` | omit line |
@@ -41,6 +41,9 @@ public record ResolvedPlaceholders(Map<String, String> values) {}
 public final class ProfilePlaceholders {
     // Pure function — no repositories, no Spring.
     public static String resolve(String template, User user, UserProfile profile);
+    public static ResolvedPlaceholders resolve(User user, UserProfile profile);
+    public static String factsBlock(User user, UserProfile profile);
+    public static String factsBlock(ResolvedPlaceholders placeholders);
 }
 ```
 
