@@ -9,7 +9,11 @@ import type { JobCard, JobDetail } from "../../src/types.js";
 // ---------------------------------------------------------------------------
 
 const mockSearchScraper = {
-  search: jest.fn<(...args: string[]) => Promise<JobCard[]>>(),
+  search: jest.fn<(
+    keywords: string,
+    location?: string,
+    geoIds?: string[],
+  ) => Promise<JobCard[]>>(),
 };
 
 const mockDetailScraper = {
@@ -73,6 +77,7 @@ describe("GET /api/jobs", () => {
     expect(mockSearchScraper.search).toHaveBeenCalledWith(
       "java junior",
       undefined,
+      [],
     );
   });
 
@@ -83,7 +88,21 @@ describe("GET /api/jobs", () => {
       "/api/jobs?keywords=java&location=Brazil",
     );
 
-    expect(mockSearchScraper.search).toHaveBeenCalledWith("java", "Brazil");
+    expect(mockSearchScraper.search).toHaveBeenCalledWith("java", "Brazil", []);
+  });
+
+  it("should pass repeated geoId parameters as an ordered list", async () => {
+    mockSearchScraper.search.mockResolvedValue([sampleJobCard]);
+
+    await request(createApp()).get(
+      "/api/jobs?keywords=java&location=Brazil&geoId=106057199&geoId=102927786",
+    );
+
+    expect(mockSearchScraper.search).toHaveBeenCalledWith(
+      "java",
+      "Brazil",
+      ["106057199", "102927786"],
+    );
   });
 
   it("should return empty array when no jobs match", async () => {

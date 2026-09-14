@@ -82,9 +82,10 @@ public class JobController {
     public ResponseEntity<List<JobResponse>> getAllJobs(
             @RequestParam(required = false) Boolean hasEmail,
             @RequestParam(required = false) Boolean excludeApplied,
-            @RequestParam(required = false) Integer minScore) {
+            @RequestParam(required = false) Integer minScore,
+            @RequestParam(required = false) Boolean remoteOnly) {
         Long userId = currentUserService.getCurrentUserId();
-        List<JobResponse> response = listJobsUseCase.findAllWithDraftStatus(userId, hasEmail, excludeApplied, minScore).stream()
+        List<JobResponse> response = listJobsUseCase.findAllWithDraftStatus(userId, hasEmail, excludeApplied, minScore, remoteOnly).stream()
                 .map(this::toJobResponse)
                 .collect(Collectors.toList());
         return ResponseEntity.ok(response);
@@ -92,20 +93,9 @@ public class JobController {
 
     @GetMapping("/{id}")
     public ResponseEntity<JobResponse> getJobById(@PathVariable Long id) {
-        Job job = getJobUseCase.getById(id);
-        JobResponse response = new JobResponse(
-                job.id(),
-                job.title(),
-                job.company(),
-                job.url(),
-                job.description(),
-                job.postedAt(),
-                job.source(),
-                job.contactEmail(),
-                null, // draft status is not resolved on the detail endpoint
-                null  // match score is not resolved on the detail endpoint
-        );
-        return ResponseEntity.ok(response);
+        Long userId = currentUserService.getCurrentUserId();
+        JobWithDraftStatus entry = getJobUseCase.getByIdWithDraftStatus(userId, id);
+        return ResponseEntity.ok(toJobResponse(entry));
     }
 
     private JobResponse toJobResponse(JobWithDraftStatus entry) {
@@ -120,7 +110,8 @@ public class JobController {
                 job.source(),
                 job.contactEmail(),
                 entry.draftStatus(),
-                entry.matchScore()
+                entry.matchScore(),
+                entry.lifecycleState()
         );
     }
 

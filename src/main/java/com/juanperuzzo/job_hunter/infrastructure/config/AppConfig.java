@@ -262,7 +262,7 @@ public class AppConfig {
             @Value("${scraper.infojobs.max-pages}") int maxPages,
             @Value("${scraper.infojobs.detail-concurrency:2}") int detailConcurrency,
             @Value("${scraper.infojobs.detail-timeout-seconds:5}") int detailTimeoutSeconds,
-            @Value("${scraper.infojobs.max-detail-fetch:20}") int maxDetailFetch,
+            @Value("${scraper.infojobs.max-detail-fetch:100}") int maxDetailFetch,
             ExponentialBackoffRetry exponentialBackoffRetry,
             RestClient scraperRestClient,
             @Qualifier("infojobsDetailRestClient") RestClient infojobsDetailRestClient,

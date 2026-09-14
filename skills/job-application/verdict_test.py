@@ -126,6 +126,40 @@ class VerifyEvidenceTests(unittest.TestCase):
         self.assertEqual(result["verdict"], verdict.SUBMIT_DONE_NO_EVIDENCE)
         self.assertIsNone(result["evidence"])
 
+    def test_gupy_finalizada_heading_on_same_url_is_evidence(self):
+        # Real MTP case: success renders inline (SPA, no /success URL change).
+        # Heading "Candidatura finalizada!" must count as Tier-1 text evidence.
+        ax = [
+            {"role": "heading", "name": "Candidatura finalizada!"},
+            {"role": "paragraph", "name": "Agora a empresa vai analisar sua compatibilidade"},
+            {"role": "button", "name": "Acompanhar candidatura"},
+            {"role": "button", "name": "Encontrar vagas similares"},
+        ]
+        result = verdict.evaluate_submit(
+            "https://mtpbrasil.gupy.io/candidates/applications/756128925/steps/4250180021/curriculum",
+            ax,
+            SCREENSHOT,
+        )
+        self.assertEqual(result["verdict"], verdict.SUBMIT_OK)
+        self.assertEqual(result["evidence"]["method"], "success_text")
+
+    def test_apresente_se_modal_is_no_evidence(self):
+        # Gupy "Apresente-se!" interstitial: "Finalizar candidatura" still
+        # pending means NOT submitted, even with prior steps done.
+        ax = [
+            {"role": "heading", "name": "Apresente-se!"},
+            {"role": "paragraph", "name": "A personalização é válida exclusivamente para esta vaga."},
+            {"role": "button", "name": "Personalizar candidatura"},
+            {"role": "button", "name": "Finalizar candidatura"},
+        ]
+        result = verdict.evaluate_submit(
+            "https://mtpbrasil.gupy.io/candidates/applications/756128925/steps/4250180021/curriculum",
+            ax,
+            SCREENSHOT,
+        )
+        self.assertEqual(result["verdict"], verdict.SUBMIT_DONE_NO_EVIDENCE)
+        self.assertIsNone(result["evidence"])
+
 
 class VerdictRoutingTests(unittest.TestCase):
     """decide() — outcome -> record routing is the single point of truth."""
@@ -326,6 +360,60 @@ class VerdictRoutingTests(unittest.TestCase):
         # applied_at is the verdict (post-submit) timestamp, NOT the plan time.
         self.assertEqual(record["applied_at"], ENDED_AT)
         self.assertEqual(result["applied_record"]["applied_at"], ENDED_AT)
+
+    # Test 9 — idempotency-key hardening: backend_job_id rides in the record BODY
+    def test_applied_record_carries_backend_job_id(self):
+        # The verdict record embeds the numeric backend id so a slug-miss
+        # (numeric vs base64 key) can reconcile against the backend id. The
+        # FILE key stays the portal slug — the backend numeric id never reaches
+        # a filename.
+        result = verdict.decide(
+            **make_attempt(memory_dir=self.memory_dir, confirmed=True,
+                           backend_job_id=42)
+        )
+        self.assertTrue(self.applied_path.is_file())
+        record = json.loads(self.applied_path.read_text(encoding="utf-8"))
+        self.assertEqual(record["backend_job_id"], 42)
+        self.assertEqual(self.applied_path.name, f"{JOB_ID}.json")
+
+    def test_applied_record_omits_backend_job_id_when_none(self):
+        # The classic --job-url flow has no backend id (backend_job_id=None):
+        # the record must not carry a null/empty backend_job_id key.
+        result = verdict.decide(
+            **make_attempt(memory_dir=self.memory_dir, confirmed=True)
+        )
+        self.assertTrue(self.applied_path.is_file())
+        record = json.loads(self.applied_path.read_text(encoding="utf-8"))
+        self.assertNotIn("backend_job_id", record)
+
+    def test_write_applied_record_persists_backend_id_but_keeps_slug_key(self):
+        # Direct writer contract: backend_job_id is persisted in the record
+        # body for later reconciliation, while the file key stays the portal
+        # slug — the backend numeric id must never reach a filename.
+        record = verdict.write_applied_record(
+            self.memory_dir, "755694375",
+            portal="infojobs",
+            contact_email=CONTACT_EMAIL,
+            applied_at=ENDED_AT,
+            screenshot_path=SCREENSHOT,
+            verdict=verdict.SUBMIT_OK,
+            evidence=success_evidence(),
+            backend_job_id=42,
+        )
+        self.assertEqual(record["backend_job_id"], 42)
+        # The file key stays the portal slug — derived ids carry no trailing
+        # .json (apply.derive_job_id strips it), so the file is
+        # applications/755694375.json, never the doubled .json.json.
+        slug_record = (
+            self.memory_dir / "applications" / "755694375.json"
+        )
+        self.assertTrue(slug_record.is_file())
+        on_disk = json.loads(slug_record.read_text(encoding="utf-8"))
+        self.assertEqual(on_disk["backend_job_id"], 42)
+        # Neither a doubled-extension nor a "42.json" backend-id sibling exists.
+        self.assertFalse(
+            (self.memory_dir / "applications" / "755694375.json.json").exists())
+        self.assertFalse((self.memory_dir / "applications" / "42.json").exists())
 
 
 if __name__ == "__main__":

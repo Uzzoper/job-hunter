@@ -36,4 +36,22 @@ class TemplateEmailServiceTest {
                 () -> assertTrue(result.body().contains("Juan Antonio Peruzzo"))
         );
     }
+
+    @Test
+    @DisplayName("should keep a single closing CTA without duplicating the demo offer sentence")
+    void generate_shouldNotDuplicateClosingSentence() {
+        var job = new Job(1L, "Desenvolvedor Java Júnior", "Acme Corp",
+                "https://example.com/job", "Desc", LocalDate.now(), "source");
+
+        var result = templateEmailService.generate(job);
+
+        assertAll(
+                () -> assertTrue(result.body().contains(
+                        "Além dos requisitos da vaga, trabalho também com JavaScript, React, Node.js, Docker e testes automatizados.")),
+                () -> assertTrue(result.body().contains(
+                        "Segue meu currículo em anexo. Podemos agendar uma conversa para eu mostrar esses projetos rodando?")),
+                () -> assertFalse(result.body().contains(
+                        "Posso demonstrar qualquer um desses projetos em funcionamento em uma conversa rápida."))
+        );
+    }
 }

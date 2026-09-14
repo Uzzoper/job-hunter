@@ -38,7 +38,7 @@ class LinkedInScraperClientTest {
                 "https://www.linkedin.com",
                 List.of("desenvolvedor"),
                 "Brazil",
-                List.of("106057199"),
+                List.of("106057199", "102927786", "105972731", "105906364"),
                 List.of("entry_level"),
                 List.of("remote"),
                 "past_week",
@@ -52,6 +52,27 @@ class LinkedInScraperClientTest {
     @Nested
     @DisplayName("Scenario 1: valid search response")
     class ValidSearchResponse {
+
+        @Test
+        @DisplayName("extract should forward only the first configured geo ID to the scraper service")
+        void extract_whenGeoIdsConfigured_shouldForwardOnlyFirstGeoId() {
+            stubFor(get(urlPathEqualTo("/api/jobs"))
+                    .withQueryParam("keywords", equalTo("desenvolvedor"))
+                    .withQueryParam("location", equalTo("Brazil"))
+                    .withQueryParam("geoId", equalTo("106057199"))
+                    .willReturn(okJson("""
+                        {
+                          "success": true,
+                          "data": []
+                        }
+                        """)));
+
+            var jobs = client.extract();
+
+            assertTrue(jobs.isEmpty());
+            verify(0, getRequestedFor(urlPathEqualTo("/api/jobs"))
+                    .withQueryParam("geoId", equalTo("102927786")));
+        }
 
         @Test
         @DisplayName("extract should return mapped RawJob list with source=linkedin")

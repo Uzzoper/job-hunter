@@ -65,6 +65,24 @@ class JobPreferenceScorerTest {
     }
 
     @Test
+    @DisplayName("adjust should still detect onsite when the ad negates remote with 'não remoto'")
+    void remote_whenDescriptionNaoRemoto_shouldStillDetectOnsite() {
+        UserPreferences prefs = new UserPreferences(new WorkPreference.Remote(), null, List.of());
+        Job job = job("Atuação presencial — não remoto.", "CompanyX");
+
+        assertEquals(65, JobPreferenceScorer.adjust(80, job, prefs));
+    }
+
+    @Test
+    @DisplayName("adjust should subtract the full penalty when the ad negates remote with 'sem remoto'")
+    void remote_whenDescriptionSemRemotoAndOnsite_shouldSubtractFullPenalty() {
+        UserPreferences prefs = new UserPreferences(new WorkPreference.Remote(), null, List.of());
+        Job job = job("Vaga sem remoto, 100% presencial.", "CompanyX");
+
+        assertEquals(65, JobPreferenceScorer.adjust(80, job, prefs));
+    }
+
+    @Test
     @DisplayName("adjust should not penalize a silent ad (no work-model signal)")
     void remote_whenDescriptionSilent_shouldNotPenalize() {
         UserPreferences prefs = new UserPreferences(new WorkPreference.Remote(), null, List.of());

@@ -167,8 +167,7 @@ Expected layout afterwards:
 │   ├── report-generator/     # progress reports (#35)
 │   ├── analyzer/             # pattern analysis (#35)
 │   ├── visualizer/           # funnel charts (#35)
-│   ├── job-application/      # Gupy apply planner (#37)
-│   └── cdp-daemon/           # persistent CDP daemon for batch applies (#44)
+│   ├── job-application/      # Gupy/InfoJobs apply planner → intent (#37, mcp-apply-loop)
 └── memails/                  # enrichment + application records (created empty)
 ```
 
@@ -178,7 +177,7 @@ Expected layout afterwards:
 (issue #46) instead of taking a `--job-url`:
 
 - **`--job-id <id>`** — fetches `GET /api/jobs/{id}` and prefills the job
-  detail into the plan.
+  detail into the intent.
 - **`--from-api`** — picks the top-scored eligible job from `GET /api/jobs`
   and applies to it.
 
@@ -225,16 +224,16 @@ bot profile into the container:
 | Backend warns about memory dir | normal without a bot profile; set `bot.memory.dir` if custom |
 | Skill not found by the bot | re-run `scripts/install-bot-skills.sh`, check per-skill subdirs |
 
-## 8. CDP setup for automated Gupy applications (optional, advanced)
+## 8. CDP setup for automated Gupy/InfoJobs applications (optional, advanced)
 
 Gupy requires authentication to submit applications. The bot uses Hermes'
 Browser Use, but you can improve the experience by sharing your local
 Chromium session via CDP (Chrome DevTools Protocol). Skip this section
-unless you use the `job-application` skill (#37) against Gupy.
+unless you use the `job-application` skill (#37) against Gupy/InfoJobs.
 
 ### Why CDP?
 
-- Bot logs into Gupy once via CDP.
+- Bot logs into Gupy/InfoJobs once via CDP.
 - All subsequent applications reuse your logged-in session.
 - No need to re-authenticate for each application.
 
@@ -263,27 +262,21 @@ unless you use the `job-application` skill (#37) against Gupy.
    ```
    You should see the Gupy tab listed.
 
-### CDP daemon (optional, systemd user unit)
+### MCP executor → CDP endpoint
 
-Instead of keeping a manual Chromium session open, you can run the persistent
-CDP daemon (`skills/cdp-daemon`, issue #44) as a systemd **user** unit. It is
-opt-in — the setup above works without it.
+The MCP executor (the `job-application` apply loop) does **not** use a CDP
+daemon (the `skills/cdp-daemon` hand-rolled WebSocket transport was retired in
+cutover package 3). Instead it attaches its Playwright MCP server straight to
+your local Chromium's CDP endpoint — `apply.py`'s browser recovery (#39) and
+the MCP server both target `http://localhost:9222`:
 
-1. Copy the unit into your user units:
+1. Start the Playwright MCP server with the CDP transport:
    ```bash
-   cp skills/cdp-daemon/jobhunter-cdp-daemon.service ~/.config/systemd/user/
+   npx @playwright/mcp@latest --cdp-endpoint http://localhost:9222
    ```
-2. Reload and enable/start it:
-   ```bash
-   systemctl --user daemon-reload
-   systemctl --user enable --now jobhunter-cdp-daemon.service
-   ```
-3. Health-check the daemon:
-   ```bash
-   curl -s http://127.0.0.1:19999/health
-   ```
-   `cdp_connected: false` is normal until a Chrome/CDP session is attached —
-   apply.py then falls back to a direct plan with a warning.
+2. `apply.py` reuses the very same endpoint (default `http://localhost:9222`,
+   override with `--cdp-url`) and the same `~/.chromium-profile-cdp` user-data
+   dir — the logged-in session is shared, so no re-authentication per apply.
 
 ### Troubleshooting CDP
 

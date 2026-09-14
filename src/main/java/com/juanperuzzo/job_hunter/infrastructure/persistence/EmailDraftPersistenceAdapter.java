@@ -1,6 +1,7 @@
 package com.juanperuzzo.job_hunter.infrastructure.persistence;
 
 import com.juanperuzzo.job_hunter.application.port.out.EmailDraftRepository;
+import com.juanperuzzo.job_hunter.domain.model.ApplicationLifecycle;
 import com.juanperuzzo.job_hunter.domain.model.EmailDraft;
 import com.juanperuzzo.job_hunter.domain.model.EmailStatus;
 import org.springframework.stereotype.Repository;
@@ -76,6 +77,13 @@ public class EmailDraftPersistenceAdapter implements EmailDraftRepository {
         entity.setGeneratedAt(draft.generatedAt());
         entity.setSentAt(draft.sentAt());
         entity.setRecipientEmail(draft.recipientEmail());
+        // Lifecycle write path (issue #56): SENT markers persist as SUBMITTED —
+        // never VERIFIED (no evidence at record time). Other statuses carry no
+        // lifecycle here; VERIFIED upgrades arrive via the cutover, which owns
+        // this field from then on.
+        entity.setLifecycleState(ApplicationLifecycle.fromEmailStatus(draft.status())
+                .map(Enum::name)
+                .orElse(null));
         return entity;
     }
 

@@ -828,4 +828,56 @@ class EmailGenerationServiceTest {
                     "UserPreferences.empty() must not inject a preferences block");
         }
     }
+
+    @Nested
+    @DisplayName("Scenario 11: prompt reference example keeps a single closing CTA")
+    class PromptReferenceCopyTests {
+
+        @Test
+        @DisplayName("generate should build a prompt whose example email does not duplicate the demo offer")
+        void generate_whenPromptBuilt_shouldNotDuplicateDemoOfferInReferenceExample() {
+            String aiResponse = """
+                Subject: Application for Java Developer Position
+
+                Olá.
+
+                Eu me candidato à vaga.
+
+                Atenciosamente,
+                Juan Peruzzo
+                """;
+
+            UserProfile profile = new UserProfile(null, 1L,
+                    "Experienced Java developer with Spring Boot expertise.",
+                    List.of("Java", "Spring Boot"),
+                    CompanyTone.FORMAL,
+                    List.of(), null, null, null, null, null, null);
+            when(userProfileRepository.findByUserId(any())).thenReturn(Optional.of(profile));
+
+            Long jobId = 40L;
+            Job job = new Job(jobId, "Java Developer", "CompanyX",
+                    "https://example.com/job/40", "Description", LocalDate.now(), "test");
+            JobAnalysis analysis = new JobAnalysis(null, null, null, 40,
+                    List.of("Java", "Spring Boot"),
+                    List.of("Kubernetes"),
+                    CompanyTone.FORMAL,
+                    "Java developer position");
+
+            when(jobRepository.findById(jobId)).thenReturn(Optional.of(job));
+            when(jobAnalysisRepository.findByJobIdAndUserId(jobId, 1L)).thenReturn(Optional.of(analysis));
+            when(emailDraftRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+            ArgumentCaptor<String> promptCaptor = ArgumentCaptor.forClass(String.class);
+            when(aiPort.complete(promptCaptor.capture())).thenReturn(aiResponse);
+
+            emailGenerationService.generate(1L, jobId);
+
+            String prompt = promptCaptor.getValue();
+            assertTrue(prompt.contains(
+                    "Além dos requisitos da vaga, trabalho também com JavaScript, React, Node.js, Docker e testes automatizados."));
+            assertTrue(prompt.contains("Podemos agendar uma conversa para eu mostrar esses projetos rodando?"));
+            assertFalse(prompt.contains(
+                    "Posso demonstrar qualquer um desses projetos em funcionamento em uma conversa rápida."));
+        }
+    }
 }
