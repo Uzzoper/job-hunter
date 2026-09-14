@@ -34,7 +34,7 @@ class TemplateEmailServiceTest {
                         new Project("Job Hunter", "API com Spring Boot", "Spring Boot"),
                         new Project("LovLink", "SaaS comercial", "PostgreSQL")
                 ),
-                "(42) 99833-1363", "juan@example.com",
+                "(42) 99999-0000", "juan@example.com",
                 "https://juanperuzzo.is-a.dev", "https://github.com/Uzzoper",
                 "https://linkedin.com/in/juan", null);
     }
@@ -53,7 +53,7 @@ class TemplateEmailServiceTest {
                 () -> assertTrue(result.body().contains("Desenvolvedor Java Júnior")),
                 () -> assertTrue(result.body().contains("Acme Corp")),
                 () -> assertTrue(result.body().contains("Juan Antonio Peruzzo")),
-                () -> assertTrue(result.body().contains("(42) 99833-1363")),
+                () -> assertTrue(result.body().contains("(42) 99999-0000")),
                 () -> assertTrue(result.body().contains("juan@example.com")),
                 () -> assertTrue(result.body().contains("https://juanperuzzo.is-a.dev")),
                 () -> assertTrue(result.body().contains("https://github.com/Uzzoper")),
@@ -82,7 +82,7 @@ class TemplateEmailServiceTest {
                 () -> assertTrue(result.body().contains("juan@example.com")),
                 () -> assertTrue(result.body().contains("Java, PostgreSQL")),
                 () -> assertTrue(result.body().contains("https://linkedin.com/in/juan")),
-                () -> assertFalse(result.body().contains("(42) 99833-1363")),
+                () -> assertFalse(result.body().contains("(42) 99999-0000")),
                 () -> assertFalse(result.body().contains("Portfólio:")),
                 () -> assertFalse(result.body().contains("GitHub:")),
                 () -> assertFalse(result.body().contains("{{PHONE}}")),

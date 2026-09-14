@@ -961,7 +961,7 @@ class EmailGenerationServiceTest {
                     List.of("Java", "Spring Boot", "PostgreSQL"),
                     CompanyTone.FORMAL,
                     List.of(new Project("Job Hunter", "API com Spring Boot", "Spring Boot")),
-                    "(42) 99833-1363", "juan@example.com",
+                    "(42) 99999-0000", "juan@example.com",
                     "https://juanperuzzo.is-a.dev", "https://github.com/Uzzoper",
                     "https://linkedin.com/in/juan", null);
             when(userProfileRepository.findByUserId(any())).thenReturn(Optional.of(profile));

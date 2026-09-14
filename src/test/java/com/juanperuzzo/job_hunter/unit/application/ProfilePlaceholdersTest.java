@@ -38,7 +38,7 @@ class ProfilePlaceholdersTest {
                         new Project("Job Hunter", "API com Spring Boot", "Spring Boot"),
                         new Project("LovLink", "SaaS comercial", "PostgreSQL")
                 ),
-                "(42) 99833-1363", "juan@example.com",
+                "(42) 99999-0000", "juan@example.com",
                 "https://juanperuzzo.is-a.dev", "https://github.com/Uzzoper",
                 "https://linkedin.com/in/juan", null);
 
@@ -47,7 +47,7 @@ class ProfilePlaceholdersTest {
         assertAll(
                 () -> assertTrue(resolved.contains("Juan Antonio Peruzzo")),
                 () -> assertTrue(resolved.contains("juan@example.com")),
-                () -> assertTrue(resolved.contains("(42) 99833-1363")),
+                () -> assertTrue(resolved.contains("(42) 99999-0000")),
                 () -> assertTrue(resolved.contains("https://juanperuzzo.is-a.dev")),
                 () -> assertTrue(resolved.contains("https://github.com/Uzzoper")),
                 () -> assertTrue(resolved.contains("https://linkedin.com/in/juan")),

@@ -402,7 +402,7 @@ class ResumeTailoringServiceTest {
                 "github must be clickable with protocol-stripped display text");
         assertTrue(html.contains("<a href=\"https://linkedin.com/in/juanperuzzo\">linkedin.com/in/juanperuzzo</a>"),
                 "linkedin must be clickable with protocol-stripped display text");
-        assertTrue(html.contains("(42) 99833-1363"),
+        assertTrue(html.contains("(42) 99999-0000"),
                 "phone must be rendered as plain text");
     }
 
@@ -431,7 +431,7 @@ class ResumeTailoringServiceTest {
                 "empty linkedin must not render");
         assertFalse(html.contains("juanperuzzo.is-a.dev"),
                 "empty portfolio must not render");
-        assertFalse(html.contains("(42) 99833-1363"),
+        assertFalse(html.contains("(42) 99999-0000"),
                 "empty phone must not render");
     }
 
@@ -497,7 +497,7 @@ class ResumeTailoringServiceTest {
     private UserProfile profileWithContact() {
         return new UserProfile(1L, USER_ID, RESUME_TEXT,
                 List.of("Java", "Spring Boot", "PostgreSQL"), CompanyTone.FORMAL, List.of(),
-                "(42) 99833-1363", "contato@juan.dev",
+                "(42) 99999-0000", "contato@juan.dev",
                 "https://juanperuzzo.is-a.dev", "https://github.com/Uzzoper",
                 "https://linkedin.com/in/juanperuzzo", null);
     }
