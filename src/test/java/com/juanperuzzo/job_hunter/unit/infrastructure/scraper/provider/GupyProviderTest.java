@@ -185,8 +185,8 @@ class GupyProviderTest {
     class EdgeCases {
 
         @Test
-        @DisplayName("extract_whenCareerPageUrlPresent_shouldSetCompanyWebsite - Scenario 10")
-        void extract_whenCareerPageUrlPresent_shouldSetCompanyWebsite() {
+        @DisplayName("extract should not store a portal careerPageUrl as companyWebsite - Scenario 10")
+        void extract_whenCareerPageUrlIsPortal_shouldNotSetCompanyWebsite() {
             // Use the provider's real mapper (first constructor wires GupyProvider.mapNode)
             var realMapperProvider = new GupyProvider(baseUrl, 5, List.of("desenvolvedor"), 20, retry);
 
@@ -209,8 +209,36 @@ class GupyProviderTest {
 
             var job = jobs.get(0);
             assertEquals("https://techco.gupy.io/jobs/123", job.url(), "jobUrl should still win for url");
-            assertEquals("https://techco.gupy.io", job.metadata().get("companyWebsite"),
-                    "careerPageUrl should be stored as companyWebsite even when jobUrl exists");
+            assertNull(job.metadata().get("companyWebsite"),
+                    "a portal careerPageUrl must never be stored as companyWebsite — Gupy's list API has no real company-site field");
+        }
+
+        @Test
+        @DisplayName("extract should keep a non-portal companyWebsite")
+        void extract_whenCompanyWebsiteNonPortal_shouldKeepIt() {
+            // Use the provider's real mapper (first constructor wires GupyProvider.mapNode)
+            var realMapperProvider = new GupyProvider(baseUrl, 5, List.of("desenvolvedor"), 20, retry);
+
+            stubFor(get(urlPathEqualTo("/api/v1/jobs"))
+                    .withQueryParam("jobName", equalTo("desenvolvedor"))
+                    .withQueryParam("limit", equalTo("20"))
+                    .willReturn(okJson("""
+                        {"data": [{
+                          "name": "Dev Java",
+                          "careerPageName": "TechCo",
+                          "jobUrl": "https://techco.gupy.io/jobs/123",
+                          "careerPageUrl": "https://techco.com",
+                          "publishedDate": "2026-07-01",
+                          "description": "Vaga"
+                        }]}
+                        """)));
+
+            var jobs = realMapperProvider.extract();
+            assertEquals(1, jobs.size());
+
+            var job = jobs.get(0);
+            assertEquals("https://techco.com", job.metadata().get("companyWebsite"),
+                    "a non-portal companyWebsite should pass through unchanged");
         }
 
         @Test

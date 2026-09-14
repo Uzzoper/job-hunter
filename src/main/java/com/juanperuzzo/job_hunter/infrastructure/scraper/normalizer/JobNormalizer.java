@@ -3,6 +3,7 @@ package com.juanperuzzo.job_hunter.infrastructure.scraper.normalizer;
 import com.juanperuzzo.job_hunter.application.port.out.NormalizerPort;
 import com.juanperuzzo.job_hunter.application.port.out.RawJob;
 import com.juanperuzzo.job_hunter.application.port.out.UserRepository;
+import com.juanperuzzo.job_hunter.domain.PortalDomains;
 import com.juanperuzzo.job_hunter.domain.model.Job;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -172,9 +173,18 @@ public class JobNormalizer implements NormalizerPort {
     /**
      * Copy the provider-supplied company website into the domain model, normalizing
      * away a trailing slash. Returns null for absent or blank metadata.
+     * <p>
+     * Job-portal URLs (see {@link PortalDomains}) are never real corporate sites —
+     * they are dropped here at the choke point so no provider can leak them into the
+     * stored {@code companyWebsite}.
      */
     private static String normalizeCompanyWebsite(String website) {
         if (website == null) return null;
+        var host = UrlNormalizer.host(website);
+        if (host != null && PortalDomains.isPortal(host)) {
+            log.debug("Discarding portal company website for {}: {}", host, website);
+            return null;
+        }
         return UrlNormalizer.noTrailingSlash(website);
     }
 
