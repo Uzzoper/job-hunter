@@ -77,6 +77,8 @@ Search LinkedIn for job listings matching keywords, optional location, and optio
 | `location` | No | string | Location filter (e.g., `Brazil`, `São Paulo`) |
 | `geoId` | No | string, repeatable | LinkedIn geographic filter; each value is forwarded as a separate `geoId` parameter |
 
+> **Note:** LinkedIn honors a single `geoId` per search — repeated values return an empty page (verified live). The Java client (`LinkedInScraperClient`) therefore forwards only the first configured `geoId`; the Node proxy itself faithfully forwards whatever list it receives.
+
 Example with multiple geographic filters:
 
 ```text
