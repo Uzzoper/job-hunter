@@ -2,6 +2,7 @@ package com.juanperuzzo.job_hunter.infrastructure.scraper.provider;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.juanperuzzo.job_hunter.application.port.out.RawJob;
+import com.juanperuzzo.job_hunter.domain.PortalDomains;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.normalizer.UrlNormalizer;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.retry.ExponentialBackoffRetry;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.strategy.ExtractionStrategy;
@@ -127,10 +128,13 @@ public class GupyProvider implements ExtractionStrategy {
         var workModel = isRemote ? "Remoto" : null;
         var company = node.path("careerPageName").asText(null);
 
-        // Scenario 10: persist careerPageUrl as companyWebsite even when jobUrl exists.
+        // Scenario 10: the list API has no real company-website field — careerPageUrl is
+        // always a Gupy-hosted portal page (e.g. https://techco.gupy.io). Portal URLs are
+        // never stored as companyWebsite (null instead); real-site extraction from detail
+        // pages is a separate future spike.
         var metadata = new HashMap<String, String>();
         var careerPageUrl = node.path("careerPageUrl").asText("");
-        if (!careerPageUrl.isBlank()) {
+        if (!careerPageUrl.isBlank() && !isPortalUrl(careerPageUrl)) {
             metadata.put("companyWebsite", UrlNormalizer.noTrailingSlash(careerPageUrl));
         }
 
@@ -152,6 +156,12 @@ public class GupyProvider implements ExtractionStrategy {
             if (!jobUrl.isBlank()) return jobUrl;
         }
         return node.path("careerPageUrl").asText("");
+    }
+
+    /** True when the given URL host ends with a known job-portal suffix (see {@link PortalDomains}). */
+    private static boolean isPortalUrl(String url) {
+        var host = UrlNormalizer.host(url);
+        return host != null && PortalDomains.isPortal(host);
     }
 
     private static String urlEncode(String value) {

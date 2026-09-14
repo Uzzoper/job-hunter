@@ -61,6 +61,17 @@ GET https://portal.api.gupy.io/api/v1/jobs?jobName=desenvolvedor&size=100
 - **Location Filter:** Accept only jobs marked as `isRemoteWork: true` OR located in configured cities/states (e.g., "Ponta Grossa", "Paraná", "PR").
 - The `Job` `id` is generated locally with `UUID.randomUUID()`
 
+### Company website
+
+- **The Gupy list API has NO real-company-website field.** The `careerPageUrl` field is
+  always a Gupy-hosted portal page (e.g. `https://techco.gupy.io`) — it is **ignored** for
+  `companyWebsite`.
+- Portal-suffixed URLs (`gupy.io`, `gupy.com.br`, `infojobs.com.br` — shared suffixes from
+  `domain/PortalDomains`) are **never stored** as `companyWebsite`; the field is `null`
+  instead. This applies both in `GupyProvider.mapNode` (the value is not emitted at all)
+  and at the central `JobNormalizer` choke point (defense-in-depth for any provider).
+- Real company-site extraction from detail pages is a separate future spike (out of scope).
+
 ---
 
 ## Interface contract (port)
