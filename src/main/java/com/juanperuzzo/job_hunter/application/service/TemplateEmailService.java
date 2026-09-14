@@ -18,7 +18,7 @@ public class TemplateEmailService {
             • LovLink (lovlink.com.br) — SaaS comercial em produção, banco de dados PostgreSQL, integração de pagamentos via Mercado Pago e arquitetura full stack moderna.
             • Jishuu (jishuu.vercel.app) — plataforma com autenticação OAuth 2.0 (Google), gerenciamento de usuários e persistência de dados utilizando PostgreSQL.
 
-            Além dos requisitos da vaga, trabalho também com JavaScript, React, Node.js, Docker e testes automatizados. Posso demonstrar qualquer um desses projetos em funcionamento em uma conversa rápida.
+            Além dos requisitos da vaga, trabalho também com JavaScript, React, Node.js, Docker e testes automatizados.
 
             Segue meu currículo em anexo. Podemos agendar uma conversa para eu mostrar esses projetos rodando?
 
