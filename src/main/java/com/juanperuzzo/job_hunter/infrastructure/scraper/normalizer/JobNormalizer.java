@@ -8,13 +8,11 @@ import com.juanperuzzo.job_hunter.domain.model.Job;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.net.URI;
 import java.text.Normalizer;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Locale;
 import java.util.regex.Pattern;
 
 /**
@@ -182,23 +180,12 @@ public class JobNormalizer implements NormalizerPort {
      */
     private static String normalizeCompanyWebsite(String website) {
         if (website == null) return null;
-        var host = host(website);
+        var host = UrlNormalizer.host(website);
         if (host != null && PortalDomains.isPortal(host)) {
             log.debug("Discarding portal company website for {}: {}", host, website);
             return null;
         }
         return UrlNormalizer.noTrailingSlash(website);
-    }
-
-    /** Lowercase host of a website URL, or null when it cannot be parsed. */
-    private static String host(String url) {
-        try {
-            var uri = URI.create(url);
-            var host = uri.getHost();
-            return host == null ? null : host.toLowerCase(Locale.ROOT);
-        } catch (Exception e) {
-            return null;
-        }
     }
 
     private boolean matchesKeywords(String normalizedTitle, String normalizedDescription) {

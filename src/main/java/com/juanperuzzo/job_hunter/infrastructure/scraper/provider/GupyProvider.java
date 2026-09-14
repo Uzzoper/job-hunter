@@ -11,12 +11,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.client.RestClientResponseException;
 
-import java.net.URI;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.List;
-import java.util.Locale;
 
 public class GupyProvider implements ExtractionStrategy {
 
@@ -162,19 +160,8 @@ public class GupyProvider implements ExtractionStrategy {
 
     /** True when the given URL host ends with a known job-portal suffix (see {@link PortalDomains}). */
     private static boolean isPortalUrl(String url) {
-        var host = host(url);
+        var host = UrlNormalizer.host(url);
         return host != null && PortalDomains.isPortal(host);
-    }
-
-    /** Lowercase host of a URL, or null when it cannot be parsed. */
-    private static String host(String url) {
-        try {
-            var uri = URI.create(url);
-            var host = uri.getHost();
-            return host == null ? null : host.toLowerCase(Locale.ROOT);
-        } catch (Exception e) {
-            return null;
-        }
     }
 
     private static String urlEncode(String value) {
