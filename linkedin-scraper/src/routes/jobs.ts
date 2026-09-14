@@ -69,6 +69,19 @@ function handleScraperError(res: Response, error: unknown): void {
   res.status(500).json(body);
 }
 
+function queryStringList(value: unknown): string[] {
+  if (typeof value === "string") {
+    return value.trim().length > 0 ? [value.trim()] : [];
+  }
+  if (Array.isArray(value)) {
+    return value
+      .filter((item): item is string => typeof item === "string")
+      .map((item) => item.trim())
+      .filter((item) => item.length > 0);
+  }
+  return [];
+}
+
 // ---------------------------------------------------------------------------
 // Router factory
 // ---------------------------------------------------------------------------
@@ -86,10 +99,10 @@ export function createJobsRouter(
   const router = Router();
 
   // -----------------------------------------------------------------------
-  // GET /api/jobs?keywords=...&location=...
+  // GET /api/jobs?keywords=...&location=...&geoId=...
   // -----------------------------------------------------------------------
   router.get("/", async (req: Request, res: Response) => {
-    const { keywords, location } = req.query;
+    const { keywords, location, geoId } = req.query;
 
     // Validate required keywords param
     if (
@@ -110,8 +123,9 @@ export function createJobsRouter(
         typeof location === "string" && location.trim().length > 0
           ? location.trim()
           : undefined;
+      const geoIds = queryStringList(geoId);
 
-      const jobs = await searchScraper.search(keywords.trim(), locationStr);
+      const jobs = await searchScraper.search(keywords.trim(), locationStr, geoIds);
 
       const body: ApiResponse<JobCard[]> = { success: true, data: jobs };
       res.json(body);

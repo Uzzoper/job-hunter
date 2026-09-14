@@ -1,6 +1,26 @@
 import { BrowserManager } from "../services/browser.js";
 import { JobCard } from "../types.js";
 
+/** Build the LinkedIn search URL, preserving repeated geoId parameters. */
+export function buildSearchUrl(
+  keywords: string,
+  location?: string,
+  geoIds: string[] = [],
+): string {
+  const params = new URLSearchParams();
+  params.set("keywords", keywords);
+  if (location) {
+    params.set("location", location);
+  }
+  for (const geoId of geoIds) {
+    const trimmed = geoId.trim();
+    if (trimmed.length > 0) {
+      params.append("geoId", trimmed);
+    }
+  }
+  return `https://www.linkedin.com/jobs/search?${params.toString()}`;
+}
+
 /**
  * SearchScraper extracts job listings from LinkedIn search results pages.
  * Uses confirmed selectors from spike validation.
@@ -17,10 +37,15 @@ export class SearchScraper {
    * Search LinkedIn for jobs matching the given keywords and location.
    * @param keywords - Search keywords (e.g., "java junior")
    * @param location - Optional location (e.g., "Brazil")
+   * @param geoIds - Optional LinkedIn geographic IDs forwarded as repeated query parameters
    * @returns Array of JobCard objects
    */
-  async search(keywords: string, location?: string): Promise<JobCard[]> {
-    const searchUrl = this.buildSearchUrl(keywords, location);
+  async search(
+    keywords: string,
+    location?: string,
+    geoIds: string[] = [],
+  ): Promise<JobCard[]> {
+    const searchUrl = buildSearchUrl(keywords, location, geoIds);
     const context = await this.browserManager.newContext();
     const page = await context.newPage();
 
@@ -37,7 +62,7 @@ export class SearchScraper {
       await this.randomDelay();
 
       this.logger.log(
-        `[search] keywords="${keywords}", location="${location ?? ""}", count=${jobCards.length}`
+        `[search] keywords="${keywords}", location="${location ?? ""}", geoIds="${geoIds.join(",")}", count=${jobCards.length}`
       );
 
       return jobCards;
@@ -51,15 +76,6 @@ export class SearchScraper {
         await context.close();
       }
     }
-  }
-
-  private buildSearchUrl(keywords: string, location?: string): string {
-    const params = new URLSearchParams();
-    params.set("keywords", keywords);
-    if (location) {
-      params.set("location", location);
-    }
-    return `https://www.linkedin.com/jobs/search?${params.toString()}`;
   }
 
   private async navigateToSearch(page: import("playwright").Page, url: string): Promise<void> {

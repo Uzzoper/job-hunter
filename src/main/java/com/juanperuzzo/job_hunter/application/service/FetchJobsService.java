@@ -11,6 +11,7 @@ import com.juanperuzzo.job_hunter.application.port.out.JobAnalysisRepository;
 import com.juanperuzzo.job_hunter.application.port.out.JobRepository;
 import com.juanperuzzo.job_hunter.application.port.out.ScraperPort;
 import com.juanperuzzo.job_hunter.domain.exception.JobNotFoundException;
+import com.juanperuzzo.job_hunter.domain.model.ApplicationLifecycle;
 import com.juanperuzzo.job_hunter.domain.model.EmailDraft;
 import com.juanperuzzo.job_hunter.domain.model.EmailStatus;
 import com.juanperuzzo.job_hunter.domain.model.Job;
@@ -88,13 +89,15 @@ public class FetchJobsService implements FetchJobsUseCase, ListJobsUseCase, GetJ
     }
 
     @Override
-    public List<JobWithDraftStatus> findAllWithDraftStatus(Long userId, Boolean hasEmail, Boolean excludeApplied, Integer minScore) {
+    public List<JobWithDraftStatus> findAllWithDraftStatus(Long userId, Boolean hasEmail, Boolean excludeApplied, Integer minScore, Boolean remoteOnly) {
         // Deliberately per-job lookups (1 draft + 1 analysis query per listed job, i.e. 2N+1).
         // At the current job-list scale this is negligible and keeps the change
         // reuse-only; a single bulk lookup replaces this if the list grows.
         var entries = findAll(hasEmail).stream()
-                .map(job -> new JobWithDraftStatus(job, draftStatus(job, userId), matchScore(job, userId)))
+                .map(job -> enrich(job, userId))
                 .filter(entry -> !Boolean.TRUE.equals(excludeApplied) || entry.draftStatus() != EmailStatus.SENT)
+                .filter(entry -> !Boolean.TRUE.equals(remoteOnly)
+                        || WorkModelSignals.isRemoteOnly(workModelSignalText(entry.job())))
                 .toList();
 
         // minScore filter: drop jobs below threshold or unanalyzed (null score)
@@ -110,6 +113,13 @@ public class FetchJobsService implements FetchJobsUseCase, ListJobsUseCase, GetJ
                         (JobWithDraftStatus e) -> e.matchScore() != null ? e.matchScore() : Integer.MIN_VALUE)
                         .reversed())
                 .toList();
+    }
+
+    /** Text source for the query-time work-model signal: title + description. */
+    private static String workModelSignalText(Job job) {
+        var title = job.title() == null ? "" : job.title();
+        var description = job.description() == null ? "" : job.description();
+        return (title + " " + description).trim();
     }
 
     private EmailStatus draftStatus(Job job, Long userId) {
@@ -128,5 +138,17 @@ public class FetchJobsService implements FetchJobsUseCase, ListJobsUseCase, GetJ
     public Job getById(Long id) {
         return jobRepository.findById(id)
                 .orElseThrow(() -> new JobNotFoundException("Job not found with id: " + id));
+    }
+
+    @Override
+    public JobWithDraftStatus getByIdWithDraftStatus(Long userId, Long jobId) {
+        return enrich(getById(jobId), userId);
+    }
+
+    /** Resolves the user's draft status, match score and lifecycle for a job. */
+    private JobWithDraftStatus enrich(Job job, Long userId) {
+        var status = draftStatus(job, userId);
+        var lifecycle = ApplicationLifecycle.fromEmailStatus(status).orElse(null);
+        return new JobWithDraftStatus(job, status, matchScore(job, userId), lifecycle);
     }
 }

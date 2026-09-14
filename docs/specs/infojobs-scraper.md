@@ -115,7 +115,10 @@ scraper:
     enabled: true
     base-url: https://www.infojobs.com.br
     keywords: desenvolvedor junior,desenvolvedor júnior,analista desenvolvedor junior,programador junior,java junior,backend junior
-    locations: Remoto,Home office,Todo Brasil,Ponta Grossa,Paraná,PR,Curitiba
+    # NOTE (issue #52): locations below was a suggested example, NEVER implemented.
+    # JobNormalizer runs with an empty list (no location filtering at ingest);
+    # remote filtering happens at query time via ?remoteOnly=true instead.
+    # locations: Remoto,Home office,Todo Brasil,Ponta Grossa,Paraná,PR,Curitiba
     exclude-keywords: senior,sênior,sr,sr.,pleno,pl.,lead,especialista,bdr,desenvolvedor de negócios,desenvolvimento de negócios,business development
     max-pages: 1
     max-age-days: 30

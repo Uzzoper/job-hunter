@@ -174,7 +174,7 @@ class InfoJobsProviderTest {
             // N were fetched (the rest were never fetched and thus marked detailFailed).
             for (int i = 1; i <= 4; i++) {
                 stubFor(get(urlPathEqualTo("/vaga-de-" + i + "__DEV"))
-                        .willReturn(ok("<html><body><div data-testid=\"job-description\"><p>detail" + i + "</p></div></body></html>")));
+                        .willReturn(ok("<html><body><div class=\"js_vacancyDataPanels\"><p class=\"mb-16 text-break white-space-pre-line\">detail" + i + "</p></div></body></html>")));
             }
 
             var jobs = capProvider.extract();
@@ -235,10 +235,10 @@ class InfoJobsProviderTest {
             stubFor(get(urlPathEqualTo("/vaga-de-123__DEV"))
                     .willReturn(ok("""
                         <html><body>
-                        <div data-testid="job-description">
-                          <p>Responsabilidades: desenvolver APIs REST com Java 21 e Spring Boot.</p>
-                          <p>Você atuará no time de plataforma, participando de todas as fases do ciclo de vida.</p>
-                          <p>Requisitos: experiência com microsserviços e banco de dados relacional.</p>
+                        <div class="js_vacancyDataPanels">
+                          <p class="mb-16 text-break white-space-pre-line">Responsabilidades: desenvolver APIs REST com Java 21 e Spring Boot.
+                          Você atuará no time de plataforma, participando de todas as fases do ciclo de vida.
+                          Requisitos: experiência com microsserviços e banco de dados relacional.</p>
                         </div>
                         </body></html>
                         """)));
@@ -253,6 +253,44 @@ class InfoJobsProviderTest {
                     "Detail description should include the full detail text, got: " + job.description());
             assertFalse(job.description().contains("Breve resumo na busca"),
                     "Should NOT use the short card snippet when detail is available");
+        }
+
+        @Test
+        @DisplayName("extract should prefer the live CSS structure text over JSON-LD when both are present")
+        void extract_whenCssAndJsonLdPresent_shouldUseCssDescription() {
+            var detailProvider = buildDetailProvider();
+
+            stubFor(get(urlPathEqualTo("/vagas-de-emprego-desenvolvedor.aspx"))
+                    .willReturn(ok("""
+                        <html><body>
+                        <article class="js_rowCard">
+                          <h2><a href="/vaga-de-555__DEV" title="Desenvolvedor Java">Desenvolvedor Java</a></h2>
+                          <span class="company">TechCo</span>
+                          <p class="descricao">Breve resumo na busca</p>
+                        </article>
+                        </body></html>
+                        """)));
+
+            stubFor(get(urlPathEqualTo("/vaga-de-555__DEV"))
+                    .willReturn(ok("""
+                        <html><body>
+                        <div class="js_vacancyDataPanels">
+                          <p class="mb-16 text-break white-space-pre-line">Descrição renderizada via CSS: desenvolver APIs REST com Java 21 e Spring Boot.</p>
+                        </div>
+                        <script type="application/ld+json">
+                          {"@context":"http://schema.org","@type":"JobPosting","title":"Desenvolvedor Java","description":"Descrição do JSON-LD: dados estruturados oficiais com resumo completo."}
+                        </script>
+                        </body></html>
+                        """)));
+
+            var jobs = detailProvider.extract();
+            assertEquals(1, jobs.size());
+
+            var job = jobs.get(0);
+            assertTrue(job.description().contains("Descrição renderizada via CSS"),
+                    "Live CSS structure should take precedence over JSON-LD, got: " + job.description());
+            assertFalse(job.description().contains("Descrição do JSON-LD"),
+                    "JSON-LD must remain the documented fallback, not the primary source, got: " + job.description());
         }
 
         @Test
@@ -284,7 +322,7 @@ class InfoJobsProviderTest {
 
             for (int i = 1; i <= 3; i++) {
                 stubFor(get(urlPathEqualTo("/vaga-de-" + i + "__DEV"))
-                        .willReturn(ok("<html><body><div data-testid=\"job-description\"><p>detail " + i + "</p></div></body></html>")
+                        .willReturn(ok("<html><body><div class=\"js_vacancyDataPanels\"><p class=\"mb-16 text-break white-space-pre-line\">detail " + i + "</p></div></body></html>")
                                 .withFixedDelay(detailDelayMillis)));
             }
 
@@ -365,7 +403,7 @@ class InfoJobsProviderTest {
 
             // Detail page: slower than the 1s detail timeout → detail fetch must time out
             stubFor(get(urlPathEqualTo("/vaga-de-timeout__DEV"))
-                    .willReturn(ok("<html><body><div data-testid=\"job-description\"><p>Detalhe.</p></div></body></html>")
+                    .willReturn(ok("<html><body><div class=\"js_vacancyDataPanels\"><p class=\"mb-16 text-break white-space-pre-line\">Detalhe.</p></div></body></html>")
                             .withFixedDelay(2_000)));
 
             var jobs = shortDetailTimeoutProvider.extract();
@@ -395,7 +433,7 @@ class InfoJobsProviderTest {
                         """)));
 
             stubFor(get(urlPathEqualTo("/vaga-de-777__DEV"))
-                    .willReturn(ok("<html><body><div data-testid=\"job-description\"><p>Detalhe completo.</p></div></body></html>")));
+                    .willReturn(ok("<html><body><div class=\"js_vacancyDataPanels\"><p class=\"mb-16 text-break white-space-pre-line\">Detalhe completo.</p></div></body></html>")));
 
             var jobs = detailProvider.extract();
             assertEquals(1, jobs.size());

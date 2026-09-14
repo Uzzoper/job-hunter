@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataIntegrityViolationException;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -106,6 +107,28 @@ class RecordExternalApplyServiceTest {
         assertNull(result.draft().recipientEmail());
         assertEquals("Subject: [Aplicação externa]", result.draft().subject());
         verify(emailDraftRepository).save(any());
+    }
+
+    @Test
+    @DisplayName("record should return the existing marker instead of failing when a concurrent insert wins the race")
+    void record_whenSaveConflicts_shouldReturnExistingWithoutError() {
+        Job job = new Job(JOB_ID, "Developer", "Acme",
+                "https://acme.com/job/10", "Description", LocalDate.now(), "test");
+        var sent = new EmailDraft(5L, JOB_ID, USER_ID,
+                "Subject: [Aplicação externa]",
+                "Inscrição realizada diretamente no portal da vaga. Nenhum e-mail foi enviado.",
+                EmailStatus.SENT, LocalDateTime.now(), LocalDateTime.now());
+        when(jobRepository.findById(JOB_ID)).thenReturn(Optional.of(job));
+        when(emailDraftRepository.findByJobIdAndUserId(JOB_ID, USER_ID))
+                .thenReturn(Optional.empty())
+                .thenReturn(Optional.of(sent));
+        when(emailDraftRepository.save(any()))
+                .thenThrow(new DataIntegrityViolationException("duplicate (job_id, user_id)"));
+
+        var result = service.record(USER_ID, JOB_ID);
+
+        assertFalse(result.created());
+        assertEquals(sent, result.draft());
     }
 
     @Test

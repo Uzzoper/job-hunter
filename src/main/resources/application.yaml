@@ -85,7 +85,7 @@ scraper:
     # Honored by the dedicated infojobsDetailRestClient bean (5s) for InfoJobs detail-page
     # fetches; search pages keep the shared 10s scraper.rest-client.timeout-seconds.
     detail-timeout-seconds: 5
-    max-detail-fetch: 20
+    max-detail-fetch: 100
   enricher:
     enabled: true
     timeout-seconds: 5
@@ -105,11 +105,13 @@ scraper:
     base-url: https://www.linkedin.com
     keywords: "desenvolvedor,programador,estágio,junior,ti,tecnologia,dev,software,analista"
     locations: "Brazil,São Paulo,Rio de Janeiro,Curitiba,Remote"
-    geo-ids: "106057199,102927786,105972731,105906364"
+    # Single LinkedIn geo ID (Brazil). Verified live: repeated geoIds return an
+    # empty search page, and the other IDs were not Brazil (Peru/UK/invalid).
+    geo-ids: "106057199"
     seniority: "entry_level"
     work-type: "remote,hybrid,on-site"
     time-range: "past_week"
-    max-jobs: 25
+    max-jobs: 60
     timeout-seconds: 30
     detail-fetch-delay-millis: 500
     base-job-url: https://www.linkedin.com/jobs/view/
