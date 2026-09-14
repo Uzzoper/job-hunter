@@ -520,7 +520,7 @@ mod tests {
                 description: "A Rust TUI client".into(),
                 tech_stack: vec!["Rust".into()],
             }],
-            phone: Some("+55 42 99833-1363".into()),
+            phone: Some("+55 42 99999-0000".into()),
             contact_email: Some("juan@example.com".into()),
             portfolio_url: Some("https://juanperuzzo.dev".into()),
             github_url: Some("https://github.com/juanperuzzo".into()),

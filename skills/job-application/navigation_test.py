@@ -28,7 +28,7 @@ JOB_ID = "12345-desenvolvedor-java"
 VALID_PROFILE = {
     "name": "Juan Antonio Peruzzo",
     "email": "juan@example.com",
-    "phone": "+55 42 99833-1363",
+    "phone": "+55 42 99999-0000",
     "cv_path": "/home/juan/cv.pdf",
     "cover_text": "Olá! Gostaria de me candidatar à vaga de desenvolvedor.",
 }

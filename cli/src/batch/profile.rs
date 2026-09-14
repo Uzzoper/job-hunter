@@ -361,7 +361,7 @@ mod tests {
             "skills": ["Rust", "PostgreSQL", "Docker"],
             "tone": "STARTUP",
             "projects": [],
-            "phone": "+55 42 99833-1363",
+            "phone": "+55 42 99999-0000",
             "contactEmail": "juan@example.com",
             "portfolioUrl": "https://juanperuzzo.dev",
             "githubUrl": "https://github.com/juanperuzzo",
@@ -663,7 +663,7 @@ mod tests {
             when.method(Method::PUT)
                 .path("/api/profile")
                 .header("authorization", "Bearer test-token")
-                .body_contains("\"phone\":\"+55 42 99833-1363\"")
+                .body_contains("\"phone\":\"+55 42 99999-0000\"")
                 .body_contains("\"contactEmail\":\"juan@example.com\"")
                 .body_contains("\"githubUrl\":\"https://github.com/juanperuzzo\"");
             then.status(200)
@@ -676,7 +676,7 @@ mod tests {
             skills: None,
             tone: None,
             projects: None,
-            phone: Some("+55 42 99833-1363".into()),
+            phone: Some("+55 42 99999-0000".into()),
             contact_email: Some("juan@example.com".into()),
             portfolio_url: None,
             github_url: Some("https://github.com/juanperuzzo".into()),
@@ -757,7 +757,7 @@ mod tests {
         let put_mock = server.mock(|when, then| {
             when.method(Method::PUT)
                 .path("/api/profile")
-                .body_contains("\"phone\":\"+55 42 99833-1363\"")
+                .body_contains("\"phone\":\"+55 42 99999-0000\"")
                 .body_contains("\"contactEmail\":\"juan@example.com\"");
             then.status(200)
                 .header("content-type", "application/json")
@@ -807,7 +807,7 @@ mod tests {
 
     #[test]
     fn apply_contact_field_omitted_keeps_current() {
-        let current = Some("+55 42 99833-1363".to_string());
+        let current = Some("+55 42 99999-0000".to_string());
         assert_eq!(apply_contact_field(current.clone(), None), current);
         assert_eq!(apply_contact_field(None, None), None);
     }
@@ -820,7 +820,7 @@ mod tests {
 
     #[test]
     fn apply_contact_field_empty_string_clears() {
-        let result = apply_contact_field(Some("+55 42 99833-1363".to_string()), Some(String::new()));
+        let result = apply_contact_field(Some("+55 42 99999-0000".to_string()), Some(String::new()));
         assert_eq!(result, None);
     }
 

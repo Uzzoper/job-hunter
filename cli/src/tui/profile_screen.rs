@@ -2205,7 +2205,7 @@ mod tests {
                     tech_stack: vec!["Rust".into(), "Ratatui".into()],
                 },
             ],
-            phone: Some("+55 42 99833-1363".to_string()),
+            phone: Some("+55 42 99999-0000".to_string()),
             contact_email: Some("juan@example.com".to_string()),
             portfolio_url: Some("https://juanperuzzo.dev".to_string()),
             github_url: None,
@@ -2676,8 +2676,8 @@ mod tests {
         let mut screen = create_test_screen();
         screen.toggle_mode();
         screen.focused_field = ProfileField::Resume;
-        screen.handle_paste("JUAN ANTONIO PERUZZO\n(42) 99833-1363 • juanperuzzo.dev");
-        assert_eq!(screen.resume_text, "JUAN ANTONIO PERUZZO\n(42) 99833-1363 • juanperuzzo.dev");
+        screen.handle_paste("JUAN ANTONIO PERUZZO\n(42) 99999-0000 • juanperuzzo.dev");
+        assert_eq!(screen.resume_text, "JUAN ANTONIO PERUZZO\n(42) 99999-0000 • juanperuzzo.dev");
     }
 
     #[test]

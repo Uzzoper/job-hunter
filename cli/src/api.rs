@@ -737,7 +737,7 @@ mod tests {
                     "skills": ["Rust", "PostgreSQL", "Docker"],
                     "tone": "STARTUP",
                     "projects": [],
-                    "phone": "+55 42 99833-1363",
+                    "phone": "+55 42 99999-0000",
                     "contactEmail": "juan@example.com",
                     "portfolioUrl": "https://juanperuzzo.dev",
                     "githubUrl": "https://github.com/juanperuzzo",
@@ -753,7 +753,7 @@ mod tests {
         assert_eq!(profile.user_id, 1);
         assert_eq!(profile.skills, vec!["Rust", "PostgreSQL", "Docker"]);
         assert_eq!(profile.tone, CompanyTone::Startup);
-        assert_eq!(profile.phone.as_deref(), Some("+55 42 99833-1363"));
+        assert_eq!(profile.phone.as_deref(), Some("+55 42 99999-0000"));
         assert_eq!(profile.contact_email.as_deref(), Some("juan@example.com"));
         assert_eq!(profile.portfolio_url.as_deref(), Some("https://juanperuzzo.dev"));
         assert_eq!(profile.github_url.as_deref(), Some("https://github.com/juanperuzzo"));
