@@ -242,6 +242,64 @@ class GupyProviderTest {
         }
 
         @Test
+        @DisplayName("extract should not store a portal careerPageUrl whose host contains an underscore")
+        void extract_whenCareerPageUrlHasUnderscoreHost_shouldNotSetCompanyWebsite() {
+            // Regression: URI.getHost() returns null for underscore hosts (RFC 2396 registry
+            // fallback), which previously bypassed the portal filter — see job 1874.
+            var realMapperProvider = new GupyProvider(baseUrl, 5, List.of("desenvolvedor"), 20, retry);
+
+            stubFor(get(urlPathEqualTo("/api/v1/jobs"))
+                    .withQueryParam("jobName", equalTo("desenvolvedor"))
+                    .withQueryParam("limit", equalTo("20"))
+                    .willReturn(okJson("""
+                        {"data": [{
+                          "name": "Dev Java",
+                          "careerPageName": "TechCo",
+                          "jobUrl": "https://bbc_digital.gupy.io/jobs/123",
+                          "careerPageUrl": "https://bbc_digital.gupy.io/eyJhbGciOiJ9",
+                          "publishedDate": "2026-07-01",
+                          "description": "Vaga"
+                        }]}
+                        """)));
+
+            var jobs = realMapperProvider.extract();
+            assertEquals(1, jobs.size());
+
+            var job = jobs.get(0);
+            assertNull(job.metadata().get("companyWebsite"),
+                    "an underscore portal host must still be dropped as companyWebsite");
+        }
+
+        @Test
+        @DisplayName("extract should not store a vaga-ja.com careerPageUrl as companyWebsite")
+        void extract_whenCareerPageUrlIsVagaJaPortal_shouldNotSetCompanyWebsite() {
+            // Live-verified: fresh Gupy fetch stored company_website on vaga-ja.com (same
+            // job-board family as Gupy — pages carry ?jobBoardSource=gupy_portal).
+            var realMapperProvider = new GupyProvider(baseUrl, 5, List.of("desenvolvedor"), 20, retry);
+
+            stubFor(get(urlPathEqualTo("/api/v1/jobs"))
+                    .withQueryParam("jobName", equalTo("desenvolvedor"))
+                    .withQueryParam("limit", equalTo("20"))
+                    .willReturn(okJson("""
+                        {"data": [{
+                          "name": "Dev Java",
+                          "careerPageName": "VagaJá",
+                          "jobUrl": "https://empresa.vaga-ja.com/jobs/123",
+                          "careerPageUrl": "https://empresa.vaga-ja.com/eyJhbGciOiJ9",
+                          "publishedDate": "2026-07-01",
+                          "description": "Vaga"
+                        }]}
+                        """)));
+
+            var jobs = realMapperProvider.extract();
+            assertEquals(1, jobs.size());
+
+            var job = jobs.get(0);
+            assertNull(job.metadata().get("companyWebsite"),
+                    "a vaga-ja.com careerPageUrl must never be stored as companyWebsite");
+        }
+
+        @Test
         @DisplayName("extract should skip entries with blank URL")
         void extract_whenBlankUrl_shouldSkip() {
             stubFor(get(urlPathEqualTo("/api/v1/jobs"))
