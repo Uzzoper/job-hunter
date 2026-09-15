@@ -5,15 +5,21 @@ import com.juanperuzzo.job_hunter.application.port.out.EmailDraftRepository;
 import com.juanperuzzo.job_hunter.application.port.out.JobAnalysisRepository;
 import com.juanperuzzo.job_hunter.application.port.out.JobRepository;
 import com.juanperuzzo.job_hunter.application.port.out.UserProfileRepository;
+import com.juanperuzzo.job_hunter.application.port.out.UserRepository;
 import com.juanperuzzo.job_hunter.application.service.EmailGenerationService;
+import com.juanperuzzo.job_hunter.application.service.ProfilePlaceholders;
 import com.juanperuzzo.job_hunter.application.service.TemplateEmailService;
 import com.juanperuzzo.job_hunter.application.service.BotMemorySyncService;
 import com.juanperuzzo.job_hunter.domain.exception.AiException;
+import com.juanperuzzo.job_hunter.domain.exception.ProfileNotFoundException;
+import com.juanperuzzo.job_hunter.domain.exception.UserNotFoundException;
 import com.juanperuzzo.job_hunter.domain.model.CompanyTone;
 import com.juanperuzzo.job_hunter.domain.model.EmailDraft;
 import com.juanperuzzo.job_hunter.domain.model.EmailStatus;
 import com.juanperuzzo.job_hunter.domain.model.Job;
 import com.juanperuzzo.job_hunter.domain.model.JobAnalysis;
+import com.juanperuzzo.job_hunter.domain.model.Project;
+import com.juanperuzzo.job_hunter.domain.model.User;
 import com.juanperuzzo.job_hunter.domain.model.UserPreferences;
 import com.juanperuzzo.job_hunter.domain.model.UserProfile;
 import com.juanperuzzo.job_hunter.domain.model.WorkPreference;
@@ -37,6 +43,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -56,6 +63,9 @@ class EmailGenerationServiceTest {
     private UserProfileRepository userProfileRepository;
 
     @Mock
+    private UserRepository userRepository;
+
+    @Mock
     private JobRepository jobRepository;
 
     @Mock
@@ -67,12 +77,16 @@ class EmailGenerationServiceTest {
     @Mock
     private BotMemorySyncService botMemorySyncService;
 
+    private static final User USER = new User(1L, "juan@example.com", "Juan Antonio Peruzzo", "hash");
+
     private EmailGenerationService emailGenerationService;
 
     @BeforeEach
     void setUp() {
+        // Lenient: the null-parameter tests never reach the user lookup.
+        lenient().when(userRepository.findById(any())).thenReturn(Optional.of(USER));
         emailGenerationService = new EmailGenerationService(aiPort, emailDraftRepository, userProfileRepository,
-                jobRepository, jobAnalysisRepository, templateEmailService, botMemorySyncService, 60);
+                userRepository, jobRepository, jobAnalysisRepository, templateEmailService, botMemorySyncService, 60);
     }
 
     @Nested
@@ -327,7 +341,8 @@ class EmailGenerationServiceTest {
             var templateResult = new TemplateEmailService.TemplateResult(
                     "Candidatura — Desenvolvedor Java na EmpresaX",
                     "Gostaria de me candidatar à vaga de Desenvolvedor Java na EmpresaX.");
-            when(templateEmailService.generate(job)).thenReturn(templateResult);
+            when(templateEmailService.generate(eq(job), any(User.class), any(UserProfile.class)))
+                    .thenReturn(templateResult);
 
             EmailDraft draft = emailGenerationService.generate(1L, jobId);
 
@@ -361,10 +376,11 @@ class EmailGenerationServiceTest {
 
             // The template result body carries the same NO_APPLY refusal marker the
             // AI path uses — it must be handled identically: REJECTED + write-back.
-            when(templateEmailService.generate(job)).thenReturn(
-                    new TemplateEmailService.TemplateResult(
-                            "Candidatura — Desenvolvedor Java na EmpresaX",
-                            "NO_APPLY: template flagged no fit"));
+            when(templateEmailService.generate(eq(job), any(User.class), any(UserProfile.class)))
+                    .thenReturn(
+                            new TemplateEmailService.TemplateResult(
+                                    "Candidatura — Desenvolvedor Java na EmpresaX",
+                                    "NO_APPLY: template flagged no fit"));
 
             EmailDraft draft = emailGenerationService.generate(1L, jobId);
 
@@ -391,10 +407,11 @@ class EmailGenerationServiceTest {
             when(userProfileRepository.findByUserId(any())).thenReturn(Optional.of(profile));
             when(emailDraftRepository.findByJobIdAndUserId(jobId, 1L)).thenReturn(Optional.empty());
             when(emailDraftRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
-            when(templateEmailService.generate(job)).thenReturn(
-                    new TemplateEmailService.TemplateResult(
-                            "Candidatura — Desenvolvedor Java na EmpresaY",
-                            "NO_APPLY: no fit for template"));
+            when(templateEmailService.generate(eq(job), any(User.class), any(UserProfile.class)))
+                    .thenReturn(
+                            new TemplateEmailService.TemplateResult(
+                                    "Candidatura — Desenvolvedor Java na EmpresaY",
+                                    "NO_APPLY: no fit for template"));
             doThrow(new RuntimeException("disk full"))
                     .when(botMemorySyncService).writeMemoryEntry(eq(1L), anyString());
 
@@ -559,7 +576,7 @@ class EmailGenerationServiceTest {
             assertEquals(existingSent.id(), result.id());
             assertEquals(EmailStatus.SENT, result.status());
             verify(aiPort, never()).complete(any());
-            verify(templateEmailService, never()).generate(any());
+            verify(templateEmailService, never()).generate(any(), any(), any());
             verify(emailDraftRepository, never()).save(any());
         }
 
@@ -592,7 +609,7 @@ class EmailGenerationServiceTest {
             assertEquals(externalApplyMarker.id(), result.id());
             assertEquals(EmailStatus.SENT, result.status());
             verify(aiPort, never()).complete(any());
-            verify(templateEmailService, never()).generate(any());
+            verify(templateEmailService, never()).generate(any(), any(), any());
             verify(emailDraftRepository, never()).save(any());
         }
 
@@ -874,10 +891,113 @@ class EmailGenerationServiceTest {
 
             String prompt = promptCaptor.getValue();
             assertTrue(prompt.contains(
-                    "Além dos requisitos da vaga, trabalho também com JavaScript, React, Node.js, Docker e testes automatizados."));
+                    "Além dos requisitos da vaga, trabalho também com {{SKILLS}}."));
             assertTrue(prompt.contains("Podemos agendar uma conversa para eu mostrar esses projetos rodando?"));
             assertFalse(prompt.contains(
                     "Posso demonstrar qualquer um desses projetos em funcionamento em uma conversa rápida."));
+        }
+    }
+
+    @Nested
+    @DisplayName("Profile placeholders: missing profile fails loudly and prompt facts match the resolver")
+    class ProfilePlaceholderScenarioTests {
+
+        @Test
+        @DisplayName("generate should throw ProfileNotFoundException when the user has no profile")
+        void generate_whenProfileMissing_shouldThrowProfileNotFoundException() {
+            Long jobId = 60L;
+            Job job = new Job(jobId, "Java Developer", "CompanyX",
+                    "https://example.com/job/60", "Description", LocalDate.now(), "test");
+            JobAnalysis analysis = new JobAnalysis(null, null, null, 40,
+                    List.of("Java"), List.of(),
+                    CompanyTone.FORMAL,
+                    "Java developer position");
+
+            when(jobRepository.findById(jobId)).thenReturn(Optional.of(job));
+            when(jobAnalysisRepository.findByJobIdAndUserId(jobId, 1L)).thenReturn(Optional.of(analysis));
+            when(userProfileRepository.findByUserId(any())).thenReturn(Optional.empty());
+
+            assertThrows(ProfileNotFoundException.class, () -> emailGenerationService.generate(1L, jobId));
+        }
+
+        @Test
+        @DisplayName("generate should throw UserNotFoundException when the user record no longer exists")
+        void generate_whenUserMissing_shouldThrowUserNotFoundException() {
+            Long jobId = 61L;
+            Job job = new Job(jobId, "Java Developer", "CompanyX",
+                    "https://example.com/job/61", "Description", LocalDate.now(), "test");
+            JobAnalysis analysis = new JobAnalysis(null, null, null, 40,
+                    List.of("Java"), List.of(),
+                    CompanyTone.FORMAL,
+                    "Java developer position");
+            UserProfile profile = new UserProfile(null, 1L,
+                    "Resume text", List.of("Java"), CompanyTone.FORMAL, List.of(),
+                    null, null, null, null, null, null);
+
+            when(jobRepository.findById(jobId)).thenReturn(Optional.of(job));
+            when(jobAnalysisRepository.findByJobIdAndUserId(jobId, 1L)).thenReturn(Optional.of(analysis));
+            when(userProfileRepository.findByUserId(any())).thenReturn(Optional.of(profile));
+            when(userRepository.findById(1L)).thenReturn(Optional.empty());
+
+            assertThrows(UserNotFoundException.class, () -> emailGenerationService.generate(1L, jobId));
+        }
+
+        @Test
+        @DisplayName("generate should embed the resolver CANDIDATE FACTS block and tokenized reference example in the prompt")
+        void generate_whenPromptBuilt_shouldContainResolverFactsBlock() {
+            String aiResponse = """
+                Subject: Application for Java Developer Position
+
+                Olá.
+
+                Eu me candidato à vaga.
+
+                Atenciosamente,
+                Juan Peruzzo
+                """;
+
+            UserProfile profile = new UserProfile(null, 1L,
+                    "Experienced Java developer with Spring Boot expertise.",
+                    List.of("Java", "Spring Boot", "PostgreSQL"),
+                    CompanyTone.FORMAL,
+                    List.of(new Project("Job Hunter", "API com Spring Boot", "Spring Boot")),
+                    "(42) 99999-0000", "juan@example.com",
+                    "https://juanperuzzo.is-a.dev", "https://github.com/Uzzoper",
+                    "https://linkedin.com/in/juan", null);
+            when(userProfileRepository.findByUserId(any())).thenReturn(Optional.of(profile));
+
+            Long jobId = 62L;
+            Job job = new Job(jobId, "Java Developer", "CompanyX",
+                    "https://example.com/job/62", "Description", LocalDate.now(), "test");
+            JobAnalysis analysis = new JobAnalysis(null, null, null, 40,
+                    List.of("Java", "Spring Boot"),
+                    List.of("Kubernetes"),
+                    CompanyTone.FORMAL,
+                    "Java developer position");
+
+            when(jobRepository.findById(jobId)).thenReturn(Optional.of(job));
+            when(jobAnalysisRepository.findByJobIdAndUserId(jobId, 1L)).thenReturn(Optional.of(analysis));
+            when(emailDraftRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+            ArgumentCaptor<String> promptCaptor = ArgumentCaptor.forClass(String.class);
+            when(aiPort.complete(promptCaptor.capture())).thenReturn(aiResponse);
+
+            emailGenerationService.generate(1L, jobId);
+
+            String prompt = promptCaptor.getValue();
+            // The block in the prompt is built by the same resolver the template uses — no drift.
+            assertEquals(ProfilePlaceholders.factsBlock(USER, profile), extractFactsBlock(prompt).strip());
+            assertTrue(prompt.contains("{{CANDIDATE_NAME}}"), "reference example must stay tokenized");
+            assertTrue(prompt.contains("{{PROJECTS}}"));
+        }
+
+        /** Extracts the {@code CANDIDATE FACTS:} block between the reference example and the rules section. */
+        private static String extractFactsBlock(String prompt) {
+            int start = prompt.indexOf("CANDIDATE FACTS:");
+            int end = prompt.indexOf("\n\nMANDATORY RULES:");
+            assertTrue(start >= 0, "prompt must contain the CANDIDATE FACTS block");
+            assertTrue(end > start, "CANDIDATE FACTS block must end before MANDATORY RULES");
+            return prompt.substring(start, end);
         }
     }
 }

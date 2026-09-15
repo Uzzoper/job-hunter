@@ -623,6 +623,54 @@ class JobNormalizerTest {
             assertNotNull(job);
             assertEquals("https://techcorp.com.br", job.companyWebsite());
         }
+
+        @Test
+        @DisplayName("should drop a gupy.io portal companyWebsite at the choke point")
+        void normalize_whenCompanyWebsiteIsGupyPortal_shouldSetNull() {
+            var raw = new RawJob(
+                    "Desenvolvedor Java", "Company", "https://example.com/job",
+                    "Description", "2026-07-01", null, null, "gupy",
+                    java.util.Map.of("companyWebsite", "https://techco.gupy.io"));
+            var job = normalizer.normalize(raw);
+            assertNotNull(job);
+            assertNull(job.companyWebsite(), "portal URLs must never become the stored company website");
+        }
+
+        @Test
+        @DisplayName("should drop a gupy.com.br portal companyWebsite at the choke point")
+        void normalize_whenCompanyWebsiteIsGupyComBrPortal_shouldSetNull() {
+            var raw = new RawJob(
+                    "Desenvolvedor Java", "Company", "https://example.com/job",
+                    "Description", "2026-07-01", null, null, "gupy",
+                    java.util.Map.of("companyWebsite", "https://techco.gupy.com.br"));
+            var job = normalizer.normalize(raw);
+            assertNotNull(job);
+            assertNull(job.companyWebsite(), "portal URLs must never become the stored company website");
+        }
+
+        @Test
+        @DisplayName("should drop an infojobs.com.br portal companyWebsite at the choke point")
+        void normalize_whenCompanyWebsiteIsInfoJobsPortal_shouldSetNull() {
+            var raw = new RawJob(
+                    "Desenvolvedor Java", "Company", "https://example.com/job",
+                    "Description", "2026-07-01", null, null, "infojobs",
+                    java.util.Map.of("companyWebsite", "https://techco.infojobs.com.br"));
+            var job = normalizer.normalize(raw);
+            assertNotNull(job);
+            assertNull(job.companyWebsite(), "portal URLs must never become the stored company website");
+        }
+
+        @Test
+        @DisplayName("should keep a non-portal companyWebsite at the choke point")
+        void normalize_whenCompanyWebsiteIsNonPortal_shouldKeepIt() {
+            var raw = new RawJob(
+                    "Desenvolvedor Java", "Company", "https://example.com/job",
+                    "Description", "2026-07-01", null, null, "gupy",
+                    java.util.Map.of("companyWebsite", "https://techco.com.br/"));
+            var job = normalizer.normalize(raw);
+            assertNotNull(job);
+            assertEquals("https://techco.com.br", job.companyWebsite());
+        }
     }
 
     @Nested
