@@ -671,6 +671,21 @@ class JobNormalizerTest {
             assertNotNull(job);
             assertEquals("https://techco.com.br", job.companyWebsite());
         }
+
+        @Test
+        @DisplayName("should drop an underscore-host gupy.io portal companyWebsite at the choke point")
+        void normalize_whenCompanyWebsiteHasUnderscorePortalHost_shouldSetNull() {
+            // Regression: URI.getHost() returns null for underscore hosts (RFC 2396 registry
+            // fallback), which previously bypassed the portal filter — see job 1874.
+            var raw = new RawJob(
+                    "Desenvolvedor Java", "Company", "https://example.com/job",
+                    "Description", "2026-07-01", null, null, "gupy",
+                    java.util.Map.of("companyWebsite", "https://bbc_digital.gupy.io/eyJhbGciOiJ9"));
+            var job = normalizer.normalize(raw);
+            assertNotNull(job);
+            assertNull(job.companyWebsite(),
+                    "an underscore portal host must still be dropped as companyWebsite");
+        }
     }
 
     @Nested

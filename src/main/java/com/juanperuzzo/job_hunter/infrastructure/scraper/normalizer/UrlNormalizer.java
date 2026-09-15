@@ -55,14 +55,54 @@ public final class UrlNormalizer {
      * Lowercase host of a URL ({@code https://techco.gupy.io} → {@code techco.gupy.io}),
      * or null when the URL cannot be parsed or has no host. Null-on-failure keeps callers
      * free to decide how to treat unparseable URLs.
+     * <p>
+     * {@link URI#getHost()} returns null for hosts containing an underscore (RFC 2396
+     * registry-based authority fallback), so a manual extraction from the authority is used
+     * as a fallback — otherwise portal URLs such as {@code https://bbc_digital.gupy.io/...}
+     * would bypass the {@code PortalDomains} filter.
      */
     public static String host(String url) {
         try {
             var uri = URI.create(url);
             var host = uri.getHost();
-            return host == null ? null : host.toLowerCase(Locale.ROOT);
+            if (host != null) {
+                return host.toLowerCase(Locale.ROOT);
+            }
+            return manualHost(url);
         } catch (Exception e) {
             return null;
         }
+    }
+
+    /**
+     * Fallback host extraction for URLs whose authority is not a valid RFC 2396 host
+     * (e.g. contains an underscore): take the substring between {@code ://} and the next
+     * {@code /}, then strip userinfo ({@code @}) and {@code :port}. Returns null when
+     * nothing usable remains.
+     */
+    private static String manualHost(String url) {
+        if (url == null || url.isBlank()) {
+            return null;
+        }
+        var schemeSep = url.indexOf("://");
+        if (schemeSep < 0) {
+            return null;
+        }
+        var start = schemeSep + 3;
+        var end = url.indexOf('/', start);
+        if (end < 0) {
+            end = url.length();
+        }
+        var authority = url.substring(start, end);
+        var at = authority.lastIndexOf('@');
+        if (at >= 0) {
+            authority = authority.substring(at + 1);
+        }
+        var colon = authority.indexOf(':');
+        if (colon >= 0) {
+            authority = authority.substring(0, colon);
+        }
+        authority = authority.trim().toLowerCase(Locale.ROOT);
+        return authority.isEmpty() ? null : authority;
     }
 }
