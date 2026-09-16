@@ -13,7 +13,7 @@ import java.util.Locale;
 public final class PortalDomains {
 
     public static final List<String> SUFFIXES = List.of(
-            "gupy.io", "gupy.com.br", "infojobs.com.br");
+            "gupy.io", "gupy.com.br", "infojobs.com.br", "vaga-ja.com");
 
     private PortalDomains() {
     }

@@ -70,4 +70,38 @@ class UrlNormalizerTest {
             assertNull(UrlNormalizer.absolute("", "https://example.com"));
         }
     }
+
+    @Nested
+    @DisplayName("host")
+    class Host {
+
+        @Test
+        @DisplayName("should extract the lowercase host of a normal URL")
+        void shouldExtractHostOfNormalUrl() {
+            assertEquals("techco.gupy.io", UrlNormalizer.host("https://techco.gupy.io"));
+        }
+
+        @Test
+        @DisplayName("should extract the host when it contains an underscore (URI.getHost returns null)")
+        void host_whenUnderscoreInHost_shouldExtractManually() {
+            // Regression: job 1874 leaked https://bbc_digital.gupy.io/eyJ... as companyWebsite
+            // because URI.getHost() returns null for underscore hosts, skipping the portal filter.
+            assertEquals("bbc_digital.gupy.io",
+                    UrlNormalizer.host("https://bbc_digital.gupy.io/eyJhbGciOiJ9"));
+        }
+
+        @Test
+        @DisplayName("should strip userinfo from the host")
+        void host_whenUserInfoPresent_shouldStripIt() {
+            assertEquals("techco.gupy.io",
+                    UrlNormalizer.host("https://user:pass@techco.gupy.io/jobs/123"));
+        }
+
+        @Test
+        @DisplayName("should strip the port from the host")
+        void host_whenPortPresent_shouldStripIt() {
+            assertEquals("techco.gupy.io",
+                    UrlNormalizer.host("https://techco.gupy.io:8443/jobs/123"));
+        }
+    }
 }

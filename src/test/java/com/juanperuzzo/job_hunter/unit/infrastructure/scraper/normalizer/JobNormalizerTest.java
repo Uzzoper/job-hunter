@@ -671,6 +671,37 @@ class JobNormalizerTest {
             assertNotNull(job);
             assertEquals("https://techco.com.br", job.companyWebsite());
         }
+
+        @Test
+        @DisplayName("should drop an underscore-host gupy.io portal companyWebsite at the choke point")
+        void normalize_whenCompanyWebsiteHasUnderscorePortalHost_shouldSetNull() {
+            // Regression: URI.getHost() returns null for underscore hosts (RFC 2396 registry
+            // fallback), which previously bypassed the portal filter — see job 1874.
+            var raw = new RawJob(
+                    "Desenvolvedor Java", "Company", "https://example.com/job",
+                    "Description", "2026-07-01", null, null, "gupy",
+                    java.util.Map.of("companyWebsite", "https://bbc_digital.gupy.io/eyJhbGciOiJ9"));
+            var job = normalizer.normalize(raw);
+            assertNotNull(job);
+            assertNull(job.companyWebsite(),
+                    "an underscore portal host must still be dropped as companyWebsite");
+        }
+
+        @Test
+        @DisplayName("should drop a vaga-ja.com portal companyWebsite at the choke point")
+        void normalize_whenCompanyWebsiteIsVagaJaPortal_shouldSetNull() {
+            // Live-verified: a fresh Gupy fetch stored 2 rows on vaga-ja.com (same JWT-path
+            // shape as gupy.io careerPages). Vaga Já is the same job-board family — pages
+            // carry ?jobBoardSource=gupy_portal — so its URLs are portals, not corporate sites.
+            var raw = new RawJob(
+                    "Desenvolvedor Java", "Company", "https://example.com/job",
+                    "Description", "2026-07-01", null, null, "gupy",
+                    java.util.Map.of("companyWebsite", "https://empresa.vaga-ja.com/eyJhbGciOiJ9"));
+            var job = normalizer.normalize(raw);
+            assertNotNull(job);
+            assertNull(job.companyWebsite(),
+                    "vaga-ja.com URLs must never become the stored company website");
+        }
     }
 
     @Nested
