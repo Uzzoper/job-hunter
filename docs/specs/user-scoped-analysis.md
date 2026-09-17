@@ -20,7 +20,7 @@ Job analysis and email drafts are scoped per authenticated user. Analysis and ge
 - **GIVEN** an authenticated user with a saved profile (`PUT /api/profile` completed)
 - **WHEN** they call `POST /api/jobs/{id}/analyze`
 - **THEN** the system loads the job and the user's profile from the database
-- **AND** sends both to OpenRouter via `AiPort` (prompt built in `AiAnalysisService`, aligned with `docs/specs/prompts.md`)
+- **AND** sends both to the Hermes gateway via `AiPort` (prompt built in `AiAnalysisService`, aligned with `docs/specs/prompts.md`)
 - **AND** persists the result in `job_analyses` with `job_id` and `user_id` (`UNIQUE(job_id, user_id)`)
 - **AND** returns HTTP 200 OK with the `JobAnalysis` JSON.
 

@@ -29,9 +29,8 @@ services:
       - "127.0.0.1:8080:8080"
     environment:
       JWT_SECRET: ${JWT_SECRET}
-      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
       HERMES_API_KEY: ${HERMES_API_KEY}
-      AI_PROVIDER: ${AI_PROVIDER:-openrouter}
+      HERMES_MODEL: ${HERMES_MODEL:-default}
       # Self-hosted bot API access (X-Bot-Token). Set both in the gitignored
       # .env to enable; blank keeps the feature disabled. Never hardcode here.
       BOT_SERVICE_API_KEY: ${BOT_SERVICE_API_KEY}

@@ -29,10 +29,10 @@ analyzes each listing with AI, and generates personalized application emails.
                                                                 [JobRepository]  ──►  [SQLite]
                     │
                     ▼ (on demand)
-            [AiAnalysisService]  ──►  [OpenRouterClient]  ──►  [OpenRouter API]
+[AiAnalysisService]  ──►  [HermesAgentClient]  ──►  [Hermes gateway]
                     │
                     ▼
-         [EmailGenerationService]  ──►  [OpenRouterClient]
+          [EmailGenerationService]  ──►  [HermesAgentClient]
                     │
                     ▼
             [EmailDraftRepository]  ──►  [SQLite]
@@ -130,7 +130,7 @@ com.juanperuzzo.job_hunter
 │   │       ├── RateLimiter.java              (interface)
 │   │       └── TokenBucketRateLimiter.java
 │   ├── ai/
-│   │   └── OpenRouterClient.java        (implements AiPort)
+│   │   └── HermesAgentClient.java      (implements AiPort — sole AI backend)
 │   ├── persistence/
 │   │   ├── JobJpaRepository.java        (Spring Data)
 │   │   ├── JobPersistenceAdapter.java   (implements JobRepository)
@@ -193,9 +193,10 @@ CREATE TABLE email_drafts (
 ## Architectural decisions
 
 ### Why Clean Architecture?
-Allows swapping the scraper (Gupy → LinkedIn), the database (SQLite → PostgreSQL),
-or the AI provider (OpenRouter → Groq) without touching the services.
-Each change is isolated to the `infrastructure` layer.
+Allows swapping the scraper (Gupy → LinkedIn) or the database (SQLite → PostgreSQL)
+without touching the services. Each change is isolated to the `infrastructure` layer.
+The AI backend is intentionally fixed: the Hermes gateway is the sole provider
+(`HermesAgentClient` implements `AiPort`), decided by `hermes-only-ai.md`.
 
 ### Why RestClient instead of WebClient?
 The project does not need reactivity — HTTP calls are synchronous and infrequent.
@@ -285,12 +286,11 @@ spring:
   flyway:
     enabled: true
 
-ai:
-  openrouter:
-    base-url: https://openrouter.ai/api/v1
-    api-key: ${OPENROUTER_API_KEY}
-    model: minimax/minimax-m2.5
-    timeout-seconds: 30
+hermes:
+  base-url: http://localhost:9119/v1   # clients append /chat/completions — the /v1 suffix is mandatory
+  api-key: ${HERMES_API_KEY}           # required; the context fails fast without it
+  model: ${HERMES_MODEL:default}
+  timeout-seconds: 120
 
 scraper:
   retry:

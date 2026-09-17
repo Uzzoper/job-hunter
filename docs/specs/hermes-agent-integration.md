@@ -10,9 +10,9 @@
 
 ## Context
 
-The application emails are no longer sent through an email API (Resend). Instead they are delegated to a **Hermes Agent** bot (Nous Research): a named profile running behind the headless gateway (`hermes gateway run`, typically installed as a systemd user service), which exposes an OpenAI-compatible API (`POST /v1/chat/completions`, default port 9119, bearer-key auth). The same gateway can also serve as the AI analysis provider (`ai.provider=hermes`), alongside `openrouter` and `ollama`.
+The application emails are no longer sent through an email API (Resend). Instead they are delegated to a **Hermes Agent** bot (Nous Research): a named profile running behind the headless gateway (`hermes gateway run`, typically installed as a systemd user service), which exposes an OpenAI-compatible API (`POST /v1/chat/completions`, default port 9119, bearer-key auth). The same gateway is the **single AI backend** for analysis and email generation — `openrouter`/`ollama`/`ai.provider` were removed by `hermes-only-ai.md`.
 
-Key property: **this repo contains no email-delivery logic**. The Java side hands the bot a structured send instruction; the bot performs delivery with whatever email tool is configured in its own profile (in the validated setup: the himalaya CLI v2, driven by a standing instruction in the profile's `SOUL.md`). Analysis likewise reuses the standard chat-completions shape already spoken by `OpenRouterClient`/`OllamaClient`.
+Key property: **this repo contains no email-delivery logic**. The Java side hands the bot a structured send instruction; the bot performs delivery with whatever email tool is configured in its own profile (in the validated setup: the himalaya CLI v2, driven by a standing instruction in the profile's `SOUL.md`). Analysis runs through `HermesAgentClient`, the sole `AiPort` bean, against the same chat-completions shape.
 
 ### External prerequisites (not code)
 
@@ -50,7 +50,7 @@ Key property: **this repo contains no email-delivery logic**. The Java side hand
 - **WHEN** `send(...)` is called
 - **THEN** throws `EmailDeliveryException` with a timeout-related cause
 
-### HermesAgentClient (implements `AiPort`, mirrors `OllamaClient`)
+### HermesAgentClient (implements `AiPort` — the sole AI backend)
 
 #### Scenario 4: successful completion
 - **GIVEN** a reachable gateway
@@ -89,18 +89,18 @@ instead of an HTTP error status. A bare 2xx must not be trusted as success.
 
 ### Wiring (`AppConfig`)
 
-#### Scenario 10: provider selection
-- **GIVEN** `ai.provider=hermes` in configuration
-- **WHEN** the Spring context starts
-- **THEN** a `HermesAgentClient` bean backs `AiPort` (same mechanism as `openrouter`/`ollama`)
-- **AND** the `hermesBotEmailSender` bean backs `EmailSenderPort` regardless of the chosen AI provider (independent ports)
-- **AND** both beans read the shared top-level `hermes:` config block
+#### Scenario 10: unconditional Hermes wiring
+- **GIVEN** any configuration — `ai.provider` no longer exists
+- **WHEN** the Spring context starts (with `HERMES_API_KEY` set)
+- **THEN** exactly one `AiPort` bean exists and it is a `HermesAgentClient` (wired unconditionally, no `@ConditionalOnProperty`)
+- **AND** the `hermesBotEmailSender` bean backs `EmailSenderPort` (independent ports, both reading the same shared `hermes:` block)
+- **AND** without `HERMES_API_KEY` the context fails fast at startup naming the key — no fallback provider
 
 ---
 
 ## Business rules
 
-- No retry policy inside these adapters — matches `OllamaClient`; `scraper.retry.*` governs AI calls where applicable
+- No retry policy inside these adapters — `scraper.retry.*` governs scraper and company-enrichment callers only; transient gateway failures surface as `AiException` / `EmailDeliveryException` (no retry, no fallback; `retry-backoff-ai.md` is archived)
 - Success criterion for sending is HTTP 2xx + non-empty parseable reply **without an embedded error** (`finish_reason != "error"`) — structured metadata is enforced, free-form content is not. The `EMAIL_SENT` / `EMAIL_TOOL_MISSING` markers are conventions in the instruction text, logged when present but **not** enforced: matching free-form LLM replies would be brittle. If the bot lacks an email tool, the gateway still answers 2xx — check the logs
 - One shared `hermes:` config block (`base-url`, `api-key`, `model`, `timeout-seconds`) serves both adapters — same gateway, same credentials
 - Timeout default is 120 s (vs Resend's 15 s): the bot may run tools before replying
@@ -129,14 +129,9 @@ Configuration:
 ```yaml
 hermes:
   base-url: http://localhost:9119/v1  # clients append /chat/completions — the /v1 suffix is mandatory (404 without it)
-  api-key: ${HERMES_API_KEY}          # equals the profile's API_SERVER_KEY
-  model: default                      # model pinned on the Bot profile
+  api-key: ${HERMES_API_KEY}          # equals the profile's API_SERVER_KEY — required, the context fails fast without it
+  model: ${HERMES_MODEL:default}      # model pinned on the Bot profile
   timeout-seconds: 120
-```
-
-```yaml
-ai:
-  provider: openrouter   # "openrouter" (default) | "ollama" | "hermes"
 ```
 
 ---
@@ -148,7 +143,7 @@ ai:
 | Gateway HTTP 4xx/5xx on send | `EmailDeliveryException` | draft stays `PENDING`; `EmailSendingService` passes it through unwrapped |
 | Gateway unreachable/timeout on send | `EmailDeliveryException` | cause carries the timeout; draft stays `PENDING` |
 | Upstream provider saturated → gateway answers HTTP 200 with `finish_reason: "error"` on send | `EmailDeliveryException` | embedded upstream failure treated as delivery failure, not as acknowledgement; draft stays `PENDING` |
-| Gateway HTTP 4xx/5xx on analysis | `AiException` | propagates to AI use cases like other providers |
+| Gateway HTTP 4xx/5xx on analysis | `AiException` | propagates to the AI use cases |
 | Gateway unreachable/timeout on analysis | `AiException` | propagates |
 | Upstream provider saturated → HTTP 200 with `finish_reason: "error"` on analysis | `AiException` | embedded upstream failure treated as completion failure |
 | Bot has no email tool configured | none (2xx) | visible only via logged reply — the `EMAIL_SENT` / `EMAIL_TOOL_MISSING` markers are log conventions, **not** enforcement; actual delivery is verified out of band |
@@ -182,7 +177,7 @@ ai:
 Read the spec at docs/specs/hermes-agent-integration.md.
 
 Step 1 — write HermesAgentClientTest and HermesBotEmailSenderTest
-(WireMock, same pattern as OllamaClientTest). Cover all scenarios.
+(WireMock, same pattern as the existing infrastructure client tests). Cover all scenarios.
 Do not touch implementation files yet.
 
 Step 2 — wait for confirmation before implementing.

@@ -36,7 +36,7 @@ Candidate profile:
 ## Prompt 1: Job analysis
 
 **Used in:** `AiAnalysisService.analyze(Job job)`
-**Model:** MiniMax M2.5 via OpenRouter
+**Model:** Hermes gateway (`${HERMES_MODEL}`, default `default`)
 **Expected response:** plain JSON (no markdown, no text before or after)
 
 ```
@@ -81,7 +81,7 @@ Description: {{JOB_DESCRIPTION}}
 ## Prompt 2: Email generation
 
 **Used in:** `EmailGenerationService.generate(Job job, JobAnalysis analysis)` with the candidate's `User` + `UserProfile`
-**Model:** MiniMax M2.5 via OpenRouter
+**Model:** Hermes gateway (`${HERMES_MODEL}`, default `default`)
 **Expected response:** text with subject on the first line followed by the body
 
 The reference example below is the **same template** used by `TemplateEmailService` (single source of truth): candidate identity/contact appears as `{{PLACEHOLDER}}` tokens, and the resolved values are supplied by the `CANDIDATE FACTS` block (built with `ProfilePlaceholders.factsBlock`). The model must read tokens in the example against the facts block.
@@ -224,7 +224,7 @@ produce a one-line `NO_APPLY:` refusal instead of an email.
 ## Prompt 3: Resume extraction
 
 **Used in:** `ResumeUploadService`
-**Model:** MiniMax M2.5 via OpenRouter
+**Model:** Hermes gateway (`${HERMES_MODEL}`, default `default`)
 **Expected response:** plain JSON (no markdown, no text before or after)
 
 ```
@@ -276,7 +276,7 @@ Resume text:
 ## Prompt 4: Resume tailoring
 
 **Used in:** `ResumeTailoringService`
-**Model:** same as Prompt 1/2 (MiniMax M2.5 via OpenRouter, or Ollama)
+**Model:** same as Prompt 1/2 — Hermes gateway (`${HERMES_MODEL}`, default `default`)
 **Expected response:** plain JSON (no markdown, no text before or after)
 
 ```

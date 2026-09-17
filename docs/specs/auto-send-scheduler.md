@@ -72,7 +72,7 @@
 - **Scheduler does not generate emails.** Email generation is handled separately by `EmailGenerationService` (high-score → template, low-score → AI). The scheduler only calls `send()`.
 - **`EmailStatus` gains `APPROVED`:** sits between `PENDING` and `SENT`. Only meaningful when `require-review = true`; full-auto mode reads `PENDING` directly.
 - **Daily cap:** 50 per user per calendar day (UTC). Resets at midnight.
-- **Feasibility with local AI (qwen2.5:3b):** Yes. The tick interval and 50/day cap keep the scheduler comfortable regardless of email type.
+- **Feasibility with the Hermes gateway:** Yes. The tick interval and 50/day cap keep the scheduler comfortable regardless of email type.
 
 ---
 

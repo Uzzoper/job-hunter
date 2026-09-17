@@ -145,7 +145,7 @@ public class ResumePdfRenderer {
 ## New AI prompt (Prompt 4: Resume tailoring)
 
 **Used in:** `ResumeTailoringService`
-**Model:** same as Prompt 1/2 (MiniMax M2.5 via OpenRouter, or Ollama)
+**Model:** same as Prompt 1/2 — Hermes gateway (`${HERMES_MODEL}`, default `default`)
 **Expected response:** plain JSON (no markdown, no text before or after)
 
 ```
