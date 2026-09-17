@@ -1,5 +1,7 @@
 # Spec: Retry with backoff for AI calls
 
+> **ARCHIVED** — OpenRouter-scoped; superseded by `hermes-only-ai.md` (no retry inside AI adapters). Kept for history only.
+
 ## Problem
 
 OpenRouter free-tier rate limits (HTTP 429) and transient 5xx/network errors surface
