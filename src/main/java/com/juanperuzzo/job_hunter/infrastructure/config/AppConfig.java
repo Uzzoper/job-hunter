@@ -20,8 +20,6 @@ import com.juanperuzzo.job_hunter.application.service.FetchJobsService;
 import com.juanperuzzo.job_hunter.application.service.FetchSourceJobsService;
 import com.juanperuzzo.job_hunter.application.service.ResumeTailoringService;
 import com.juanperuzzo.job_hunter.infrastructure.ai.HermesAgentClient;
-import com.juanperuzzo.job_hunter.infrastructure.ai.OllamaClient;
-import com.juanperuzzo.job_hunter.infrastructure.ai.OpenRouterClient;
 import com.juanperuzzo.job_hunter.infrastructure.botmemory.FileSystemBotMemoryAdapter;
 import com.juanperuzzo.job_hunter.infrastructure.botmemory.BotMemoryStartupSync;
 import com.juanperuzzo.job_hunter.infrastructure.email.HermesBotEmailSender;
@@ -307,28 +305,12 @@ public class AppConfig {
         return new ProviderBasedScraperAdapter(providerRegistry);
     }
 
+    /**
+     * Sole {@link AiPort} bean: the Hermes Agent gateway is the single AI backend for
+     * analysis and email generation (docs/specs/hermes-only-ai.md). Unconditional on
+     * purpose — {@code HERMES_API_KEY} is mandatory and startup fails fast without it.
+     */
     @Bean
-    @ConditionalOnProperty(name = "ai.provider", havingValue = "openrouter", matchIfMissing = true)
-    public OpenRouterClient openRouterClient(
-            @Value("${ai.openrouter.base-url}") String baseUrl,
-            @Value("${ai.openrouter.api-key}") String apiKey,
-            @Value("${ai.openrouter.model}") String model,
-            @Value("${ai.openrouter.timeout-seconds}") int timeoutSeconds,
-            ExponentialBackoffRetry exponentialBackoffRetry) {
-        return new OpenRouterClient(baseUrl, apiKey, model, timeoutSeconds, exponentialBackoffRetry);
-    }
-
-    @Bean
-    @ConditionalOnProperty(name = "ai.provider", havingValue = "ollama")
-    public OllamaClient ollamaClient(
-            @Value("${ai.ollama.base-url}") String baseUrl,
-            @Value("${ai.ollama.model}") String model,
-            @Value("${ai.ollama.timeout-seconds}") int timeoutSeconds) {
-        return new OllamaClient(baseUrl, model, timeoutSeconds);
-    }
-
-    @Bean
-    @ConditionalOnProperty(name = "ai.provider", havingValue = "hermes")
     public HermesAgentClient hermesAgentClient(
             @Value("${hermes.base-url}") String baseUrl,
             @Value("${hermes.api-key}") String apiKey,
