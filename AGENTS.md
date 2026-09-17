@@ -24,7 +24,7 @@ Scraper (ProviderRegistry: Gupy + InfoJobs + LinkedIn)
        ↓
 Persistence (SQLite + Flyway)
        ↓
-AI Client (provider switch: openrouter | ollama | hermes — Hermes Agent gateway)
+AI Client (HermesAgentClient → Hermes Agent gateway — sole AiPort, no provider switch)
        ↓
 Job analysis + personalized email generation
        ↓
@@ -57,7 +57,7 @@ com.juanperuzzo.job_hunter
 ├── infrastructure/              ← technical details
 │   ├── scraper/                 → ProviderRegistry, LinkedInScraperClient,
 │                                  GupyProvider, InfoJobsProvider, LinkedInProvider
-│   ├── ai/                      → OpenRouterClient, OllamaClient, HermesAgentClient
+│   ├── ai/                      → HermesAgentClient (sole AiPort)
 │   ├── email/                   → HermesBotEmailSender
 │   ├── persistence/             → JPA adapters per entity
 │   ├── security/                → JWT filter, token service, CurrentUserService
@@ -90,7 +90,7 @@ infrastructure → domain
 | Migrations | Flyway |
 | Security | Spring Security + JWT (jjwt) |
 | Scraping | Jsoup + RestClient |
-| AI | OpenRouter API, Ollama local, or Hermes Agent gateway (OpenAI-compatible) |
+| AI | Hermes Agent gateway (OpenAI-compatible) — sole provider |
 | Logging | SLF4J (`private static final Logger log`) |
 | Tests | JUnit 5 + Mockito + WireMock |
 
@@ -141,50 +141,24 @@ infrastructure → domain
 
 ## AI integration
 
-### Provider support
-Three AI providers are supported, configurable via `ai.provider`:
+### Single provider: Hermes gateway
+Hermes is the only AI backend — there is no provider switch. `AppConfig` always
+wires exactly one `AiPort` bean, `HermesAgentClient`, and `HERMES_API_KEY` is
+mandatory: the Spring context fails fast at startup without it (no silent
+fallback).
 
-| Provider | Config value | Default |
-|---|---|---|
-| OpenRouter | `openrouter` | ✅ (default) |
-| Ollama (local) | `ollama` | — |
-| Hermes gateway | `hermes` | — |
-
-#### OpenRouter (default)
 ```yaml
-ai:
-  provider: openrouter
-  openrouter:
-    base-url: https://openrouter.ai/api/v1
-    api-key: ${OPENROUTER_API_KEY}
-    model: minimax/minimax-m2.5
-    timeout-seconds: 30
-```
-
-#### Ollama (local)
-```yaml
-ai:
-  provider: ollama
-  ollama:
-    base-url: http://localhost:11434
-    model: llama3.2
-    timeout-seconds: 60
-```
-
-Ollama is selected via `@ConditionalOnProperty(name = "ai.provider", havingValue = "ollama")` in `AppConfig`. All providers implement the same `AiPort` interface.
-
-#### Hermes gateway
-```yaml
-ai:
-  provider: hermes
 hermes:                                # shared block — also used by the email-sending bot
-  base-url: http://localhost:9119/v1
-  api-key: ${HERMES_API_KEY}
-  model: jobhunter-bot                 # model pinned on the Bot profile
+  base-url: http://localhost:9119/v1   # clients append /chat/completions — the /v1 suffix is mandatory (404 without it)
+  api-key: ${HERMES_API_KEY}           # required; startup fails fast without it
+  model: ${HERMES_MODEL:default}       # model pinned on the Bot profile
   timeout-seconds: 120
 ```
 
-Selected via `@ConditionalOnProperty(name = "ai.provider", havingValue = "hermes")` in `AppConfig`.
+`AiAnalysisService`, `EmailGenerationService`, `ResumeUploadService`, and
+`ResumeTailoringService` consume the backend through the unchanged `AiPort`
+interface. Adapters do not retry — transient gateway failures surface as
+`AiException` (see `docs/specs/hermes-only-ai.md`).
 
 > The `base-url` MUST end in `/v1`: both Hermes clients append `/chat/completions`,
 > so a base URL without the suffix answers 404.
@@ -259,7 +233,7 @@ Tests follow the same package structure under `src/test/java/.../`. Check the di
 - [x] `GupyScraper` → GREEN → REFACTOR
 
 ### Phase 2 — AI — ✅ Complete
-- [x] `OpenRouterClient` with `RestClient`
+- [x] `AiPort` client for AI completion (`HermesAgentClient`, sole provider)
 - [x] **[TDD]** `AiAnalysisServiceTest` RED
 - [x] `AiAnalysisService` → GREEN → REFACTOR
 - [x] **[TDD]** `EmailGenerationServiceTest` RED
@@ -316,7 +290,7 @@ feat(application): add FetchJobsService with deduplication logic
 feat(application): add AiAnalysisService with matchScore clamping
 feat(application): add EmailGenerationService
 feat(infrastructure): implement GupyScraper with keyword filtering
-feat(infrastructure): implement OpenRouterClient for AI completion
+feat(infrastructure): implement HermesAgentClient for AI completion
 feat(persistence): add JobRepository port and JPA adapter
 fix(infrastructure): handle null description on job mapping
 test(domain): add JobTest covering isExpired and URL equality

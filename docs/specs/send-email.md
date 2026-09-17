@@ -123,7 +123,7 @@ Step 2 — wait for confirmation before implementing.
 
 Step 3 — after confirmation, implement EmailSendingService
 and a Resend-backed EmailSenderPort adapter (RestClient,
-same pattern as OpenRouterClient) under infrastructure/email/.
+same pattern as the existing HTTP client adapters) under infrastructure/email/.
 No new Spring Boot starter needed — it's a plain HTTP call.
 ```
 

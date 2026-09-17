@@ -17,12 +17,10 @@ Prerequisites: Java 21, `python3` (skills are stdlib-only, no pip needed).
 Create `src/main/resources/application-local.yaml` (gitignored, never commit):
 
 ```yaml
-ai:
-  provider: hermes          # or openrouter / ollama for bot-free usage
 hermes:
   base-url: http://localhost:9119/v1   # MUST end in /v1
-  api-key: YOUR_HERMES_API_KEY         # equals the gateway API_SERVER_KEY
-  model: default
+  api-key: YOUR_HERMES_API_KEY         # equals the gateway API_SERVER_KEY — required
+  model: default                       # HERMES_MODEL, pinned on the Bot profile
   timeout-seconds: 120
 bot:
   memory:

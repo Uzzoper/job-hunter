@@ -38,24 +38,16 @@ flowchart TB
 
     subgraph AI["AI Analysis"]
         I1["POST /api/jobs/{id}/analyze"] --> I2[AiAnalysisService]
-        I2 --> I3{Provider}
-        I3 -->|openrouter| I4["OpenRouter API<br/>poolside/laguna-s-2.1:free"]
-        I3 -->|ollama| I5["Ollama (local)<br/>llama3.2"]
-        I3 -->|hermes| I7["Hermes gateway<br/>jobhunter-bot"]
+        I2 --> I3["HermesAgentClient<br/>(sole AiPort)"]
+        I3 --> I4["Hermes gateway<br/>HERMES_MODEL (default: default)"]
         I4 --> I6[JobAnalysis<br/>score + skills + tone]
-        I5 --> I6
-        I7 --> I6
     end
 
     subgraph Email["Email Generation"]
         E1["POST /api/jobs/{id}/email"] --> E2[EmailGenerationService]
-        E2 --> E3{Provider}
-        E3 -->|openrouter| E4["OpenRouter API"]
-        E3 -->|ollama| E5["Ollama (local)"]
-        E3 -->|hermes| E7["Hermes gateway<br/>jobhunter-bot"]
+        E2 --> E3["HermesAgentClient<br/>(sole AiPort)"]
+        E3 --> E4["Hermes gateway<br/>HERMES_MODEL (default: default)"]
         E4 --> E6[EmailDraft<br/>ready to send]
-        E5 --> E6
-        E7 --> E6
     end
 
     Auth -->|Authorization: Bearer| Scraper
@@ -161,7 +153,7 @@ sequenceDiagram
     User ->> API: POST /api/jobs/:id/analyze
     API ->> AI: analyze(jobId)
     AI ->> AI: build prompt
-    AI ->> AI: call AI provider<br/>(OpenRouter / Ollama / Hermes)
+    AI ->> AI: call HermesAgentClient<br/>(Hermes gateway, sole AiPort)
     AI ->> DB: save analysis
     DB -->> AI: analysis saved
     AI -->> API: score, matchedSkills, missingSkills, companyTone
@@ -170,7 +162,7 @@ sequenceDiagram
     User ->> API: POST /api/jobs/:id/email
     API ->> Email: generate(jobId)
     Email ->> Email: build prompt
-    Email ->> Email: call AI provider<br/>(OpenRouter / Ollama / Hermes)
+    Email ->> Email: call HermesAgentClient<br/>(Hermes gateway, sole AiPort)
     Email ->> DB: save draft
     DB -->> Email: draft saved
     Email -->> API: subject, body
@@ -194,7 +186,7 @@ sequenceDiagram
 | Security | Spring Security + JWT (jjwt) |
 | Scraping | RestClient + Jsoup |
 | Browser Automation | Playwright (Node.js + TypeScript, separate container) |
-| AI | OpenRouter API, Ollama local, or Hermes Agent gateway (OpenAI-compatible) |
+| AI | Hermes Agent gateway (OpenAI-compatible) — sole provider |
 | Tests | JUnit 5 + Mockito + WireMock / Rust async tests |
 | Build | Maven / Cargo |
 
@@ -219,7 +211,7 @@ flowchart BT
 
     subgraph Infrastructure["🟠 Infrastructure"]
         I1["scraper/ — ProviderBasedScraperAdapter,<br/>GupyProvider, InfoJobsProvider,<br/>LinkedInProvider, LinkedInScraperClient,<br/>ProviderRegistry, JobNormalizer,<br/>DateParser, JsonLdParser,<br/>RateLimiter, RetryStrategy,<br/>ExtractionStrategy, HtmlStrategy,<br/>RestApiStrategy"]
-        I2["ai/ — OpenRouterClient, OllamaClient,<br/>HermesAgentClient"]
+        I2["ai/ — HermesAgentClient<br/>(sole AiPort)"]
         I3["persistence/ — JPA adapters,<br/>repositories, entities"]
         I4["security/ — JwtTokenFilter,<br/>JwtTokenService, SecurityConfig,<br/>CurrentUserService"]
         I5["email/ — HermesBotEmailSender"]
@@ -345,7 +337,7 @@ Each source is wrapped by a **Provider** that selects the right **Strategy** (RE
 ### Prerequisites
 
 - Java 21
-- An [OpenRouter](https://openrouter.ai) API key (free tier works), [Ollama](https://ollama.com) running locally, or a local **Hermes Agent** bot profile (gateway on localhost:9119 — see 'Email sending via Hermes Agent' below), which also handles email delivery
+- A local **Hermes Agent** bot profile (gateway on localhost:9119 — see 'Email sending via Hermes Agent' below). `HERMES_API_KEY` is the only AI credential required; Hermes also handles email delivery
 - Rust 2024 edition (for the CLI binary — `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`)
 - Docker + Docker Compose (optional — only to run the LinkedIn scraper container; the database needs none)
 
@@ -368,22 +360,13 @@ Flyway creates the file and the schema automatically on first startup — no ser
 Create `src/main/resources/application-local.yaml`:
 
 ```yaml
-ai:
-  provider: openrouter   # or ollama / hermes for local inference
-  openrouter:
-    api-key: YOUR_OPENROUTER_API_KEY
-  ollama:
-    base-url: http://localhost:11434
-    model: llama3.2
-    timeout-seconds: 60
-
 jwt:
   secret: a-key-with-at-least-32-characters-for-hmac
 
 hermes:
-  base-url: http://localhost:9119/v1   # OpenAI-compatible API root
-  api-key: YOUR_HERMES_API_KEY   # equals the gateway API_SERVER_KEY
-  model: default                 # model pinned on the Bot profile
+  base-url: http://localhost:9119/v1   # OpenAI-compatible API root; clients append /chat/completions
+  api-key: YOUR_HERMES_API_KEY   # equals the gateway API_SERVER_KEY — required
+  model: default                 # HERMES_MODEL: model pinned on the Bot profile
   timeout-seconds: 120
 
 bot:
@@ -454,7 +437,7 @@ EOF
 > Re-uploading a resume in the app does **not** sync to the Bot's copy — repeat the
 > `cp` after a new upload. This setup assumes a single user (one fixed resume per Bot).
 
-The same gateway doubles as an AI analysis provider via `ai.provider: hermes`
+The same gateway is the sole AI backend for analysis and email generation
 (`hermes.base-url` must end in `/v1` — the clients append `/chat/completions`).
 
 #### Bot setup from scratch
@@ -564,8 +547,9 @@ scraper:
 > falls back to Jsoup (`scraper.linkedin.mode: jsoup`).
 
 > **Retry/backoff**: the `scraper.retry.*` properties (`max-attempts`, `base-delay-millis`,
-> `max-delay-millis`, `max-jitter-millis`) also govern AI calls (OpenRouter/Ollama) —
+> `max-delay-millis`, `max-jitter-millis`) govern scraper and company-enrichment callers only —
 > transient HTTP 429/5xx responses and timeouts are retried with exponential backoff.
+> AI adapters do not retry: Hermes gateway failures surface as `AiException`.
 
 **6. Build and run the CLI**
 

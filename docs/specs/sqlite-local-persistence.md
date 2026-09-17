@@ -65,7 +65,7 @@ for the database; Docker Compose keeps only the LinkedIn scraper container.
 - **Rule 4 — SQLite dialect details.** `INTEGER PRIMARY KEY AUTOINCREMENT` for ids,
   `CURRENT_TIMESTAMP` instead of `NOW()`, constraints inline in `CREATE TABLE` (no
   `ALTER TABLE ... ADD CONSTRAINT`), WAL enabled.
-- **Rule 5 — no secrets in code.** `JWT_SECRET`, `OPENROUTER_API_KEY`, `RESEND_API_KEY` remain
+- **Rule 5 — no secrets in code.** `JWT_SECRET` and `HERMES_API_KEY` remain
   env-var driven. SQLite introduces no credentials.
 - **Rule 6 — Clean Architecture holds.** Only `infrastructure` (entities, converter, config, pom)
   and resources change. `domain` and `application` are untouched; repository ports keep signatures.
@@ -109,7 +109,7 @@ public class StringListConverter implements AttributeConverter<String[], String>
 ## Out of scope
 
 - Does not include migrating existing local PostgreSQL data (fresh start; a one-time export script can be a future spec)
-- Does not handle making `JWT_SECRET` / `OPENROUTER_API_KEY` / `RESEND_API_KEY` optional (future "optional integrations" spec)
+- Does not handle making `JWT_SECRET` / `HERMES_API_KEY` optional (future "optional integrations" spec)
 - Does not include SaaS/multi-instance concerns (if ever needed, ports keep a future Postgres re-adoption cheap)
 - Does not change the CLI (its rusqlite cache is already SQLite) or the LinkedIn scraper service
 

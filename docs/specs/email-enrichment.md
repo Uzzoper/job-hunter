@@ -44,7 +44,7 @@ This spec was **grilled** before writing. Locked decisions from grilling:
 
 ## Non-Goals
 
-- AI extraction (Ollama/Hermes prompt) — P3, separate spec.
+- AI extraction (Hermes gateway prompt) — P3, separate spec.
 - MX/DNS validation, SMTP verification, Hunter-style inference — out of scope.
 - Proxy rotation, CAPTCHA bypass, login — forbidden (same policy as `infojobs-scraper.md`).
 - Persistent `company_contacts` table — deferred (in-memory cache only in v1).
@@ -361,7 +361,7 @@ scraper:
 
 ## Out of scope
 
-- AI extraction via Ollama/Hermes (P3) — separate spec.
+- AI extraction via the Hermes gateway (P3) — separate spec.
 - MX/DNS or SMTP deliverability check.
 - `company_contacts` persistent table — in-memory cache only in v1.
 - Backfill of existing `jobs` rows (only new fetches enriched).

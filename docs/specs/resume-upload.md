@@ -15,7 +15,7 @@
 - **GIVEN** an authenticated user
 - **WHEN** they call `POST /api/profile/upload-resume` with a valid `.pdf` file (≤ 2MB)
 - **THEN** the backend extracts raw text via Apache PDFBox
-- **AND** sends the raw text to OpenRouter to extract `skills` and `projects`
+- **AND** sends the raw text through `AiPort` (Hermes gateway) to extract `skills` and `projects`
 - **AND** saves the PDF to `${app.upload-dir}/{userId}/resume.pdf`
 - **AND** saves/overwrites the user's `UserProfile` with: extracted `resumeText`, `skills`, `projects`; `tone` unchanged (or FORMAL if new profile)
 - **AND** returns `200 OK` with the full `ProfileResponse`
@@ -37,7 +37,7 @@
 
 ### Scenario 5: AI extraction returns malformed JSON
 - **GIVEN** an authenticated user uploading a valid PDF
-- **WHEN** the OpenRouter response is not valid JSON or lacks required fields
+- **WHEN** the Hermes gateway response is not valid JSON or lacks required fields
 - **THEN** returns `502 Bad Gateway` (AI service error)
 
 ---
@@ -75,14 +75,14 @@ public class ResumeUploadService {
 ### Existing output ports used
 
 - `UserProfileRepository` — save the extracted profile
-- `OpenRouterClient` — extract skills/projects from text
+- `AiPort` (`HermesAgentClient`, sole provider) — extract skills/projects from text
 
 ---
 
 ## New AI prompt (Prompt 3: Resume extraction)
 
 **Used in:** `ResumeUploadService`
-**Model:** `inclusionai/ling-3.0-flash:free` (OpenRouter) or `qwen2.5:3b` (Ollama), configured via `ai.resume-extraction.*`
+**Model:** Hermes gateway (`${HERMES_MODEL}`, default `default`); truncation via `ai.resume-extraction.max-chars`
 **Expected response:** plain JSON (no markdown, no text before or after)
 
 ```
@@ -130,10 +130,6 @@ spring:
 
 ai:
   resume-extraction:
-    provider: openrouter  # or "ollama"
-    openrouter-model: inclusionai/ling-3.0-flash:free
-    ollama-model: qwen2.5:3b
-    timeout-seconds: 30
     max-chars: 8000       # max chars sent to AI; longer text is truncated with logged warning
 ```
 
