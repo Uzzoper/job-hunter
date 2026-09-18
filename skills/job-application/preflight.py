@@ -111,15 +111,34 @@ def _is_dedicated_chromium(line: str, expanded_user_data_dir: str) -> bool:
 
     Both signals are required: the chromium/chrome executable appears among the
     first two command tokens (the pid+executable window in ``pgrep -af``
-    output), AND the expanded user-data-dir is present in the line — a chromium
-    running on ANY OTHER profile never counts.
+    output), AND the process argv carries a ``--user-data-dir`` that resolves
+    to the dedicated profile. The argv value is normalized with ``expanduser``
+    BEFORE comparing to the also-expanded expected dir: Chromium is often
+    launched with a literal tilde (``--user-data-dir=~/.chromium-profile-cdp``),
+    so a raw-substring match of the expanded path against the raw argv would
+    false-negative on a perfectly valid process (issue #72 live-run finding).
     """
-    if expanded_user_data_dir not in line:
-        return False
     tokens = line.split()
-    executable = tokens[0] if tokens else ""
-    window = (os.path.basename(executable), tokens[1] if len(tokens) > 1 else "")
-    return any("chrom" in token.lower() for token in window)
+    if not tokens:
+        return False
+    executable = tokens[0]
+    window = (os.path.basename(executable),
+              tokens[1] if len(tokens) > 1 else "")
+    if not any("chrom" in token.lower() for token in window):
+        return False
+    for i, token in enumerate(tokens):
+        if not token.startswith("--user-data-dir"):
+            continue
+        if "=" in token:
+            raw_value = token.split("=", 1)[1]
+        elif i + 1 < len(tokens):
+            raw_value = tokens[i + 1]  # space-separated flag form
+        else:
+            raw_value = ""
+        profile_dir = os.path.expanduser(raw_value.strip().strip("\"'"))
+        if profile_dir == expanded_user_data_dir:
+            return True
+    return False
 
 
 def check_chromium_running(user_data_dir: str,
