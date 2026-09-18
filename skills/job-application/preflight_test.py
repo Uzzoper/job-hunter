@@ -235,6 +235,38 @@ class ChromiumRunningTests(unittest.TestCase):
         self.assertTrue(result["ok"])
         self.assertEqual(result["process"], CHROMIUM_PROFILE_CMD)
 
+    def test_tilde_form_user_data_dir_argv_matches_expanded_profile(self):
+        # Regression (issue #72 live run): Chromium may be launched with the
+        # literal tilde form --user-data-dir=~/.chromium-profile-cdp — the raw
+        # pgrep argv then holds the TILDE, not the expanded /home/... path, so
+        # a raw-substring match of the expanded dir false-negatives even though
+        # the dedicated profile IS running. The argv value must be expanded
+        # (normalized on BOTH sides) before comparing.
+        tilde_cmd = (
+            "/usr/bin/chromium --remote-debugging-port=9222 "
+            "--user-data-dir=~/.chromium-profile-cdp --no-first-run"
+        )
+        result = preflight.check_chromium_running(
+            USER_DATA_DIR, list_procs=fake_procs(tilde_cmd)
+        )
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["user_data_dir"], USER_DATA_EXPANDED)
+        self.assertEqual(result["process"], tilde_cmd)
+
+    def test_tilde_form_with_pgrep_pid_prefix_passes(self):
+        # pgrep -af output prefixes the line with the numeric pid — the
+        # combined pid+executable window must still recognize the browser and
+        # the tilde-form user-data-dir must still normalize to the profile.
+        pgrep_line = (
+            "23456 /usr/bin/chromium --remote-debugging-port=9222 "
+            "--user-data-dir=~/.chromium-profile-cdp --no-first-run"
+        )
+        result = preflight.check_chromium_running(
+            USER_DATA_DIR, list_procs=fake_procs(pgrep_line)
+        )
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["user_data_dir"], USER_DATA_EXPANDED)
+
 
 # ---------------------------------------------------------------------------
 # Check 2 — cdp_endpoint: the profile-config CDP endpoint answers /json
