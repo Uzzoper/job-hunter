@@ -335,6 +335,50 @@ The executor runs **observe → classify → act → verify** against each **liv
 - React-controlled inputs ignore direct `.value` assignment: dispatch native
   `input`/`change` events (bubbles) and always re-read field values afterwards.
 
+### Answer policy (issue #73 — the per-question gate, spec `answer-policy.md`)
+
+`classify.py` classifies **pages**; `answer.py` owns the **question** verdict.
+During fill/triagem the executor accumulates questions via
+`answer.extract_questions(ax_nodes)` (stable keys from the label, deduplicated;
+text inputs default to required, choice controls rely on `*`/`obrigatório`)
+and, on the review page BEFORE any submit action, runs the gate:
+
+```python
+gate = answer.review_gate(
+    questions,
+    profile,
+    memory_entries=answer.load_answers(memory_dir, job_id),
+)
+# {"submittable": bool, "questions": [...], "blockers": [...], "detail": "..."}
+```
+
+Verdict per question (exactly one, deterministic — no LLM):
+
+| Verdict | When | Submit |
+|---|---|---|
+| `ANSWER` | sourced: profile field (`profile.<field>`) or a stored memory answer (`memory`, incl. previously dictated) | allowed |
+| `ASK` | no source — required consent, open text, personal data, eligibility, unrecognized | **blocked** |
+| `SKIP` | optional consent (`optional`) or not applicable / ineligible (`not_applicable`) | allowed |
+
+Resolve order is strict: profile → memory → human dictation → not applicable →
+optional → ASK. **Never invent an answer.** An `ASK` blocker is surfaced to the
+human; dictated answers go through `resolve_question(..., human_answers=...)`
+and are persisted with `answer.save_answers(memory_dir, job_id, resolved,
+attempt_id=...)` before re-running the gate.
+
+Persisted at `<memory-dir>/answers/<job_id>.json` (per-entry dict; reuse = the
+same question key on the next run resolves `source="memory"`; the profile
+always wins over stored memory). This is the ONLY extra record tree besides
+`applications/`, `attempts/` and `screenshots/` — answers are stored per JOB,
+never at the profile root.
+
+A blocked submit ends as an attempt record:
+`verdict.decide(outcome=INCOMPLETE, reason=answer.canonical_block_reason(blockers))`
+with the canonical codes EXACTLY `MANUAL | DADOS_PESSOAIS | ELIGIBILITY_BLOCK |
+DOUBT` (`answer.BLOCK_REASONS`). The human dictates the missing answers, they
+are persisted, and the next run reuses them — the gate passes with
+`source="memory"`.
+
 ### Post-final-action evidence (learned in production)
 
 - After the apply-final click, take a FRESH snapshot before evaluating: never
@@ -507,8 +551,8 @@ attempt record*, never a separate directory tree — there is no
 the record would split the idempotency key chain (#27) and the human-review
 flow. Attempt/applied records **never** live anywhere else — in particular
 **never** at the profile root (`~/.hermes/profiles/jobhunter-bot/`): the only
-record trees under `memails` are `applications/`, `attempts/` and
-`screenshots/`. Violating this path breaks the idempotency gate (#27) and the
+record trees under `memails` are `applications/`, `attempts/`, `screenshots/`
+and `answers/`. Violating this path breaks the idempotency gate (#27) and the
 human-review flow.
 
 ---
@@ -545,6 +589,7 @@ Errors are always JSON: `{"error": <code>, "detail": <message>, "screenshot_path
 - **#41 session expiry gate** — never fill a form on an expired session: the pre-flight gate stops with the `session_expired` error before any intent is emitted, and `stop_on_auth_url` covers mid-loop redirects.
 - **#42 auto-apply / batch fill** — `--auto-apply` implies confirmation (policy flipped) and skips only the user confirmation of a healthy flow; it NEVER bypasses idempotency (#27), refusal (#28), or the session gate (#41). (The legacy `fill_form` batch step retired with the selector plan.)
 - **#72 deterministic preflight** — never proceed in the wrong browser/session: when `--preflight-config` is set, the gate must fully pass (`preflight.py`); a failing check stops the run with the verbatim payload, and malformed configs refuse (`invalid_config`). No ad-hoc scripts/config edits during the run (runbook §3.3).
+- **#73 answer policy** — submit requires every required answer GROUNDED: the review gate refuses on any `ASK` without a source (never invented); optional consents and not-applicable questions `SKIP`; dictated answers persist for reuse (`answers/<job_id>.json`); a blocked submit ends `INCOMPLETE` with a canonical reason (`MANUAL | DADOS_PESSOAIS | ELIGIBILITY_BLOCK | DOUBT`).
 - **Explicit confirmation** — no apply-final action without user confirmation (`require_confirmation_before_final_submit` is `true` unless `--confirmed` / `--auto-apply` flipped it); the bot never submits without that authorization.
 
 ---
