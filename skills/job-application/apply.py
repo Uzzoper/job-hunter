@@ -31,7 +31,14 @@ Pre-flight gates, enforced before any intent is emitted:
   * refusal block (#28) — profile marked NO_APPLY / cover refuses;
   * session expiry check (#41) — an expired session stops with the
     session_expired error (exit 0) so the human can authenticate first;
-  * idempotency (#27) — already-applied jobs are never re-planned.
+  * idempotency (#27) — already-applied jobs are never re-planned;
+  * preflight (#72) — when --preflight-config is given, the deterministic
+    runbook gate (preflight.py: chromium_running, cdp_endpoint,
+    browser_tool_attached, gupy_session) runs BEFORE the intent emission.
+    A failing check is reported VERBATIM (fail-closed §3.4) and no intent
+    is emitted; preflight.run is invoked in-process with captured stdout
+    (parsed back as JSON) — apply.py never improvises a substitute check.
+    Runs even on --dry-run (read-only: a process listing + GET /json).
 
 # Issue #46 — API-first: the Job Hunter REST API is the PRIMARY job source.
 # The bot plans from top-scored DB jobs (--from-api) or a specific job detail
@@ -41,13 +48,14 @@ Pre-flight gates, enforced before any intent is emitted:
 # ONCE by the human (never stored in this repo). The classic --job-url flow is
 # unchanged otherwise.
 
-Stdlib only: argparse, json, os, re, subprocess, time, uuid, urllib, pathlib.
-No pip dependencies.
+Stdlib only: argparse, contextlib, io, json, os, re, subprocess, time, uuid,
+urllib, pathlib. No pip dependencies.
 
 Usage:
     python3 apply.py --job-url <url> --profile <profile.json> [--portal gupy|infojobs] \\
         [--memory-dir <dir>] [--dry-run] [--confirmed]
         [--skip-session-check] [--auto-apply] [--emit-intent] [--max-steps N]
+        [--preflight-config <config.json>]
     python3 apply.py --job-id <id> --profile <profile.json> [--api-token <token>]
     python3 apply.py --check-browser [--cdp-url <url>] [--user-data-dir <dir>]
 
@@ -55,6 +63,7 @@ Output: JSON to stdout (executor intent, browser status, or {"error": <code>, "d
 """
 
 import argparse
+import io
 import json
 import os
 import re
@@ -64,6 +73,7 @@ import time
 import uuid
 import urllib.parse
 import urllib.request
+from contextlib import redirect_stdout
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -71,6 +81,7 @@ from navigation import SESSION_EXPIRED_DETAIL, verify_session  # issues #38, #41
 
 import job_api  # issue #46 — Job Hunter API as the PRIMARY job source
 import intent  # mcp-apply-loop — planner-intent builder + portal allow-list
+import preflight  # issue #72 — deterministic pre-intent gate (runbook §3.1)
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -389,6 +400,48 @@ def build_error(code: str, detail: str, memory_dir: Optional[Path] = None,
 
 
 # ---------------------------------------------------------------------------
+# Issue #72 — deterministic preflight gate (docs/specs/deterministic-apply-runbook.md
+# §3.1/§3.4): read-only checks run before intent emission. Runs even on
+# --dry-run — it never launches a browser (pgrep + GET /json only).
+# ---------------------------------------------------------------------------
+
+def _run_preflight_gate(config_path: str,
+                        memory_dir: Path) -> Optional[int]:
+    """Run preflight.run(["--config", config_path]) and enforce fail-closed.
+
+    Returns ``None`` when the gate PASSES (intent emission may continue), or
+    the process exit code to propagate when it does not. On any non-pass the
+    preflight payload is printed VERBATIM — the machine-readable failure is
+    the output contract, no improvisation and no fallback checks (§3.4).
+
+    Exit-code mapping (preflight.run's own contract):
+      * 0 + ``{"ok": true}``        → pass → None;
+      * 1                          → first failing check, reported verbatim;
+      * 2                          → usage/config errors;
+      * 0 + anything else          → fail-closed by payload (treated as a
+                                     check failure, exit 1).
+    """
+    buf = io.StringIO()
+    with redirect_stdout(buf):
+        code = preflight.run(["--config", config_path])
+    try:
+        payload = json.loads(buf.getvalue())
+    except Exception as exc:
+        print(json.dumps(build_error(
+            "invalid_config",
+            f"preflight output is not valid JSON: {exc}",
+            memory_dir=memory_dir,
+        )))
+        return 2
+    if not isinstance(payload, dict) or payload.get("ok") is not True:
+        # Verbatim propagation (fail-closed): whatever preflight decided, the
+        # planner just relays it — never re-decides, never invents details.
+        print(json.dumps(payload, ensure_ascii=False))
+        return code if code != 0 else 1
+    return None
+
+
+# ---------------------------------------------------------------------------
 # CLI
 
 
@@ -460,6 +513,11 @@ def parse_args(argv: Optional[List[str]]):
                         help="emit the selector-free executor INTENT JSON (id/url/portal/profile/policy/metadata) — accepted for backward compat; intent emission is now the default output")
     parser.add_argument("--max-steps", type=int, default=None,
                         help=f"executor loop step budget for the intent (default: {intent.DEFAULT_MAX_STEPS}; must be >= 1)")
+    # Issue #72 — deterministic preflight gate (runbook §3.1): when a config
+    # path is given, the gate runs before intent emission; a failing check is
+    # reported verbatim and no intent is emitted (fail-closed).
+    parser.add_argument("--preflight-config", default=None,
+                        help="issue #72: path to the preflight config JSON (cdp_url, user_data_dir, browser_tool); runs the deterministic gate before intent emission")
     return parser.parse_args(argv)
 
 
@@ -670,6 +728,15 @@ def run(argv: Optional[List[str]] = None) -> int:
             existing_record=existing,
         )))
         return 1
+
+    # Issue #72 — deterministic preflight gate: runs AFTER idempotency and
+    # BEFORE intent emission. A failing check (or invalid config) short-circuits
+    # with the verbatim preflight payload; no intent is ever emitted. Runs even
+    # on --dry-run — the checks are read-only (process listing + GET /json).
+    if args.preflight_config:
+        gate_result = _run_preflight_gate(args.preflight_config, memory_dir)
+        if gate_result is not None:
+            return gate_result
 
     # mcp-apply-loop — planner-intent emission, the ONLY output since cutover
     # pkg 3 (spec l.291-299): the selector-free contract (intent.py) carries

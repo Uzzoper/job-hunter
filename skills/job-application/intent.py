@@ -24,7 +24,7 @@ portals/*.yaml selector mappings (retired in cutover pkg 3; spec l.291-299).
 LinkedIn is deliberately unsupported.
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, NotRequired, Optional, TypedDict
 
 # Executor loop step budget when --max-steps is not given (spec: default 25).
 DEFAULT_MAX_STEPS = 25
@@ -195,6 +195,166 @@ def validate_intent(intent: Any) -> List[str]:
             problems.append(f"intent must not contain selector fields: {forbidden}")
 
     return problems
+
+
+# ---------------------------------------------------------------------------
+# Machine-readable intent CONTRACT validation (issue #72 — stdlib TypedDicts)
+# ---------------------------------------------------------------------------
+#
+# The prose ``validate_intent`` above stays as the human-readable checker. This
+# partner validator lets the bot REFUSE a malformed intent contract with stable,
+# machine-readable codes (one per offending field/rule) instead of parsing
+# prose sentences. The TypedDicts document the canonical contract shape that
+# ``build_intent`` produces; they are NOT runtime-enforced classes — the checks
+# are explicit isinstance/type tests so the validator also catches JSON
+# round-trip corruption (e.g. an int arriving as a string from a manual edit).
+
+class ProfileContract(TypedDict):
+    name: str
+    email: str
+    phone: NotRequired[Optional[str]]
+    resume_path: NotRequired[Optional[str]]
+    cover_text: NotRequired[Optional[str]]
+
+
+class PolicyContract(TypedDict):
+    require_confirmation_before_final_submit: bool
+    never_fill_credentials: bool
+    stop_on_auth_url: bool
+    max_steps: int
+
+
+class MetadataContract(TypedDict):
+    job_title: NotRequired[str]
+    job_company: NotRequired[str]
+    backend_job_id: NotRequired[int]
+    api_base_url: NotRequired[str]
+
+
+class IntentContract(TypedDict):
+    intent_id: str
+    job_id: str
+    job_url: str
+    portal: str
+    profile: ProfileContract
+    policy: PolicyContract
+    metadata: NotRequired[MetadataContract]
+
+
+def _require_str(obj: Dict[str, Any], namespace: str, field: str,
+                 problems: List[str]) -> None:
+    """Append ``<path>.missing`` / ``<path>.not_a_string`` when a required
+    string field is absent or of the wrong type (``namespace`` may be empty)."""
+    path = field if not namespace else f"{namespace}.{field}"
+    if field not in obj:
+        problems.append(f"{path}.missing")
+    elif not isinstance(obj[field], str):
+        problems.append(f"{path}.not_a_string")
+
+
+def _forbidden_codes(obj: Any) -> List[str]:
+    """Stable codes (``forbidden_key.<name>``) for every forbidden key found
+    in the intent, nested included — deduplicated at the end."""
+    codes: List[str] = []
+    if isinstance(obj, dict):
+        for key, value in obj.items():
+            if key in _FORBIDDEN_KEYS:
+                codes.append(f"forbidden_key.{key}")
+                continue  # never descend into known-bad subtrees
+            codes.extend(_forbidden_codes(value))
+    elif isinstance(obj, list):
+        for value in obj:
+            codes.extend(_forbidden_codes(value))
+    return codes
+
+
+def validate_intent_contract(intent_obj: Any) -> Dict[str, Any]:
+    """Validate an object against the ``IntentContract`` (issue #72).
+
+    Returns ``{"ok": True}`` on conformance, or a machine-readable refusal
+    (the shape tests' contract):
+
+        {"ok": False, "error": "invalid_intent_contract",
+         "problems": [<stable codes, e.g. "portal.unsupported",
+                      "policy.max_steps.not_an_int",
+                      "forbidden_key.steps", ...>],
+         "detail": <human-readable join of the codes>}
+
+    The required fields mirror the prose ``validate_intent`` (identity +
+    profile.name/email + every policy gate); optional profile/metadata keys are
+    checked for TYPE when present. Portal allow-list and the selector-free
+    rule (``_FORBIDDEN_KEYS``) are enforced with stable codes here too.
+    """
+    problems: List[str] = []
+    if not isinstance(intent_obj, dict):
+        return {"ok": False, "error": "invalid_intent_contract",
+                "problems": ["intent.not_an_object"],
+                "detail": "intent contract must be a JSON object"}
+
+    for key in ("intent_id", "job_id", "job_url", "portal"):
+        _require_str(intent_obj, "", key, problems)
+
+    if "portal" in intent_obj and isinstance(intent_obj["portal"], str) \
+            and not is_supported_portal(intent_obj["portal"]):
+        problems.append("portal.unsupported")
+
+    profile = intent_obj.get("profile")
+    if not isinstance(profile, dict):
+        problems.append("profile.not_an_object" if "profile" in intent_obj
+                        else "profile.missing")
+    else:
+        for key in ("name", "email"):
+            _require_str(profile, "profile", key, problems)
+        # Optional profile payload keys — only the TYPE is enforced when present.
+        for key in ("phone", "resume_path", "cover_text"):
+            value = profile.get(key)
+            if value is not None and not isinstance(value, str):
+                problems.append(f"profile.{key}.not_a_string")
+
+    policy = intent_obj.get("policy")
+    if not isinstance(policy, dict):
+        problems.append("policy.not_an_object" if "policy" in intent_obj
+                        else "policy.missing")
+    else:
+        for key in ("require_confirmation_before_final_submit",
+                    "never_fill_credentials", "stop_on_auth_url"):
+            if key not in policy:
+                problems.append(f"policy.{key}.missing")
+            elif not isinstance(policy[key], bool):
+                problems.append(f"policy.{key}.not_a_bool")
+        if "max_steps" not in policy:
+            problems.append("policy.max_steps.missing")
+        else:
+            max_steps = policy["max_steps"]
+            if isinstance(max_steps, bool) or not isinstance(max_steps, int):
+                problems.append("policy.max_steps.not_an_int")
+            elif max_steps < 1:
+                problems.append("policy.max_steps.too_small")
+        if policy.get("never_fill_credentials") is False:
+            problems.append("policy.never_fill_credentials.disabled")
+        if policy.get("stop_on_auth_url") is False:
+            problems.append("policy.stop_on_auth_url.disabled")
+
+    metadata = intent_obj.get("metadata")
+    if metadata is not None and not isinstance(metadata, dict):
+        problems.append("metadata.not_an_object")
+    elif isinstance(metadata, dict):
+        for key, tp in (("job_title", str), ("job_company", str),
+                        ("api_base_url", str)):
+            if key in metadata and not isinstance(metadata[key], tp):
+                problems.append(f"metadata.{key}.not_a_string")
+        if "backend_job_id" in metadata and \
+                not isinstance(metadata["backend_job_id"], int):
+            problems.append("metadata.backend_job_id.not_an_int")
+
+    for code in _forbidden_codes(intent_obj):
+        if code not in problems:
+            problems.append(code)
+
+    if problems:
+        return {"ok": False, "error": "invalid_intent_contract",
+                "problems": problems, "detail": "; ".join(problems)}
+    return {"ok": True}
 
 
 if __name__ == "__main__":

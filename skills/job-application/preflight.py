@@ -55,7 +55,7 @@ import sys
 import urllib.parse
 import urllib.request
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, NotRequired, Optional, TypedDict
 
 from navigation import is_auth_url
 
@@ -329,12 +329,82 @@ def check_gupy_session(page_state: Dict[str, Any]) -> Dict[str, Any]:
 # Orchestration — run(argv): config load + ordered, short-circuiting checks
 # ---------------------------------------------------------------------------
 
+# Issue #72 — machine-readable config CONTRACT validation (stdlib TypedDicts).
+# The TypedDicts document the canonical config shape (runbook §3.1); they are
+# NOT runtime classes — checks are explicit isinstance/type tests so malformed
+# configs refuse with stable codes before any browser check runs.
+
+class BrowserToolContract(TypedDict):
+    tabs: List[Any]          # tab objects, each carrying an "id"
+    active_page: Dict[str, Any]  # {"url": str, "authenticated": bool}
+
+
+class PreflightConfigContract(TypedDict, total=False):
+    cdp_url: str                         # optional — default applies
+    user_data_dir: str                   # optional — default applies
+    browser_tool: BrowserToolContract    # required
+
+
+def validate_config_contract(raw: Any) -> Dict[str, Any]:
+    """Validate a decoded preflight config against ``PreflightConfigContract``.
+
+    Returns ``{"ok": True}`` on conformance, or a machine-readable refusal:
+
+        {"ok": False, "error": "invalid_config",
+         "problems": [<stable codes, e.g. "browser_tool.missing",
+                      "browser_tool.tabs.not_a_list", ...>],
+         "detail": <human-readable join of the codes>}
+
+    ``cdp_url`` / ``user_data_dir`` are optional (loader defaults apply);
+    ``browser_tool`` with ``tabs`` (a list of tab objects) and ``active_page``
+    (an object) is required — mirrors the runbook §3.1 config schema.
+    """
+    problems: List[str] = []
+    if not isinstance(raw, dict):
+        return {"ok": False, "error": "invalid_config",
+                "problems": ["config.not_an_object"],
+                "detail": "config must be a JSON object"}
+
+    for key in ("cdp_url", "user_data_dir"):
+        if key in raw and not isinstance(raw[key], str):
+            problems.append(f"{key}.not_a_string")
+
+    browser_tool = raw.get("browser_tool")
+    if "browser_tool" not in raw:
+        problems.append("browser_tool.missing")
+    elif not isinstance(browser_tool, dict):
+        problems.append("browser_tool.not_an_object")
+    else:
+        tabs = browser_tool.get("tabs")
+        if "tabs" not in browser_tool:
+            problems.append("browser_tool.tabs.missing")
+        elif not isinstance(tabs, list):
+            problems.append("browser_tool.tabs.not_a_list")
+        else:
+            for item in tabs:
+                if not isinstance(item, dict):
+                    problems.append("browser_tool.tabs.item_not_an_object")
+        active_page = browser_tool.get("active_page")
+        if "active_page" not in browser_tool:
+            problems.append("browser_tool.active_page.missing")
+        elif not isinstance(active_page, dict):
+            problems.append("browser_tool.active_page.not_an_object")
+
+    if problems:
+        return {"ok": False, "error": "invalid_config",
+                "problems": problems, "detail": "; ".join(problems)}
+    return {"ok": True}
+
+
 def _load_config(config_path: Path):
     """Load and normalize the preflight config; (config, None) or (None, err).
 
     ``config`` is normalized to
     ``{"cdp_url", "user_data_dir", "tabs", "active_page"}`` with the documented
-    defaults applied for the optional keys.
+    defaults applied for the optional keys. The shape is validated by
+    :func:`validate_config_contract` (issue #72): malformed configs refuse
+    with stable machine-readable codes underneath the standard
+    ``error == ERROR_CONFIG_INVALID`` surface (exit 2).
     """
     if not config_path.is_file():
         return None, {"error": ERROR_CONFIG_INVALID,
@@ -344,26 +414,16 @@ def _load_config(config_path: Path):
     except Exception as exc:
         return None, {"error": ERROR_CONFIG_INVALID,
                       "detail": f"config is not valid JSON: {exc}"}
-    if not isinstance(raw, dict):
+    validation = validate_config_contract(raw)
+    if not validation.get("ok"):
         return None, {"error": ERROR_CONFIG_INVALID,
-                      "detail": "config must be a JSON object"}
-    browser_tool = raw.get("browser_tool")
-    if not isinstance(browser_tool, dict):
-        return None, {"error": ERROR_CONFIG_INVALID,
-                      "detail": "config.browser_tool must be an object"}
-    tabs = browser_tool.get("tabs")
-    if not isinstance(tabs, list):
-        return None, {"error": ERROR_CONFIG_INVALID,
-                      "detail": "config.browser_tool.tabs must be a list"}
-    active_page = browser_tool.get("active_page")
-    if not isinstance(active_page, dict):
-        return None, {"error": ERROR_CONFIG_INVALID,
-                      "detail": "config.browser_tool.active_page must be an object"}
+                      "detail": validation.get("detail")}
+    browser_tool = raw["browser_tool"]
     return {
         "cdp_url": raw.get("cdp_url") or DEFAULT_CDP_URL,
         "user_data_dir": raw.get("user_data_dir") or DEFAULT_USER_DATA_DIR,
-        "tabs": tabs,
-        "active_page": active_page,
+        "tabs": browser_tool["tabs"],
+        "active_page": browser_tool["active_page"],
     }, None
 
 
