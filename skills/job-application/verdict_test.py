@@ -416,5 +416,109 @@ class VerdictRoutingTests(unittest.TestCase):
         self.assertFalse((self.memory_dir / "applications" / "42.json").exists())
 
 
+class RecordContractTests(unittest.TestCase):
+    """validate_record_contract: machine-readable schema refusal (issue #72).
+
+    verdict.py is the SINGLE writer of the two persisted record kinds
+    (applications/<job_id>.json and attempts/<attempt_id>/<ts>.json); this
+    pure validator lets the bot refuse a malformed record with stable codes
+    instead of reading back garbage for idempotency/review.
+    """
+
+    def _applied(self, **overrides):
+        record = {
+            "job_id": JOB_ID,
+            "contact_email": CONTACT_EMAIL,
+            "portal": PORTAL,
+            "applied_at": ENDED_AT,
+            "screenshot_path": SCREENSHOT,
+            "status": "applied",
+            "verdict": verdict.SUBMIT_OK,
+            "evidence": success_evidence(),
+        }
+        record.update(overrides)
+        return record
+
+    def _attempt(self, **overrides):
+        record = {
+            "attempt_id": ATTEMPT_ID,
+            "job_id": JOB_ID,
+            "job_url": JOB_URL,
+            "portal": PORTAL,
+            "started_at": STARTED_AT,
+            "ended_at": ENDED_AT,
+            "outcome": verdict.INCOMPLETE,
+            "reason": "budget_exceeded",
+        }
+        record.update(overrides)
+        return record
+
+    def test_canonical_applied_record_passes(self):
+        self.assertEqual(
+            verdict.validate_record_contract(self._applied(), "applied"),
+            {"ok": True})
+
+    def test_canonical_attempt_record_passes(self):
+        record = self._attempt(
+            reason="loop_stalled",
+            trace=[{"seq": 1, "page": "start", "action": "next", "ok": True}],
+            final_page={"url": JOB_URL, "page": "start"},
+        )
+        self.assertEqual(
+            verdict.validate_record_contract(record, "attempt"),
+            {"ok": True})
+
+    def test_unknown_kind_refused(self):
+        result = verdict.validate_record_contract(self._applied(), "bogus")
+        self.assertEqual(result["ok"], False)
+        self.assertEqual(result["error"], "invalid_record_contract")
+        self.assertIn("record.kind.unknown", result["problems"])
+        self.assertTrue(result["detail"])
+
+    def test_non_object_record_refused(self):
+        result = verdict.validate_record_contract("not a record", "applied")
+        self.assertIn("record.not_an_object", result["problems"])
+
+    def test_applied_requires_applied_status(self):
+        result = verdict.validate_record_contract(
+            self._applied(status="pending"), "applied")
+        self.assertIn("status.not_an_applied_status", result["problems"])
+
+    def test_applied_requires_submit_ok_verdict(self):
+        result = verdict.validate_record_contract(
+            self._applied(verdict=verdict.INCOMPLETE), "applied")
+        self.assertIn("verdict.not_submit_ok", result["problems"])
+
+    def test_applied_missing_job_id_refused(self):
+        record = self._applied()
+        del record["job_id"]
+        result = verdict.validate_record_contract(record, "applied")
+        self.assertIn("job_id.missing", result["problems"])
+
+    def test_applied_evidence_must_be_an_object(self):
+        result = verdict.validate_record_contract(
+            self._applied(evidence=["not", "an", "object"]), "applied")
+        self.assertIn("evidence.not_an_object", result["problems"])
+
+    def test_attempt_requires_known_outcome(self):
+        result = verdict.validate_record_contract(
+            self._attempt(outcome="SOMETHING_MADE_UP"), "attempt")
+        self.assertIn("outcome.unknown", result["problems"])
+
+    def test_attempt_missing_attempt_id_refused(self):
+        record = self._attempt()
+        del record["attempt_id"]
+        result = verdict.validate_record_contract(record, "attempt")
+        self.assertIn("attempt_id.missing", result["problems"])
+
+    def test_trace_must_be_a_list_of_objects(self):
+        result = verdict.validate_record_contract(
+            self._attempt(trace="oops"), "attempt")
+        self.assertIn("trace.not_a_list", result["problems"])
+        result = verdict.validate_record_contract(
+            self._attempt(trace=[{"seq": 1}, "oops"]), "attempt")
+        self.assertIn("trace.item_not_an_object", result["problems"])
+
+
 if __name__ == "__main__":
     unittest.main()

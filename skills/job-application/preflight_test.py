@@ -684,6 +684,78 @@ class RunTests(unittest.TestCase):
         self.assertEqual(data["error"], preflight.ERROR_CONFIG_INVALID)
 
 
+class ConfigContractTests(unittest.TestCase):
+    """validate_config_contract: shape-tight schema refusal (issue #72 schema
+    validation phase) — malformed preflight configs refuse with stable,
+    machine-readable codes instead of free-text guesses."""
+
+    def test_canonical_config_passes(self):
+        raw = {
+            "cdp_url": CDP_URL,
+            "user_data_dir": USER_DATA_DIR,
+            "browser_tool": {
+                "tabs": [{"id": "target-1", "url": GUPY_JOB_URL}],
+                "active_page": {"url": GUPY_JOB_URL, "authenticated": True},
+            },
+        }
+        self.assertEqual(preflight.validate_config_contract(raw), {"ok": True})
+
+    def test_minimal_config_passes(self):
+        # cdp_url and user_data_dir are optional (the loader applies defaults).
+        raw = {"browser_tool": {"tabs": [], "active_page": {}}}
+        self.assertEqual(preflight.validate_config_contract(raw), {"ok": True})
+
+    def test_missing_browser_tool_refused(self):
+        result = preflight.validate_config_contract({"cdp_url": CDP_URL})
+        self.assertEqual(result["ok"], False)
+        self.assertEqual(result["error"], "invalid_config")
+        self.assertIn("browser_tool.missing", result["problems"])
+        self.assertTrue(result["detail"])
+
+    def test_browser_tool_must_be_an_object(self):
+        result = preflight.validate_config_contract(
+            {"browser_tool": ["tabs", "active_page"]})
+        self.assertIn("browser_tool.not_an_object", result["problems"])
+
+    def test_tabs_must_be_a_list(self):
+        result = preflight.validate_config_contract(
+            {"browser_tool": {"tabs": "nope",
+                              "active_page": {"url": GUPY_JOB_URL}}})
+        self.assertIn("browser_tool.tabs.not_a_list", result["problems"])
+
+    def test_tabs_item_must_be_an_object(self):
+        result = preflight.validate_config_contract(
+            {"browser_tool": {"tabs": ["target-1"],
+                              "active_page": {"url": GUPY_JOB_URL}}})
+        self.assertIn("browser_tool.tabs.item_not_an_object", result["problems"])
+
+    def test_active_page_must_be_an_object(self):
+        result = preflight.validate_config_contract(
+            {"browser_tool": {"tabs": [], "active_page": ["url"]}})
+        self.assertIn("browser_tool.active_page.not_an_object", result["problems"])
+
+    def test_cdp_url_must_be_a_string(self):
+        result = preflight.validate_config_contract(
+            {"cdp_url": 9222,
+             "browser_tool": {"tabs": [], "active_page": {}}})
+        self.assertIn("cdp_url.not_a_string", result["problems"])
+
+    def test_non_object_input_refused(self):
+        result = preflight.validate_config_contract("not a config")
+        self.assertEqual(result["error"], "invalid_config")
+        self.assertIn("config.not_an_object", result["problems"])
+
+    def test_run_still_exits_two_on_invalid_config(self):
+        # End-to-end: a malformed config traverses the loader — exit 2 with
+        # the machine-readable error surface and a truthful detail.
+        with tempfile.TemporaryDirectory() as td:
+            config_path = write_config(Path(td), browser_tool={"tabs": []})
+            code, data = run_cli(config_path)
+        self.assertEqual(code, 2)
+        self.assertEqual(data["error"], preflight.ERROR_CONFIG_INVALID)
+        self.assertTrue(data["detail"])
+
+
 class DefaultConfigConstantsTests(unittest.TestCase):
     """The GREEN module exposes the documented defaults verbatim."""
 

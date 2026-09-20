@@ -1287,6 +1287,137 @@ class IntentEmissionTests(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
+# Preflight gate (issue #72) — deterministic pre-intent gate
+# ---------------------------------------------------------------------------
+
+class _FakePreflight:
+    """preflight.run stand-in injected as ``apply.preflight`` in the gate tests.
+
+    Records every argv it is called with, prints the payload verbatim (as the
+    real preflight.run does) and returns the given exit code.
+    """
+
+    def __init__(self, payload, code):
+        self.payload = payload
+        self.code = code
+        self.calls = []
+
+    def run(self, argv):
+        self.calls.append(argv)
+        print(json.dumps(self.payload, ensure_ascii=False))
+        return self.code
+
+
+class PreflightGateTests(unittest.TestCase):
+    """Issue #72 — the deterministic preflight gate: apply.py refuses to emit
+    an intent when --preflight-config reports a failing check (fail-closed,
+    §3.4 — reported VERBATIM, no improvisation, no fallback browsers)."""
+
+    PREFLIGHT_FAIL = {
+        "ok": False,
+        "check": "chromium_running",
+        "error": "chromium_not_running",
+        "detail": "no Chromium process is running for the dedicated profile",
+        "checks": {"chromium_running": {"ok": False,
+                                        "error": "chromium_not_running"}},
+    }
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.mem = Path(self.tmp.name)
+        self.profile_path = write_profile(self.mem)
+        self.config_path = str(self.mem / "preflight-config.json")
+
+    def _run_gate(self, payload, code, *extra):
+        """Run apply.run in-process with the fake preflight injected; return
+        (exit_code, stdout). --dry-run keeps the run off the browser/session."""
+        fake = _FakePreflight(payload, code)
+        with unittest.mock.patch("apply.preflight", fake, create=True):
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                exit_code = apply.run([
+                    "--job-url", GUPY_URL,
+                    "--profile", self.profile_path,
+                    "--memory-dir", str(self.mem),
+                    "--portal", "gupy",
+                    "--dry-run",
+                    "--preflight-config", self.config_path,
+                    *extra,
+                ])
+        return exit_code, fake, buf.getvalue()
+
+    def test_parse_args_has_preflight_config(self):
+        args = apply.parse_args(["--preflight-config", "preflight.json"])
+        self.assertEqual(args.preflight_config, "preflight.json")
+
+    def test_preflight_failure_blocks_intent_verbatim(self):
+        code, fake, out = self._run_gate(self.PREFLIGHT_FAIL, 1)
+        self.assertEqual(code, 1)
+        self.assertEqual(json.loads(out), self.PREFLIGHT_FAIL)
+        self.assertNotIn("intent", out)
+        self.assertEqual(fake.calls, [["--config", self.config_path]])
+
+    def test_preflight_pass_allows_intent(self):
+        code, _, out = self._run_gate({"ok": True, "checks": {}}, 0)
+        self.assertEqual(code, 0)
+        data = json.loads(out)
+        self.assertIn("intent", data)
+        self.assertNotIn("error", data)
+
+    def test_preflight_config_error_refuses_intent(self):
+        code, _, out = self._run_gate(
+            {"error": "invalid_config",
+             "detail": "config.browser_tool.tabs must be a list"}, 2)
+        self.assertEqual(code, 2)
+        data = json.loads(out)
+        self.assertEqual(data["error"], "invalid_config")
+        self.assertNotIn("intent", out)
+
+    def test_preflight_called_with_config_path(self):
+        fake = _FakePreflight({"ok": True, "checks": {}}, 0)
+        with unittest.mock.patch("apply.preflight", fake, create=True):
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                code = apply.run([
+                    "--job-url", GUPY_URL,
+                    "--profile", self.profile_path,
+                    "--memory-dir", str(self.mem),
+                    "--portal", "gupy",
+                    "--dry-run",
+                    "--preflight-config", self.config_path,
+                ])
+        self.assertEqual(code, 0)
+        self.assertEqual(fake.calls, [["--config", self.config_path]])
+
+    def test_malformed_pass_payload_fails_closed(self):
+        # A preflight that exits 0 but prints {"ok": false} (or garbage)
+        # must NEVER let the intent through — fail-closed by payload too.
+        code, _, out = self._run_gate(
+            {"ok": False, "error": "browser_tool_detached",
+             "detail": "tool not attached"}, 0)
+        self.assertEqual(code, 1)
+        self.assertNotIn("intent", out)
+
+    def test_no_preflight_flag_skips_the_gate(self):
+        fake = _FakePreflight(self.PREFLIGHT_FAIL, 1)
+        with unittest.mock.patch("apply.preflight", fake, create=True):
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                code = apply.run([
+                    "--job-url", GUPY_URL,
+                    "--profile", self.profile_path,
+                    "--memory-dir", str(self.mem),
+                    "--portal", "gupy",
+                    "--dry-run",
+                ])
+        self.assertEqual(fake.calls, [])
+        self.assertEqual(code, 0)
+        data = json.loads(buf.getvalue())
+        self.assertIn("intent", data)
+
+
+# ---------------------------------------------------------------------------
 # Session expiry gate (issue #41) — pre-flight for every emission mode
 # ---------------------------------------------------------------------------
 

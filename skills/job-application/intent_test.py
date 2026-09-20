@@ -226,5 +226,91 @@ class SupportedPortalTests(unittest.TestCase):
             self.assertFalse(intent.is_supported_portal(bad), repr(bad))
 
 
+class ContractShapeTests(unittest.TestCase):
+    """validate_intent_contract: machine-readable schema refusal (issue #72).
+
+    The prose ``validate_intent`` stays as-is (human-readable list of
+    problems); this partner validator refuses malformed INTENT CONTRACTS with
+    stable, machine-readable problem codes so the bot can react without
+    parsing sentences.
+    """
+
+    def test_accepts_canonical_built_intent(self):
+        self.assertEqual(intent.validate_intent_contract(build()), {"ok": True})
+
+    def test_non_object_input_refused(self):
+        result = intent.validate_intent_contract("not an intent")
+        self.assertEqual(result["ok"], False)
+        self.assertEqual(result["error"], "invalid_intent_contract")
+        self.assertIn("intent.not_an_object", result["problems"])
+        self.assertTrue(result["detail"])
+
+    def test_missing_identity_fields_refused(self):
+        for field, code in (
+            ("intent_id", "intent_id.missing"),
+            ("job_id", "job_id.missing"),
+            ("job_url", "job_url.missing"),
+            ("portal", "portal.missing"),
+        ):
+            broken = build()
+            del broken[field]
+            result = intent.validate_intent_contract(broken)
+            self.assertEqual(result["ok"], False,
+                             f"{field} must refuse the contract")
+            self.assertEqual(result["error"], "invalid_intent_contract")
+            self.assertIn(code, result["problems"])
+
+    def test_unsupported_portal_refused(self):
+        broken = build(portal="linkedin")
+        result = intent.validate_intent_contract(broken)
+        self.assertIn("portal.unsupported", result["problems"])
+
+    def test_max_steps_not_an_int_refused(self):
+        broken = build()
+        broken["policy"]["max_steps"] = "25"
+        result = intent.validate_intent_contract(broken)
+        self.assertIn("policy.max_steps.not_an_int", result["problems"])
+
+    def test_max_steps_too_small_refused(self):
+        broken = build()
+        broken["policy"]["max_steps"] = 0
+        result = intent.validate_intent_contract(broken)
+        self.assertIn("policy.max_steps.too_small", result["problems"])
+
+    def test_hard_gate_disabled_refused(self):
+        broken = build()
+        broken["policy"]["never_fill_credentials"] = False
+        self.assertIn("policy.never_fill_credentials.disabled",
+                      intent.validate_intent_contract(broken)["problems"])
+        broken = build()
+        broken["policy"]["stop_on_auth_url"] = False
+        self.assertIn("policy.stop_on_auth_url.disabled",
+                      intent.validate_intent_contract(broken)["problems"])
+
+    def test_forbidden_key_refused(self):
+        broken = build()
+        broken["steps"] = []
+        result = intent.validate_intent_contract(broken)
+        self.assertIn("forbidden_key.steps", result["problems"])
+
+    def test_metadata_must_be_an_object(self):
+        broken = build()
+        broken["metadata"] = ["not", "an", "object"]
+        result = intent.validate_intent_contract(broken)
+        self.assertIn("metadata.not_an_object", result["problems"])
+
+    def test_problems_are_stable_and_deduplicated(self):
+        broken = build()
+        broken["portal"] = "linkedin"
+        broken["steps"] = []
+        broken["steps2"] = []  # the second hostile key is still reported once
+        result = intent.validate_intent_contract(broken)
+        self.assertIn("portal.unsupported", result["problems"])
+        self.assertIn("forbidden_key.steps", result["problems"])
+        # Each stable code appears exactly once.
+        for code in result["problems"]:
+            self.assertEqual(result["problems"].count(code), 1, code)
+
+
 if __name__ == "__main__":
     unittest.main()
