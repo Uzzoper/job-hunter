@@ -77,6 +77,7 @@ from pathlib import Path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import answer  # noqa: E402  (RED phase: module does not exist yet)
+import verdict  # noqa: E402  (P0-2: record_blocked_submit routes through verdict.decide)
 
 
 JOB_ID = "dev-backend-jr-8472"
@@ -337,6 +338,45 @@ class MemoryReuseTests(unittest.TestCase):
         )
         self.assertEqual(answer.load_answers(self.memory_dir, JOB_ID), {})
 
+    def test_resolveQuestion_whenMemoryValueHasWhitespace_shouldStrip(self):
+        # PR #80 review P1 — persisted values are normalized on reuse.
+        stored = {
+            "q_cpf": {
+                "question_key": "q_cpf",
+                "verdict": answer.ANSWER,
+                "value": "  123.456.789-00  ",
+            }
+        }
+        result = answer.resolve_question(
+            make_question(key="q_cpf", label="CPF"), PROFILE,
+            memory_entries=stored,
+        )
+        self.assertEqual(result["source"], "memory")
+        self.assertEqual(result["value"], "123.456.789-00")
+
+    def test_resolveQuestion_whenMemoryValueBlanksAfterStrip_shouldNotReuse(self):
+        # PR #80 review P1 — a stored value that collapses to blank is treated
+        # as ABSENT: reuse must not resurrect whitespace-only text.
+        stored = {
+            "q_cpf": {"question_key": "q_cpf", "verdict": answer.ANSWER,
+                      "value": "   "},
+        }
+        result = answer.resolve_question(
+            make_question(key="q_cpf", label="CPF"), PROFILE,
+            memory_entries=stored,
+        )
+        self.assertEqual(result["verdict"], answer.ASK)
+        self.assertNotEqual(result["source"], "memory")
+
+    def test_resolveQuestion_whenHumanDictationHasWhitespace_shouldStrip(self):
+        # PR #80 review P1 — dictated values are normalized before storing.
+        result = answer.resolve_question(
+            make_question(key="q_cpf", label="CPF"), PROFILE,
+            human_answers={"q_cpf": "  123.456.789-00 "},
+        )
+        self.assertEqual(result["source"], "human")
+        self.assertEqual(result["value"], "123.456.789-00")
+
     def test_saveAnswers_whenSameJobTwice_shouldOverwrite(self):
         first = make_question(key="q_cpf", label="CPF")
         answer.save_answers(
@@ -450,6 +490,57 @@ class CanonicalCodeTests(unittest.TestCase):
         ]
         self.assertEqual(answer.canonical_block_reason(blockers),
                          "DADOS_PESSOAIS+MANUAL")
+
+
+class BlockedSubmitTests(unittest.TestCase):
+    """PR #80 review P0-2 — the review gate WRITES its outcome: a blocked
+    submit becomes an INCOMPLETE attempt through the single record path
+    (verdict.decide) with the canonical block reason — NEVER an applied
+    record (a blocked submit must never look applied to idempotency)."""
+
+    def setUp(self):
+        self.memory_dir = Path(tempfile.mkdtemp(prefix="answer-blocked-"))
+
+    def tearDown(self):
+        shutil.rmtree(self.memory_dir, ignore_errors=True)
+
+    def test_recordBlockedSubmit_whenBlocked_shouldWriteIncompleteAttempt(self):
+        blockers = [{"reason_code": "DADOS_PESSOAIS"},
+                    {"reason_code": "MANUAL"}]
+        result = answer.record_blocked_submit(
+            self.memory_dir,
+            job_id=JOB_ID,
+            attempt_id=ATTEMPT_ID,
+            job_url="https://jobs.gupy.io/jobs/8472",
+            portal="gupy",
+            blockers=blockers,
+        )
+        self.assertEqual(result["outcome"], verdict.INCOMPLETE)
+        self.assertEqual(result["reason"], "DADOS_PESSOAIS+MANUAL")
+        self.assertFalse(result["written_applied"])
+        self.assertTrue(result["written_attempt"])
+        attempts = list((self.memory_dir / "attempts" / ATTEMPT_ID).rglob("*.json"))
+        self.assertEqual(len(attempts), 1)
+        data = json.loads(attempts[0].read_text(encoding="utf-8"))
+        self.assertEqual(data["outcome"], verdict.INCOMPLETE)
+        self.assertEqual(data["reason"], "DADOS_PESSOAIS+MANUAL")
+        self.assertFalse(data["verdict"]["submitted"])
+        # No applied record — a blocked submit must never look applied.
+        self.assertFalse(
+            (self.memory_dir / "applications" / f"{JOB_ID}.json").exists())
+
+    def test_recordBlockedSubmit_whenSingleBlocker_shouldUseCanonicalCode(self):
+        result = answer.record_blocked_submit(
+            self.memory_dir,
+            job_id=JOB_ID,
+            attempt_id=ATTEMPT_ID,
+            job_url="https://jobs.gupy.io/jobs/8472",
+            portal="gupy",
+            blockers=[{"reason_code": "ELIGIBILITY_BLOCK"}],
+        )
+        self.assertEqual(result["outcome"], verdict.INCOMPLETE)
+        self.assertEqual(result["reason"], "ELIGIBILITY_BLOCK")
+        self.assertFalse(result["written_applied"])
 
 
 if __name__ == "__main__":

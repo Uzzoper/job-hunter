@@ -136,6 +136,11 @@ def run_cli(memory_dir, profile_path, *args, portal=PORTAL, url=GUPY_URL,
         "--portal", portal,
         "--memory-dir", str(memory_dir),
         "--profile", profile_path,
+        # PR #80 review P0-1 — the preflight gate is DEFAULT-ON on real runs;
+        # these subprocess tests target OTHER gates, so opt out explicitly.
+        # (PreflightGateTests above cover the gate itself in-process, without
+        # --skip-preflight-check.)
+        "--skip-preflight-check",
     ]
     if cdp_url:
         cmd += ["--cdp-url", cdp_url]
@@ -1291,10 +1296,11 @@ class IntentEmissionTests(unittest.TestCase):
 # ---------------------------------------------------------------------------
 
 class _FakePreflight:
-    """preflight.run stand-in injected as ``apply.preflight`` in the gate tests.
+    """preflight stand-in injected as ``apply.preflight`` in the gate tests.
 
-    Records every argv it is called with, prints the payload verbatim (as the
-    real preflight.run does) and returns the given exit code.
+    PR #80 review P1 — apply.py consumes the DIRECT ``evaluate(config_path)``
+    dict API (no argv, no stdout sniffing). The fake records every config path
+    it is evaluated with and returns the configured (exit_code, payload) tuple.
     """
 
     def __init__(self, payload, code):
@@ -1302,10 +1308,9 @@ class _FakePreflight:
         self.code = code
         self.calls = []
 
-    def run(self, argv):
-        self.calls.append(argv)
-        print(json.dumps(self.payload, ensure_ascii=False))
-        return self.code
+    def evaluate(self, config_path):
+        self.calls.append(config_path)
+        return self.code, self.payload
 
 
 class PreflightGateTests(unittest.TestCase):
@@ -1356,7 +1361,7 @@ class PreflightGateTests(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertEqual(json.loads(out), self.PREFLIGHT_FAIL)
         self.assertNotIn("intent", out)
-        self.assertEqual(fake.calls, [["--config", self.config_path]])
+        self.assertEqual(fake.calls, [self.config_path])
 
     def test_preflight_pass_allows_intent(self):
         code, _, out = self._run_gate({"ok": True, "checks": {}}, 0)
@@ -1388,7 +1393,7 @@ class PreflightGateTests(unittest.TestCase):
                     "--preflight-config", self.config_path,
                 ])
         self.assertEqual(code, 0)
-        self.assertEqual(fake.calls, [["--config", self.config_path]])
+        self.assertEqual(fake.calls, [self.config_path])
 
     def test_malformed_pass_payload_fails_closed(self):
         # A preflight that exits 0 but prints {"ok": false} (or garbage)
@@ -1399,7 +1404,10 @@ class PreflightGateTests(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertNotIn("intent", out)
 
-    def test_no_preflight_flag_skips_the_gate(self):
+    def test_dry_run_without_config_keeps_default_gate_dormant(self):
+        # PR #80 review P0-1 — the gate is DEFAULT-ON on real runs, but a
+        # --dry-run WITHOUT an explicit --preflight-config keeps it dormant
+        # (dry runs plan the intent without the preflight).
         fake = _FakePreflight(self.PREFLIGHT_FAIL, 1)
         with unittest.mock.patch("apply.preflight", fake, create=True):
             buf = io.StringIO()
@@ -1415,6 +1423,83 @@ class PreflightGateTests(unittest.TestCase):
         self.assertEqual(code, 0)
         data = json.loads(buf.getvalue())
         self.assertIn("intent", data)
+
+    def test_real_run_without_flag_runs_gate_on_default_path(self):
+        # PR #80 review P0-1 — a REAL run with no flags evaluates the gate on
+        # the memory-dir default config; a pass lets the intent through.
+        fake = _FakePreflight({"ok": True, "checks": {}}, 0)
+        with unittest.mock.patch("apply.preflight", fake, create=True), \
+                unittest.mock.patch.object(
+                    apply, "ensure_browser",
+                    return_value={"status": "ready"}), \
+                unittest.mock.patch.object(
+                    apply, "verify_session",
+                    return_value={"session": "active"}):
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                code = apply.run([
+                    "--job-url", GUPY_URL,
+                    "--profile", self.profile_path,
+                    "--memory-dir", str(self.mem),
+                    "--portal", "gupy",
+                ])
+        self.assertEqual(code, 0)
+        default_config = str(self.mem / apply.DEFAULT_PREFLIGHT_CONFIG)
+        self.assertEqual(fake.calls, [default_config])
+        data = json.loads(buf.getvalue())
+        self.assertIn("intent", data)
+
+    def test_skip_preflight_check_opts_out_on_real_run(self):
+        # PR #80 review P0-1 — --skip-preflight-check is the documented opt-out
+        # for real runs; the default gate does not evaluate.
+        fake = _FakePreflight(self.PREFLIGHT_FAIL, 1)
+        with unittest.mock.patch("apply.preflight", fake, create=True), \
+                unittest.mock.patch.object(
+                    apply, "ensure_browser",
+                    return_value={"status": "ready"}), \
+                unittest.mock.patch.object(
+                    apply, "verify_session",
+                    return_value={"session": "active"}):
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                code = apply.run([
+                    "--job-url", GUPY_URL,
+                    "--profile", self.profile_path,
+                    "--memory-dir", str(self.mem),
+                    "--portal", "gupy",
+                    "--skip-preflight-check",
+                ])
+        self.assertEqual(fake.calls, [])
+        self.assertEqual(code, 0)
+        data = json.loads(buf.getvalue())
+        self.assertIn("intent", data)
+
+    def test_real_run_without_flags_missing_default_config_fails_closed(self):
+        # PR #80 review P0-1 — fail-closed semantics: on a real run the default
+        # config path is REQUIRED; a missing file relays the invalid_config
+        # exit — never a silent "gate skipped".
+        config_err = {"ok": False, "error": "invalid_config",
+                      "detail": "config file not found: default path"}
+        fake = _FakePreflight(config_err, 2)
+        with unittest.mock.patch("apply.preflight", fake, create=True), \
+                unittest.mock.patch.object(
+                    apply, "ensure_browser",
+                    return_value={"status": "ready"}), \
+                unittest.mock.patch.object(
+                    apply, "verify_session",
+                    return_value={"session": "active"}):
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                code = apply.run([
+                    "--job-url", GUPY_URL,
+                    "--profile", self.profile_path,
+                    "--memory-dir", str(self.mem),
+                    "--portal", "gupy",
+                ])
+        self.assertEqual(code, 2)
+        data = json.loads(buf.getvalue())
+        self.assertEqual(data["error"], "invalid_config")
+        self.assertNotIn("intent", buf.getvalue())
 
 
 # ---------------------------------------------------------------------------

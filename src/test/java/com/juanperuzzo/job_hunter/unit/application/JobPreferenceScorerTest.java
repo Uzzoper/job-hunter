@@ -183,7 +183,7 @@ class JobPreferenceScorerTest {
         assertEquals(10, JobPreferenceScorer.adjust(10, job, prefs));
     }
 
-    // ---------- Seniority mismatch (issue #72) ----------
+    // ---------- Seniority mismatch (docs/specs/preferences-scoring.md) ----------
 
     @Test
     @DisplayName("adjust should subtract 10 when the job title marks the role as pleno")
@@ -299,6 +299,19 @@ class JobPreferenceScorerTest {
     void adjust_whenOnlySalaryFloor_shouldNotChangeScore() {
         UserPreferences prefs = new UserPreferences(null, 5000, List.of());
         Job job = job("Vaga 100% presencial em São Paulo.", "CompanyX");
+
+        assertEquals(80, JobPreferenceScorer.adjust(80, job, prefs));
+    }
+
+    @Test
+    @DisplayName("adjust should not apply the seniority penalty when only salaryFloor is set (prompt-only guarantee)")
+    void seniority_whenOnlySalaryFloorAndPlenoTitle_shouldKeepScore() {
+        // PR #80 review P0-3: salaryFloor is a prompt-only signal, so a
+        // profile carrying ONLY a salary floor must come out byte-identical —
+        // a "Desenvolvedor Pleno" title cannot silently penalize it.
+        UserPreferences prefs = new UserPreferences(null, 5000, List.of());
+        Job job = job("Desenvolvedor Java Pleno",
+                "Vaga 100% presencial em São Paulo.", "CompanyX");
 
         assertEquals(80, JobPreferenceScorer.adjust(80, job, prefs));
     }

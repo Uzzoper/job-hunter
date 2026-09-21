@@ -367,16 +367,20 @@ class BrowserToolAttachedTests(unittest.TestCase):
         self.assertFalse(result["ok"])
         self.assertEqual(result["error"], preflight.ERROR_BROWSER_TOOL_DETACHED)
 
-    def test_partial_overlap_fails(self):
-        # Subsets never count: the tab lists must match EXACTLY (same CDP
-        # endpoint), so a partial overlap is still a detached tool.
+    def test_partial_overlap_is_tool_subset_passes(self):
+        # PR #80 review P1 — the tool's tabs are a SUBSET of the CDP page
+        # targets: the browser may hold extra pages the tool does not report,
+        # and that is still proof of attachment to THIS endpoint. (The old
+        # exact-match rule falsely flagged a perfectly attached tool.)
         state, fetch = fake_cdp(targets=[PAGE_A, PAGE_B])
         tool_tabs = [{"id": "target-1", "url": GUPY_JOB_URL}]
         result = preflight.check_browser_tool_attached(
             CDP_URL, tool_tabs, fetch=fetch
         )
-        self.assertFalse(result["ok"])
-        self.assertEqual(result["error"], preflight.ERROR_BROWSER_TOOL_DETACHED)
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["matched"], 1)
+        self.assertEqual(result["cdp_page_ids"], {"target-1", "target-2"})
+        self.assertEqual(result["tool_tab_ids"], {"target-1"})
 
     def test_empty_cdp_tab_list_fails_closed(self):
         # Ambiguous (browser with no tabs): fail-closed, never green.
@@ -613,11 +617,16 @@ class RunTests(unittest.TestCase):
         self.assertEqual(code, 0)
         m_chromium.assert_called_once_with(
             user_data_dir="/tmp/dedicated-profile")
-        m_cdp.assert_called_once_with(cdp_url="http://10.0.0.1:9333")
-        m_tool.assert_called_once_with(
-            cdp_url="http://10.0.0.1:9333",
-            tool_tabs=[{"id": "target-1", "url": GUPY_JOB_URL},
-                       {"id": "target-9", "url": GUPY_AUTH_URL}])
+        m_cdp.assert_called_once()
+        self.assertEqual(m_cdp.call_args.kwargs["cdp_url"],
+                         "http://10.0.0.1:9333")
+        m_tool.assert_called_once()
+        self.assertEqual(m_tool.call_args.kwargs["cdp_url"],
+                         "http://10.0.0.1:9333")
+        self.assertEqual(
+            m_tool.call_args.kwargs["tool_tabs"],
+            [{"id": "target-1", "url": GUPY_JOB_URL},
+             {"id": "target-9", "url": GUPY_AUTH_URL}])
         m_session.assert_called_once_with(
             page_state={"url": GUPY_JOB_URL, "authenticated": True})
 
@@ -637,7 +646,9 @@ class RunTests(unittest.TestCase):
         self.assertEqual(code, 0)
         m_chromium.assert_called_once_with(
             user_data_dir=preflight.DEFAULT_USER_DATA_DIR)
-        m_cdp.assert_called_once_with(cdp_url=preflight.DEFAULT_CDP_URL)
+        m_cdp.assert_called_once()
+        self.assertEqual(m_cdp.call_args.kwargs["cdp_url"],
+                         preflight.DEFAULT_CDP_URL)
 
     def test_run_missing_config_flag_usage_exit_two(self):
         buf = io.StringIO()
@@ -754,6 +765,88 @@ class ConfigContractTests(unittest.TestCase):
         self.assertEqual(code, 2)
         self.assertEqual(data["error"], preflight.ERROR_CONFIG_INVALID)
         self.assertTrue(data["detail"])
+
+
+class EvaluateTests(unittest.TestCase):
+    """PR #80 review P1 — preflight.evaluate(): the direct in-process dict API
+    apply.py consumes (no stdout, no argv parsing), with a SINGLE /json fetch
+    shared by the two cdp checks and subset tab comparison end-to-end."""
+
+    CONFIG = {
+        "cdp_url": CDP_URL,
+        "user_data_dir": USER_DATA_DIR,
+        "browser_tool": {
+            "tabs": [{"id": "target-1", "url": GUPY_JOB_URL}],
+            "active_page": {"url": GUPY_JOB_URL, "authenticated": True},
+        },
+    }
+
+    def _write(self, td):
+        path = Path(td) / "preflight-config.json"
+        path.write_text(json.dumps(self.CONFIG), encoding="utf-8")
+        return path
+
+    def test_evaluate_returns_dict_without_printing(self):
+        state, fetch = fake_cdp(targets=[PAGE_A])
+        with tempfile.TemporaryDirectory() as td:
+            config_path = self._write(td)
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                code, payload = preflight.evaluate(
+                    str(config_path),
+                    list_procs=fake_procs(CHROMIUM_PROFILE_CMD),
+                    fetch=fetch,
+                )
+        self.assertEqual(buf.getvalue(), "")
+        self.assertEqual(code, 0)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(
+            list(payload["checks"].keys()),
+            ["chromium_running", "cdp_endpoint",
+             "browser_tool_attached", "gupy_session"],
+        )
+
+    def test_evaluate_single_json_fetch_shared_by_cdp_checks(self):
+        # Checks 2 and 3 probe the SAME <cdp_url>/json endpoint; the gate must
+        # not issue two GET /json round-trips. One fetch, shared by both.
+        state, fetch = fake_cdp(targets=[PAGE_A, PAGE_B])
+        with tempfile.TemporaryDirectory() as td:
+            config_path = self._write(td)
+            code, payload = preflight.evaluate(
+                str(config_path),
+                list_procs=fake_procs(CHROMIUM_PROFILE_CMD),
+                fetch=fetch,
+            )
+        self.assertEqual(code, 0)
+        json_fetches = [u for u in state["urls"]
+                        if u.rstrip("/").endswith("/json")]
+        self.assertEqual(len(json_fetches), 1)
+        # Subset semantics end-to-end: CDP serves TWO page targets, the tool
+        # reports ONE — still firmly attached to this endpoint.
+        self.assertEqual(
+            payload["checks"]["browser_tool_attached"]["matched"], 1)
+
+    def test_evaluate_invalid_config_returns_code_two_with_payload(self):
+        with tempfile.TemporaryDirectory() as td:
+            code, payload = preflight.evaluate(str(Path(td) / "missing.json"))
+        self.assertEqual(code, 2)
+        self.assertFalse(payload.get("ok"))
+        self.assertEqual(payload["error"], preflight.ERROR_CONFIG_INVALID)
+
+    def test_evaluate_failing_check_exit_one_verbatim(self):
+        # /json serves a non-list body → check 2 (cdp_endpoint) fails closed;
+        # the short-circuit payload reports that check verbatim, exit 1.
+        state, fetch = fake_cdp(targets={"not": "a list"})
+        with tempfile.TemporaryDirectory() as td:
+            config_path = self._write(td)
+            code, payload = preflight.evaluate(
+                str(config_path),
+                list_procs=fake_procs(CHROMIUM_PROFILE_CMD),
+                fetch=fetch,
+            )
+        self.assertEqual(code, 1)
+        self.assertFalse(payload["ok"])
+        self.assertEqual(payload["check"], "cdp_endpoint")
 
 
 class DefaultConfigConstantsTests(unittest.TestCase):

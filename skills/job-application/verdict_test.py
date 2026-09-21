@@ -31,6 +31,7 @@ import shutil
 import sys
 import tempfile
 import unittest
+import unittest.mock
 from pathlib import Path
 
 # Allow direct import when running from the skill dir or the repo root.
@@ -518,6 +519,116 @@ class RecordContractTests(unittest.TestCase):
         result = verdict.validate_record_contract(
             self._attempt(trace=[{"seq": 1}, "oops"]), "attempt")
         self.assertIn("trace.item_not_an_object", result["problems"])
+
+
+class WriterContractGateTests(unittest.TestCase):
+    """PR #80 review P1 — the writers validate BEFORE persisting.
+
+    ``write_applied_record`` / ``write_attempt_log`` are the ONLY entry points
+    to the two record kinds; a record that violates its contract must REFUSE
+    (return the validation dict) and write NOTHING — never a malformed file
+    that would poison idempotency/review later.
+    """
+
+    def setUp(self):
+        self.mem = Path(tempfile.mkdtemp(prefix="verdict_writer_contract_"))
+
+    def tearDown(self):
+        shutil.rmtree(self.mem, ignore_errors=True)
+
+    def test_write_applied_record_with_invalid_portal_refuses(self):
+        result = verdict.write_applied_record(
+            self.mem, JOB_ID,
+            portal=None,  # contract violation: portal is required
+            contact_email=CONTACT_EMAIL,
+            applied_at=ENDED_AT,
+            screenshot_path=SCREENSHOT,
+            verdict=verdict.SUBMIT_OK,
+            evidence={"phrase": "candidatura enviada"},
+        )
+        self.assertEqual(result["ok"], False)
+        self.assertEqual(result["error"], "invalid_record_contract")
+        self.assertIn("portal.not_a_string", result["problems"])
+        self.assertEqual(list(self.mem.glob("applications/**/*")), [])
+
+    def test_write_applied_record_invalid_never_poisons_applications_dir(self):
+        # Even when the directory exists from a previous valid record, the
+        # refused write must not add a file for the invalid job id.
+        applications = self.mem / "applications"
+        applications.mkdir(parents=True)
+        (applications / "other-job.json").write_text("{}", encoding="utf-8")
+        result = verdict.write_applied_record(
+            self.mem, JOB_ID,
+            portal=None,
+            contact_email=CONTACT_EMAIL,
+            applied_at=ENDED_AT,
+            screenshot_path=SCREENSHOT,
+            verdict=verdict.SUBMIT_OK,
+            evidence={"phrase": "candidatura enviada"},
+        )
+        self.assertEqual(result["ok"], False)
+        self.assertEqual(
+            sorted(p.name for p in applications.iterdir()),
+            ["other-job.json"])
+
+    def test_write_attempt_log_with_invalid_outcome_refuses(self):
+        result = verdict.write_attempt_log(
+            self.mem,
+            attempt_id=ATTEMPT_ID,
+            job_id=JOB_ID,
+            job_url=JOB_URL,
+            portal=PORTAL,
+            started_at=STARTED_AT,
+            ended_at=ENDED_AT,
+            outcome="NOPE",  # contract violation: not a known outcome
+            reason="blocked",
+        )
+        self.assertEqual(result["ok"], False)
+        self.assertEqual(result["error"], "invalid_record_contract")
+        self.assertIn("outcome.unknown", result["problems"])
+        self.assertEqual(list(self.mem.glob("attempts/**/*")), [])
+
+    def test_decide_reports_written_flags_false_on_refused_attempt(self):
+        # PR #80 review P1 — decide() propagates the writer refusal: the
+        # routing summary must report what actually landed on disk.
+        with unittest.mock.patch(
+            "verdict.write_attempt_log", return_value={
+                "ok": False, "error": "invalid_record_contract",
+                "kind": "attempt", "problems": ["outcome.unknown"],
+                "detail": "outcome.unknown",
+            }), unittest.mock.patch(
+            "verdict.write_applied_record", return_value={
+                "ok": False, "error": "invalid_record_contract",
+                "kind": "applied", "problems": ["portal.not_a_string"],
+                "detail": "portal.not_a_string",
+            }):
+            result = verdict.decide(
+                self.mem,
+                outcome=verdict.INCOMPLETE,
+                reason="blocked",
+                job_id=JOB_ID,
+                attempt_id=ATTEMPT_ID,
+                job_url=JOB_URL,
+                portal=PORTAL,
+            )
+        self.assertFalse(result["written_applied"])
+        self.assertFalse(result["written_attempt"])
+
+    def test_decide_sets_written_flags_true_on_write(self):
+        # Sanity: the normal decided INCOMPLETE still writes the attempt log.
+        result = verdict.decide(
+            self.mem,
+            outcome=verdict.INCOMPLETE,
+            reason="blocked",
+            job_id=JOB_ID,
+            attempt_id=ATTEMPT_ID,
+            job_url=JOB_URL,
+            portal=PORTAL,
+        )
+        self.assertFalse(result["written_applied"])
+        self.assertTrue(result["written_attempt"])
+        attempts = list((self.mem / "attempts").rglob("*.json"))
+        self.assertEqual(len(attempts), 1)
 
 
 if __name__ == "__main__":
