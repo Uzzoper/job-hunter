@@ -55,7 +55,7 @@ import sys
 import urllib.parse
 import urllib.request
 from pathlib import Path
-from typing import Any, Dict, List, NotRequired, Optional, TypedDict
+from typing import Any, Dict, List, NotRequired, Optional, Tuple, TypedDict
 
 from navigation import is_auth_url
 
@@ -221,11 +221,14 @@ def check_browser_tool_attached(cdp_url: str,
     """Check 3 (§3.1): the configured browser tool is attached to the CDP
     endpoint of check 2.
 
-    The page-target ids exposed by GET ``<cdp_url>/json`` must match the tab
-    ids the configured browser tool currently reports. A LISTENING PORT ALONE
-    IS NOT PROOF: the tool may be attached to a different browser/instance.
-    Missing tool, no page targets, empty tabs or any mismatch all fail closed
-    (§3.4).
+    The page-target ids exposed by GET ``<cdp_url>/json`` must contain ALL of
+    the tab ids the configured browser tool currently reports (SUBSET rule,
+    PR #80 review P1): the browser may legitimately hold extra pages the tool
+    does not report, and that is still proof of attachment. A LISTENING PORT
+    ALONE IS NOT PROOF: the tool may be attached to a different browser/
+    instance. Missing tool, no page targets, empty tabs or a non-subset all
+    fail closed (§3.4). The /json probe happens ONCE (single-fetch, shared
+    with check 2 via ``evaluate``).
 
     ``fetch`` is injected as in :func:`check_cdp_endpoint`.
 
@@ -272,13 +275,18 @@ def check_browser_tool_attached(cdp_url: str,
         return {"ok": False, "error": ERROR_BROWSER_TOOL_DETACHED,
                 "detail": "CDP endpoint reports no page targets; tab "
                           "comparison impossible (fail-closed)"}
-    if cdp_page_ids != tool_tab_ids:
+    if not tool_tab_ids:
+        return {"ok": False, "error": ERROR_BROWSER_TOOL_DETACHED,
+                "detail": "browser tool reports no tabs — a listening port "
+                          "alone is not proof; nothing is attached to this "
+                          "CDP endpoint (fail-closed)"}
+    if not tool_tab_ids.issubset(cdp_page_ids):
         return {"ok": False, "error": ERROR_BROWSER_TOOL_DETACHED,
                 "detail": f"browser tool is NOT attached to this CDP endpoint: "
-                          f"a listening port alone is not proof "
-                          f"(cdp page targets={len(cdp_page_ids)}, "
-                          f"tool tabs={len(tool_tab_ids)})"}
-    return {"ok": True, "matched": len(cdp_page_ids),
+                          f"tool tabs {sorted(tool_tab_ids)} are not a subset "
+                          f"of the CDP page targets {sorted(cdp_page_ids)}; "
+                          f"a listening port alone is not proof"}
+    return {"ok": True, "matched": len(tool_tab_ids),
             "cdp_page_ids": cdp_page_ids, "tool_tab_ids": tool_tab_ids}
 
 
@@ -438,18 +446,103 @@ def _jsonable(value: Any) -> Any:
     return value
 
 
-def _print_failure(check_name: str, result: Dict[str, Any],
-                   checks: Dict[str, Any]) -> int:
-    """Print the machine-readable failure (check reported VERBATIM) and return 1."""
-    payload = {
+class _ReplayableResponse:
+    """Response stand-in replaying a captured (status, body) pair."""
+
+    def __init__(self, status: int, body: bytes):
+        self.status = status
+        self._body = body
+
+    def read(self) -> bytes:
+        return self._body
+
+
+class _SharedCdpFetch:
+    """Memoizing fetch shared by checks 2 and 3 (PR #80 review P1, single-fetch).
+
+    ``check_cdp_endpoint`` and ``check_browser_tool_attached`` probe the SAME
+    endpoint (``<cdp_url>/json``). This wrapper replays the captured
+    (status, body) of the FIRST network round-trip for every later request to
+    the same URL, so the whole gate fetches that endpoint exactly ONCE while
+    each check still receives a response object with a live ``status``.
+    """
+
+    def __init__(self, fetch):
+        self._fetch = fetch
+        self._cache: Dict[str, _ReplayableResponse] = {}
+        self.urls: List[str] = []
+
+    def __call__(self, url: str, timeout: int = CDP_TIMEOUT):
+        self.urls.append(url)
+        if url in self._cache:
+            return self._cache[url]
+        resp = self._fetch(url, timeout=timeout)
+        replay = _ReplayableResponse(resp.status, resp.read())
+        self._cache[url] = replay
+        return replay
+
+
+def _failure_payload(check_name: str, result: Dict[str, Any],
+                     checks: Dict[str, Any]) -> Dict[str, Any]:
+    """The machine-readable failure payload (check reported VERBATIM)."""
+    return {
         "ok": False,
         "check": check_name,
         "error": result.get("error"),
         "detail": result.get("detail"),
         "checks": _jsonable(checks),
     }
-    print(json.dumps(payload, ensure_ascii=False))
-    return 1
+
+
+def evaluate(config_path: str,
+             list_procs: Optional[Any] = None,
+             fetch: Optional[Any] = None) -> Tuple[int, Dict[str, Any]]:
+    """Run the full §3.1 check sequence in-process; return ``(exit_code, payload)``.
+
+    PR #80 review P1 — the DIRECT dict API consumed by ``apply.py``: never
+    writes to stdout and never parses argv (``run()`` is a thin wrapper that
+    prints this payload). ``list_procs`` / ``fetch`` are injected exactly as in
+    the check functions (defaults: pgrep / urllib). The ``<cdp_url>/json``
+    endpoint is fetched ONCE and the response is shared by ``cdp_endpoint``
+    and ``browser_tool_attached`` (single-fetch).
+
+    Exit codes: ``0`` full pass, ``1`` first failing check (verbatim), ``2``
+    usage/config errors. Failure payloads carry the failing check VERBATIM
+    (fail-closed §3.4 — no improvisation, no fallback checks).
+    """
+    config, config_err = _load_config(Path(config_path))
+    if config_err is not None:
+        return 2, config_err
+
+    shared_fetch = _SharedCdpFetch(fetch if fetch is not None else _default_fetch)
+    checks: Dict[str, Any] = {}
+
+    chromium_args: Dict[str, Any] = {"user_data_dir": config["user_data_dir"]}
+    if list_procs is not None:
+        chromium_args["list_procs"] = list_procs
+    chromium = check_chromium_running(**chromium_args)
+    checks["chromium_running"] = chromium
+    if not chromium.get("ok"):
+        return 1, _failure_payload("chromium_running", chromium, checks)
+
+    cdp = check_cdp_endpoint(cdp_url=config["cdp_url"], fetch=shared_fetch)
+    checks["cdp_endpoint"] = cdp
+    if not cdp.get("ok"):
+        return 1, _failure_payload("cdp_endpoint", cdp, checks)
+
+    tool = check_browser_tool_attached(cdp_url=config["cdp_url"],
+                                       tool_tabs=config["tabs"],
+                                       fetch=shared_fetch)
+    checks["browser_tool_attached"] = tool
+    if not tool.get("ok"):
+        return 1, _failure_payload("browser_tool_attached", tool, checks)
+
+    session = check_gupy_session(page_state=config["active_page"])
+    checks["gupy_session"] = session
+    if not session.get("ok"):
+        return 1, _failure_payload("gupy_session", session, checks)
+
+    return 0, {"ok": True, "checks": _jsonable(checks)}
 
 
 def parse_args(argv: Optional[List[str]] = None):
@@ -461,12 +554,17 @@ def parse_args(argv: Optional[List[str]] = None):
     return parser.parse_args(argv)
 
 
-def run(argv: Optional[List[str]] = None) -> int:
+def run(argv: Optional[List[str]] = None,
+        list_procs: Optional[Any] = None,
+        fetch: Optional[Any] = None) -> int:
     """CLI entry point; prints JSON to stdout and returns the exit code.
 
     * 0 — every check passed (full-pass gate).
     * 1 — the first failing check, reported VERBATIM (no improvisation).
     * 2 — usage/config errors (missing --config, unreadable/invalid config).
+
+    Delegates the check sequence to :func:`evaluate` (PR #80 review P1 — the
+    direct dict API); this wrapper only prints the returned payload.
     """
     try:
         args = parse_args(argv)
@@ -480,38 +578,9 @@ def run(argv: Optional[List[str]] = None) -> int:
                           "detail": "required argument: --config <json>"}))
         return 2
 
-    config, config_err = _load_config(Path(args.config))
-    if config_err is not None:
-        print(json.dumps(config_err, ensure_ascii=False))
-        return 2
-
-    # Checks run strictly in the §3.1 order; the first failure stops the run.
-    checks: Dict[str, Any] = {}
-
-    chromium = check_chromium_running(user_data_dir=config["user_data_dir"])
-    checks["chromium_running"] = chromium
-    if not chromium.get("ok"):
-        return _print_failure("chromium_running", chromium, checks)
-
-    cdp = check_cdp_endpoint(cdp_url=config["cdp_url"])
-    checks["cdp_endpoint"] = cdp
-    if not cdp.get("ok"):
-        return _print_failure("cdp_endpoint", cdp, checks)
-
-    tool = check_browser_tool_attached(cdp_url=config["cdp_url"],
-                                       tool_tabs=config["tabs"])
-    checks["browser_tool_attached"] = tool
-    if not tool.get("ok"):
-        return _print_failure("browser_tool_attached", tool, checks)
-
-    session = check_gupy_session(page_state=config["active_page"])
-    checks["gupy_session"] = session
-    if not session.get("ok"):
-        return _print_failure("gupy_session", session, checks)
-
-    print(json.dumps({"ok": True, "checks": _jsonable(checks)},
-                     ensure_ascii=False))
-    return 0
+    code, payload = evaluate(args.config, list_procs=list_procs, fetch=fetch)
+    print(json.dumps(payload, ensure_ascii=False))
+    return code
 
 
 if __name__ == "__main__":

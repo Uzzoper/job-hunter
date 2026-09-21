@@ -15,10 +15,12 @@ import java.util.regex.Pattern;
  * <p>Guarantees three things the AI alone cannot: (1) an explicit work-model
  * conflict <em>always</em> lowers the stored score by a fixed, documented
  * amount; (2) a seniority mismatch (role marked as pleno / "pl." / "PL" /
- * mid-level) <em>always</em> lowers it by a fixed amount, while never blocking;
- * (3) an excluded company <em>always</em> caps the score at 15, regardless of
- * the model's output. Absent or semantically blank preferences leave the raw
- * score untouched (byte-identical behavior).
+ * mid-level) <em>always</em> lowers it by a fixed amount when an explicit work
+ * model is set (a salary-only profile is never penalized — salaryFloor is a
+ * prompt-only signal), while never blocking; (3) an excluded company
+ * <em>always</em> caps the score at 15, regardless of the model's output.
+ * Absent or semantically blank preferences leave the raw score untouched
+ * (byte-identical behavior).
  *
  * <p>Pure logic, no framework dependencies. Nothing here reads or writes user
  * data outside the supplied arguments.
@@ -64,8 +66,14 @@ public final class JobPreferenceScorer {
         if (isExcludedCompany(job.company(), preferences.excludedCompanies())) {
             return Math.min(rawScore, EXCLUDED_COMPANY_SCORE_CAP);
         }
-        int modifier = workModelModifier(job.description(), preferences.workPreference())
-                + seniorityModifier(job.title());
+        int modifier = workModelModifier(job.description(), preferences.workPreference());
+        // PR #80 review P0-3: the seniority penalty only composes when an
+        // EXPLICIT work model is set. A salary-only profile must stay
+        // byte-identical (salaryFloor is a prompt-only signal), so a senior
+        // title must never silently penalize it.
+        if (preferences.workPreference() != null) {
+            modifier += seniorityModifier(job.title());
+        }
         return Math.max(0, Math.min(100, rawScore + modifier));
     }
 
@@ -75,6 +83,10 @@ public final class JobPreferenceScorer {
      * points. Junior and unmarked titles are neutral. Detection runs on the job
      * title only (word-level, case-insensitive) and never blocks the job — it
      * simply composes with the work-model modifier inside the 0–100 clamp.
+     *
+     * <p>Callers only invoke this when an explicit {@link WorkPreference} is
+     * set: the penalty belongs to the work-model dimension, and a salary-only
+     * profile must remain byte-identical (prompt-only guarantee).
      */
     private static int seniorityModifier(String title) {
         if (title == null) {

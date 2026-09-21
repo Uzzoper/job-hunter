@@ -371,6 +371,13 @@ def write_applied_record(memory_dir: Path, job_id: str, *,
     if backend_job_id is not None:
         record["backend_job_id"] = backend_job_id
 
+    # PR #80 review P1 — validate BEFORE persisting: a record that violates the
+    # contract returns the refusal dict and writes NOTHING (a malformed file
+    # would poison idempotency/review later). The caller must surface it.
+    contract = validate_record_contract(record, "applied")
+    if contract.get("ok") is not True:
+        return contract
+
     out_dir = _applications_dir(memory_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / f"{job_id}.json"
@@ -420,6 +427,11 @@ def write_attempt_log(memory_dir: Path, *,
     record["verdict"] = verdict_block or {
         "submitted": False, "evidence": None, "detail": reason or "not submitted",
     }
+
+    # PR #80 review P1 — validate BEFORE persisting (see write_applied_record).
+    contract = validate_record_contract(record, "attempt")
+    if contract.get("ok") is not True:
+        return contract
 
     out_dir = _attempts_dir(memory_dir, attempt_id)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -545,9 +557,17 @@ def decide(memory_dir: Path, *,
             backend_record=backend_record,
             backend_job_id=backend_job_id,
         )
-        results["written_applied"] = True
-        results["applied_record"] = applied_record
-        results["record_applied"] = True
+        if isinstance(applied_record, dict) \
+                and applied_record.get("ok") is False:
+            # PR #80 review P1 — the writer REFUSED (invalid contract): nothing
+            # landed on disk; surface the refusal and keep the flags truthful.
+            results["applied_record"] = applied_record
+            results["written_applied"] = False
+            results["record_applied"] = False
+        else:
+            results["written_applied"] = True
+            results["applied_record"] = applied_record
+            results["record_applied"] = True
 
     verdict_block = {
         "submitted": outcome == SUBMIT_OK,
@@ -572,6 +592,10 @@ def decide(memory_dir: Path, *,
         manual_url=manual_url,
         verdict_block=verdict_block,
     )
+    if isinstance(results["attempt_record"], dict) \
+            and results["attempt_record"].get("ok") is False:
+        # PR #80 review P1 — the writer REFUSED (invalid contract): report it.
+        results["written_attempt"] = False
     return results
 
 

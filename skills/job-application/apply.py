@@ -32,13 +32,15 @@ Pre-flight gates, enforced before any intent is emitted:
   * session expiry check (#41) — an expired session stops with the
     session_expired error (exit 0) so the human can authenticate first;
   * idempotency (#27) — already-applied jobs are never re-planned;
-  * preflight (#72) — when --preflight-config is given, the deterministic
+  * preflight (#72, PR #80 P0-1) — DEFAULT-ON on real runs: the deterministic
     runbook gate (preflight.py: chromium_running, cdp_endpoint,
-    browser_tool_attached, gupy_session) runs BEFORE the intent emission.
-    A failing check is reported VERBATIM (fail-closed §3.4) and no intent
-    is emitted; preflight.run is invoked in-process with captured stdout
-    (parsed back as JSON) — apply.py never improvises a substitute check.
-    Runs even on --dry-run (read-only: a process listing + GET /json).
+    browser_tool_attached, gupy_session) runs BEFORE the intent emission, on
+    <memory-dir>/preflight-config.json unless --preflight-config overrides it.
+    A failing check (or a missing default config) is reported VERBATIM
+    (fail-closed §3.4) and no intent is emitted; apply.py consumes the direct
+    preflight.evaluate dict API — it never improvises a substitute check.
+    --dry-run without an explicit --preflight-config keeps the default gate
+    dormant; --skip-preflight-check is the documented opt-out for real runs.
 
 # Issue #46 — API-first: the Job Hunter REST API is the PRIMARY job source.
 # The bot plans from top-scored DB jobs (--from-api) or a specific job detail
@@ -48,14 +50,14 @@ Pre-flight gates, enforced before any intent is emitted:
 # ONCE by the human (never stored in this repo). The classic --job-url flow is
 # unchanged otherwise.
 
-Stdlib only: argparse, contextlib, io, json, os, re, subprocess, time, uuid,
-urllib, pathlib. No pip dependencies.
+Stdlib only: argparse, json, os, re, subprocess, time, uuid, urllib,
+pathlib. No pip dependencies.
 
 Usage:
     python3 apply.py --job-url <url> --profile <profile.json> [--portal gupy|infojobs] \\
         [--memory-dir <dir>] [--dry-run] [--confirmed]
         [--skip-session-check] [--auto-apply] [--emit-intent] [--max-steps N]
-        [--preflight-config <config.json>]
+        [--preflight-config <config.json>] [--skip-preflight-check]
     python3 apply.py --job-id <id> --profile <profile.json> [--api-token <token>]
     python3 apply.py --check-browser [--cdp-url <url>] [--user-data-dir <dir>]
 
@@ -63,7 +65,6 @@ Output: JSON to stdout (executor intent, browser status, or {"error": <code>, "d
 """
 
 import argparse
-import io
 import json
 import os
 import re
@@ -73,7 +74,6 @@ import time
 import uuid
 import urllib.parse
 import urllib.request
-from contextlib import redirect_stdout
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -401,39 +401,36 @@ def build_error(code: str, detail: str, memory_dir: Optional[Path] = None,
 
 # ---------------------------------------------------------------------------
 # Issue #72 — deterministic preflight gate (docs/specs/deterministic-apply-runbook.md
-# §3.1/§3.4): read-only checks run before intent emission. Runs even on
-# --dry-run — it never launches a browser (pgrep + GET /json only).
+# §3.1/§3.4): read-only checks run before intent emission. PR #80 review P0-1:
+# the gate is DEFAULT-ON for real runs (no browser is launched — only pgrep +
+# GET /json), on <memory-dir>/preflight-config.json unless --preflight-config
+# overrides the path. --dry-run without an explicit config keeps the default
+# gate dormant; --skip-preflight-check is the documented real-run opt-out.
 # ---------------------------------------------------------------------------
+
+DEFAULT_PREFLIGHT_CONFIG = "preflight-config.json"
 
 def _run_preflight_gate(config_path: str,
                         memory_dir: Path) -> Optional[int]:
-    """Run preflight.run(["--config", config_path]) and enforce fail-closed.
+    """Run preflight.evaluate(config_path) in-process and enforce fail-closed.
 
+    PR #80 review P1 — the DIRECT dict API: no subprocess, no stdout sniffing.
     Returns ``None`` when the gate PASSES (intent emission may continue), or
-    the process exit code to propagate when it does not. On any non-pass the
-    preflight payload is printed VERBATIM — the machine-readable failure is
-    the output contract, no improvisation and no fallback checks (§3.4).
+    the process exit code to propagate. On any non-pass the preflight payload
+    is printed VERBATIM — the machine-readable failure is the output contract,
+    no improvisation and no fallback checks (§3.4).
 
-    Exit-code mapping (preflight.run's own contract):
-      * 0 + ``{"ok": true}``        → pass → None;
-      * 1                          → first failing check, reported verbatim;
-      * 2                          → usage/config errors;
-      * 0 + anything else          → fail-closed by payload (treated as a
-                                     check failure, exit 1).
+    Exit-code mapping (preflight.evaluate's contract):
+      * ``(0, {"ok": true})`` → pass → None;
+      * 1                     → first failing check, reported verbatim;
+      * 2                     → usage/config errors (missing default config on
+                                 a real run FAILS CLOSED with invalid_config);
+      * ``(0, anything else)`` → fail-closed by payload (treated as a check
+                                 failure, exit 1 — preflight never returns 0
+                                 on a non-pass, but the guard stays).
     """
-    buf = io.StringIO()
-    with redirect_stdout(buf):
-        code = preflight.run(["--config", config_path])
-    try:
-        payload = json.loads(buf.getvalue())
-    except Exception as exc:
-        print(json.dumps(build_error(
-            "invalid_config",
-            f"preflight output is not valid JSON: {exc}",
-            memory_dir=memory_dir,
-        )))
-        return 2
-    if not isinstance(payload, dict) or payload.get("ok") is not True:
+    code, payload = preflight.evaluate(config_path)
+    if payload.get("ok") is not True:
         # Verbatim propagation (fail-closed): whatever preflight decided, the
         # planner just relays it — never re-decides, never invents details.
         print(json.dumps(payload, ensure_ascii=False))
@@ -513,11 +510,14 @@ def parse_args(argv: Optional[List[str]]):
                         help="emit the selector-free executor INTENT JSON (id/url/portal/profile/policy/metadata) — accepted for backward compat; intent emission is now the default output")
     parser.add_argument("--max-steps", type=int, default=None,
                         help=f"executor loop step budget for the intent (default: {intent.DEFAULT_MAX_STEPS}; must be >= 1)")
-    # Issue #72 — deterministic preflight gate (runbook §3.1): when a config
-    # path is given, the gate runs before intent emission; a failing check is
-    # reported verbatim and no intent is emitted (fail-closed).
+    # Issue #72 — deterministic preflight gate (runbook §3.1): DEFAULT-ON for
+    # real runs (PR #80 review P0-1) on <memory-dir>/preflight-config.json,
+    # unless --preflight-config pins a path (which also forces the gate to run
+    # even on --dry-run). --skip-preflight-check is the explicit opt-out.
     parser.add_argument("--preflight-config", default=None,
-                        help="issue #72: path to the preflight config JSON (cdp_url, user_data_dir, browser_tool); runs the deterministic gate before intent emission")
+                        help="issue #72: path to the preflight config JSON (cdp_url, user_data_dir, browser_tool); overrides <memory-dir>/preflight-config.json and forces the gate on --dry-run too")
+    parser.add_argument("--skip-preflight-check", action="store_true",
+                        help="PR #80 review P0-1: opt out of the default-on preflight gate (preflight files stay untouched; the intent is emitted without the gate)")
     return parser.parse_args(argv)
 
 
@@ -729,12 +729,22 @@ def run(argv: Optional[List[str]] = None) -> int:
         )))
         return 1
 
-    # Issue #72 — deterministic preflight gate: runs AFTER idempotency and
-    # BEFORE intent emission. A failing check (or invalid config) short-circuits
-    # with the verbatim preflight payload; no intent is ever emitted. Runs even
-    # on --dry-run — the checks are read-only (process listing + GET /json).
-    if args.preflight_config:
-        gate_result = _run_preflight_gate(args.preflight_config, memory_dir)
+    # Issue #72 — deterministic preflight gate (PR #80 review P0-1: DEFAULT-ON
+    # for real runs). Gate runs AFTER idempotency and BEFORE intent emission.
+    # A failing check (or a missing default config on a real run) short-circuits
+    # with the verbatim preflight payload; no intent is ever emitted. The
+    # activation rule:
+    #   * an explicit --preflight-config ALWAYS starts the gate (even on
+    #     --dry-run — the checks are read-only: pgrep + GET /json);
+    #   * otherwise a REAL run starts it on <memory-dir>/preflight-config.json
+    #     (missing file → fail-closed with invalid_config, exit 2);
+    #   * a --dry-run without --preflight-config keeps the default gate dormant;
+    #   * --skip-preflight-check opts out of the whole gate.
+    gate_wanted = bool(args.preflight_config) or not args.dry_run
+    if gate_wanted and not args.skip_preflight_check:
+        config_path = args.preflight_config or str(
+            memory_dir / DEFAULT_PREFLIGHT_CONFIG)
+        gate_result = _run_preflight_gate(config_path, memory_dir)
         if gate_result is not None:
             return gate_result
 
@@ -760,6 +770,21 @@ def run(argv: Optional[List[str]] = None) -> int:
         backend_job_id=backend_job_id,
         api_base_url=args.api_base_url if api_mode else None,
     )
+    # PR #80 review P1 — the deterministic selector-free contract: the intent
+    # is the executor's ONLY input, so it must satisfy the machine-readable
+    # contract before anything is printed (no selector/xpath/locator/steps
+    # keys, required identity + policy fields, valid knobs). A violation
+    # refuses emission — the executor never receives an incoherent intent.
+    contract_result = intent.validate_intent_contract(intent_obj)
+    if contract_result.get("ok") is not True:
+        print(json.dumps(build_error(
+            "invalid_intent_contract",
+            f"refusing to emit: the intent violates the selector-free contract "
+            f"({contract_result.get('error')})",
+            memory_dir=memory_dir,
+            job_id=job_id,
+        )))
+        return 2
     payload: Dict[str, Any] = {"intent": intent_obj}
     if args.dry_run:
         payload["dry_run"] = True

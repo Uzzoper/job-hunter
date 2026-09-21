@@ -40,6 +40,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+import verdict  # P0-2 (PR #80): record_blocked_submit routes through verdict.decide
+
 # ---------------------------------------------------------------------------
 # Constants — the verdicts, the kinds and the CANONICAL attempt codes
 # ---------------------------------------------------------------------------
@@ -162,6 +164,20 @@ def _normalize(text: Any) -> str:
     return " ".join(text.lower().split())
 
 
+def _strip_text(value: Any) -> Any:
+    """Strip string values; a value that collapses to blank is treated as absent.
+
+    PR #80 review P1 — memory-reuse and human dictation normalize their values
+    this way: whitespace padding is never persisted as-is, and a blank-after-
+    strip value is semantically empty (never reused, never stored).
+    """
+    if isinstance(value, str):
+        value = value.strip()
+        if not value:
+            return None
+    return value
+
+
 def _has_word(label: str, word: str) -> bool:
     """True when ``word`` is a whole space token (never a substring)."""
     for token in label.split():
@@ -279,15 +295,15 @@ def resolve_question(
 
     if isinstance(memory_entries, dict) and key in memory_entries:
         entry = memory_entries[key]
-        if isinstance(entry, dict) and entry.get("verdict") == ANSWER \
-                and entry.get("value") is not None:
-            result.update(verdict=ANSWER, source="memory", value=entry["value"])
-            return result
+        if isinstance(entry, dict) and entry.get("verdict") == ANSWER:
+            value = _strip_text(entry.get("value"))
+            if value is not None:
+                result.update(verdict=ANSWER, source="memory", value=value)
+                return result
 
     if isinstance(human_answers, dict) and key in human_answers:
-        value = human_answers[key]
-        if value is not None and not (isinstance(value, str)
-                                      and not value.strip()):
+        value = _strip_text(human_answers[key])
+        if value is not None:
             result.update(verdict=ANSWER, source="human", value=value)
             return result
 
@@ -348,6 +364,48 @@ def blocker_codes(blockers: List[Dict[str, Any]]) -> List[str]:
 def canonical_block_reason(blockers: List[Dict[str, Any]]) -> str:
     """Single attempt-reason string for a blocked submit ("+"-joined)."""
     return "+".join(blocker_codes(blockers))
+
+
+def record_blocked_submit(
+    memory_dir, *,
+    job_id: str,
+    attempt_id: str,
+    job_url: str,
+    portal: str,
+    blockers: List[Dict[str, Any]],
+    trace: Optional[List[Dict[str, Any]]] = None,
+    final_page: Optional[Dict[str, Any]] = None,
+    screenshot_path: Optional[str] = None,
+    manual_url: Optional[str] = None,
+    started_at: Optional[str] = None,
+    ended_at: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Persist a blocked submit as an INCOMPLETE attempt (PR #80 review P0-2).
+
+    The review gate found ASK blockers, so the submit is refused; this writes
+    the refusal through the SINGLE record path — ``verdict.decide`` with
+    ``outcome=INCOMPLETE`` and the canonical block reason (the "+"-joined
+    ``reason_code``s of the blockers). It never writes an applied record: a
+    blocked submit must never look applied to idempotency (#27).
+
+    Returns the ``verdict.decide`` routing summary (``outcome``, ``reason``,
+    ``written_applied``, ``written_attempt``, ...).
+    """
+    return verdict.decide(
+        memory_dir,
+        outcome=verdict.INCOMPLETE,
+        reason=canonical_block_reason(blockers),
+        job_id=job_id,
+        attempt_id=attempt_id,
+        job_url=job_url,
+        portal=portal,
+        started_at=started_at,
+        ended_at=ended_at,
+        trace=trace,
+        final_page=final_page,
+        screenshot_path=screenshot_path,
+        manual_url=manual_url,
+    )
 
 
 # ---------------------------------------------------------------------------
