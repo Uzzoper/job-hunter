@@ -40,8 +40,12 @@ produces loops instead of one-shot execution.
 
 ### 3.1 `preflight.py` (new, stdlib-only, same style as `apply.py`)
 
-Runs before any intent. Checks, in order, each returning facts plus an exit
-code (`0` pass, `1` fail with a machine-readable error):
+Runs before any intent, **by default** (default-on): the planner runs the
+gate on `<memory-dir>/preflight-config.json` on every real run, dormant only
+on `--dry-run` without an explicit `--preflight-config`. The documented
+opt-out is `--skip-preflight-check` (diagnosed cases only). Checks, in order,
+each returning facts plus an exit code (`0` pass, `1` fail with a
+machine-readable error):
 
 1. Chromium process for the dedicated profile is running.
 2. CDP endpoint from the profile config answers `/json`.

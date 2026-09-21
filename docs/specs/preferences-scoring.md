@@ -69,7 +69,9 @@ is preserved: this feature only affects ranking/filtering/draft generation).
 
 Applied in `AiAnalysisService.analyze` AFTER JSON parsing (raw AI score),
 BEFORE persistence. The final stored score is
-`clamp(0, 100, rawScore + workModelModifier)` unless the company is excluded.
+`clamp(0, 100, rawScore + workModelModifier + seniorityModifier)` unless the
+company is excluded (`seniorityModifier` fires only when an explicit work
+preference is set — see below).
 
 ### Terms detection (description text, lowercased)
 
@@ -105,6 +107,20 @@ silent/unknown descriptions never get penalized (no invented negativity). The
 ≈ 40–59): a full contradiction (−15) pulls a high raw score below the template
 threshold in most cases, and the AI's own preference-aware raw score does the
 heavy lifting. The deterministic modifier is the guaranteed floor.
+
+### Seniority mismatch (soft −10)
+
+| Condition | Modifier |
+|---|---|
+| Explicit work preference set (`Remote` / `Hybrid` / `Onsite`) AND the job title is marked pleno / "pl." / "PL" / mid-level (whole-word, case-insensitive) | **−10** |
+| No explicit work preference (blank, or only `salaryFloor` / `excludedCompanies` set) | 0 — never applied |
+
+The penalty composes with the work-model modifier inside the 0–100 clamp and is
+**soft by design**: it lowers the stored `matchScore` but never blocks ranking
+or applying (unlike the excluded-company cap). It fires ONLY when the user
+declared an explicit work model — a salary-only profile keeps the identity
+guarantee, because `salaryFloor` is a prompt-only signal and a "Desenvolvedor
+Pleno" title must never silently penalize it (PR #80 review P0-3).
 
 ### Excluded-company cap
 
@@ -215,6 +231,7 @@ public final class PreferencesPromptFormatter {
 | 16 | Generation prompt includes preference block + rule 12 when set | `generate_whenPreferencesSet_shouldIncludePreferencesInPrompt` |
 | 17 | Generation prompt unchanged when preferences absent | `generate_whenNoPreferences_shouldNotIncludePreferencesBlock` |
 | 18 | Full suite GREEN (no regressions) | `./mvnw test` |
+| 19 | Seniority −10 fires only with an explicit work preference; salary-only profiles stay byte-identical | `seniority_whenOnlySalaryFloorAndPlenoTitle_shouldKeepScore` (plus the existing `seniority_whenTitlePleno_shouldSubtractSeniorityPenalty` family) |
 
 ---
 
