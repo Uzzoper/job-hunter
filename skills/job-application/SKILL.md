@@ -9,7 +9,7 @@
 
 Plan a job application as a **selector-free executor INTENT** that the bot executes
 through its browser tool against live page snapshots. The intent is produced by
-`apply.py` (stdlib-only Python), which validates inputs, enforces apply
+`apply.py` (stdlib-only Python ≥ 3.11), which validates inputs, enforces apply
 guardrails, and emits `{intent_id, job_id, job_url, portal, profile, policy,
 metadata}` — no steps, no CSS selectors, no `fill_form`. The MCP executor derives
 every action from live AX snapshots via `classify.py` and records the outcome
@@ -176,6 +176,7 @@ New flags (all optional): `--job-id`, `--from-api`, `--api-base-url` (default
 | status check | `--check-browser` | flag | no | Issue #39: print browser status as JSON and exit — no intent emitted |
 | verification | `--verify-with` | string | no (default `screenshot`) | Issue #43: kept as an accepted executor hint (`screenshot` or `ax`); invalid modes error cleanly |
 | intent mode | `--emit-intent`, `--max-steps` | flag / int | no | mcp-apply-loop: explicit intent-emission switch (already the **default** output); `--max-steps` caps the executor loop budget (default `25`) |
+| preflight #72 | `--preflight-config <json>` / `--skip-preflight-check` | path / flag | no | Deterministic runbook gate: **default-on** on real runs via `<memory-dir>/preflight-config.json` (use `--preflight-config` to override the path — it also forces the gate on `--dry-run`); `preflight.py` checks chromium_running → cdp_endpoint → browser_tool_attached → gupy_session; a failing check (or a missing default config) stops the run **verbatim** — no intent emitted. `--skip-preflight-check` is the documented opt-out |
 
 Profile JSON:
 
@@ -199,7 +200,7 @@ Profile JSON:
      --job-url "https://jobs.gupy.io/jobs/<id-slug>" \
      --profile profile.json --portal gupy --memory-dir <memails-dir>
    ```
-2. **Validate** — apply.py runs the pre-flight gates (order below): portal allow-list → profile validation (`name`, `email`, `phone`, `cv_path`, `cover_text`) → refusal #28 → API resolution → browser recovery #39 (skipped on `--dry-run`) → session expiry #41 → idempotency #27. Any failure returns a JSON error.
+2. **Validate** — apply.py runs the pre-flight gates (order below): portal allow-list → profile validation (`name`, `email`, `phone`, `cv_path`, `cover_text`) → refusal #28 → API resolution → browser recovery #39 (skipped on `--dry-run`) → session expiry #41 → idempotency #27 → preflight #72 (default-on: real runs use `<memory-dir>/preflight-config.json`). Any failure returns a JSON error.
 3. **Receive the intent envelope** — `{"intent": {...}, "dry_run": true}` (the `--dry-run` hint lives OUTSIDE the intent object, spec l.111). The intent carries `{intent_id, job_id, job_url, portal, profile, policy, metadata?}` — no steps, no selectors.
 4. **Execute the MCP loop** — snapshot-driven against live AX trees (see "MCP executor apply loop" below).
 
@@ -214,8 +215,78 @@ portal allow-list (intent.is_supported_portal)
   → browser recovery (#39, non --dry-run)
   → session expiry (#41)     ← expired → session_expired error (exit 0)
   → idempotency (#27)
+  → preflight (#72, default-on for real runs — see below)
+                          ← fail → check reported VERBATIM, no intent
   → intent emission
 ```
+
+### Preflight gate (issue #72, runbook §3.1)
+
+`preflight.py` is a deterministic, stdlib-only gate. **It is DEFAULT-ON for real
+runs** (PR #80 review P0-1): apply.py consumes the direct
+`preflight.evaluate(config_path)` dict API before intent emission, on
+`<memory-dir>/preflight-config.json` unless `--preflight-config <config.json>`
+pins the path (which also forces the gate to run on `--dry-run`). A real run
+with a missing default config fails CLOSED with `invalid_config` (exit 2) —
+never a silent skip. `--skip-preflight-check` is the documented opt-out.
+Checks, IN ORDER, short-circuiting at the first failure:
+
+```
+1. chromium_running      — Chromium for the DEDICATED user-data-dir is running
+2. cdp_endpoint          — the profile-config CDP endpoint answers GET /json
+3. browser_tool_attached — the browser tool is attached to THAT SAME CDP
+                           endpoint (tool tabs are a SUBSET of the CDP page
+                           targets; a listening port alone is NOT proof)
+4. gupy_session          — authenticated marker present, no /candidates/auth
+```
+
+Checks 2 and 3 share ONE `GET <cdp_url>/json` round-trip (single-fetch,
+PR #80 review P1).
+
+Config schema (`cdp_url` / `user_data_dir` optional — defaults apply;
+`browser_tool` required):
+
+```json
+{
+  "cdp_url": "http://localhost:9222",
+  "user_data_dir": "~/.chromium-profile-cdp",
+  "browser_tool": {
+    "tabs": [{"id": "target-1", "url": "https://jobs.gupy.io/jobs/<slug>"}],
+    "active_page": {"url": "https://jobs.gupy.io/jobs/<slug>", "authenticated": true}
+  }
+}
+```
+
+- The bot proceeds **only on a full pass**. A failing check stops the run and
+  reports the check **verbatim** (fail-closed §3.4): no improvisation, no
+  fallback browsers, no ad-hoc scripts, no config edits during the run.
+- The gate runs even on `--dry-run` when an explicit `--preflight-config` is
+  given — the checks are read-only (`pgrep` + a GET `/json`), they never launch
+  or touch the browser. Without it, `--dry-run` keeps the default gate dormant.
+- Malformed configs refuse with `{"error": "invalid_config", ...}` (exit 2)
+  with stable machine-readable contract codes (see `preflight.validate_config_contract`).
+- Exit codes propagate from `preflight.evaluate`: `1` = first failing check
+  (verbatim payload), `2` = usage/config error. The standard `{error, detail,
+  screenshot_path}` envelope is used only for apply.py's own gate failures.
+
+### Tool allow-list per phase (runbook §3.3)
+
+During an apply run the bot may use, per phase, exactly:
+
+| Phase | Allowed tools |
+|---|---|
+| `preflight` | `apply.py` — default-on gate (invokes `preflight.evaluate` in-process); opt-out via `--skip-preflight-check` |
+| `intent` | `apply.py` — plan only, emits the intent envelope |
+| `navigate` / `fill` / `review` / `submit` | browser tool + `classify.py` (pure) against live AX snapshots |
+| `record` | `verdict.py` — the SOLE writer of applied/attempt records; best-effort backend via `job_api.api_record_applied` |
+
+Always allowed across the run: **API reads** (`job_api.py` — `GET /api/jobs`,
+`GET /api/jobs/{id}`) and **URL/session guards** (`navigation.py`, `ax_tree.py`).
+
+Out of scope for the run — the wrong path must be **impossible**, not merely
+discouraged: generic shell, script creation, and config edits (no ad-hoc CDP
+scripts, no `preflight-config` edits, no new `.py`/`.sh` files mid-run). Any
+ambiguity stops the run and asks the human.
 
 ---
 
@@ -273,6 +344,53 @@ The executor runs **observe → classify → act → verify** against each **liv
   Reporting a fill without re-snapshot evidence is a defect, not progress.
 - React-controlled inputs ignore direct `.value` assignment: dispatch native
   `input`/`change` events (bubbles) and always re-read field values afterwards.
+
+### Answer policy (issue #73 — the per-question gate, spec `answer-policy.md`)
+
+`classify.py` classifies **pages**; `answer.py` owns the **question** verdict.
+During fill/triagem the executor accumulates questions via
+`answer.extract_questions(ax_nodes)` (stable keys from the label, deduplicated;
+text inputs default to required, choice controls rely on `*`/`obrigatório`)
+and, on the review page BEFORE any submit action, runs the gate:
+
+```python
+gate = answer.review_gate(
+    questions,
+    profile,
+    memory_entries=answer.load_answers(memory_dir, job_id),
+)
+# {"submittable": bool, "questions": [...], "blockers": [...], "detail": "..."}
+```
+
+Verdict per question (exactly one, deterministic — no LLM):
+
+| Verdict | When | Submit |
+|---|---|---|
+| `ANSWER` | sourced: profile field (`profile.<field>`) or a stored memory answer (`memory`, incl. previously dictated) | allowed |
+| `ASK` | no source — required consent, open text, personal data, eligibility, unrecognized | **blocked** |
+| `SKIP` | optional consent (`optional`) or not applicable / ineligible (`not_applicable`) | allowed |
+
+Resolve order is strict: profile → memory → human dictation → not applicable →
+optional → ASK. **Never invent an answer.** An `ASK` blocker is surfaced to the
+human; dictated answers go through `resolve_question(..., human_answers=...)`
+and are persisted with `answer.save_answers(memory_dir, job_id, resolved,
+attempt_id=...)` before re-running the gate.
+
+Persisted at `<memory-dir>/answers/<job_id>.json` (per-entry dict; reuse = the
+same question key on the next run resolves `source="memory"`; the profile
+always wins over stored memory). This is the ONLY extra record tree besides
+`applications/`, `attempts/` and `screenshots/` — answers are stored per JOB,
+never at the profile root.
+
+A blocked submit ends as an attempt record. The executor writes it through
+`answer.record_blocked_submit(memory_dir, job_id=..., attempt_id=...,
+job_url=..., portal=..., blockers=...)` — a thin wrapper over
+`verdict.decide(outcome=INCOMPLETE, reason=answer.canonical_block_reason(blockers))`
+with the canonical codes EXACTLY `MANUAL | DADOS_PESSOAIS | ELIGIBILITY_BLOCK |
+DOUBT` (`answer.BLOCK_REASONS`). It never writes an applied record: a blocked
+submit must never look applied to idempotency (#27) (PR #80 review P0-2). The
+human dictates the missing answers, they are persisted, and the next run reuses
+them — the gate passes with `source="memory"`.
 
 ### Post-final-action evidence (learned in production)
 
@@ -430,22 +548,25 @@ Records live at:
   conveying that the run is authorized/committed).
 - `--dry-run` never writes records.
 
-### Quarantine (pinned path)
+### Quarantine (canonical format — §5)
 
 Non-verified attempts that need human review — `SUBMIT_DONE_NO_EVIDENCE`,
-`INCOMPLETE` stalls, auth stops, errors — are quarantined at the **exact**
-location (after enrichment/`classify.py` triage):
+`INCOMPLETE` stalls, auth stops, errors — are quarantined as the exact
+per-attempt log the verdict stage already writes for **every** run:
 
-    <memory-dir>/attempts/quarantine/            # per-attempt JSONs
-    <memory-dir>/attempts/quarantine/MANIFEST.md # human-readable index
+    <memory-dir>/attempts/<attempt_id>/<ts>.json
 
-With the default `<memory-dir>`, that is
-`~/.hermes/profiles/jobhunter-bot/memails/attempts/quarantine/` +
-`MANIFEST.md`. Attempt/applied records **never** live anywhere else — in
-particular **never** at the profile root
-(`~/.hermes/profiles/jobhunter-bot/`): the only record trees under `memails`
-are `applications/`, `attempts/` and `screenshots/`. Violating this path
-breaks the idempotency gate (#27) and the human-review flow.
+That **is** the quarantine record: one canonical filename per attempt
+(`attempt_id` = the run uuid, `ts` = the file-safe `ended_at` timestamp),
+written by `verdict.write_attempt_log`. Quarantine is a *status inside the
+attempt record*, never a separate directory tree — there is no
+`attempts/quarantine/` dir and no `MANIFEST.md` index, because duplicating
+the record would split the idempotency key chain (#27) and the human-review
+flow. Attempt/applied records **never** live anywhere else — in particular
+**never** at the profile root (`~/.hermes/profiles/jobhunter-bot/`): the only
+record trees under `memails` are `applications/`, `attempts/`, `screenshots/`
+and `answers/`. Violating this path breaks the idempotency gate (#27) and the
+human-review flow.
 
 ---
 
@@ -465,6 +586,8 @@ breaks the idempotency gate (#27) and the human-review flow.
 | `already_applied` | Record exists with `status: applied` (guardrail #27) | Stop — duplicate apply refused |
 | `session_expired` | Browser is on a login/auth page (guardrail #41, pre-flight) | Stop (exit 0) — ask the human to log in; `login_url` is the job link to return to |
 | `browser_unavailable` | Chromium failed to start, or CDP still unreachable after recovery (issue #39) | Stop — real error; user cannot complete the application without a browser session. The *recovery* status `needs_login` is **not** an error (exit 0) |
+| preflight check block (issue #72) | `--preflight-config` given and `preflight.py` reported `{"ok": false, "check": <name>, "error": <code>, ...}` | Stop and relay the block **verbatim** (no improvisation, no fallback). Exit 1. Common codes: `chromium_not_running`, `cdp_unreachable`, `browser_tool_detached`, `gupy_session_invalid` |
+| `invalid_config` | Preflight config is malformed (issue #72 — stable contract codes behind `detail`: `browser_tool.missing`, `browser_tool.tabs.not_a_list`, …) | Fix the config file; no intent is emitted (exit 2) |
 
 Errors are always JSON: `{"error": <code>, "detail": <message>, "screenshot_path": <hint>}`. The `screenshot_path` hint tells the bot where to capture the current browser state on failure.
 
@@ -478,6 +601,8 @@ Errors are always JSON: `{"error": <code>, "detail": <message>, "screenshot_path
 - **#38 auth/loop guard (retired for the apply loop)** — the deterministic planner guard was removed in cutover pkg 3; the executor loop re-checks the live page every step (`classify.py`): an auth page is a hard policy stop (`stop_on_auth_url`) and stalls burn the `max_steps` budget. `--visited-urls` / `--current-url` remain accepted flags.
 - **#41 session expiry gate** — never fill a form on an expired session: the pre-flight gate stops with the `session_expired` error before any intent is emitted, and `stop_on_auth_url` covers mid-loop redirects.
 - **#42 auto-apply / batch fill** — `--auto-apply` implies confirmation (policy flipped) and skips only the user confirmation of a healthy flow; it NEVER bypasses idempotency (#27), refusal (#28), or the session gate (#41). (The legacy `fill_form` batch step retired with the selector plan.)
+- **#72 deterministic preflight** — never proceed in the wrong browser/session: when `--preflight-config` is set, the gate must fully pass (`preflight.py`); a failing check stops the run with the verbatim payload, and malformed configs refuse (`invalid_config`). No ad-hoc scripts/config edits during the run (runbook §3.3).
+- **#73 answer policy** — submit requires every required answer GROUNDED: the review gate refuses on any `ASK` without a source (never invented); optional consents and not-applicable questions `SKIP`; dictated answers persist for reuse (`answers/<job_id>.json`); a blocked submit ends `INCOMPLETE` with a canonical reason (`MANUAL | DADOS_PESSOAIS | ELIGIBILITY_BLOCK | DOUBT`).
 - **Explicit confirmation** — no apply-final action without user confirmation (`require_confirmation_before_final_submit` is `true` unless `--confirmed` / `--auto-apply` flipped it); the bot never submits without that authorization.
 
 ---

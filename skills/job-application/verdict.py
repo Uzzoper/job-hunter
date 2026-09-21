@@ -38,7 +38,7 @@ import json
 import urllib.parse
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, NotRequired, Optional, TypedDict
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -82,6 +82,157 @@ _DEFAULT_REASONS = {
     INCOMPLETE: "unresolved",
     ERROR_OUTCOME: "executor_error",
 }
+
+# The complete set of outcomes the verdict stage may persist in an attempt
+# record. Anything else read back from disk is refused as malformed.
+KNOWN_OUTCOMES = frozenset({
+    SUBMIT_OK, SUBMIT_DONE_NO_EVIDENCE, INCOMPLETE,
+    AUTH_REQUIRED, CONFIRM_DECLINED, ERROR_OUTCOME,
+})
+
+
+# ---------------------------------------------------------------------------
+# Machine-readable record CONTRACT validation (issue #72 — stdlib TypedDicts)
+# ---------------------------------------------------------------------------
+#
+# verdict.py is the SINGLE writer of the two persisted record kinds; this pure
+# validator lets the bot REFUSE a malformed record with stable, machine-readable
+# codes instead of reading back garbage for idempotency (#27) or review. The
+# TypedDicts document the canonical shapes the writers produce. They are NOT
+# runtime classes — every check is an explicit isinstance/type test so JSON
+# round-trip corruption (str-backend_id, missing evidence, made-up outcome) is
+# caught deterministically.
+
+class AppliedRecordContract(TypedDict):
+    job_id: str
+    contact_email: NotRequired[Optional[str]]
+    portal: str
+    applied_at: str
+    screenshot_path: NotRequired[Optional[str]]
+    status: str
+    verdict: str
+    evidence: NotRequired[Dict[str, Any]]
+    backend_record: NotRequired[Dict[str, Any]]
+    backend_job_id: NotRequired[Optional[int]]
+
+
+class AttemptRecordContract(TypedDict):
+    attempt_id: str
+    job_id: str
+    job_url: str
+    portal: str
+    started_at: str
+    ended_at: str
+    outcome: str
+    reason: NotRequired[Optional[str]]
+    final_page: NotRequired[Dict[str, Any]]
+    trace: NotRequired[List[Dict[str, Any]]]
+    screenshot_path: NotRequired[Optional[str]]
+    manual_url: NotRequired[Optional[str]]
+    verdict: NotRequired[Dict[str, Any]]
+
+
+def _record_str(record: Dict[str, Any], namespace: str, field: str,
+                problems: List[str], allow_none: bool = False) -> None:
+    """Append ``<path>.missing`` / ``<path>.not_a_string`` for a string field
+    (``namespace`` may be empty; ``allow_none`` tolerates explicit nulls)."""
+    path = field if not namespace else f"{namespace}.{field}"
+    if field not in record:
+        problems.append(f"{path}.missing")
+    else:
+        value = record[field]
+        if value is None and allow_none:
+            return
+        if not isinstance(value, str):
+            problems.append(f"{path}.not_a_string")
+
+
+def _validate_applied_record(record: Dict[str, Any],
+                             problems: List[str]) -> None:
+    """Applied records: written ONLY on SUBMIT_OK with evidence (spec rules)."""
+    for field in ("job_id", "portal", "applied_at"):
+        _record_str(record, "", field, problems)
+    for field in ("contact_email", "screenshot_path"):
+        _record_str(record, "", field, problems, allow_none=True)
+
+    if "status" not in record:
+        problems.append("status.missing")
+    elif record["status"] != APPLIED_STATUS:
+        problems.append("status.not_an_applied_status")
+    if "verdict" not in record:
+        problems.append("verdict.missing")
+    elif record["verdict"] != SUBMIT_OK:
+        problems.append("verdict.not_submit_ok")
+
+    for field in ("evidence", "backend_record"):
+        if field in record and not isinstance(record[field], dict):
+            problems.append(f"{field}.not_an_object")
+    if "backend_job_id" in record:
+        value = record["backend_job_id"]
+        if value is not None and \
+                (isinstance(value, bool) or not isinstance(value, int)):
+            problems.append("backend_job_id.not_an_int")
+
+
+def _validate_attempt_record(record: Dict[str, Any],
+                             problems: List[str]) -> None:
+    """Attempt records: the per-run diagnostic trace, whatever the outcome."""
+    for field in ("attempt_id", "job_id", "job_url", "portal",
+                  "started_at", "ended_at"):
+        _record_str(record, "", field, problems)
+    _record_str(record, "", "reason", problems, allow_none=True)
+
+    if "outcome" not in record:
+        problems.append("outcome.missing")
+    elif record["outcome"] not in KNOWN_OUTCOMES:
+        problems.append("outcome.unknown")
+
+    for field in ("final_page", "verdict"):
+        if field in record and not isinstance(record[field], dict):
+            problems.append(f"{field}.not_an_object")
+    for field in ("screenshot_path", "manual_url"):
+        if field in record and record[field] is not None and \
+                not isinstance(record[field], str):
+            problems.append(f"{field}.not_a_string")
+
+    if "trace" in record:
+        if not isinstance(record["trace"], list):
+            problems.append("trace.not_a_list")
+        else:
+            for item in record["trace"]:
+                if not isinstance(item, dict):
+                    problems.append("trace.item_not_an_object")
+
+
+def validate_record_contract(record: Any, kind: str) -> Dict[str, Any]:
+    """Validate a persisted record against its typed contract (issue #72).
+
+    ``kind`` is ``"applied"`` (applications/<job_id>.json) or ``"attempt"``
+    (attempts/<attempt_id>/<ts>.json). Returns ``{"ok": True}`` on
+    conformance, or a machine-readable refusal:
+
+        {"ok": False, "error": "invalid_record_contract", "kind": <kind>,
+         "problems": [<stable codes, e.g. "outcome.unknown",
+                      "status.not_an_applied_status", ...>],
+         "detail": <human-readable join of the codes>}
+
+    Unknown kinds are refused with ``record.kind.unknown``. Pure and
+    read-only — never touches the filesystem.
+    """
+    problems: List[str] = []
+    if not isinstance(record, dict):
+        problems.append("record.not_an_object")
+    elif kind == "applied":
+        _validate_applied_record(record, problems)
+    elif kind == "attempt":
+        _validate_attempt_record(record, problems)
+    else:
+        problems.append("record.kind.unknown")
+
+    if problems:
+        return {"ok": False, "error": "invalid_record_contract", "kind": kind,
+                "problems": problems, "detail": "; ".join(problems)}
+    return {"ok": True}
 
 
 # ---------------------------------------------------------------------------
@@ -220,6 +371,13 @@ def write_applied_record(memory_dir: Path, job_id: str, *,
     if backend_job_id is not None:
         record["backend_job_id"] = backend_job_id
 
+    # PR #80 review P1 — validate BEFORE persisting: a record that violates the
+    # contract returns the refusal dict and writes NOTHING (a malformed file
+    # would poison idempotency/review later). The caller must surface it.
+    contract = validate_record_contract(record, "applied")
+    if contract.get("ok") is not True:
+        return contract
+
     out_dir = _applications_dir(memory_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / f"{job_id}.json"
@@ -269,6 +427,11 @@ def write_attempt_log(memory_dir: Path, *,
     record["verdict"] = verdict_block or {
         "submitted": False, "evidence": None, "detail": reason or "not submitted",
     }
+
+    # PR #80 review P1 — validate BEFORE persisting (see write_applied_record).
+    contract = validate_record_contract(record, "attempt")
+    if contract.get("ok") is not True:
+        return contract
 
     out_dir = _attempts_dir(memory_dir, attempt_id)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -394,9 +557,17 @@ def decide(memory_dir: Path, *,
             backend_record=backend_record,
             backend_job_id=backend_job_id,
         )
-        results["written_applied"] = True
-        results["applied_record"] = applied_record
-        results["record_applied"] = True
+        if isinstance(applied_record, dict) \
+                and applied_record.get("ok") is False:
+            # PR #80 review P1 — the writer REFUSED (invalid contract): nothing
+            # landed on disk; surface the refusal and keep the flags truthful.
+            results["applied_record"] = applied_record
+            results["written_applied"] = False
+            results["record_applied"] = False
+        else:
+            results["written_applied"] = True
+            results["applied_record"] = applied_record
+            results["record_applied"] = True
 
     verdict_block = {
         "submitted": outcome == SUBMIT_OK,
@@ -421,6 +592,10 @@ def decide(memory_dir: Path, *,
         manual_url=manual_url,
         verdict_block=verdict_block,
     )
+    if isinstance(results["attempt_record"], dict) \
+            and results["attempt_record"].get("ok") is False:
+        # PR #80 review P1 — the writer REFUSED (invalid contract): report it.
+        results["written_attempt"] = False
     return results
 
 

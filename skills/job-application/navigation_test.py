@@ -312,6 +312,9 @@ class ApplyIntegrationTests(unittest.TestCase):
             "--portal", "gupy",
             "--memory-dir", str(self.mem),
             "--profile", self.profile_path,
+            # PR #80 review P0-1 — the preflight gate is default-on on real
+            # runs; these tests target the OTHER gates, so opt out explicitly.
+            "--skip-preflight-check",
         ]
         if cdp_url:
             cmd += ["--cdp-url", cdp_url]

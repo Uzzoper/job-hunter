@@ -26,6 +26,11 @@ class JobPreferenceScorerTest {
                 description, TODAY, "test");
     }
 
+    private Job job(String title, String description, String company) {
+        return new Job(1L, title, company, "https://example.com/job/1",
+                description, TODAY, "test");
+    }
+
     // ---------- Remote preference ----------
 
     @Test
@@ -178,6 +183,99 @@ class JobPreferenceScorerTest {
         assertEquals(10, JobPreferenceScorer.adjust(10, job, prefs));
     }
 
+    // ---------- Seniority mismatch (docs/specs/preferences-scoring.md) ----------
+
+    @Test
+    @DisplayName("adjust should subtract 10 when the job title marks the role as pleno")
+    void seniority_whenTitlePleno_shouldSubtractSeniorityPenalty() {
+        UserPreferences prefs = new UserPreferences(new WorkPreference.Remote(), null, List.of());
+        Job job = job("Desenvolvedor Java Pleno",
+                "Desenvolvedor com experiência em Java e Spring Boot.", "CompanyX");
+
+        assertEquals(70, JobPreferenceScorer.adjust(80, job, prefs));
+    }
+
+    @Test
+    @DisplayName("adjust should subtract 10 when the job title marks the role as 'Pl.'")
+    void seniority_whenTitleAbbreviatedPl_shouldSubtractSeniorityPenalty() {
+        UserPreferences prefs = new UserPreferences(new WorkPreference.Remote(), null, List.of());
+        Job job = job("Analista de Sistemas Pl.",
+                "Oportunidade na área de sistemas.", "CompanyX");
+
+        assertEquals(70, JobPreferenceScorer.adjust(80, job, prefs));
+    }
+
+    @Test
+    @DisplayName("adjust should subtract 10 when the job title marks the role as 'PL' (uppercase)")
+    void seniority_whenTitlePlUppercase_shouldSubtractSeniorityPenalty() {
+        UserPreferences prefs = new UserPreferences(new WorkPreference.Remote(), null, List.of());
+        Job job = job("Desenvolvedor Backend PL",
+                "Oportunidade na área de backend.", "CompanyX");
+
+        assertEquals(70, JobPreferenceScorer.adjust(80, job, prefs));
+    }
+
+    @Test
+    @DisplayName("adjust should subtract 10 when the job title marks the role as mid-level")
+    void seniority_whenTitleMidLevel_shouldSubtractSeniorityPenalty() {
+        UserPreferences prefs = new UserPreferences(new WorkPreference.Remote(), null, List.of());
+        Job job = job("Desenvolvedor Mid-Level",
+                "Oportunidade na área de tecnologia.", "CompanyX");
+
+        assertEquals(70, JobPreferenceScorer.adjust(80, job, prefs));
+    }
+
+    @Test
+    @DisplayName("adjust should not penalize a junior title")
+    void seniority_whenTitleJunior_shouldKeepScore() {
+        UserPreferences prefs = new UserPreferences(new WorkPreference.Remote(), null, List.of());
+        Job job = job("Desenvolvedor Júnior",
+                "Oportunidade para quem está começando.", "CompanyX");
+
+        assertEquals(80, JobPreferenceScorer.adjust(80, job, prefs));
+    }
+
+    @Test
+    @DisplayName("adjust should not penalize a title without any seniority marker")
+    void seniority_whenTitleWithoutSeniority_shouldKeepScore() {
+        UserPreferences prefs = new UserPreferences(new WorkPreference.Remote(), null, List.of());
+        Job job = job("Desenvolvedor",
+                "Desenvolvedor com experiência em Java.", "CompanyX");
+
+        assertEquals(80, JobPreferenceScorer.adjust(80, job, prefs));
+    }
+
+    @Test
+    @DisplayName("adjust should not match 'pl' inside another word (word-boundary on the PL abbreviation)")
+    void seniority_whenTitleContainsPlInsideWord_shouldNotPenalize() {
+        UserPreferences prefs = new UserPreferences(new WorkPreference.Remote(), null, List.of());
+        Job job = job("Desenvolvedor de Aplicação",
+                "Oportunidade na área de desenvolvimento.", "CompanyX");
+
+        assertEquals(80, JobPreferenceScorer.adjust(80, job, prefs));
+    }
+
+    @Test
+    @DisplayName("adjust should combine the seniority penalty with the work-model modifier")
+    void seniority_whenTitlePlenoAndWorkModelConflict_shouldCombinePenalties() {
+        UserPreferences prefs = new UserPreferences(new WorkPreference.Remote(), null, List.of());
+        Job job = job("Desenvolvedor Java Pleno",
+                "Trabalho 100% presencial em São Paulo.", "CompanyX");
+
+        // -10 (seniority) + -15 (onsite contradicting remote preference) = -25
+        assertEquals(55, JobPreferenceScorer.adjust(80, job, prefs));
+    }
+
+    @Test
+    @DisplayName("adjust should clamp at zero after the seniority penalty is applied")
+    void seniority_whenScoreWouldClamp_shouldClampAtZero() {
+        UserPreferences prefs = new UserPreferences(new WorkPreference.Remote(), null, List.of());
+        Job job = job("Desenvolvedor Pleno",
+                "Oportunidade na área de tecnologia.", "CompanyX");
+
+        assertEquals(0, JobPreferenceScorer.adjust(4, job, prefs));
+    }
+
     // ---------- Identity guarantee ----------
 
     @Test
@@ -201,6 +299,19 @@ class JobPreferenceScorerTest {
     void adjust_whenOnlySalaryFloor_shouldNotChangeScore() {
         UserPreferences prefs = new UserPreferences(null, 5000, List.of());
         Job job = job("Vaga 100% presencial em São Paulo.", "CompanyX");
+
+        assertEquals(80, JobPreferenceScorer.adjust(80, job, prefs));
+    }
+
+    @Test
+    @DisplayName("adjust should not apply the seniority penalty when only salaryFloor is set (prompt-only guarantee)")
+    void seniority_whenOnlySalaryFloorAndPlenoTitle_shouldKeepScore() {
+        // PR #80 review P0-3: salaryFloor is a prompt-only signal, so a
+        // profile carrying ONLY a salary floor must come out byte-identical —
+        // a "Desenvolvedor Pleno" title cannot silently penalize it.
+        UserPreferences prefs = new UserPreferences(null, 5000, List.of());
+        Job job = job("Desenvolvedor Java Pleno",
+                "Vaga 100% presencial em São Paulo.", "CompanyX");
 
         assertEquals(80, JobPreferenceScorer.adjust(80, job, prefs));
     }
