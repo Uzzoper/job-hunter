@@ -318,6 +318,74 @@ class BackendKeyMappingTests(unittest.TestCase):
         self.assertEqual(keys, {"42"})
 
 
+class BackendJobIdIdentityTests(unittest.TestCase):
+    """Issue #82 (item D) — the audit prefers the applications record's
+    ``backend_job_id`` (numeric) over the slug for backend identity when
+    present: a slug-format miss (InfoJobs numeric slug vs a Gupy-derived key,
+    or a corrupt slug) must NOT manufacture phantom divergences once the
+    record body carries the backend id (the #82 job=755694375 gap)."""
+
+    def test_applied_record_reconciles_backend_via_backend_job_id(self):
+        # Record keyed by the InfoJobs numeric slug; the backend job has the
+        # same numeric id but its URL derives to a DIFFERENT slug — only the
+        # record's backend_job_id can tie them together.
+        with tempfile.TemporaryDirectory() as td:
+            mem = Path(td) / "mem"
+            write_json(mem / "applications" / "755694375.json", {
+                "job_id": "755694375",
+                "contact_email": "bot@example.com",
+                "portal": "infojobs",
+                "applied_at": "2026-09-10T14:22:00+00:00",
+                "screenshot_path": None,
+                "status": "applied",
+                "verdict": "SUBMIT_OK",
+                "evidence": {"method": "success_text",
+                             "match": "Inscrição realizada"},
+                "backend_job_id": 755694375,
+            })
+            write_json(
+                mem / "attempts" / "attempt-755-1" / "20260910T1422.json",
+                attempt_record("755694375", "attempt-755-1", "SUBMIT_OK"),
+            )
+            (mem / "screenshots").mkdir(parents=True, exist_ok=True)
+            (mem / "screenshots" / "755694375.png").write_bytes(b"png-755")
+            backend = [{"id": 755694375,
+                        "url": "https://www.infojobs.com.br/vaga/OutraChave",
+                        "lifecycleState": "SUBMITTED"}]
+            code, out = run_cli(
+                ["--api-base-url", "http://localhost:8080",
+                 "--api-token", "tok", "--memory-dir", str(mem)],
+                fetch=fake_fetch(backend),
+            )
+        self.assertEqual(code, 0, out)
+        self.assertNotIn("applied_without_backend", out)
+        self.assertNotIn("backend_submitted_without_application", out)
+        self.assertEqual(out.count("DIVERGENCE"), 0)
+
+    def test_backend_job_id_does_not_mask_real_backend_divergence(self):
+        # The numeric id only RE-ROUTES the lookup — a lifecycleState that is
+        # not SUBMITTED must still be flagged (backend_job_id is not a whitewash).
+        with tempfile.TemporaryDirectory() as td:
+            mem = Path(td) / "mem"
+            write_json(mem / "applications" / "755694375.json", {
+                "job_id": "755694375",
+                "status": "applied",
+                "backend_job_id": 755694375,
+            })
+            backend = [{"id": 755694375,
+                        "url": "https://www.infojobs.com.br/vaga/OutraChave",
+                        "lifecycleState": "EXPIRED"}]
+            code, out = run_cli(
+                ["--api-base-url", "http://localhost:8080",
+                 "--api-token", "tok", "--memory-dir", str(mem)],
+                fetch=fake_fetch(backend),
+            )
+        self.assertEqual(code, 1)
+        self.assertIn("DIVERGENCE applied_without_backend", out)
+        self.assertIn("job=755694375", out)
+        self.assertIn("backend_lifecycle=EXPIRED", out)
+
+
 class LoaderTests(unittest.TestCase):
     """Source loaders: read-only, corrupt/missing files degrade to missing."""
 
