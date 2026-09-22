@@ -137,7 +137,9 @@ Gupy job publicIds are urlsafe-base64: the only legal characters are
   `applications/` and `attempts/`) and `answer.py` (`answers/`) refuse to
   persist a record whose `job_id` contains `.`. The marker surfaces through
   the record contract validator as `job_id.corrupt_gupy_slug`; the writer
-  returns the refusal dict and writes nothing.
+  returns the refusal dict and writes nothing. The attempt writer also scans
+  its `job_url` **field** with the same Gupy-scoped rule — a clean id must not
+  mask a corrupt url behind it (`job_url.corrupt_gupy_url_slug`, PR #83 P1-1).
 - Audit identity (item D): the audit prefers the applications record's
   `backend_job_id` (numeric) over the slug when resolving backend identity
   — a slug-format miss (InfoJobs numeric vs Gupy base64) or a corrupt slug
