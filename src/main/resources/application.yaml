@@ -41,6 +41,9 @@ ai:
     max-chars: 8000    # max characters sent to AI; text exceeding this is truncated with a warning
   resume-tailoring:
     max-chars: 8000    # max chars of resume text sent to AI; longer text is truncated with a warning
+  analysis:
+    max-resume-chars: 8000       # job analysis prompt: resume excerpt limit (match-quality spec)
+    max-description-chars: 8000  # job analysis prompt: job description limit (match-quality spec)
 
 scraper:
   # NOTE: scraper.retry.* governs scraper and company-enrichment callers only.
@@ -110,6 +113,11 @@ auto-send:
   interval-seconds: 120
   jitter-seconds: 30
   daily-cap: 50
+
+email:
+  max-resume-chars: 8000    # email generation prompt: resume excerpt limit (match-quality spec)
+  standard-template:
+    min-match-score: 60     # below this score the standard template is used, AI path above (match-quality spec)
 
 # Hermes Agent gateway ("hermes gateway run") — the single AI backend for
 # analysis and email generation, and the email-sending bot transport. The bot

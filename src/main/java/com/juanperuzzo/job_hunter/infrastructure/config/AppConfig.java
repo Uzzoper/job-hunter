@@ -340,8 +340,11 @@ public class AppConfig {
 
     @Bean
     public AiAnalysisService aiAnalysisService(AiPort aiPort, JobAnalysisRepository jobAnalysisRepository,
-                                               UserProfileRepository userProfileRepository, JobRepository jobRepository) {
-        return new AiAnalysisService(aiPort, jobAnalysisRepository, userProfileRepository, jobRepository);
+                                               UserProfileRepository userProfileRepository, JobRepository jobRepository,
+                                               @Value("${ai.analysis.max-resume-chars:8000}") int maxResumeChars,
+                                               @Value("${ai.analysis.max-description-chars:8000}") int maxDescriptionChars) {
+        return new AiAnalysisService(aiPort, jobAnalysisRepository, userProfileRepository, jobRepository,
+                maxResumeChars, maxDescriptionChars);
     }
 
     @Bean
@@ -351,9 +354,10 @@ public class AppConfig {
                                                          JobRepository jobRepository, JobAnalysisRepository jobAnalysisRepository,
                                                          TemplateEmailService templateEmailService,
                                                          BotMemorySyncService botMemorySyncService,
-                                                         @Value("${email.standard-template.min-match-score:60}") int minMatchScore) {
+                                                         @Value("${email.standard-template.min-match-score:60}") int minMatchScore,
+                                                         @Value("${email.max-resume-chars:8000}") int maxResumeChars) {
         return new EmailGenerationService(aiPort, emailDraftRepository, userProfileRepository, userRepository,
-                jobRepository, jobAnalysisRepository, templateEmailService, botMemorySyncService, minMatchScore);
+                jobRepository, jobAnalysisRepository, templateEmailService, botMemorySyncService, minMatchScore, maxResumeChars);
     }
 
     @Bean

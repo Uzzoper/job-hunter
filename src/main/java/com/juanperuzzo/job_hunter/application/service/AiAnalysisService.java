@@ -21,22 +21,24 @@ import java.util.List;
 
 public class AiAnalysisService implements AnalyzeJobUseCase {
 
-    private static final int MAX_RESUME_CHARS = 1500;
-    private static final int MAX_DESCRIPTION_CHARS = 1000;
-
     private final AiPort aiPort;
     private final JobAnalysisRepository jobAnalysisRepository;
     private final UserProfileRepository userProfileRepository;
     private final JobRepository jobRepository;
+    private final int maxResumeChars;
+    private final int maxDescriptionChars;
     private final ObjectMapper objectMapper;
     private static final Logger log = LoggerFactory.getLogger(AiAnalysisService.class);
 
     public AiAnalysisService(AiPort aiPort, JobAnalysisRepository jobAnalysisRepository,
-                             UserProfileRepository userProfileRepository, JobRepository jobRepository) {
+                             UserProfileRepository userProfileRepository, JobRepository jobRepository,
+                             int maxResumeChars, int maxDescriptionChars) {
         this.aiPort = aiPort;
         this.jobAnalysisRepository = jobAnalysisRepository;
         this.userProfileRepository = userProfileRepository;
         this.jobRepository = jobRepository;
+        this.maxResumeChars = maxResumeChars;
+        this.maxDescriptionChars = maxDescriptionChars;
         this.objectMapper = new ObjectMapper();
     }
 
@@ -77,8 +79,8 @@ public class AiAnalysisService implements AnalyzeJobUseCase {
     }
 
     private String buildPrompt(Job job, UserProfile profile) {
-        String resumeExcerpt = truncate(profile.resumeText(), MAX_RESUME_CHARS);
-        String descExcerpt = truncate(job.description(), MAX_DESCRIPTION_CHARS);
+        String resumeExcerpt = truncate(profile.resumeText(), maxResumeChars, "Resume");
+        String descExcerpt = truncate(job.description(), maxDescriptionChars, "Description");
 
         String prompt = """
             You are a career assistant. Analyze this job against the candidate.
@@ -115,9 +117,11 @@ public class AiAnalysisService implements AnalyzeJobUseCase {
         return prompt;
     }
 
-    private String truncate(String text, int maxChars) {
+    private String truncate(String text, int maxChars, String label) {
         if (text == null) return "";
-        return text.length() <= maxChars ? text : text.substring(0, maxChars) + "...";
+        if (text.length() <= maxChars) return text;
+        log.warn("{} text is {} chars, truncating to {} for AI prompt", label, text.length(), maxChars);
+        return text.substring(0, maxChars) + "...";
     }
 
     private JobAnalysis parseAnalysis(String json) {
