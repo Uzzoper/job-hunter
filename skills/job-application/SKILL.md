@@ -615,7 +615,7 @@ human-review flow.
 | `invalid_profile` | Profile file missing / bad JSON / missing required fields (`name`, `email`, `phone`, `cv_path`, `cover_text`) | Show detail; fix profile |
 | `refusal_draft_blocked` | Profile marks `no_apply` or cover text carries `NO_APPLY` (guardrail #28) | Stop — never send a refusal as an application |
 | `invalid_job_url` | No `/jobs/<slug>` segment derivable | Show detail |
-| `corrupt_gupy_slug` | Derived job id contains a `.` (i.e. a `...` elision) — impossible in a genuine urlsafe-base64 Gupy publicId, so the URL was truncated or hand-typed (issue #82) | Stop, exit 1; re-fetch the URL from the API (`--from-api` / `--job-id`) instead of typing it |
+| `corrupt_gupy_slug` | Derived job id — or a resolved Gupy url's last slug, which `derive_job_id` may not surface as the id — contains a `.` (i.e. a `...` elision), impossible in a genuine urlsafe-base64 Gupy publicId: the URL was truncated or hand-typed (issue #82) | Stop, exit 1; re-fetch the URL from the API (`--from-api` / `--job-id`) instead of typing it |
 | `missing_api_token` | No Job Hunter API service token found (issue #46) — try `--api-token`, `JOBHUNTER_API_TOKEN`, or `<profile-dir>/api-token.txt` | Show the one-time service-token setup + save step (PT-BR) |
 | `unauthorized` | Job Hunter API answered HTTP 401 (issue #47 — `X-Bot-Token` present but `bot.service.api-key` mismatch, or the feature is disabled) | Verify the bot secret equals `BOT_SERVICE_API_KEY` and `BOT_SERVICE_OWNER_USER_ID` is a positive id |
 | `api_error` | Job Hunter API unreachable / unexpected response (issue #46) | Show detail; check `--api-base-url` and the backend |

@@ -124,6 +124,15 @@ Gupy job publicIds are urlsafe-base64: the only legal characters are
   Gupy URL whose derived slug contains `.` (hence `...`) with a JSON error
   `{"error": "corrupt_gupy_slug", ...}` — exit code 1, the same failure mode
   as `invalid_job_url`. No intent is emitted and nothing is written.
+- **Validation of the resolved URL at intent emission:** `derive_job_id`
+  over-matches the FIRST `/jobs/<slug>/` segment, so a derived id can be
+  clean while the url field (the API/DB value, in every input mode
+  `--job-url` / `--job-id` / `--from-api`) still carries a corrupt LAST slug.
+  The single intent-emission point therefore also scans the resolved url:
+  for Gupy hosts only, the last path segment is checked with the same
+  integrity rule (`corrupt_gupy_url_slug`), rejecting with the same
+  `corrupt_gupy_slug` JSON error and exit 1, before any intent file is
+  written. Non-Gupy urls are unaffected.
 - **Validation at record-write time:** `verdict.py` (sole writer of
   `applications/` and `attempts/`) and `answer.py` (`answers/`) refuse to
   persist a record whose `job_id` contains `.`. The marker surfaces through
