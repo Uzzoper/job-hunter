@@ -39,7 +39,7 @@ class JobPreferenceScorerTest {
         UserPreferences prefs = new UserPreferences(new WorkPreference.Remote(), null, List.of());
         Job job = job("Trabalho 100% presencial em São Paulo.", "CompanyX");
 
-        assertEquals(65, JobPreferenceScorer.adjust(80, job, prefs));
+        assertEquals(65, JobPreferenceScorer.adjust(80, job, prefs, List.of()));
     }
 
     @Test
@@ -48,7 +48,7 @@ class JobPreferenceScorerTest {
         UserPreferences prefs = new UserPreferences(new WorkPreference.Remote(), null, List.of());
         Job job = job("Modelo híbrido, 2 dias de home office por semana.", "CompanyX");
 
-        assertEquals(72, JobPreferenceScorer.adjust(80, job, prefs));
+        assertEquals(72, JobPreferenceScorer.adjust(80, job, prefs, List.of()));
     }
 
     @Test
@@ -57,7 +57,7 @@ class JobPreferenceScorerTest {
         UserPreferences prefs = new UserPreferences(new WorkPreference.Remote(), null, List.of());
         Job job = job("Vaga remota para qualquer lugar do Brasil.", "CompanyX");
 
-        assertEquals(80, JobPreferenceScorer.adjust(80, job, prefs));
+        assertEquals(80, JobPreferenceScorer.adjust(80, job, prefs, List.of()));
     }
 
     @Test
@@ -66,7 +66,7 @@ class JobPreferenceScorerTest {
         UserPreferences prefs = new UserPreferences(new WorkPreference.Remote(), null, List.of());
         Job job = job("Atuação 100% presencial — não é remoto e não é home office.", "CompanyX");
 
-        assertEquals(65, JobPreferenceScorer.adjust(80, job, prefs));
+        assertEquals(65, JobPreferenceScorer.adjust(80, job, prefs, List.of()));
     }
 
     @Test
@@ -75,7 +75,7 @@ class JobPreferenceScorerTest {
         UserPreferences prefs = new UserPreferences(new WorkPreference.Remote(), null, List.of());
         Job job = job("Atuação presencial — não remoto.", "CompanyX");
 
-        assertEquals(65, JobPreferenceScorer.adjust(80, job, prefs));
+        assertEquals(65, JobPreferenceScorer.adjust(80, job, prefs, List.of()));
     }
 
     @Test
@@ -84,7 +84,7 @@ class JobPreferenceScorerTest {
         UserPreferences prefs = new UserPreferences(new WorkPreference.Remote(), null, List.of());
         Job job = job("Vaga sem remoto, 100% presencial.", "CompanyX");
 
-        assertEquals(65, JobPreferenceScorer.adjust(80, job, prefs));
+        assertEquals(65, JobPreferenceScorer.adjust(80, job, prefs, List.of()));
     }
 
     @Test
@@ -93,7 +93,7 @@ class JobPreferenceScorerTest {
         UserPreferences prefs = new UserPreferences(new WorkPreference.Remote(), null, List.of());
         Job job = job("Desenvolvedor Java com experiência em Spring Boot.", "CompanyX");
 
-        assertEquals(80, JobPreferenceScorer.adjust(80, job, prefs));
+        assertEquals(80, JobPreferenceScorer.adjust(80, job, prefs, List.of()));
     }
 
     // ---------- Hybrid preference ----------
@@ -104,7 +104,7 @@ class JobPreferenceScorerTest {
         UserPreferences prefs = new UserPreferences(new WorkPreference.Hybrid(List.of("Curitiba")), null, List.of());
         Job job = job("Vaga 100% remota.", "CompanyX");
 
-        assertEquals(72, JobPreferenceScorer.adjust(80, job, prefs));
+        assertEquals(72, JobPreferenceScorer.adjust(80, job, prefs, List.of()));
     }
 
     @Test
@@ -113,7 +113,7 @@ class JobPreferenceScorerTest {
         UserPreferences prefs = new UserPreferences(new WorkPreference.Hybrid(List.of("Curitiba")), null, List.of());
         Job job = job("Trabalho híbrido com escritório em Curitiba.", "CompanyX");
 
-        assertEquals(80, JobPreferenceScorer.adjust(80, job, prefs));
+        assertEquals(80, JobPreferenceScorer.adjust(80, job, prefs, List.of()));
     }
 
     @Test
@@ -122,7 +122,7 @@ class JobPreferenceScorerTest {
         UserPreferences prefs = new UserPreferences(new WorkPreference.Hybrid(List.of("Curitiba")), null, List.of());
         Job job = job("Oportunidade na área de TI.", "CompanyX");
 
-        assertEquals(80, JobPreferenceScorer.adjust(80, job, prefs));
+        assertEquals(80, JobPreferenceScorer.adjust(80, job, prefs, List.of()));
     }
 
     // ---------- Onsite preference ----------
@@ -133,7 +133,7 @@ class JobPreferenceScorerTest {
         UserPreferences prefs = new UserPreferences(new WorkPreference.Onsite(List.of("Curitiba")), null, List.of());
         Job job = job("Vaga totalmente remota para todo o Brasil.", "CompanyX");
 
-        assertEquals(65, JobPreferenceScorer.adjust(80, job, prefs));
+        assertEquals(65, JobPreferenceScorer.adjust(80, job, prefs, List.of()));
     }
 
     @Test
@@ -142,7 +142,7 @@ class JobPreferenceScorerTest {
         UserPreferences prefs = new UserPreferences(new WorkPreference.Onsite(List.of("São Paulo")), null, List.of());
         Job job = job("Atuação remota, com escritório disponível em São Paulo.", "CompanyX");
 
-        assertEquals(72, JobPreferenceScorer.adjust(80, job, prefs));
+        assertEquals(72, JobPreferenceScorer.adjust(80, job, prefs, List.of()));
     }
 
     @Test
@@ -151,7 +151,7 @@ class JobPreferenceScorerTest {
         UserPreferences prefs = new UserPreferences(new WorkPreference.Onsite(List.of("São Paulo")), null, List.of());
         Job job = job("Vaga presencial em São Paulo.", "CompanyX");
 
-        assertEquals(80, JobPreferenceScorer.adjust(80, job, prefs));
+        assertEquals(80, JobPreferenceScorer.adjust(80, job, prefs, List.of()));
     }
 
     // ---------- Excluded companies ----------
@@ -162,7 +162,7 @@ class JobPreferenceScorerTest {
         UserPreferences prefs = new UserPreferences(null, null, List.of("Acme Corp"));
         Job job = job("Desenvolvedor Java.", "ACME CORP");
 
-        assertEquals(15, JobPreferenceScorer.adjust(90, job, prefs));
+        assertEquals(15, JobPreferenceScorer.adjust(90, job, prefs, List.of()));
     }
 
     @Test
@@ -171,7 +171,7 @@ class JobPreferenceScorerTest {
         UserPreferences prefs = new UserPreferences(null, null, List.of("Acme Corp"));
         Job job = job("Desenvolvedor Java.", "Globex");
 
-        assertEquals(80, JobPreferenceScorer.adjust(80, job, prefs));
+        assertEquals(80, JobPreferenceScorer.adjust(80, job, prefs, List.of()));
     }
 
     @Test
@@ -180,7 +180,7 @@ class JobPreferenceScorerTest {
         UserPreferences prefs = new UserPreferences(null, null, List.of("Acme Corp"));
         Job job = job("Desenvolvedor Java.", "Acme Corp");
 
-        assertEquals(10, JobPreferenceScorer.adjust(10, job, prefs));
+        assertEquals(10, JobPreferenceScorer.adjust(10, job, prefs, List.of()));
     }
 
     // ---------- Seniority mismatch (docs/specs/preferences-scoring.md) ----------
@@ -192,7 +192,7 @@ class JobPreferenceScorerTest {
         Job job = job("Desenvolvedor Java Pleno",
                 "Desenvolvedor com experiência em Java e Spring Boot.", "CompanyX");
 
-        assertEquals(70, JobPreferenceScorer.adjust(80, job, prefs));
+        assertEquals(70, JobPreferenceScorer.adjust(80, job, prefs, List.of()));
     }
 
     @Test
@@ -202,7 +202,7 @@ class JobPreferenceScorerTest {
         Job job = job("Analista de Sistemas Pl.",
                 "Oportunidade na área de sistemas.", "CompanyX");
 
-        assertEquals(70, JobPreferenceScorer.adjust(80, job, prefs));
+        assertEquals(70, JobPreferenceScorer.adjust(80, job, prefs, List.of()));
     }
 
     @Test
@@ -212,7 +212,7 @@ class JobPreferenceScorerTest {
         Job job = job("Desenvolvedor Backend PL",
                 "Oportunidade na área de backend.", "CompanyX");
 
-        assertEquals(70, JobPreferenceScorer.adjust(80, job, prefs));
+        assertEquals(70, JobPreferenceScorer.adjust(80, job, prefs, List.of()));
     }
 
     @Test
@@ -222,7 +222,7 @@ class JobPreferenceScorerTest {
         Job job = job("Desenvolvedor Mid-Level",
                 "Oportunidade na área de tecnologia.", "CompanyX");
 
-        assertEquals(70, JobPreferenceScorer.adjust(80, job, prefs));
+        assertEquals(70, JobPreferenceScorer.adjust(80, job, prefs, List.of()));
     }
 
     @Test
@@ -232,7 +232,7 @@ class JobPreferenceScorerTest {
         Job job = job("Desenvolvedor Júnior",
                 "Oportunidade para quem está começando.", "CompanyX");
 
-        assertEquals(80, JobPreferenceScorer.adjust(80, job, prefs));
+        assertEquals(80, JobPreferenceScorer.adjust(80, job, prefs, List.of()));
     }
 
     @Test
@@ -242,7 +242,7 @@ class JobPreferenceScorerTest {
         Job job = job("Desenvolvedor",
                 "Desenvolvedor com experiência em Java.", "CompanyX");
 
-        assertEquals(80, JobPreferenceScorer.adjust(80, job, prefs));
+        assertEquals(80, JobPreferenceScorer.adjust(80, job, prefs, List.of()));
     }
 
     @Test
@@ -252,7 +252,7 @@ class JobPreferenceScorerTest {
         Job job = job("Desenvolvedor de Aplicação",
                 "Oportunidade na área de desenvolvimento.", "CompanyX");
 
-        assertEquals(80, JobPreferenceScorer.adjust(80, job, prefs));
+        assertEquals(80, JobPreferenceScorer.adjust(80, job, prefs, List.of()));
     }
 
     @Test
@@ -263,7 +263,7 @@ class JobPreferenceScorerTest {
                 "Trabalho 100% presencial em São Paulo.", "CompanyX");
 
         // -10 (seniority) + -15 (onsite contradicting remote preference) = -25
-        assertEquals(55, JobPreferenceScorer.adjust(80, job, prefs));
+        assertEquals(55, JobPreferenceScorer.adjust(80, job, prefs, List.of()));
     }
 
     @Test
@@ -273,7 +273,7 @@ class JobPreferenceScorerTest {
         Job job = job("Desenvolvedor Pleno",
                 "Oportunidade na área de tecnologia.", "CompanyX");
 
-        assertEquals(0, JobPreferenceScorer.adjust(4, job, prefs));
+        assertEquals(0, JobPreferenceScorer.adjust(4, job, prefs, List.of()));
     }
 
     // ---------- Seniority-in-body (docs/specs/match-quality.md §3) ----------
@@ -285,7 +285,7 @@ class JobPreferenceScorerTest {
         Job job = job("Desenvolvedor",
                 "Requer 5 anos de experiência em Java e Spring Boot.", "CompanyX");
 
-        assertEquals(70, JobPreferenceScorer.adjust(80, job, prefs));
+        assertEquals(70, JobPreferenceScorer.adjust(80, job, prefs, List.of()));
     }
 
     @Test
@@ -295,7 +295,7 @@ class JobPreferenceScorerTest {
         Job job = job("Developer",
                 "Requires 5 years of experience with Spring Boot and AWS.", "CompanyX");
 
-        assertEquals(70, JobPreferenceScorer.adjust(80, job, prefs));
+        assertEquals(70, JobPreferenceScorer.adjust(80, job, prefs, List.of()));
     }
 
     @Test
@@ -305,7 +305,7 @@ class JobPreferenceScorerTest {
         Job job = job("Desenvolvedor",
                 "Requisitos: anos de experiência mínima de 5 em Java.", "CompanyX");
 
-        assertEquals(70, JobPreferenceScorer.adjust(80, job, prefs));
+        assertEquals(70, JobPreferenceScorer.adjust(80, job, prefs, List.of()));
     }
 
     @Test
@@ -313,11 +313,11 @@ class JobPreferenceScorerTest {
     void seniority_whenBodyYearsAtBandBoundaries_shouldFollowBand() {
         UserPreferences prefs = new UserPreferences(new WorkPreference.Remote(), null, List.of());
 
-        assertEquals(70, JobPreferenceScorer.adjust(80, job("Requer 3 anos de experiência.", "CompanyX"), prefs));
-        assertEquals(70, JobPreferenceScorer.adjust(80, job("Requer 30 anos de experiência.", "CompanyX"), prefs));
-        assertEquals(80, JobPreferenceScorer.adjust(80, job("Requer 2 anos de experiência.", "CompanyX"), prefs));
-        assertEquals(80, JobPreferenceScorer.adjust(80, job("Requer 35 anos de experiência.", "CompanyX"), prefs));
-        assertEquals(80, JobPreferenceScorer.adjust(80, job("Requer 1 ano de experiência.", "CompanyX"), prefs));
+        assertEquals(70, JobPreferenceScorer.adjust(80, job("Requer 3 anos de experiência.", "CompanyX"), prefs, List.of()));
+        assertEquals(70, JobPreferenceScorer.adjust(80, job("Requer 30 anos de experiência.", "CompanyX"), prefs, List.of()));
+        assertEquals(80, JobPreferenceScorer.adjust(80, job("Requer 2 anos de experiência.", "CompanyX"), prefs, List.of()));
+        assertEquals(80, JobPreferenceScorer.adjust(80, job("Requer 35 anos de experiência.", "CompanyX"), prefs, List.of()));
+        assertEquals(80, JobPreferenceScorer.adjust(80, job("Requer 1 ano de experiência.", "CompanyX"), prefs, List.of()));
     }
 
     @Test
@@ -327,7 +327,7 @@ class JobPreferenceScorerTest {
         Job job = job("A vaga exige 12 profissionais no time e experiência sólida. "
                 + "Requer anos de experiência comprovada na função.", "CompanyX");
 
-        assertEquals(80, JobPreferenceScorer.adjust(80, job, prefs));
+        assertEquals(80, JobPreferenceScorer.adjust(80, job, prefs, List.of()));
     }
 
     @Test
@@ -337,7 +337,7 @@ class JobPreferenceScorerTest {
         Job job = job("Desenvolvedor Java Pleno",
                 "Requer 5 anos de experiência em Java.", "CompanyX");
 
-        assertEquals(70, JobPreferenceScorer.adjust(80, job, prefs));
+        assertEquals(70, JobPreferenceScorer.adjust(80, job, prefs, List.of()));
     }
 
     @Test
@@ -347,7 +347,7 @@ class JobPreferenceScorerTest {
         Job job = job("Desenvolvedor",
                 "Atuará em squad pleno, colaborando diretamente com os sêniores.", "CompanyX");
 
-        assertEquals(80, JobPreferenceScorer.adjust(80, job, prefs));
+        assertEquals(80, JobPreferenceScorer.adjust(80, job, prefs, List.of()));
     }
 
     @Test
@@ -357,7 +357,111 @@ class JobPreferenceScorerTest {
         Job job = job("Desenvolvedor",
                 "Requer 5 anos de experiência em Java.", "CompanyX");
 
-        assertEquals(80, JobPreferenceScorer.adjust(80, job, prefs));
+        assertEquals(80, JobPreferenceScorer.adjust(80, job, prefs, List.of()));
+    }
+
+    // ---------- Soft stack signal (docs/specs/match-quality.md §4) ----------
+
+    @Test
+    @DisplayName("adjust should subtract 10 when no profile skill appears in title or description")
+    void stack_whenSkillsMissingFromJob_shouldSubtractPenalty() {
+        UserPreferences prefs = new UserPreferences(new WorkPreference.Remote(), null, List.of());
+        Job job = job("COBOL Developer",
+                "Vaga para manutenção de sistemas mainframe.", "CompanyX");
+
+        assertEquals(70, JobPreferenceScorer.adjust(80, job, prefs, List.of("Java", "Spring Boot")));
+    }
+
+    @Test
+    @DisplayName("adjust should not penalize when a profile skill appears in the title")
+    void stack_whenSkillMatchesTitle_shouldNotPenalize() {
+        UserPreferences prefs = new UserPreferences(new WorkPreference.Remote(), null, List.of());
+        Job job = job("Java Developer",
+                "Vaga para desenvolvimento backend.", "CompanyX");
+
+        assertEquals(80, JobPreferenceScorer.adjust(80, job, prefs, List.of("java")));
+    }
+
+    @Test
+    @DisplayName("adjust should not penalize when a multi-word skill appears in the description")
+    void stack_whenMultiWordSkillInDescription_shouldNotPenalize() {
+        UserPreferences prefs = new UserPreferences(new WorkPreference.Remote(), null, List.of());
+        Job job = job("Developer",
+                "Atuação com Spring Boot e microservices.", "CompanyX");
+
+        assertEquals(80, JobPreferenceScorer.adjust(80, job, prefs, List.of("Spring Boot")));
+    }
+
+    @Test
+    @DisplayName("adjust should not penalize when at least one of several skills overlaps")
+    void stack_whenPartialSkillOverlap_shouldNotPenalize() {
+        UserPreferences prefs = new UserPreferences(new WorkPreference.Remote(), null, List.of());
+        Job job = job("Java Developer",
+                "Vaga para desenvolvimento backend.", "CompanyX");
+
+        assertEquals(80, JobPreferenceScorer.adjust(80, job, prefs, List.of("Java", "Kotlin")));
+    }
+
+    @Test
+    @DisplayName("adjust should match skills case-insensitively (same contains idiom as city detection)")
+    void stack_whenTitleUppercaseAndSkillLowercase_shouldNotPenalize() {
+        UserPreferences prefs = new UserPreferences(new WorkPreference.Remote(), null, List.of());
+        Job job = job("JAVA DEVELOPER",
+                "Vaga para desenvolvimento backend.", "CompanyX");
+
+        assertEquals(80, JobPreferenceScorer.adjust(80, job, prefs, List.of("java")));
+    }
+
+    @Test
+    @DisplayName("adjust should not penalize when skills are empty (identity guarantee)")
+    void stack_whenEmptySkills_shouldStayIdentical() {
+        UserPreferences prefs = new UserPreferences(new WorkPreference.Remote(), null, List.of());
+        Job job = job("COBOL Developer",
+                "Vaga para manutenção de sistemas mainframe.", "CompanyX");
+
+        assertEquals(80, JobPreferenceScorer.adjust(80, job, prefs, List.of()));
+    }
+
+    @Test
+    @DisplayName("adjust should not penalize when skills are blank after trimming (identity guarantee)")
+    void stack_whenBlankSkills_shouldStayIdentical() {
+        UserPreferences prefs = new UserPreferences(new WorkPreference.Remote(), null, List.of());
+        Job job = job("COBOL Developer",
+                "Vaga para manutenção de sistemas mainframe.", "CompanyX");
+
+        assertEquals(80, JobPreferenceScorer.adjust(80, job, prefs, List.of(" ", "", "  ")));
+    }
+
+    @Test
+    @DisplayName("adjust should apply the stack signal for a preference-less profile carrying skills")
+    void stack_whenNoPreferencesButSkillsMismatch_shouldSubtractPenalty() {
+        Job job = job("COBOL Developer",
+                "Vaga para manutenção de sistemas mainframe.", "CompanyX");
+
+        assertEquals(70, JobPreferenceScorer.adjust(80, job, null, List.of("Java")));
+    }
+
+    @Test
+    @DisplayName("adjust should keep the excluded-company cap above the stack penalty")
+    void stack_whenExcludedCompany_shouldCapBeforeStack() {
+        UserPreferences prefs = new UserPreferences(null, null, List.of("Acme Corp"));
+        Job job = job("COBOL Developer",
+                "Vaga para manutenção de sistemas mainframe.", "ACME CORP");
+
+        // excluded cap (15) wins over the -10 stack penalty; never 5.
+        assertEquals(15, JobPreferenceScorer.adjust(90, job, prefs, List.of("Java")));
+    }
+
+    @Test
+    @DisplayName("adjust should compose the stack penalty with work-model and seniority, clamped at zero")
+    void stack_whenCombinedWithOtherSignals_shouldComposeAndClamp() {
+        UserPreferences prefs = new UserPreferences(new WorkPreference.Remote(), null, List.of());
+        Job job = job("Desenvolvedor Java Pleno",
+                "Trabalho 100% presencial em São Paulo.", "CompanyX");
+
+        // -10 (seniority via pleno title) + -15 (onsite vs remote) = -25; the
+        // Java skill hits the title so the stack signal stays silent.
+        assertEquals(55, JobPreferenceScorer.adjust(80, job, prefs, List.of("Java")));
     }
 
     // ---------- Identity guarantee ----------
@@ -367,7 +471,7 @@ class JobPreferenceScorerTest {
     void adjust_whenNoPreferences_shouldReturnRawScore() {
         Job job = job("Vaga 100% presencial em São Paulo.", "CompanyX");
 
-        assertEquals(80, JobPreferenceScorer.adjust(80, job, null));
+        assertEquals(80, JobPreferenceScorer.adjust(80, job, null, List.of()));
     }
 
     @Test
@@ -375,7 +479,7 @@ class JobPreferenceScorerTest {
     void adjust_whenEmptyPreferences_shouldReturnRawScore() {
         Job job = job("Vaga 100% presencial em São Paulo.", "CompanyX");
 
-        assertEquals(80, JobPreferenceScorer.adjust(80, job, UserPreferences.empty()));
+        assertEquals(80, JobPreferenceScorer.adjust(80, job, UserPreferences.empty(), List.of()));
     }
 
     @Test
@@ -384,7 +488,7 @@ class JobPreferenceScorerTest {
         UserPreferences prefs = new UserPreferences(null, 5000, List.of());
         Job job = job("Vaga 100% presencial em São Paulo.", "CompanyX");
 
-        assertEquals(80, JobPreferenceScorer.adjust(80, job, prefs));
+        assertEquals(80, JobPreferenceScorer.adjust(80, job, prefs, List.of()));
     }
 
     @Test
@@ -397,7 +501,7 @@ class JobPreferenceScorerTest {
         Job job = job("Desenvolvedor Java Pleno",
                 "Vaga 100% presencial em São Paulo.", "CompanyX");
 
-        assertEquals(80, JobPreferenceScorer.adjust(80, job, prefs));
+        assertEquals(80, JobPreferenceScorer.adjust(80, job, prefs, List.of()));
     }
 
     // ---------- Clamping ----------
@@ -408,7 +512,7 @@ class JobPreferenceScorerTest {
         UserPreferences prefs = new UserPreferences(new WorkPreference.Remote(), null, List.of());
         Job onsiteJob = job("Trabalho 100% presencial.", "CompanyX");
 
-        assertEquals(0, JobPreferenceScorer.adjust(5, onsiteJob, prefs));
-        assertEquals(85, JobPreferenceScorer.adjust(100, onsiteJob, prefs));
+        assertEquals(0, JobPreferenceScorer.adjust(5, onsiteJob, prefs, List.of()));
+        assertEquals(85, JobPreferenceScorer.adjust(100, onsiteJob, prefs, List.of()));
     }
 }
