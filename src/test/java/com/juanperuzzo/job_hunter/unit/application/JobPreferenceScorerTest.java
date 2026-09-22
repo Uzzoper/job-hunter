@@ -360,6 +360,40 @@ class JobPreferenceScorerTest {
         assertEquals(80, JobPreferenceScorer.adjust(80, job, prefs, List.of()));
     }
 
+    // ---------- parseBareInteger robustness (PR #84 review P0) ----------
+
+    @Test
+    @DisplayName("adjust should still detect the body signal when separators produce an empty leading token")
+    void seniority_whenDescriptionStartsWithSeparator_shouldStillDetectBodySignal() {
+        UserPreferences prefs = new UserPreferences(new WorkPreference.Remote(), null, List.of());
+        Job job = job("Desenvolvedor",
+                " 5 anos de experiência em Java e Spring Boot.", "CompanyX");
+
+        assertEquals(70, JobPreferenceScorer.adjust(80, job, prefs, List.of()));
+    }
+
+    @Test
+    @DisplayName("adjust should ignore an overflowing digit string near the marker without throwing or false-firing")
+    void seniority_whenOverlongDigitsNearMarker_shouldNotThrow() {
+        UserPreferences prefs = new UserPreferences(new WorkPreference.Remote(), null, List.of());
+        Job job = job("Desenvolvedor",
+                "CNPJ 12345678901234567890, requisito de anos de experiência comprovada.", "CompanyX");
+
+        // 20-digit CNPJ-like number parses to nothing (out of the int range and
+        // out of the 3..30 band) — no NumberFormatException, no penalty.
+        assertEquals(80, JobPreferenceScorer.adjust(80, job, prefs, List.of()));
+    }
+
+    @Test
+    @DisplayName("adjust should ignore a trailing separator token next to the marker without throwing")
+    void seniority_whenDescriptionEndsWithSeparator_shouldNotThrow() {
+        UserPreferences prefs = new UserPreferences(new WorkPreference.Remote(), null, List.of());
+        Job job = job("Desenvolvedor",
+                "Requer experiência sólida com anos de experiência comprovada. ", "CompanyX");
+
+        assertEquals(80, JobPreferenceScorer.adjust(80, job, prefs, List.of()));
+    }
+
     // ---------- Soft stack signal (docs/specs/match-quality.md §4) ----------
 
     @Test

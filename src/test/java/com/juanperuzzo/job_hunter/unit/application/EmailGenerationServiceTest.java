@@ -256,6 +256,84 @@ class EmailGenerationServiceTest {
     }
 
     @Nested
+    @DisplayName("Threshold boundary: score exactly at the 60/59 edge")
+    class ThresholdBoundaryTests {
+
+        @Test
+        @DisplayName("generate should use the AI path when matchScore equals the threshold (60)")
+        void generate_whenScoreExactlyThreshold_shouldCallAiNotTemplate() {
+            String aiResponse = """
+                Subject: Application for Java Developer Position
+
+                Dear Hiring Manager,
+
+                I am writing to express my interest in the Java Developer position at CompanyX.
+
+                Sincerely,
+                Juan Peruzzo
+                """;
+            Long jobId = 90L;
+            Job job = new Job(jobId, "Java Developer", "CompanyX",
+                    "https://example.com/job/90", "Description", LocalDate.now(), "test");
+            JobAnalysis analysis = new JobAnalysis(null, null, null, 60,
+                    List.of("Java", "Spring Boot"),
+                    List.of("Kubernetes"),
+                    CompanyTone.FORMAL,
+                    "Java developer position");
+            UserProfile profile = new UserProfile(null, 1L,
+                    "Resume text", List.of("Java"), CompanyTone.FORMAL, List.of(),
+                    null, null, null, null, null, null);
+
+            when(jobRepository.findById(jobId)).thenReturn(Optional.of(job));
+            when(jobAnalysisRepository.findByJobIdAndUserId(jobId, 1L)).thenReturn(Optional.of(analysis));
+            when(userProfileRepository.findByUserId(any())).thenReturn(Optional.of(profile));
+            when(aiPort.complete(any())).thenReturn(aiResponse);
+            when(emailDraftRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+            EmailDraft draft = emailGenerationService.generate(1L, jobId);
+
+            assertNotNull(draft);
+            assertEquals(EmailStatus.PENDING, draft.status());
+            verify(aiPort).complete(any());
+            verify(templateEmailService, never()).generate(any(), any(), any());
+        }
+
+        @Test
+        @DisplayName("generate should use the template path one point below the threshold (59)")
+        void generate_whenScoreOneBelowThreshold_shouldUseTemplateNotAi() {
+            Long jobId = 91L;
+            Job job = new Job(jobId, "Java Developer", "CompanyX",
+                    "https://example.com/job/91", "Description", LocalDate.now(), "test");
+            JobAnalysis analysis = new JobAnalysis(null, null, null, 59,
+                    List.of("Java", "Spring Boot"),
+                    List.of("Kubernetes"),
+                    CompanyTone.FORMAL,
+                    "Java developer position");
+            UserProfile profile = new UserProfile(null, 1L,
+                    "Resume text", List.of("Java"), CompanyTone.FORMAL, List.of(),
+                    null, null, null, null, null, null);
+
+            when(jobRepository.findById(jobId)).thenReturn(Optional.of(job));
+            when(jobAnalysisRepository.findByJobIdAndUserId(jobId, 1L)).thenReturn(Optional.of(analysis));
+            when(userProfileRepository.findByUserId(any())).thenReturn(Optional.of(profile));
+            when(emailDraftRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            when(templateEmailService.generate(eq(job), any(User.class), any(UserProfile.class)))
+                    .thenReturn(new TemplateEmailService.TemplateResult(
+                            "Candidatura — Java Developer na CompanyX",
+                            "Gostaria de me candidatar à vaga de Java Developer na CompanyX."));
+
+            EmailDraft draft = emailGenerationService.generate(1L, jobId);
+
+            assertNotNull(draft);
+            assertTrue(draft.subject().contains("Java Developer"));
+            assertTrue(draft.subject().contains("CompanyX"));
+            assertEquals(EmailStatus.PENDING, draft.status());
+            verify(aiPort, never()).complete(any());
+            verify(templateEmailService).generate(eq(job), any(User.class), any(UserProfile.class));
+        }
+    }
+
+    @Nested
     @DisplayName("Scenario 3: formal tone")
     class FormalToneTests {
 
