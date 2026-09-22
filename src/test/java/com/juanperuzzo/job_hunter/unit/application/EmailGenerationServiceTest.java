@@ -127,7 +127,7 @@ class EmailGenerationServiceTest {
             Long jobId = 70L;
             Job job = new Job(jobId, "Java Developer", "CompanyX",
                     "https://example.com/job/70", "Description", LocalDate.now(), "test");
-            JobAnalysis analysis = new JobAnalysis(null, null, null, 40,
+            JobAnalysis analysis = new JobAnalysis(null, null, null, 75,
                     List.of("Java", "Spring Boot"),
                     List.of("Kubernetes"),
                     CompanyTone.FORMAL,
@@ -191,7 +191,7 @@ class EmailGenerationServiceTest {
             Long jobId = 1L;
             Job job = new Job(jobId, "Java Developer", "CompanyX",
                     "https://example.com/job/1", "Description", LocalDate.now(), "test");
-            JobAnalysis analysis = new JobAnalysis(null, null, null, 40,
+            JobAnalysis analysis = new JobAnalysis(null, null, null, 75,
                     List.of("Java", "Spring Boot"),
                     List.of("Kubernetes"),
                     CompanyTone.FORMAL,
@@ -214,31 +214,12 @@ class EmailGenerationServiceTest {
     }
 
     @Nested
-    @DisplayName("Scenario 2: analysis with low matchScore")
+    @DisplayName("Scenario 2: analysis with low matchScore (template branch)")
     class LowMatchScoreTests {
 
         @Test
-        @DisplayName("generate should proceed normally when matchScore < 30")
-        void generate_whenLowMatchScore_shouldProceedNormally() {
-            String aiResponse = """
-                Subject: Application for Junior Developer
-
-                I am very interested in this position.
-                Although I lack some skills, I am willing to learn.
-
-                Best regards,
-                Juan Peruzzo
-                """;
-
-            when(aiPort.complete(any())).thenReturn(aiResponse);
-            when(emailDraftRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
-            UserProfile validProfile = new UserProfile(null, 1L,
-                "Experienced Java developer with Spring Boot expertise.",
-                List.of("Java", "Spring Boot", "PostgreSQL"),
-                CompanyTone.FORMAL,
-                List.of(), null, null, null, null, null, null);
-            when(userProfileRepository.findByUserId(any())).thenReturn(Optional.of(validProfile));
-
+        @DisplayName("generate should use the standard template and skip AI when matchScore is below the threshold")
+        void generate_whenLowMatchScore_shouldUseTemplateAndSkipAi() {
             Long jobId = 2L;
             Job job = new Job(jobId, "Junior Developer", "StartupY",
                     "https://example.com/job/2", "Description", LocalDate.now(), "test");
@@ -247,15 +228,30 @@ class EmailGenerationServiceTest {
                     List.of("AWS", "Docker"),
                     CompanyTone.STARTUP,
                     "Junior developer position");
+            UserProfile validProfile = new UserProfile(null, 1L,
+                "Experienced Java developer with Spring Boot expertise.",
+                List.of("Java", "Spring Boot", "PostgreSQL"),
+                CompanyTone.FORMAL,
+                List.of(), null, null, null, null, null, null);
 
             when(jobRepository.findById(jobId)).thenReturn(Optional.of(job));
             when(jobAnalysisRepository.findByJobIdAndUserId(jobId, 1L)).thenReturn(Optional.of(analysis));
+            when(userProfileRepository.findByUserId(any())).thenReturn(Optional.of(validProfile));
+            when(emailDraftRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            when(templateEmailService.generate(eq(job), any(User.class), any(UserProfile.class)))
+                    .thenReturn(new TemplateEmailService.TemplateResult(
+                            "Candidatura — Junior Developer na StartupY",
+                            "Gostaria de me candidatar à vaga de Junior Developer na StartupY."));
 
             EmailDraft draft = emailGenerationService.generate(1L, jobId);
 
             assertNotNull(draft);
-            // Low score doesn't block generation; prompt handles missing skills matter-of-factly
-            assertTrue(draft.subject().startsWith("Subject: "));
+            // Low score doesn't block generation; it routes to the deterministic template.
+            assertTrue(draft.subject().contains("Junior Developer"));
+            assertTrue(draft.subject().contains("StartupY"));
+            assertEquals(EmailStatus.PENDING, draft.status());
+            verify(aiPort, never()).complete(any());
+            verify(templateEmailService).generate(eq(job), any(User.class), any(UserProfile.class));
         }
     }
 
@@ -291,7 +287,7 @@ class EmailGenerationServiceTest {
             Long jobId = 3L;
             Job job = new Job(jobId, "Developer", "BankZ",
                     "https://example.com/job/3", "Description", LocalDate.now(), "test");
-            JobAnalysis analysis = new JobAnalysis(null, null, null, 50,
+            JobAnalysis analysis = new JobAnalysis(null, null, null, 65,
                     List.of("Java"),
                     List.of(),
                     CompanyTone.FORMAL,
@@ -337,7 +333,7 @@ class EmailGenerationServiceTest {
             Long jobId = 4L;
             Job job = new Job(jobId, "Developer", "StartupCool",
                     "https://example.com/job/4", "Description", LocalDate.now(), "test");
-            JobAnalysis analysis = new JobAnalysis(null, null, null, 50,
+            JobAnalysis analysis = new JobAnalysis(null, null, null, 65,
                     List.of("React"),
                     List.of("AWS"),
                     CompanyTone.STARTUP,
@@ -371,7 +367,7 @@ class EmailGenerationServiceTest {
             Long jobId = 5L;
             Job job = new Job(jobId, "Developer", "CompanyX",
                     "https://example.com/job/5", "Description", LocalDate.now(), "test");
-            JobAnalysis analysis = new JobAnalysis(null, null, null, 50,
+            JobAnalysis analysis = new JobAnalysis(null, null, null, 65,
                     List.of("Java"),
                     List.of(),
                     CompanyTone.FORMAL,
@@ -385,12 +381,22 @@ class EmailGenerationServiceTest {
     }
 
     @Nested
-    @DisplayName("Scenario 6: template branch for high matchScore")
+    @DisplayName("Scenario 6: AI branch for high matchScore")
     class TemplateBranchTests {
 
         @Test
-        @DisplayName("generate should use template and skip AI when matchScore >= 60")
-        void generate_whenMatchScoreHigh_shouldUseTemplateAndSkipAi() {
+        @DisplayName("generate should call AI and skip the template when matchScore >= threshold")
+        void generate_whenMatchScoreHigh_shouldCallAiAndSkipTemplate() {
+            String aiResponse = """
+                Subject: Application for Java Developer Position
+
+                Dear Hiring Manager,
+
+                I am writing to express my interest in the Java Developer position at EmpresaX.
+
+                Sincerely,
+                Juan Peruzzo
+                """;
             Long jobId = 6L;
             Job job = new Job(jobId, "Desenvolvedor Java", "EmpresaX",
                     "https://example.com/job/6", "Description", LocalDate.now(), "test");
@@ -406,23 +412,17 @@ class EmailGenerationServiceTest {
             when(jobRepository.findById(jobId)).thenReturn(Optional.of(job));
             when(jobAnalysisRepository.findByJobIdAndUserId(jobId, 1L)).thenReturn(Optional.of(analysis));
             when(userProfileRepository.findByUserId(any())).thenReturn(Optional.of(profile));
-            when(emailDraftRepository.findByJobIdAndUserId(jobId, 1L)).thenReturn(Optional.empty());
             when(emailDraftRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
-
-            var templateResult = new TemplateEmailService.TemplateResult(
-                    "Candidatura — Desenvolvedor Java na EmpresaX",
-                    "Gostaria de me candidatar à vaga de Desenvolvedor Java na EmpresaX.");
-            when(templateEmailService.generate(eq(job), any(User.class), any(UserProfile.class)))
-                    .thenReturn(templateResult);
+            when(aiPort.complete(any())).thenReturn(aiResponse);
 
             EmailDraft draft = emailGenerationService.generate(1L, jobId);
 
             assertNotNull(draft);
-            assertTrue(draft.subject().contains("Desenvolvedor Java"));
-            assertTrue(draft.subject().contains("EmpresaX"));
+            assertEquals("Subject: Application for Java Developer Position", draft.subject());
             assertTrue(draft.body().contains("EmpresaX"));
             assertEquals(EmailStatus.PENDING, draft.status());
-            verify(aiPort, never()).complete(any());
+            verify(aiPort).complete(any());
+            verify(templateEmailService, never()).generate(any(), any(), any());
         }
 
         @Test
@@ -431,7 +431,7 @@ class EmailGenerationServiceTest {
             Long jobId = 7L;
             Job job = new Job(jobId, "Desenvolvedor Java", "EmpresaX",
                     "https://example.com/job/7", "Description", LocalDate.now(), "test");
-            JobAnalysis analysis = new JobAnalysis(null, null, null, 75,
+            JobAnalysis analysis = new JobAnalysis(null, null, null, 30,
                     List.of("Java"), List.of(),
                     CompanyTone.FORMAL,
                     "Java developer position");
@@ -465,7 +465,7 @@ class EmailGenerationServiceTest {
             Long jobId = 8L;
             Job job = new Job(jobId, "Desenvolvedor Java", "EmpresaY",
                     "https://example.com/job/8", "Description", LocalDate.now(), "test");
-            JobAnalysis analysis = new JobAnalysis(null, null, null, 80,
+            JobAnalysis analysis = new JobAnalysis(null, null, null, 30,
                     List.of("Java"), List.of(),
                     CompanyTone.FORMAL,
                     "Java developer position");
@@ -535,7 +535,7 @@ class EmailGenerationServiceTest {
             Long jobId = 7L;
             Job job = new Job(jobId, "Customer Service", "CompanyZ",
                     "https://example.com/job/7", "Description", LocalDate.now(), "test");
-            JobAnalysis analysis = new JobAnalysis(null, null, null, 10,
+            JobAnalysis analysis = new JobAnalysis(null, null, null, 75,
                     List.of(),
                     List.of("Java", "Spring Boot"),
                     CompanyTone.FORMAL,
@@ -552,6 +552,7 @@ class EmailGenerationServiceTest {
             assertEquals("", draft.subject());
             assertEquals(aiResponse, draft.body());
             verify(aiPort).complete(any());
+            verify(templateEmailService, never()).generate(any(), any(), any());
             verify(emailDraftRepository).save(draft);
         }
 
@@ -570,7 +571,7 @@ class EmailGenerationServiceTest {
             Long jobId = 8L;
             Job job = new Job(jobId, "Fullstack", "CompanyW",
                     "https://example.com/job/8", "Description", LocalDate.now(), "test");
-            JobAnalysis analysis = new JobAnalysis(null, null, null, 15,
+            JobAnalysis analysis = new JobAnalysis(null, null, null, 75,
                     List.of(), List.of("Java"),
                     CompanyTone.FORMAL,
                     "Fullstack role");
@@ -598,7 +599,7 @@ class EmailGenerationServiceTest {
             Long jobId = 9L;
             Job job = new Job(jobId, "Analista de Fidelização", "CompanyV",
                     "https://example.com/job/9", "Description", LocalDate.now(), "test");
-            JobAnalysis analysis = new JobAnalysis(null, null, null, 20,
+            JobAnalysis analysis = new JobAnalysis(null, null, null, 75,
                     List.of(), List.of(),
                     CompanyTone.STARTUP,
                     "Analyst role, non-tech");
@@ -690,7 +691,7 @@ class EmailGenerationServiceTest {
             Long jobId = 11L;
             Job job = new Job(jobId, "Developer", "MTP",
                     "https://example.com/job/11", "Description", LocalDate.now(), "test", HR_EMAIL);
-            JobAnalysis analysis = new JobAnalysis(null, null, null, 10,
+            JobAnalysis analysis = new JobAnalysis(null, null, null, 65,
                     List.of(), List.of("Java"),
                     CompanyTone.FORMAL,
                     "Developer role");
@@ -731,7 +732,7 @@ class EmailGenerationServiceTest {
             Long jobId = 20L;
             Job job = new Job(jobId, "COBOL Dev", "CompanyM",
                     "https://example.com/job/20", "Description", LocalDate.now(), "test");
-            JobAnalysis analysis = new JobAnalysis(null, null, null, 5,
+            JobAnalysis analysis = new JobAnalysis(null, null, null, 65,
                     List.of(), List.of("Java"),
                     CompanyTone.FORMAL,
                     "Mainframe role");
@@ -760,7 +761,7 @@ class EmailGenerationServiceTest {
             Long jobId = 21L;
             Job job = new Job(jobId, "Sales Analyst", "CompanyN",
                     "https://example.com/job/21", "Description", LocalDate.now(), "test");
-            JobAnalysis analysis = new JobAnalysis(null, null, null, 5,
+            JobAnalysis analysis = new JobAnalysis(null, null, null, 65,
                     List.of(), List.of("Java"),
                     CompanyTone.FORMAL,
                     "Non-tech role");
@@ -807,7 +808,7 @@ class EmailGenerationServiceTest {
             Long jobId = 30L;
             Job job = new Job(jobId, "Java Developer", "CompanyX",
                     "https://example.com/job/30", "Description", LocalDate.now(), "test");
-            JobAnalysis analysis = new JobAnalysis(null, null, null, 40,
+            JobAnalysis analysis = new JobAnalysis(null, null, null, 65,
                     List.of("Java", "Spring Boot"),
                     List.of("Kubernetes"),
                     CompanyTone.FORMAL,
@@ -852,7 +853,7 @@ class EmailGenerationServiceTest {
             Long jobId = 31L;
             Job job = new Job(jobId, "Java Developer", "CompanyX",
                     "https://example.com/job/31", "Description", LocalDate.now(), "test");
-            JobAnalysis analysis = new JobAnalysis(null, null, null, 40,
+            JobAnalysis analysis = new JobAnalysis(null, null, null, 65,
                     List.of("Java", "Spring Boot"),
                     List.of("Kubernetes"),
                     CompanyTone.FORMAL,
@@ -896,7 +897,7 @@ class EmailGenerationServiceTest {
             Long jobId = 32L;
             Job job = new Job(jobId, "Java Developer", "CompanyX",
                     "https://example.com/job/32", "Description", LocalDate.now(), "test");
-            JobAnalysis analysis = new JobAnalysis(null, null, null, 40,
+            JobAnalysis analysis = new JobAnalysis(null, null, null, 65,
                     List.of("Java", "Spring Boot"),
                     List.of("Kubernetes"),
                     CompanyTone.FORMAL,
@@ -945,7 +946,7 @@ class EmailGenerationServiceTest {
             Long jobId = 40L;
             Job job = new Job(jobId, "Java Developer", "CompanyX",
                     "https://example.com/job/40", "Description", LocalDate.now(), "test");
-            JobAnalysis analysis = new JobAnalysis(null, null, null, 40,
+            JobAnalysis analysis = new JobAnalysis(null, null, null, 65,
                     List.of("Java", "Spring Boot"),
                     List.of("Kubernetes"),
                     CompanyTone.FORMAL,
@@ -979,7 +980,7 @@ class EmailGenerationServiceTest {
             Long jobId = 60L;
             Job job = new Job(jobId, "Java Developer", "CompanyX",
                     "https://example.com/job/60", "Description", LocalDate.now(), "test");
-            JobAnalysis analysis = new JobAnalysis(null, null, null, 40,
+            JobAnalysis analysis = new JobAnalysis(null, null, null, 65,
                     List.of("Java"), List.of(),
                     CompanyTone.FORMAL,
                     "Java developer position");
@@ -997,7 +998,7 @@ class EmailGenerationServiceTest {
             Long jobId = 61L;
             Job job = new Job(jobId, "Java Developer", "CompanyX",
                     "https://example.com/job/61", "Description", LocalDate.now(), "test");
-            JobAnalysis analysis = new JobAnalysis(null, null, null, 40,
+            JobAnalysis analysis = new JobAnalysis(null, null, null, 65,
                     List.of("Java"), List.of(),
                     CompanyTone.FORMAL,
                     "Java developer position");
@@ -1040,7 +1041,7 @@ class EmailGenerationServiceTest {
             Long jobId = 62L;
             Job job = new Job(jobId, "Java Developer", "CompanyX",
                     "https://example.com/job/62", "Description", LocalDate.now(), "test");
-            JobAnalysis analysis = new JobAnalysis(null, null, null, 40,
+            JobAnalysis analysis = new JobAnalysis(null, null, null, 65,
                     List.of("Java", "Spring Boot"),
                     List.of("Kubernetes"),
                     CompanyTone.FORMAL,
