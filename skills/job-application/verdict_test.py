@@ -512,6 +512,18 @@ class RecordContractTests(unittest.TestCase):
         result = verdict.validate_record_contract(record, "attempt")
         self.assertIn("attempt_id.missing", result["problems"])
 
+    def test_applied_corrupt_job_id_refused(self):
+        # Issue #82 — a '.' (hence '...') is impossible in a genuine slug:
+        # the contract must flag it like any other malformed field.
+        result = verdict.validate_record_contract(
+            self._applied(job_id="eyJqb2...sIn0="), "applied")
+        self.assertIn("job_id.corrupt_gupy_slug", result["problems"])
+
+    def test_attempt_corrupt_job_id_refused(self):
+        result = verdict.validate_record_contract(
+            self._attempt(job_id="eyJqb2...sIn0="), "attempt")
+        self.assertIn("job_id.corrupt_gupy_slug", result["problems"])
+
     def test_trace_must_be_a_list_of_objects(self):
         result = verdict.validate_record_contract(
             self._attempt(trace="oops"), "attempt")
@@ -627,6 +639,179 @@ class WriterContractGateTests(unittest.TestCase):
         )
         self.assertFalse(result["written_applied"])
         self.assertTrue(result["written_attempt"])
+        attempts = list((self.mem / "attempts").rglob("*.json"))
+        self.assertEqual(len(attempts), 1)
+
+
+class CorruptJobIdRefusalTests(unittest.TestCase):
+    """Issue #82 — the record writers refuse to persist a job_id carrying the
+    '.', '...' corruption marker: a corrupt file would poison idempotency and
+    the consistency audit (the #82 phantom-divergence root cause)."""
+
+    CORRUPT_ID = "eyJqb2...sIn0="
+    GENUINE_ID = ("eyJpZCI6Ijc1NTY5NDM3NSIsInRpdGxlIjoi"
+                  "ZGVzZW52b2x2ZWRvci1qYXZhIn0=")
+
+    def setUp(self):
+        self.mem = Path(tempfile.mkdtemp(prefix="verdict_corrupt_"))
+
+    def tearDown(self):
+        shutil.rmtree(self.mem, ignore_errors=True)
+
+    def test_write_applied_record_with_corrupt_job_id_refuses(self):
+        result = verdict.write_applied_record(
+            self.mem, self.CORRUPT_ID,
+            portal="gupy",
+            contact_email=CONTACT_EMAIL,
+            applied_at=ENDED_AT,
+            screenshot_path=SCREENSHOT,
+            verdict=verdict.SUBMIT_OK,
+            evidence=success_evidence(),
+        )
+        self.assertEqual(result["ok"], False)
+        self.assertEqual(result["error"], "invalid_record_contract")
+        self.assertIn("job_id.corrupt_gupy_slug", result["problems"])
+        self.assertEqual(list(self.mem.glob("applications/**/*")), [])
+
+    def test_write_attempt_log_with_corrupt_job_id_refuses(self):
+        result = verdict.write_attempt_log(
+            self.mem,
+            attempt_id=ATTEMPT_ID,
+            job_id=self.CORRUPT_ID,
+            job_url=JOB_URL,
+            portal=PORTAL,
+            started_at=STARTED_AT,
+            ended_at=ENDED_AT,
+            outcome=verdict.INCOMPLETE,
+            reason="blocked",
+        )
+        self.assertEqual(result["ok"], False)
+        self.assertIn("job_id.corrupt_gupy_slug", result["problems"])
+        self.assertEqual(list(self.mem.glob("attempts/**/*")), [])
+
+    def test_decide_with_corrupt_job_id_reports_no_write(self):
+        # decide() propagates the writer refusal: neither the applied record
+        # nor the attempt log lands on disk for a corrupt id.
+        result = verdict.decide(
+            self.mem,
+            outcome=verdict.SUBMIT_OK,
+            job_id=self.CORRUPT_ID,
+            attempt_id=ATTEMPT_ID,
+            job_url=JOB_URL,
+            portal=PORTAL,
+            contact_email=CONTACT_EMAIL,
+            started_at=STARTED_AT,
+            ended_at=ENDED_AT,
+            final_url=EVIDENCE_URL,
+            ax_nodes=[{"role": "heading", "name": "Inscrição realizada"}],
+            screenshot_path=SCREENSHOT,
+            confirmed=True,
+        )
+        self.assertFalse(result["written_applied"])
+        self.assertFalse(result["record_applied"])
+        self.assertFalse(result["written_attempt"])
+        self.assertEqual(list(self.mem.rglob("*.json")), [])
+
+    def test_genuine_base64_slug_record_still_written(self):
+        # urlsafe base64 + trailing '=' is a legal id — writing keeps working.
+        record = verdict.write_applied_record(
+            self.mem, self.GENUINE_ID,
+            portal="gupy",
+            contact_email=CONTACT_EMAIL,
+            applied_at=ENDED_AT,
+            screenshot_path=SCREENSHOT,
+            verdict=verdict.SUBMIT_OK,
+            evidence=success_evidence(),
+        )
+        self.assertEqual(record["job_id"], self.GENUINE_ID)
+        self.assertTrue(
+            (self.mem / "applications" / f"{self.GENUINE_ID}.json").is_file())
+
+    def test_infojobs_numeric_slug_record_still_written(self):
+        # Non-Gupy: the numeric InfoJobs slug is unaffected by the guard.
+        record = verdict.write_applied_record(
+            self.mem, "755694375",
+            portal="infojobs",
+            contact_email=CONTACT_EMAIL,
+            applied_at=ENDED_AT,
+            screenshot_path=SCREENSHOT,
+            verdict=verdict.SUBMIT_OK,
+            evidence=success_evidence(),
+        )
+        self.assertEqual(record["job_id"], "755694375")
+        self.assertTrue(
+            (self.mem / "applications" / "755694375.json").is_file())
+
+    def test_write_attempt_log_with_corrupt_job_url_refuses(self):
+        # P1-1: the attempt record persists the url FIELD (job_url); a clean
+        # id must not mask a corrupt Gupy url behind it — the writer refuses
+        # with the url-scoped contract problem and writes NOTHING.
+        result = verdict.write_attempt_log(
+            self.mem,
+            attempt_id=ATTEMPT_ID,
+            job_id=JOB_ID,
+            job_url="https://acme.gupy.io/jobs/123-dev/positions/eyJqb2...sIn0=",
+            portal=PORTAL,
+            started_at=STARTED_AT,
+            ended_at=ENDED_AT,
+            outcome=verdict.INCOMPLETE,
+            reason="blocked",
+        )
+        self.assertEqual(result["ok"], False)
+        self.assertEqual(result["error"], "invalid_record_contract")
+        self.assertIn("job_url.corrupt_gupy_url_slug", result["problems"])
+        self.assertEqual(list(self.mem.glob("attempts/**/*")), [])
+
+    def test_decide_with_corrupt_job_url_reports_no_write(self):
+        # decide() propagates the refusal: clean id + corrupt url → the
+        # attempt writer declines, so nothing lands on disk.
+        result = verdict.decide(
+            self.mem,
+            outcome=verdict.INCOMPLETE,
+            reason="blocked",
+            job_id=JOB_ID,
+            attempt_id=ATTEMPT_ID,
+            job_url="https://jobs.gupy.io/jobs/888-a/vagas/eyJobz...xIn0=",
+            portal=PORTAL,
+            started_at=STARTED_AT,
+            ended_at=ENDED_AT,
+        )
+        self.assertFalse(result["written_attempt"])
+        self.assertEqual(list(self.mem.rglob("*.json")), [])
+
+    def test_write_attempt_log_with_clean_job_url_still_writes(self):
+        # A genuine Gupy url with the clean id keeps writing the attempt log
+        # (the success path returns the record body, not an ok/error dict).
+        result = verdict.write_attempt_log(
+            self.mem,
+            attempt_id=ATTEMPT_ID,
+            job_id=JOB_ID,
+            job_url=JOB_URL,
+            portal=PORTAL,
+            started_at=STARTED_AT,
+            ended_at=ENDED_AT,
+            outcome=verdict.INCOMPLETE,
+            reason="blocked",
+        )
+        self.assertEqual(result["job_url"], JOB_URL)
+        attempts = list((self.mem / "attempts").rglob("*.json"))
+        self.assertEqual(len(attempts), 1)
+
+    def test_write_attempt_log_with_non_gupy_url_unaffected(self):
+        # The url guard is Gupy-scoped: an InfoJobs url (numeric slug, dottish
+        # suffix is legal there) keeps writing even with a clean id.
+        result = verdict.write_attempt_log(
+            self.mem,
+            attempt_id=ATTEMPT_ID,
+            job_id="755694375",
+            job_url="https://www.infojobs.com.br/vaga/755694375.json",
+            portal="infojobs",
+            started_at=STARTED_AT,
+            ended_at=ENDED_AT,
+            outcome=verdict.INCOMPLETE,
+            reason="manual",
+        )
+        self.assertEqual(result["job_id"], "755694375")
         attempts = list((self.mem / "attempts").rglob("*.json"))
         self.assertEqual(len(attempts), 1)
 

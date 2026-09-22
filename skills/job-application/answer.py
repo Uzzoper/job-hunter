@@ -40,6 +40,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from apply import is_corrupt_gupy_slug  # issue #82 — shared slug integrity guard
 import verdict  # P0-2 (PR #80): record_blocked_submit routes through verdict.decide
 
 # ---------------------------------------------------------------------------
@@ -519,6 +520,16 @@ def save_answers(memory_dir: Path, job_id: str, resolved: List[Dict[str, Any]],
     }
     if attempt_id is not None:
         record["attempt_id"] = str(attempt_id)
+
+    # Issue #82 — refuse a corrupt idempotency key: a '.' (hence '...') is
+    # impossible in a genuine slug, and answers/<job_id>.json keyed by a
+    # truncated id aliases unrelated jobs in the audit.
+    if is_corrupt_gupy_slug(job_id):
+        return {"ok": False, "error": "corrupt_gupy_slug",
+                "detail": f"job id '{job_id}' contains a '.' (e.g. a '...' "
+                          f"elision) which no genuine Gupy publicId can "
+                          f"contain (issue #82): refusing to persist answers "
+                          f"under a corrupt key"}
 
     out_dir = answers_dir(memory_dir)
     out_dir.mkdir(parents=True, exist_ok=True)

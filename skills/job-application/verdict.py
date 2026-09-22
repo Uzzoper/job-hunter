@@ -40,6 +40,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List, NotRequired, Optional, TypedDict
 
+from apply import corrupt_gupy_url_slug, is_corrupt_gupy_slug  # issue #82 — shared slug integrity guards
+
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
@@ -152,6 +154,12 @@ def _validate_applied_record(record: Dict[str, Any],
     """Applied records: written ONLY on SUBMIT_OK with evidence (spec rules)."""
     for field in ("job_id", "portal", "applied_at"):
         _record_str(record, "", field, problems)
+    # Issue #82 — a '.' (hence '...') is impossible in a genuine slug; a
+    # corrupt job_id must never reach disk (it would poison idempotency and
+    # the consistency audit — the #82 phantom-divergence root cause).
+    if isinstance(record.get("job_id"), str) and \
+            is_corrupt_gupy_slug(record["job_id"]):
+        problems.append("job_id.corrupt_gupy_slug")
     for field in ("contact_email", "screenshot_path"):
         _record_str(record, "", field, problems, allow_none=True)
 
@@ -180,6 +188,17 @@ def _validate_attempt_record(record: Dict[str, Any],
     for field in ("attempt_id", "job_id", "job_url", "portal",
                   "started_at", "ended_at"):
         _record_str(record, "", field, problems)
+    # Issue #82 — see _validate_applied_record: the same corrupt-key guard.
+    if isinstance(record.get("job_id"), str) and \
+            is_corrupt_gupy_slug(record["job_id"]):
+        problems.append("job_id.corrupt_gupy_slug")
+    # Issue #82 (PR #83 review P1-1) — the attempt record persists the url
+    # FIELD (job_url); a clean id must not mask a corrupt Gupy url behind it
+    # (derive_job_id over-matches the first /jobs/<slug>/ segment). The
+    # Gupy-scoped url scan refuses with the url-scoped contract problem.
+    if isinstance(record.get("job_url"), str) and \
+            corrupt_gupy_url_slug(record["job_url"]) is not None:
+        problems.append("job_url.corrupt_gupy_url_slug")
     _record_str(record, "", "reason", problems, allow_none=True)
 
     if "outcome" not in record:

@@ -543,5 +543,66 @@ class BlockedSubmitTests(unittest.TestCase):
         self.assertFalse(result["written_applied"])
 
 
+class CorruptJobIdRefusalTests(unittest.TestCase):
+    """Issue #82 — answer.py persists answers/<job_id>.json keyed by the same
+    derived id; a job_id carrying the '.' (hence '...') corruption marker must
+    be refused, writing nothing (a corrupt key aliases jobs in the audit)."""
+
+    CORRUPT_ID = "eyJqb2...sIn0="
+    GENUINE_ID = ("eyJpZCI6Ijc1NTY5NDM3NSIsInRpdGxlIjoi"
+                  "ZGVzZW52b2x2ZWRvci1qYXZhIn0=")
+
+    def setUp(self):
+        self.memory_dir = Path(tempfile.mkdtemp(prefix="answer-corrupt-"))
+
+    def tearDown(self):
+        shutil.rmtree(self.memory_dir, ignore_errors=True)
+
+    def test_saveAnswers_whenJobIdCorrupt_shouldRefuse(self):
+        question = make_question()
+        resolved = [answer.resolve_question(question, PROFILE)]
+        result = answer.save_answers(
+            self.memory_dir, self.CORRUPT_ID, resolved, attempt_id=ATTEMPT_ID,
+        )
+        self.assertEqual(result["ok"], False)
+        self.assertEqual(result["error"], "corrupt_gupy_slug")
+        self.assertEqual(list(self.memory_dir.rglob("*.json")), [])
+
+    def test_recordBlockedSubmit_whenJobIdCorrupt_shouldWriteNothing(self):
+        # record_blocked_submit routes through verdict.decide — the attempt
+        # writer refuses the corrupt id, so nothing is persisted.
+        result = answer.record_blocked_submit(
+            self.memory_dir,
+            job_id=self.CORRUPT_ID,
+            attempt_id=ATTEMPT_ID,
+            job_url="https://mendelics.gupy.io/job/eyJqb2...sIn0=",
+            portal="gupy",
+            blockers=[{"reason_code": "MANUAL"}],
+        )
+        self.assertFalse(result["written_applied"])
+        self.assertFalse(result["written_attempt"])
+        self.assertEqual(list(self.memory_dir.rglob("*.json")), [])
+
+    def test_saveAnswers_whenJobIdGenuineBase64_shouldSave(self):
+        question = make_question()
+        resolved = [answer.resolve_question(question, PROFILE)]
+        result = answer.save_answers(
+            self.memory_dir, self.GENUINE_ID, resolved, attempt_id=ATTEMPT_ID,
+        )
+        self.assertEqual(result["job_id"], self.GENUINE_ID)
+        self.assertTrue(
+            (self.memory_dir / "answers" / f"{self.GENUINE_ID}.json").is_file())
+
+    def test_saveAnswers_whenInfojobsNumericSlug_shouldSave(self):
+        question = make_question()
+        resolved = [answer.resolve_question(question, PROFILE)]
+        result = answer.save_answers(
+            self.memory_dir, "755694375", resolved, attempt_id=ATTEMPT_ID,
+        )
+        self.assertEqual(result["job_id"], "755694375")
+        self.assertTrue(
+            (self.memory_dir / "answers" / "755694375.json").is_file())
+
+
 if __name__ == "__main__":
     unittest.main()

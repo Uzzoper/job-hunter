@@ -338,6 +338,54 @@ def derive_job_id(url: str) -> Optional[str]:
     return _strip_json_suffix(slug)
 
 
+def is_corrupt_gupy_slug(job_id: Optional[str]) -> bool:
+    """True when the derived id carries the issue #82 integrity marker.
+
+    Gupy publicIds are urlsafe-base64 — the only legal characters are
+    ``A-Za-z0-9_-`` plus a trailing ``=`` padding — so a literal ``.`` (and
+    therefore a ``...`` elision) is impossible in a genuine slug. No legal
+    derivation in this system produces a dotted id either (the single legit
+    dot source, a trailing ``.json`` extension, is stripped by
+    ``_strip_json_suffix``), so a dot means the URL was truncated or
+    hand-typed before derivation (#82 root cause). Callers refuse to plan and
+    the record writers refuse to persist any job_id this function flags.
+    """
+    return bool(job_id) and "." in job_id
+
+
+def corrupt_gupy_url_slug(url: Optional[str]) -> Optional[str]:
+    """Return the corrupt Gupy slug embedded in a resolved job URL, else None.
+
+    Entry-gate defense-in-depth over ``is_corrupt_gupy_slug``: that gate keys
+    on the DERIVED id, and ``derive_job_id`` over-matches the FIRST
+    ``/jobs/<slug>/`` segment — a resolved URL whose LAST slug carries the
+    ``...`` elision (clean id, corrupt url field) slips past it. This scans
+    the RESOLVED url string itself (the API/DB field, in every input mode
+    ``--job-url`` / ``--job-id`` / ``--from-api``): for Gupy hosts only, the
+    last path segment is checked with the same integrity rule. Non-Gupy URLs
+    always return ``None`` and are unaffected (issue #82 scope).
+    """
+    if not url:
+        return None
+    try:
+        parsed = urllib.parse.urlparse(url)
+        host = (parsed.hostname or "").lower()
+        path = parsed.path.rstrip("/")
+    except Exception:
+        return None
+    if not (host == "gupy.io" or host.endswith(".gupy.io")):
+        return None
+    if not path:
+        return None
+    segments = [s for s in path.split("/") if s]
+    if not segments:
+        return None
+    slug = segments[-1]
+    if is_corrupt_gupy_slug(slug):
+        return slug
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Idempotency gate (#27) — memory record READ-ONLY.
 # The applications/ record is now written ONLY by verdict.py (mcp-apply-loop,
@@ -670,6 +718,43 @@ def run(argv: Optional[List[str]] = None) -> int:
             "invalid_job_url",
             f"could not derive a job id from url: {job_url}",
             memory_dir=memory_dir,
+        )))
+        return 1
+
+    # Issue #82 — URL and job_id integrity validation, BEFORE any other gate
+    # and before intent emission: a '.' (hence '...') is impossible in a
+    # genuine Gupy slug (urlsafe base64), so its presence proves the URL was
+    # truncated or hand-typed by the LLM. Hard-fail with clean JSON (exit 1,
+    # same failure mode as invalid_job_url) — never navigate a corrupt URL and
+    # never mint a corrupt idempotency key on disk.
+    if is_corrupt_gupy_slug(job_id):
+        print(json.dumps(build_error(
+            "corrupt_gupy_slug",
+            f"job id '{job_id}' contains a '.' (e.g. a '...' elision) which no "
+            f"genuine Gupy publicId can contain: the URL was truncated or "
+            f"hand-typed (issue #82). Re-fetch the URL from --from-api or "
+            f"--job-id instead of typing it",
+            memory_dir=memory_dir,
+            job_id=job_id,
+        )))
+        return 1
+
+    # Issue #82 — intent-emission gate, the RESOLVED url (the --job-id /
+    # --from-api / --job-url url field, finalized above): derive_job_id
+    # over-matches the FIRST /jobs/<slug>/ segment, so a clean derived id can
+    # coexist with a corrupt LAST slug carrying the '...' elision — the url
+    # field of the intent must be clean too. Same corrupt_gupy_slug error,
+    # same exit 1, before any intent file is written. Non-Gupy urls unaffected.
+    corrupt_slug = corrupt_gupy_url_slug(job_url)
+    if corrupt_slug is not None:
+        print(json.dumps(build_error(
+            "corrupt_gupy_slug",
+            f"resolved url '{job_url}' carries slug '{corrupt_slug}' "
+            f"containing a '.' (e.g. a '...' elision) which no genuine Gupy "
+            f"publicId can contain: the url field is corrupted (issue #82). "
+            f"Re-fetch the job from the API instead of relying on this url",
+            memory_dir=memory_dir,
+            job_id=job_id,
         )))
         return 1
 

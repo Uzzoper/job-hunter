@@ -29,6 +29,10 @@ produces loops instead of one-shot execution.
   (`gupy | infojobs`), `DEFAULT_MAX_STEPS=25`, no selectors/step lists.
 - `skills/job-application/job_api.py`, `navigation.py`, `ax_tree.py`: API
   client (header `X-Bot-Token`), URL/session guards, AX-tree helpers.
+- `skills/job-application/audit.py` (+ `audit_test.py`): optional **read-only**
+  pre-batch consistency audit of backend lifecycleState vs `applications/`,
+  `attempts/` and screenshots (issue #81, spec
+  `docs/specs/consistency-audit.md`).
 - Test suites: `apply_test.py`, `classify_test.py`, `intent_test.py`,
   `job_api_test.py`, `navigation_test.py`, `ax_tree_test.py`, `verdict_test.py`
   (all stdlib `unittest`).
@@ -104,7 +108,47 @@ another means silently.
   directory tree; `SKILL.md` quarantine/`MANIFEST.md` section is updated to
   match. No migration of existing records.
 
-## 6. Acceptance criteria (#72)
+## 6. URL and job_id integrity validation (issue #82)
+
+Gupy job publicIds are urlsafe-base64: the only legal characters are
+`A-Za-z0-9_-` plus a trailing `=` padding. A literal `.` — and therefore a
+`...` elision — is **impossible** in a genuine Gupy slug.
+
+- **Source rule:** job URLs come from the Job Hunter API (`--from-api` /
+  `--job-id`) or pass the integrity validation. They are **never hand-typed**
+  — an LLM elides the long opaque base64 publicId as `...`, and a truncated
+  URL navigates to the listing page instead of the detail (the #82 root
+  cause). `derive_job_id` keeps accepting the URL verbatim; validation is
+  the gate that refuses the corrupt result.
+- **Validation at entry (before intent emission):** `apply.py` rejects any
+  Gupy URL whose derived slug contains `.` (hence `...`) with a JSON error
+  `{"error": "corrupt_gupy_slug", ...}` — exit code 1, the same failure mode
+  as `invalid_job_url`. No intent is emitted and nothing is written.
+- **Validation of the resolved URL at intent emission:** `derive_job_id`
+  over-matches the FIRST `/jobs/<slug>/` segment, so a derived id can be
+  clean while the url field (the API/DB value, in every input mode
+  `--job-url` / `--job-id` / `--from-api`) still carries a corrupt LAST slug.
+  The single intent-emission point therefore also scans the resolved url:
+  for Gupy hosts only, the last path segment is checked with the same
+  integrity rule (`corrupt_gupy_url_slug`), rejecting with the same
+  `corrupt_gupy_slug` JSON error and exit 1, before any intent file is
+  written. Non-Gupy urls are unaffected.
+- **Validation at record-write time:** `verdict.py` (sole writer of
+  `applications/` and `attempts/`) and `answer.py` (`answers/`) refuse to
+  persist a record whose `job_id` contains `.`. The marker surfaces through
+  the record contract validator as `job_id.corrupt_gupy_slug`; the writer
+  returns the refusal dict and writes nothing. The attempt writer also scans
+  its `job_url` **field** with the same Gupy-scoped rule — a clean id must not
+  mask a corrupt url behind it (`job_url.corrupt_gupy_url_slug`, PR #83 P1-1).
+- Audit identity (item D): the audit prefers the applications record's
+  `backend_job_id` (numeric) over the slug when resolving backend identity
+  — a slug-format miss (InfoJobs numeric vs Gupy base64) or a corrupt slug
+  must not manufacture `applied_without_backend` / `backend_submitted_without_application`
+  phantoms.
+- Non-Gupy portals (InfoJobs numeric slug `755694375`, LinkedIn
+  `/jobs/view/`) are unaffected: numeric and normal slugs keep working.
+
+## 7. Acceptance criteria (#72)
 
 - In a fresh conversation, the bot uses the correct (authenticated) Chromium
   or stops with a clear instruction — never proceeds in the wrong browser.
@@ -112,7 +156,7 @@ another means silently.
 - Every phase transition backed by current-snapshot evidence.
 - Ambiguity stops the run instead of triggering workarounds.
 
-## 7. Out of scope
+## 8. Out of scope
 
 - Hermes auto-attach integration (follows separately if needed).
 - Profile-facts answer policy (issue #73; plugs into the review gate).
