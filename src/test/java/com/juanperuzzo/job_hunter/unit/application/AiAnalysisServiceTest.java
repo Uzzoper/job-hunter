@@ -174,6 +174,49 @@ class AiAnalysisServiceTest {
     }
 
     @Nested
+    @DisplayName("Prompt v4.1: score-down factors for seniority and degree")
+    class PromptV41Tests {
+
+        private static final String VALID_JSON = """
+            {
+              "matchScore": 80,
+              "matchedSkills": ["Java"],
+              "missingSkills": ["Go"],
+              "companyTone": "formal",
+              "summary": "Developer position"
+            }
+            """;
+
+        @Test
+        @DisplayName("analyze should embed the v4.1 score-down factors and still parse the 5-field response")
+        void analyze_whenPromptBuilt_shouldContainV41ScoreDownFactors() {
+            when(userProfileRepository.findByUserId(any())).thenReturn(Optional.of(defaultProfile));
+            ArgumentCaptor<String> promptCaptor = ArgumentCaptor.forClass(String.class);
+            when(aiPort.complete(promptCaptor.capture())).thenReturn(VALID_JSON);
+            when(jobAnalysisRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            when(jobRepository.findById(1L)).thenReturn(Optional.of(
+                    new Job(1L, "Java Developer", "CompanyX",
+                            "https://example.com/job/1", "Description", LocalDate.now(), "test")));
+
+            JobAnalysis analysis = aiAnalysisService.analyze(1L, 1L);
+
+            String prompt = promptCaptor.getValue();
+            assertTrue(prompt.contains("years of experience above the candidate's junior level"),
+                    "prompt must carry the years-of-experience score-down factor, got: " + prompt);
+            assertTrue(prompt.contains("2027 graduate"),
+                    "prompt must carry the required-degree score-down factor, got: " + prompt);
+            assertTrue(prompt.contains("80-100") && prompt.contains("0-19"),
+                    "prompt must keep the 5-band grading, got: " + prompt);
+            // v4.1 keeps the response format UNCHANGED — the same 5 fields still parse
+            assertEquals(80, analysis.matchScore());
+            assertEquals(List.of("Java"), analysis.matchedSkills());
+            assertEquals(List.of("Go"), analysis.missingSkills());
+            assertEquals(CompanyTone.FORMAL, analysis.companyTone());
+            assertEquals("Developer position", analysis.summary());
+        }
+    }
+
+    @Nested
     @DisplayName("Scenario 1: successful analysis")
     class SuccessfulAnalysisTests {
 
