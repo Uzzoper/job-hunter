@@ -40,7 +40,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List, NotRequired, Optional, TypedDict
 
-from apply import is_corrupt_gupy_slug  # issue #82 — shared slug integrity guard
+from apply import corrupt_gupy_url_slug, is_corrupt_gupy_slug  # issue #82 — shared slug integrity guards
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -192,6 +192,13 @@ def _validate_attempt_record(record: Dict[str, Any],
     if isinstance(record.get("job_id"), str) and \
             is_corrupt_gupy_slug(record["job_id"]):
         problems.append("job_id.corrupt_gupy_slug")
+    # Issue #82 (PR #83 review P1-1) — the attempt record persists the url
+    # FIELD (job_url); a clean id must not mask a corrupt Gupy url behind it
+    # (derive_job_id over-matches the first /jobs/<slug>/ segment). The
+    # Gupy-scoped url scan refuses with the url-scoped contract problem.
+    if isinstance(record.get("job_url"), str) and \
+            corrupt_gupy_url_slug(record["job_url"]) is not None:
+        problems.append("job_url.corrupt_gupy_url_slug")
     _record_str(record, "", "reason", problems, allow_none=True)
 
     if "outcome" not in record:
