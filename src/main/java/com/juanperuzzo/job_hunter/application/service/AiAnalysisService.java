@@ -96,7 +96,8 @@ public class AiAnalysisService implements AnalyzeJobUseCase {
 
             {"matchScore": 75, "matchedSkills": ["Java"], "missingSkills": ["Go"], "companyTone": "formal", "summary": "Resume em ate 80 caracteres"}
 
-            Score: 80-100=todos requisitos, 50-79=maioria, <50=poucos matches
+            Score: 80-100=todos requisitos, 60-79=maioria, 40-59=metade, 20-39=poucos, 0-19=stack diferente
+            Score down within the band: job requiring years of experience above the candidate's junior level; job requiring a degree the candidate does not hold (candidate is a 2027 graduate)
             Tone: formal=tradicional, casual=moderno, startup=jovem/dinamico
             """.formatted(
                 String.join(", ", profile.skills()),
