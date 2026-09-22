@@ -100,7 +100,7 @@ public class EmailGenerationService implements GenerateEmailUseCase, GetEmailDra
             }
         }
 
-        if (analysis.matchScore() >= minMatchScore) {
+        if (analysis.matchScore() < minMatchScore) {
             return generateFromTemplate(job, user, profile, userId);
         }
 
