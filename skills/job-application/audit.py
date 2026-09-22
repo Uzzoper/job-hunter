@@ -95,6 +95,27 @@ def backend_job_keys(job: Dict[str, Any]) -> set:
     return keys
 
 
+def _record_identity_keys(record: Dict[str, Any]) -> List[str]:
+    """The backend-lookup keys an applications record answers to, in order.
+
+    Issue #82 (item D): the record body's ``backend_job_id`` (numeric) is
+    PREFERRED over the portal slug — a slug can be a different format than
+    the backend's derived key (InfoJobs numeric slug vs a Gupy base64 id) or
+    even corrupt (#82 wildcard rows), while the numeric id is the funnel
+    source's own key. Falls back to the record's ``job_id`` slug.
+    """
+    keys: List[str] = []
+    if not isinstance(record, dict):
+        return keys
+    backend_job_id = record.get("backend_job_id")
+    if backend_job_id is not None:
+        keys.append(str(backend_job_id))
+    job_id = record.get("job_id")
+    if isinstance(job_id, str) and job_id and job_id not in keys:
+        keys.append(job_id)
+    return keys
+
+
 # ---------------------------------------------------------------------------
 # Source loaders — READ-ONLY; corrupt/missing files degrade to missing
 # ---------------------------------------------------------------------------
@@ -240,9 +261,20 @@ def check(backend_jobs: List[Dict[str, Any]],
     attempts = load_attempts(memory_dir)
     screenshots = load_screenshots(screenshots_dir)
 
+    # Issue #82 (item D) — identity map: every key an applications record
+    # answers to (backend_job_id FIRST, then the slug) → the record. The
+    # backend-side lookups below use it, so a slug-format miss or a corrupt
+    # slug no longer manufactures phantoms when the record carries the
+    # numeric backend id.
+    application_identity: Dict[str, Dict[str, Any]] = {}
+    for _job_id, record in applications.items():
+        for key in _record_identity_keys(record):
+            application_identity.setdefault(key, record)
+
     # Backend key → lifecycleState (a numeric id and its url-slug key both map).
     known_keys: set = set()
     backend_lifecycle: Dict[str, Any] = {}
+    key_siblings: Dict[str, set] = {}
     for job in backend_jobs:
         if not isinstance(job, dict):
             continue
@@ -250,6 +282,11 @@ def check(backend_jobs: List[Dict[str, Any]],
         known_keys.update(keys)
         for key in keys:
             backend_lifecycle.setdefault(key, job.get("lifecycleState"))
+        # Issue #82 (item D) — the OTHER identity keys of the same backend
+        # job (id vs url-slug), so check 2 never double-reports a job that
+        # already reconciles under a sibling key.
+        for key in keys:
+            key_siblings.setdefault(key, set()).update(keys - {key})
 
     lines: List[str] = []
 
@@ -258,7 +295,14 @@ def check(backend_jobs: List[Dict[str, Any]],
     for job_id, record in sorted(applications.items()):
         if not isinstance(record, dict) or record.get("status") != APPLIED_STATUS:
             continue
-        lifecycle = backend_lifecycle.get(job_id)
+        # Issue #82 (item D) — resolve the backend lifecycle through the
+        # record's identity keys (backend_job_id preferred), never the slug
+        # alone.
+        lifecycle = None
+        for key in _record_identity_keys(record):
+            if key in backend_lifecycle:
+                lifecycle = backend_lifecycle.get(key)
+                break
         if lifecycle != SUBMITTED_LIFECYCLE:
             lines.append(
                 f"DIVERGENCE applied_without_backend: job={job_id} "
@@ -280,18 +324,26 @@ def check(backend_jobs: List[Dict[str, Any]],
             )
 
     # Check 2 — backend SUBMITTED → matching applications/ file must exist.
+    # Issue #82 (item D): membership is resolved via the full identity map
+    # (backend_job_id + slug) AND the backend job's sibling keys — a record
+    # keyed under a different slug than the backend-derived one still
+    # satisfies the cross-check, and a single job is never double-reported.
     for key in sorted(k for k, state in backend_lifecycle.items()
                       if state == SUBMITTED_LIFECYCLE):
-        if key not in applications:
-            lines.append(
-                f"DIVERGENCE backend_submitted_without_application: job={key} "
-                f"backend=SUBMITTED applications=missing"
-            )
+        if key in application_identity:
+            continue
+        if any(s in application_identity
+               for s in key_siblings.get(key, set())):
+            continue
+        lines.append(
+            f"DIVERGENCE backend_submitted_without_application: job={key} "
+            f"backend=SUBMITTED applications=missing"
+        )
 
     # Check 3 — attempts referencing keys unknown to the backend: ONE line per
     # unknown key (never per attempt file), grouping the attempt ids.
     for job_id, records in sorted(attempts.items()):
-        if job_id in known_keys:
+        if job_id in known_keys or job_id in application_identity:
             continue
         attempt_ids = ",".join(
             str(r.get("attempt_id") or "?")
