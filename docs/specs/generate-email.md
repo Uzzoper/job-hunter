@@ -9,19 +9,21 @@
 
 ## Expected behavior
 
-### Scenario 1: successful generation (AI path, matchScore < threshold)
-- **GIVEN** a valid `Job`, `JobAnalysis` with `matchScore < threshold`, and saved user profile
+### Scenario 1: successful generation (AI path, matchScore >= threshold)
+- **GIVEN** a valid `Job`, `JobAnalysis` with `matchScore >= threshold`, and saved user profile
 - **WHEN** `generate(userId, jobId)` is called
 - **THEN** builds prompt from job/analysis/profile, calls `AiPort.complete()`
 - **AND** returns an `EmailDraft` with `subject` and `body` populated from the AI response
 - **AND** `subject` starts with "Subject: " (standard prefix)
 - **AND** `body` has 3-5 paragraphs
 
-### Scenario 2: analysis with low matchScore
-- **GIVEN** a `JobAnalysis` with `matchScore < 30`
+### Scenario 2: analysis with low matchScore (template fallback)
+- **GIVEN** a `JobAnalysis` with `matchScore < threshold`
 - **WHEN** `generate(userId, jobId)` is called
-- **THEN** generation proceeds normally — not blocked by low score
-- **AND** the email addresses missing skills matter-of-factly — professional positioning, no trainee phrasing
+- **THEN** `AiPort.complete()` is **never** called
+- **AND** the returned `EmailDraft` has `subject` and `body` built from `TemplateEmailService` with both `job.title()` and `job.company()` substituted
+- **AND** the draft is persisted with `status = PENDING` — or `REJECTED` when the template result carries the `NO_APPLY:` marker (see `email-no-apply-refusal.md`)
+- **AND** generation is not blocked by the low score as long as the job was analyzed
 
 ### Scenario 3: formal tone
 - **GIVEN** `companyTone == FORMAL`
@@ -38,12 +40,12 @@
 - **WHEN** `generate(userId, jobId)` is called
 - **THEN** throws `AiException`
 
-### Scenario 6: template branch for high matchScore — NEW
+### Scenario 6: AI branch for high matchScore — NEW
 - **GIVEN** `analysis.matchScore() >= threshold` (default: 60, configurable via `email.standard-template.min-match-score`)
 - **WHEN** `generate(userId, jobId)` is called
-- **THEN** `AiPort.complete()` is **never** called
-- **AND** the returned `EmailDraft` has `subject` and `body` built from `TemplateEmailService` with both `job.title()` and `job.company()` substituted
-- **AND** the draft is persisted with `status = PENDING` through the same upsert path
+- **THEN** `TemplateEmailService` is **never** called
+- **AND** `AiPort.complete()` is called and the returned `EmailDraft` has `subject` and `body` populated from the AI response
+- **AND** the draft is persisted with `status = PENDING` through the same upsert path — or `REJECTED` when the AI returns `NO_APPLY:` (see `email-no-apply-refusal.md`)
 
 ---
 
@@ -56,7 +58,7 @@
 - The `body` is the remainder of the response after removing the subject line
 - `EmailDraft` is saved with `userId`, `jobId`, and `status = PENDING` — or `REJECTED` when the AI returns the `NO_APPLY:` refusal (see `email-no-apply-refusal.md`)
 - Per-user uniqueness: one draft per `(job_id, user_id)` enforced at database level (see `email-no-apply-refusal.md` for the reconciled migration numbering — the earlier `V3` mention here predates the actual `V3__add_rejected_to_email_status.sql`)
-- When `matchScore >= minMatchScore`, a fixed template replaces the AI call entirely (saves AI credits, deterministic output)
+- When `matchScore >= minMatchScore`, the AI-write path personalizes the email (high-score jobs deserve tailored outreach); when `matchScore < minMatchScore`, a fixed template replaces the AI call entirely (saves AI credits, deterministic output)
 - Idempotency check on create (see `email-idempotency.md`): if a `SENT` draft already exists for `(jobId, job.contactEmail)`, generation is skipped and the existing `SENT` is returned (`DEBUG` log); new drafts snapshot `recipientEmail = job.contactEmail()`
 - The threshold is configured via `email.standard-template.min-match-score` (default: 60)
 
