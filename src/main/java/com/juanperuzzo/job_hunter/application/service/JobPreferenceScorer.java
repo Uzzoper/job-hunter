@@ -39,6 +39,13 @@ public final class JobPreferenceScorer {
      * lowers the score — it never blocks the job from ranking or applying.
      */
     private static final int SENIORITY_MISMATCH_PENALTY = 10;
+    /**
+     * A stack mismatch for the candidacy: none of the profile skills appears in
+     * the job's title or description (match-quality spec §4). Same magnitude as
+     * the seniority penalty; composes additively inside the 0–100 clamp and
+     * never blocks the job — ordering signal only.
+     */
+    private static final int STACK_MISMATCH_PENALTY = 10;
 
     /**
      * Whole-word markers for a pleno/mid-level title, built with the same
@@ -56,17 +63,21 @@ public final class JobPreferenceScorer {
 
     /**
      * Returns the preference-adjusted score for {@code rawScore}, clamped to
-     * 0–100. The raw score passes through unchanged when preferences are null
-     * or semantically blank.
+     * 0–100. The stack signal applies whenever the profile carries a non-blank
+     * skill list — preferences or not. The work-model, seniority and
+     * excluded-company signals only apply when preferences carry content; the
+     * raw score passes through unchanged for null/blank preferences without
+     * skills (byte-identical behavior).
      */
-    public static int adjust(int rawScore, Job job, UserPreferences preferences) {
+    public static int adjust(int rawScore, Job job, UserPreferences preferences, List<String> profileSkills) {
+        int modifier = stackModifier(job, profileSkills);
         if (preferences == null || !preferences.hasContent()) {
-            return rawScore;
+            return clamp(rawScore + modifier);
         }
         if (isExcludedCompany(job.company(), preferences.excludedCompanies())) {
             return Math.min(rawScore, EXCLUDED_COMPANY_SCORE_CAP);
         }
-        int modifier = workModelModifier(job.description(), preferences.workPreference());
+        modifier += workModelModifier(job.description(), preferences.workPreference());
         // PR #80 review P0-3: the seniority penalty only composes when an
         // EXPLICIT work model is set. A salary-only profile must stay
         // byte-identical (salaryFloor is a prompt-only signal), so a senior
@@ -74,7 +85,37 @@ public final class JobPreferenceScorer {
         if (preferences.workPreference() != null) {
             modifier += seniorityModifier(job);
         }
-        return Math.max(0, Math.min(100, rawScore + modifier));
+        return clamp(rawScore + modifier);
+    }
+
+    private static int clamp(int score) {
+        return Math.max(0, Math.min(100, score));
+    }
+
+    /**
+     * Soft stack-fit modifier: −10 when none of the profile skills appears in
+     * the normalized {@code title + " " + description} haystack. Skills are
+     * trimmed; blank/empty lists carry no penalty (identity guarantee). A skill
+     * hits when its normalized string is a substring of the haystack — the same
+     * {@code contains()} idiom as {@link #mentionsAnyCity}. Independent of
+     * {@code workPreference}: fires for any profile carrying skills.
+     */
+    private static int stackModifier(Job job, List<String> profileSkills) {
+        if (profileSkills == null || profileSkills.isEmpty()) {
+            return 0;
+        }
+        List<String> skills = profileSkills.stream()
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .toList();
+        if (skills.isEmpty()) {
+            return 0;
+        }
+        String haystack = (job.title() == null ? "" : job.title().toLowerCase(Locale.ROOT))
+                + " " + (job.description() == null ? "" : job.description().toLowerCase(Locale.ROOT));
+        boolean hit = skills.stream()
+                .anyMatch(skill -> haystack.contains(skill.toLowerCase(Locale.ROOT)));
+        return hit ? 0 : -STACK_MISMATCH_PENALTY;
     }
 
     /**

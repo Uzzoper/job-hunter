@@ -60,8 +60,9 @@ public class AiAnalysisService implements AnalyzeJobUseCase {
             JobAnalysis parsed = parseAnalysis(response);
             // Deterministic preferences→scoring modifier: guarantees work-model
             // conflicts and excluded companies lower the persisted matchScore even
-            // if the AI ignores the injected context. Null/blank preferences → no-op.
-            int matchScore = JobPreferenceScorer.adjust(parsed.matchScore(), job, profile.preferences());
+            // if the AI ignores the injected context; the soft stack signal
+            // (match-quality spec §4) penalizes a skills list with zero overlap.
+            int matchScore = JobPreferenceScorer.adjust(parsed.matchScore(), job, profile.preferences(), profile.skills());
             var existingId = jobAnalysisRepository.findByJobIdAndUserId(job.id(), userId)
                     .map(JobAnalysis::id)
                     .orElse(null);
