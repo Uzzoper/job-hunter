@@ -69,9 +69,10 @@ is preserved: this feature only affects ranking/filtering/draft generation).
 
 Applied in `AiAnalysisService.analyze` AFTER JSON parsing (raw AI score),
 BEFORE persistence. The final stored score is
-`clamp(0, 100, rawScore + workModelModifier + seniorityModifier)` unless the
-company is excluded (`seniorityModifier` fires only when an explicit work
-preference is set — see below).
+`clamp(0, 100, rawScore + workModelModifier + seniorityModifier + stackModifier)`
+unless the company is excluded (`seniorityModifier` fires only when an explicit
+work preference is set — see below; `stackModifier` fires independently for any
+profile carrying non-blank skills — match-quality spec §4).
 
 ### Terms detection (description text, lowercased)
 
@@ -113,14 +114,28 @@ heavy lifting. The deterministic modifier is the guaranteed floor.
 | Condition | Modifier |
 |---|---|
 | Explicit work preference set (`Remote` / `Hybrid` / `Onsite`) AND the job title is marked pleno / "pl." / "PL" / mid-level (whole-word, case-insensitive) | **−10** |
+| Explicit work preference set AND the description contains a bare integer 3..30 within ±6 tokens of `anos de experiência` / `anos de experiencia` / `years of experience` (PT+EN, both orders; match-quality spec §3) | **−10** |
 | No explicit work preference (blank, or only `salaryFloor` / `excludedCompanies` set) | 0 — never applied |
 
-The penalty composes with the work-model modifier inside the 0–100 clamp and is
+The penalty composes as 0 or −10 total: a title-hit OR a body-hit fires, never
+both. It composes with the work-model modifier inside the 0–100 clamp and is
 **soft by design**: it lowers the stored `matchScore` but never blocks ranking
 or applying (unlike the excluded-company cap). It fires ONLY when the user
 declared an explicit work model — a salary-only profile keeps the identity
 guarantee, because `salaryFloor` is a prompt-only signal and a "Desenvolvedor
 Pleno" title must never silently penalize it (PR #80 review P0-3).
+
+### Soft stack signal (soft −10)
+
+| Condition | Modifier |
+|---|---|
+| Profile skills non-empty after trim/blank filtering AND none of the normalized skills appears in the lowercased `title + " " + description` (substring `contains()` match) | **−10** |
+| Empty or blank skills | 0 — identity guarantee extension (match-quality spec §4) |
+
+The stack signal is **independent of `workPreference`**: it fires for any
+profile carrying skills, preferences or not. Same magnitude as seniority and
+additive in the clamp; `matchScore` stays a ranking input, never a gate — no
+eliminatory field, no Flyway change, no new AI response fields.
 
 ### Excluded-company cap
 
@@ -143,8 +158,11 @@ AI treats "below floor" as a negative signal (score + generation).
 
 - `preferences == null` OR semantically blank
   (`workPreference == null && salaryFloor == null && excludedCompanies
-  isEmpty`) → `adjust` returns the raw score unchanged and the prompt is
-  byte-identical to today.
+  isEmpty`) **AND** empty/blank `profileSkills` → `adjust` returns the raw score
+  unchanged and the prompt is byte-identical to today. The identity promise
+  covers preference-less/skill-less profiles only: a preference-less profile
+  WITH skills gets the stack signal (match-quality spec §4), a deliberate,
+  documented new signal.
 - Clamping: `min(max(rawScore + modifier, 0), 100)` applied after adjustment.
 
 ---
@@ -195,9 +213,10 @@ precedent of a framework-free helper.
 ```java
 // application/service/JobPreferenceScorer.java
 public final class JobPreferenceScorer {
-    public static int adjust(int rawScore, Job job, UserPreferences preferences);
-    // null or blank preferences → rawScore unchanged; excluded company → min(rawScore, 15);
-    // otherwise clamp(rawScore + workModelModifier, 0, 100)
+    public static int adjust(int rawScore, Job job, UserPreferences preferences,
+                             List<String> profileSkills); // profile.skills() at the call site
+    // skills empty/blank → no stack signal; null or blank preferences → clamp(rawScore + stackModifier);
+    // excluded company → min(rawScore, 15); otherwise clamp(rawScore + workModelModifier + seniorityModifier + stackModifier, 0, 100)
 }
 
 // application/service/PreferencesPromptFormatter.java
