@@ -800,6 +800,94 @@ class CorruptGupySlugTests(unittest.TestCase):
         self.assertEqual(data["error"], "corrupt_gupy_slug")
         self.assertNotIn("intent", buf.getvalue())
 
+    def test_job_id_fetched_url_with_corrupt_slug_tail_rejected(self):
+        # Follow-up gate: derive_job_id over-matches the FIRST /jobs/<clean>/
+        # segment, so a --job-id URL whose LAST slug is corrupt (a '...'
+        # elision) currently passes the derived-id guard while the url field
+        # of the intent still carries the corruption. The intent-emission
+        # gate scans the RESOLVED url (the api/DB field) and must reject it.
+        with unittest.mock.patch("job_api.resolve_token", return_value="tok"), \
+                unittest.mock.patch("job_api.api_get_job", return_value={
+                    "id": 1463,
+                    "url": "https://acme.gupy.io/jobs/123-dev/positions/eyJqb2...sIn0=",
+                    "title": "Dev",
+                    "company": "Acme",
+                }):
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                code = apply.run([
+                    "--profile", self.profile_path,
+                    "--memory-dir", str(self.mem),
+                    "--job-id", "1463",
+                    "--dry-run",
+                ])
+        self.assertEqual(code, 1)
+        data = json.loads(buf.getvalue())
+        self.assertEqual(data["error"], "corrupt_gupy_slug")
+        self.assertNotIn("intent", buf.getvalue())
+
+    def test_from_api_fetched_url_with_corrupt_slug_tail_rejected(self):
+        # Same resolved-url gate for --from-api (the top-scored job's url
+        # field): the derived id '888-a' is clean, the url is corrupt — no
+        # intent may be emitted.
+        with unittest.mock.patch("job_api.resolve_token", return_value="tok"), \
+                unittest.mock.patch("job_api.pick_jobs_for_apply", return_value=[{
+                    "id": 888,
+                    "url": "https://jobs.gupy.io/jobs/888-a/vagas/eyJobz...xIn0=",
+                    "title": "Dev",
+                    "company": "Acme",
+                }]):
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                code = apply.run([
+                    "--profile", self.profile_path,
+                    "--memory-dir", str(self.mem),
+                    "--portal", "gupy",
+                    "--from-api",
+                    "--dry-run",
+                ])
+        self.assertEqual(code, 1)
+        data = json.loads(buf.getvalue())
+        self.assertEqual(data["error"], "corrupt_gupy_slug")
+        self.assertNotIn("intent", buf.getvalue())
+
+    def test_job_url_with_corrupt_slug_tail_rejected(self):
+        # The classic --job-url flow gets the same resolved-url scan: the gap
+        # shape (clean first slug, corrupt tail) must not emit an intent.
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            code = apply.run([
+                "--profile", self.profile_path,
+                "--memory-dir", str(self.mem),
+                "--portal", "gupy",
+                "--job-url", "https://jobs.gupy.io/jobs/123-dev/vagas/eyJqb2...sIn0=",
+                "--dry-run",
+            ])
+        self.assertEqual(code, 1)
+        data = json.loads(buf.getvalue())
+        self.assertEqual(data["error"], "corrupt_gupy_slug")
+        self.assertNotIn("intent", buf.getvalue())
+
+    def test_corrupt_gupy_url_slug_helper_non_gupy_unaffected(self):
+        # The resolved-url scanner is Gupy-scoped: non-Gupy URLs (InfoJobs,
+        # LinkedIn, unknown hosts) never flag — only Gupy slugs are checked.
+        self.assertIsNone(apply.corrupt_gupy_url_slug(
+            "https://www.infojobs.com.br/vaga/755694375.json"))
+        self.assertIsNone(apply.corrupt_gupy_url_slug(
+            "https://www.linkedin.com/jobs/view/4123456789/"))
+        self.assertIsNone(apply.corrupt_gupy_url_slug("https://example.com"))
+        self.assertIsNone(apply.corrupt_gupy_url_slug(""))
+
+    def test_corrupt_gupy_url_slug_helper_clean_urls_unaffected(self):
+        # Genuine slugs — normal kebab, base64 without dots, localhost-ish —
+        # never flag; only a dotted (elided) slug in a Gupy URL is corrupt.
+        self.assertIsNone(apply.corrupt_gupy_url_slug(
+            "https://jobs.gupy.io/jobs/12345-desenvolvedor-java"))
+        self.assertIsNone(apply.corrupt_gupy_url_slug(
+            "https://jobs.gupy.io/jobs/eyJpZCI6Ijc1NTY5NDM3NSIsInRpdGxlIjoiZGVzZW52b2x2ZWRvci1qYXZhIn0="))
+        self.assertIsNone(apply.corrupt_gupy_url_slug(
+            "https://acme.gupy.io/jobs/123-dev/positions"))
+
 
 # ---------------------------------------------------------------------------
 # Idempotency (#27) — memory record round-trip
