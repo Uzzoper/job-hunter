@@ -742,6 +742,79 @@ class CorruptJobIdRefusalTests(unittest.TestCase):
         self.assertTrue(
             (self.mem / "applications" / "755694375.json").is_file())
 
+    def test_write_attempt_log_with_corrupt_job_url_refuses(self):
+        # P1-1: the attempt record persists the url FIELD (job_url); a clean
+        # id must not mask a corrupt Gupy url behind it — the writer refuses
+        # with the url-scoped contract problem and writes NOTHING.
+        result = verdict.write_attempt_log(
+            self.mem,
+            attempt_id=ATTEMPT_ID,
+            job_id=JOB_ID,
+            job_url="https://acme.gupy.io/jobs/123-dev/positions/eyJqb2...sIn0=",
+            portal=PORTAL,
+            started_at=STARTED_AT,
+            ended_at=ENDED_AT,
+            outcome=verdict.INCOMPLETE,
+            reason="blocked",
+        )
+        self.assertEqual(result["ok"], False)
+        self.assertEqual(result["error"], "invalid_record_contract")
+        self.assertIn("job_url.corrupt_gupy_url_slug", result["problems"])
+        self.assertEqual(list(self.mem.glob("attempts/**/*")), [])
+
+    def test_decide_with_corrupt_job_url_reports_no_write(self):
+        # decide() propagates the refusal: clean id + corrupt url → the
+        # attempt writer declines, so nothing lands on disk.
+        result = verdict.decide(
+            self.mem,
+            outcome=verdict.INCOMPLETE,
+            reason="blocked",
+            job_id=JOB_ID,
+            attempt_id=ATTEMPT_ID,
+            job_url="https://jobs.gupy.io/jobs/888-a/vagas/eyJobz...xIn0=",
+            portal=PORTAL,
+            started_at=STARTED_AT,
+            ended_at=ENDED_AT,
+        )
+        self.assertFalse(result["written_attempt"])
+        self.assertEqual(list(self.mem.rglob("*.json")), [])
+
+    def test_write_attempt_log_with_clean_job_url_still_writes(self):
+        # A genuine Gupy url with the clean id keeps writing the attempt log
+        # (the success path returns the record body, not an ok/error dict).
+        result = verdict.write_attempt_log(
+            self.mem,
+            attempt_id=ATTEMPT_ID,
+            job_id=JOB_ID,
+            job_url=JOB_URL,
+            portal=PORTAL,
+            started_at=STARTED_AT,
+            ended_at=ENDED_AT,
+            outcome=verdict.INCOMPLETE,
+            reason="blocked",
+        )
+        self.assertEqual(result["job_url"], JOB_URL)
+        attempts = list((self.mem / "attempts").rglob("*.json"))
+        self.assertEqual(len(attempts), 1)
+
+    def test_write_attempt_log_with_non_gupy_url_unaffected(self):
+        # The url guard is Gupy-scoped: an InfoJobs url (numeric slug, dottish
+        # suffix is legal there) keeps writing even with a clean id.
+        result = verdict.write_attempt_log(
+            self.mem,
+            attempt_id=ATTEMPT_ID,
+            job_id="755694375",
+            job_url="https://www.infojobs.com.br/vaga/755694375.json",
+            portal="infojobs",
+            started_at=STARTED_AT,
+            ended_at=ENDED_AT,
+            outcome=verdict.INCOMPLETE,
+            reason="manual",
+        )
+        self.assertEqual(result["job_id"], "755694375")
+        attempts = list((self.mem / "attempts").rglob("*.json"))
+        self.assertEqual(len(attempts), 1)
+
 
 if __name__ == "__main__":
     unittest.main()
