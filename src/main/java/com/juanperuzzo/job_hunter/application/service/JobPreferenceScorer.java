@@ -72,7 +72,7 @@ public final class JobPreferenceScorer {
         // byte-identical (salaryFloor is a prompt-only signal), so a senior
         // title must never silently penalize it.
         if (preferences.workPreference() != null) {
-            modifier += seniorityModifier(job.title());
+            modifier += seniorityModifier(job);
         }
         return Math.max(0, Math.min(100, rawScore + modifier));
     }
@@ -80,22 +80,76 @@ public final class JobPreferenceScorer {
     /**
      * Seniority fit modifier for a junior-seeker: roles explicitly marked as
      * pleno / "pl." / "PL" / mid-level lose {@value #SENIORITY_MISMATCH_PENALTY}
-     * points. Junior and unmarked titles are neutral. Detection runs on the job
-     * title only (word-level, case-insensitive) and never blocks the job — it
-     * simply composes with the work-model modifier inside the 0–100 clamp.
+     * points, and so do descriptions requiring a bare 3..30 years of
+     * experience near the "anos de experiência" / "years of experience"
+     * marker (match-quality spec §3). Junior and unmarked roles are neutral.
+     * Detection composes as 0 or −10 total: a title-hit OR a body-hit fires,
+     * never both. Unlike the body signal, the word-level patterns stay
+     * title-only — a free-form "pleno" in prose is not treated as a signal.
      *
      * <p>Callers only invoke this when an explicit {@link WorkPreference} is
      * set: the penalty belongs to the work-model dimension, and a salary-only
      * profile must remain byte-identical (prompt-only guarantee).
      */
-    private static int seniorityModifier(String title) {
+    private static int seniorityModifier(Job job) {
+        boolean mismatch = titleSignal(job.title())
+                || bodyExperienceSignal(job.description());
+        return mismatch ? -SENIORITY_MISMATCH_PENALTY : 0;
+    }
+
+    private static boolean titleSignal(String title) {
         if (title == null) {
-            return 0;
+            return false;
         }
         String normalized = title.toLowerCase(Locale.ROOT);
-        boolean mismatch = SENIORITY_MISMATCH_PATTERNS.stream()
+        return SENIORITY_MISMATCH_PATTERNS.stream()
                 .anyMatch(pattern -> pattern.matcher(normalized).find());
-        return mismatch ? -SENIORITY_MISMATCH_PENALTY : 0;
+    }
+
+    /**
+     * Years-of-experience signal in free-form description text. Fires when a
+     * bare integer between 3 and 30 appears within ±6 tokens of the PT/EN
+     * "years of experience" marker (both orders allowed). The marker is
+     * matched as the consecutive token triple "anos de experiência" /
+     * "anos de experiencia" / "years of experience"; anything else in the
+     * text — including a bare "pleno" — is ignored (match-quality spec §3).
+     */
+    private static boolean bodyExperienceSignal(String description) {
+        if (description == null) {
+            return false;
+        }
+        String[] tokens = description.toLowerCase(Locale.ROOT).split("[^\\p{L}\\p{N}]+");
+        for (int i = 0; i < tokens.length; i++) {
+            if (!isExperienceMarker(tokens, i)) {
+                continue;
+            }
+            int from = Math.max(0, i - 6);
+            int to = Math.min(tokens.length - 1, i + 2 + 6);
+            for (int j = from; j <= to; j++) {
+                Integer years = parseBareInteger(tokens[j]);
+                if (years != null && years >= 3 && years <= 30) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private static boolean isExperienceMarker(String[] tokens, int i) {
+        if (i + 2 >= tokens.length) {
+            return false;
+        }
+        return tokens[i].equals("anos") && tokens[i + 1].equals("de")
+                        && (tokens[i + 2].equals("experiência") || tokens[i + 2].equals("experiencia"))
+                || tokens[i].equals("years") && tokens[i + 1].equals("of")
+                        && tokens[i + 2].equals("experience");
+    }
+
+    private static Integer parseBareInteger(String token) {
+        if (token.chars().allMatch(Character::isDigit)) {
+            return Integer.valueOf(token);
+        }
+        return null;
     }
 
     private static Pattern compileWordPattern(String term) {
