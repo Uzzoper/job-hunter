@@ -34,6 +34,11 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
+import org.slf4j.LoggerFactory;
+
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -86,7 +91,73 @@ class EmailGenerationServiceTest {
         // Lenient: the null-parameter tests never reach the user lookup.
         lenient().when(userRepository.findById(any())).thenReturn(Optional.of(USER));
         emailGenerationService = new EmailGenerationService(aiPort, emailDraftRepository, userProfileRepository,
-                userRepository, jobRepository, jobAnalysisRepository, templateEmailService, botMemorySyncService, 60);
+                userRepository, jobRepository, jobAnalysisRepository, templateEmailService, botMemorySyncService, 60, 8000);
+    }
+
+    @Nested
+    @DisplayName("Truncation: configurable resume limit, tail cut with a warning")
+    class TruncationTests {
+
+        @Test
+        @DisplayName("generate should truncate the resume beyond the configured limit and log a warning")
+        void generate_whenResumeExceedsLimit_shouldTruncateAndWarn() {
+            EmailGenerationService smallLimitService = new EmailGenerationService(
+                    aiPort, emailDraftRepository, userProfileRepository, userRepository,
+                    jobRepository, jobAnalysisRepository, templateEmailService, botMemorySyncService, 60, 100);
+            String aiResponse = """
+                Subject: Application for Java Developer Position
+
+                Dear Hiring Manager,
+
+                I am writing to express my interest in the Java Developer position at CompanyX.
+
+                Sincerely,
+                Juan Peruzzo
+                """;
+
+            when(aiPort.complete(any())).thenReturn(aiResponse);
+            when(emailDraftRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            UserProfile longResumeProfile = new UserProfile(null, 1L,
+                    "y".repeat(150) + " FIM_DO_CURRICULO",
+                    List.of("Java", "Spring Boot", "PostgreSQL"),
+                    CompanyTone.FORMAL,
+                    List.of(), null, null, null, null, null, null);
+            when(userProfileRepository.findByUserId(any())).thenReturn(Optional.of(longResumeProfile));
+
+            Long jobId = 70L;
+            Job job = new Job(jobId, "Java Developer", "CompanyX",
+                    "https://example.com/job/70", "Description", LocalDate.now(), "test");
+            JobAnalysis analysis = new JobAnalysis(null, null, null, 40,
+                    List.of("Java", "Spring Boot"),
+                    List.of("Kubernetes"),
+                    CompanyTone.FORMAL,
+                    "Java developer position");
+
+            when(jobRepository.findById(jobId)).thenReturn(Optional.of(job));
+            when(jobAnalysisRepository.findByJobIdAndUserId(jobId, 1L)).thenReturn(Optional.of(analysis));
+
+            ArgumentCaptor<String> promptCaptor = ArgumentCaptor.forClass(String.class);
+            when(aiPort.complete(promptCaptor.capture())).thenReturn(aiResponse);
+
+            var logger = (Logger) LoggerFactory.getLogger(EmailGenerationService.class);
+            var appender = new ListAppender<ILoggingEvent>();
+            appender.start();
+            logger.addAppender(appender);
+            try {
+                smallLimitService.generate(1L, jobId);
+            } finally {
+                logger.detachAppender(appender);
+            }
+
+            String prompt = promptCaptor.getValue();
+            assertTrue(prompt.contains("y".repeat(100) + "..."),
+                    "resume excerpt must carry the ellipsis after the configured limit");
+            assertFalse(prompt.contains("FIM_DO_CURRICULO"), "truncated resume tail must not appear in the prompt");
+            var warned = appender.list.stream()
+                    .map(ILoggingEvent::getFormattedMessage)
+                    .anyMatch(m -> m.contains("truncating to 100"));
+            assertTrue(warned, "expected a truncation WARN for the resume");
+        }
     }
 
     @Nested
