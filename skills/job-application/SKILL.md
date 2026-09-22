@@ -269,6 +269,33 @@ Config schema (`cdp_url` / `user_data_dir` optional — defaults apply;
   (verbatim payload), `2` = usage/config error. The standard `{error, detail,
   screenshot_path}` envelope is used only for apply.py's own gate failures.
 
+### Optional pre-batch consistency audit (issue #81)
+
+`audit.py` is a **read-only** cross-check of applied-job state before a batch:
+it compares the backend `jobs.lifecycleState` (`GET /api/jobs`) against
+`applications/*.json`, the `attempts/**/*.json` trail and the screenshots dir,
+and lists every mismatch (one `DIVERGENCE` line per finding + a summary).
+Exit `0` = consistent, `1` = divergences found (a future pre-batch gate
+contract), `2` = usage. It **never writes, moves or deletes anything**.
+
+```
+python3 skills/job-application/audit.py [--api-base-url <url>]
+    [--api-token <token>] [--profile-dir <dir>] [--memory-dir <dir>]
+    [--screenshots-dir <dir>]
+```
+
+- Token: the usual service-token resolution (`--api-token` >
+  `JOBHUNTER_API_TOKEN` > `<profile-dir>/api-token.txt`, issue #47).
+- `--memory-dir` defaults to `<~/.hermes/profiles/jobhunter-bot/memails>`;
+  `--screenshots-dir` defaults to `<memory-dir>/screenshots` (pass the
+  profile-root screenshots location when the evidence lives there).
+- Checks: applied records must see `SUBMITTED` + a successful attempt + a
+  screenshot; backend `SUBMITTED` must have an `applications/` file; attempts
+  for unknown job keys and screenshots with no local records are flagged.
+  Quarantine (non-verified) attempt records are annotated `[quarantine]` on
+  the line they contribute to — never double-flagged.
+- Full contract: `docs/specs/consistency-audit.md` (issue #81).
+
 ### Tool allow-list per phase (runbook §3.3)
 
 During an apply run the bot may use, per phase, exactly:

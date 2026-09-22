@@ -29,6 +29,10 @@ produces loops instead of one-shot execution.
   (`gupy | infojobs`), `DEFAULT_MAX_STEPS=25`, no selectors/step lists.
 - `skills/job-application/job_api.py`, `navigation.py`, `ax_tree.py`: API
   client (header `X-Bot-Token`), URL/session guards, AX-tree helpers.
+- `skills/job-application/audit.py` (+ `audit_test.py`): optional **read-only**
+  pre-batch consistency audit of backend lifecycleState vs `applications/`,
+  `attempts/` and screenshots (issue #81, spec
+  `docs/specs/consistency-audit.md`).
 - Test suites: `apply_test.py`, `classify_test.py`, `intent_test.py`,
   `job_api_test.py`, `navigation_test.py`, `ax_tree_test.py`, `verdict_test.py`
   (all stdlib `unittest`).
