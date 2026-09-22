@@ -276,6 +276,90 @@ class JobPreferenceScorerTest {
         assertEquals(0, JobPreferenceScorer.adjust(4, job, prefs));
     }
 
+    // ---------- Seniority-in-body (docs/specs/match-quality.md §3) ----------
+
+    @Test
+    @DisplayName("adjust should subtract 10 when the description requires 5 anos de experiência")
+    void seniority_whenBodyMentionsFiveYears_shouldSubtractPenalty() {
+        UserPreferences prefs = new UserPreferences(new WorkPreference.Remote(), null, List.of());
+        Job job = job("Desenvolvedor",
+                "Requer 5 anos de experiência em Java e Spring Boot.", "CompanyX");
+
+        assertEquals(70, JobPreferenceScorer.adjust(80, job, prefs));
+    }
+
+    @Test
+    @DisplayName("adjust should subtract 10 when the description requires years of experience (EN anchor)")
+    void seniority_whenBodyMentionsYearsOfExperience_shouldSubtractPenalty() {
+        UserPreferences prefs = new UserPreferences(new WorkPreference.Remote(), null, List.of());
+        Job job = job("Developer",
+                "Requires 5 years of experience with Spring Boot and AWS.", "CompanyX");
+
+        assertEquals(70, JobPreferenceScorer.adjust(80, job, prefs));
+    }
+
+    @Test
+    @DisplayName("adjust should subtract 10 when the number comes after the marker (either order)")
+    void seniority_whenNumberAfterMarker_shouldSubtractPenalty() {
+        UserPreferences prefs = new UserPreferences(new WorkPreference.Remote(), null, List.of());
+        Job job = job("Desenvolvedor",
+                "Requisitos: anos de experiência mínima de 5 em Java.", "CompanyX");
+
+        assertEquals(70, JobPreferenceScorer.adjust(80, job, prefs));
+    }
+
+    @Test
+    @DisplayName("adjust should fire only for bare integers in the 3..30 band near the marker")
+    void seniority_whenBodyYearsAtBandBoundaries_shouldFollowBand() {
+        UserPreferences prefs = new UserPreferences(new WorkPreference.Remote(), null, List.of());
+
+        assertEquals(70, JobPreferenceScorer.adjust(80, job("Requer 3 anos de experiência.", "CompanyX"), prefs));
+        assertEquals(70, JobPreferenceScorer.adjust(80, job("Requer 30 anos de experiência.", "CompanyX"), prefs));
+        assertEquals(80, JobPreferenceScorer.adjust(80, job("Requer 2 anos de experiência.", "CompanyX"), prefs));
+        assertEquals(80, JobPreferenceScorer.adjust(80, job("Requer 35 anos de experiência.", "CompanyX"), prefs));
+        assertEquals(80, JobPreferenceScorer.adjust(80, job("Requer 1 ano de experiência.", "CompanyX"), prefs));
+    }
+
+    @Test
+    @DisplayName("adjust should ignore years sitting further than 6 tokens from the marker")
+    void seniority_whenNumberFarFromMarker_shouldNotPenalize() {
+        UserPreferences prefs = new UserPreferences(new WorkPreference.Remote(), null, List.of());
+        Job job = job("A vaga exige 12 profissionais no time e experiência sólida. "
+                + "Requer anos de experiência comprovada na função.", "CompanyX");
+
+        assertEquals(80, JobPreferenceScorer.adjust(80, job, prefs));
+    }
+
+    @Test
+    @DisplayName("adjust should subtract the penalty only once when title and body both hit")
+    void seniority_whenTitleAndBodyBothHit_shouldSubtractOnce() {
+        UserPreferences prefs = new UserPreferences(new WorkPreference.Remote(), null, List.of());
+        Job job = job("Desenvolvedor Java Pleno",
+                "Requer 5 anos de experiência em Java.", "CompanyX");
+
+        assertEquals(70, JobPreferenceScorer.adjust(80, job, prefs));
+    }
+
+    @Test
+    @DisplayName("adjust should not treat a bare 'pleno' in free-form prose as a body signal")
+    void seniority_whenBodyProseMentionsPleno_shouldNotPenalize() {
+        UserPreferences prefs = new UserPreferences(new WorkPreference.Remote(), null, List.of());
+        Job job = job("Desenvolvedor",
+                "Atuará em squad pleno, colaborando diretamente com os sêniores.", "CompanyX");
+
+        assertEquals(80, JobPreferenceScorer.adjust(80, job, prefs));
+    }
+
+    @Test
+    @DisplayName("adjust should not apply the body seniority penalty when only salaryFloor is set")
+    void seniority_whenOnlySalaryFloorAndBodyYears_shouldKeepScore() {
+        UserPreferences prefs = new UserPreferences(null, 5000, List.of());
+        Job job = job("Desenvolvedor",
+                "Requer 5 anos de experiência em Java.", "CompanyX");
+
+        assertEquals(80, JobPreferenceScorer.adjust(80, job, prefs));
+    }
+
     // ---------- Identity guarantee ----------
 
     @Test
