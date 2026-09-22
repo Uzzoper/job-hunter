@@ -140,6 +140,12 @@ New flags (all optional): `--job-id`, `--from-api`, `--api-base-url` (default
 - Every API failure (missing token, 401, unknown job, unreachable host) prints
   clean JSON and exits 1 — never a traceback. A 401 maps to
   `{"error": "unauthorized"}`.
+- **Never type or "improve" a Gupy URL** (issue #82): Gupy publicIds are
+  urlsafe base64 (`A-Za-z0-9_-` + `=`) — a literal `.` (e.g. a `...`) cannot
+  exist in a real slug, and a hand-typed URL with one is rejected with
+  `corrupt_gupy_slug` (exit 1), as are the record writers (contract problem
+  `job_id.corrupt_gupy_slug`). Always source the URL from the API
+  (`--from-api` / `--job-id`), never by transcription.
 
 ---
 
@@ -156,6 +162,9 @@ New flags (all optional): `--job-id`, `--from-api`, `--api-base-url` (default
 - The flow is unknown, multi-step/paginated, or needs login/session as the normal path (the loop assumes logged-in; a login page stops the loop with the hard `stop_on_auth_url` policy and hands off to the human — it does **not** silently retry). Use `job-portal-browser` for unknown/free navigation.
 - The portal is **not** Gupy or InfoJobs — `apply.py` errors cleanly (`unknown_portal`). **LinkedIn is explicitly OUT of scope for automation**: LinkedIn applications are done **manually** by the human only; the separate LinkedIn scraper microservice (Node.js) only *reads* listings and never submits applications. There is deliberately **no** `linkedin` portal in the allow-list — requesting `--portal linkedin` errors cleanly.
 - The paired draft is a `NO_APPLY` refusal — the bot must refuse to plan (guardrail #28).
+- The launch URL is not in hand (no sensible `--job-id` / `--from-api` source and the
+  pasted URL looks truncated or carries a `...`) — typing a guess produces the corrupt-key
+  trap of issue #82; get the real URL from the API instead.
 
 ---
 
@@ -606,6 +615,7 @@ human-review flow.
 | `invalid_profile` | Profile file missing / bad JSON / missing required fields (`name`, `email`, `phone`, `cv_path`, `cover_text`) | Show detail; fix profile |
 | `refusal_draft_blocked` | Profile marks `no_apply` or cover text carries `NO_APPLY` (guardrail #28) | Stop — never send a refusal as an application |
 | `invalid_job_url` | No `/jobs/<slug>` segment derivable | Show detail |
+| `corrupt_gupy_slug` | Derived job id contains a `.` (i.e. a `...` elision) — impossible in a genuine urlsafe-base64 Gupy publicId, so the URL was truncated or hand-typed (issue #82) | Stop, exit 1; re-fetch the URL from the API (`--from-api` / `--job-id`) instead of typing it |
 | `missing_api_token` | No Job Hunter API service token found (issue #46) — try `--api-token`, `JOBHUNTER_API_TOKEN`, or `<profile-dir>/api-token.txt` | Show the one-time service-token setup + save step (PT-BR) |
 | `unauthorized` | Job Hunter API answered HTTP 401 (issue #47 — `X-Bot-Token` present but `bot.service.api-key` mismatch, or the feature is disabled) | Verify the bot secret equals `BOT_SERVICE_API_KEY` and `BOT_SERVICE_OWNER_USER_ID` is a positive id |
 | `api_error` | Job Hunter API unreachable / unexpected response (issue #46) | Show detail; check `--api-base-url` and the backend |
