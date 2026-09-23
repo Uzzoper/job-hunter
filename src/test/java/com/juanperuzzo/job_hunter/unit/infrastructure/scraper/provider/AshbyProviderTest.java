@@ -248,5 +248,39 @@ class AshbyProviderTest {
             assertEquals("Nubank", jobs.get(0).company(),
                     "Ashby responses carry no company — must come from display-names config");
         }
+
+        @Test
+        @DisplayName("real mapper should fall back to the board token for an unlisted board")
+        void realMapper_whenBoardNotInDisplayNames_shouldFallBackToToken() {
+            var realMapperProvider = new AshbyProvider(baseUrl, 5, List.of("nubank", "unlisted"), displayNames, retry);
+
+            // Stub both boards; the "unlisted" board is deliberately absent from
+            // ats.display-names → its company must fall back to the token, never null.
+            stubFor(get(urlPathEqualTo("/posting-api/job-board/nubank"))
+                    .willReturn(okJson("""
+                        [
+                          {"title": "Nubank Dev", "jobUrl": "https://jobs.ashbyhq.com/nubank/1",
+                           "publishedAt": "2026-07-01T10:00:00.000Z", "descriptionPlain": "Role"}
+                        ]
+                        """)));
+            stubFor(get(urlPathEqualTo("/posting-api/job-board/unlisted"))
+                    .willReturn(okJson("""
+                        [
+                          {"title": "Unlisted Dev", "jobUrl": "https://jobs.ashbyhq.com/unlisted/1",
+                           "publishedAt": "2026-07-01T10:00:00.000Z", "descriptionPlain": "Role"}
+                        ]
+                        """)));
+
+            var jobs = realMapperProvider.extract();
+            assertEquals(2, jobs.size());
+            assertEquals("Nubank", byUrl(jobs, "https://jobs.ashbyhq.com/nubank/1").company());
+            assertEquals("unlisted", byUrl(jobs, "https://jobs.ashbyhq.com/unlisted/1").company(),
+                    "unlisted board must fall back to its token, never null (PR#84 P2-c)");
+        }
+
+        /** Extract deduplicates into a HashMap — look jobs up by URL instead of position. */
+        private static RawJob byUrl(List<RawJob> jobs, String url) {
+            return jobs.stream().filter(j -> url.equals(j.url())).findFirst().orElseThrow();
+        }
     }
 }

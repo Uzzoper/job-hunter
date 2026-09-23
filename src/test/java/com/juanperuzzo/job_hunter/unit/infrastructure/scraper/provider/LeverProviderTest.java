@@ -357,5 +357,37 @@ class LeverProviderTest {
             assertEquals("dLocal", jobs.get(0).company(),
                     "Lever responses carry no company — must come from display-names config");
         }
+
+        @Test
+        @DisplayName("real mapper should fall back to the site token for an unlisted site")
+        void realMapper_whenSiteNotInDisplayNames_shouldFallBackToToken() {
+            var realMapperProvider = new LeverProvider(baseUrl, 5, List.of("dlocal", "freshworks"), displayNames, retry, 100, 10);
+
+            // Stub both sites; "freshworks" is deliberately absent from
+            // ats.display-names → its company must fall back to the token, never null.
+            stubFor(get(urlPathEqualTo("/v0/postings/dlocal"))
+                    .withQueryParam("mode", equalTo("json"))
+                    .willReturn(okJson("""
+                        [{"text": "dLocal Dev", "hostedUrl": "https://jobs.lever.co/dlocal/1",
+                          "createdAt": 1750000000000, "descriptionPlain": "A"}]
+                        """)));
+            stubFor(get(urlPathEqualTo("/v0/postings/freshworks"))
+                    .withQueryParam("mode", equalTo("json"))
+                    .willReturn(okJson("""
+                        [{"text": "Freshworks Dev", "hostedUrl": "https://jobs.lever.co/freshworks/1",
+                          "createdAt": 1750000000000, "descriptionPlain": "B"}]
+                        """)));
+
+            var jobs = realMapperProvider.extract();
+            assertEquals(2, jobs.size());
+            assertEquals("dLocal", byUrl(jobs, "https://jobs.lever.co/dlocal/1").company());
+            assertEquals("freshworks", byUrl(jobs, "https://jobs.lever.co/freshworks/1").company(),
+                    "unlisted site must fall back to its token, never null (PR#84 P2-c)");
+        }
+
+        /** Extract deduplicates into a HashMap — look jobs up by URL instead of position. */
+        private static RawJob byUrl(List<RawJob> jobs, String url) {
+            return jobs.stream().filter(j -> url.equals(j.url())).findFirst().orElseThrow();
+        }
     }
 }
