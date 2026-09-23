@@ -303,8 +303,9 @@ public class AppConfig {
             @Value("${ats.lever-sites:}") List<String> sites,
             @Value("#{${ats.display-names:{}}}") java.util.Map<String, String> displayNames,
             @Value("${ats.lever-page-size:100}") int pageSize,
+            @Value("${ats.lever-max-pages:3}") int maxPages,
             ExponentialBackoffRetry exponentialBackoffRetry) {
-        return new LeverProvider(baseUrl, timeoutSeconds, sites, displayNames, exponentialBackoffRetry, pageSize);
+        return new LeverProvider(baseUrl, timeoutSeconds, sites, displayNames, exponentialBackoffRetry, pageSize, maxPages);
     }
 
     @Bean

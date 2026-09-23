@@ -117,6 +117,8 @@ ats:
     mozilla, monzo, tailscale, wikimedia]
   ashby-boards: [nubank, notion, cursor, preply, replit, linear, zapier]
   lever-sites: [dlocal, outreach, metabase]
+  lever-page-size: 100            # Lever pagination page size (spec §4)
+  lever-max-pages: 3              # hard cap per site, mirrors scraper.infojobs.max-pages (PR#84 P2-a)
   # Company label per board (Ashby/Lever responses carry no company). Injected via
   # @Value("#{${ats.display-names}}") — must stay a single-line SpEL map literal
   # (nested YAML maps flatten into per-key properties and cannot be resolved).

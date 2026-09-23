@@ -12,6 +12,7 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 
@@ -36,6 +37,7 @@ public class LeverProvider implements ExtractionStrategy {
     private final ExponentialBackoffRetry retry;
     private final List<SiteStrategy> sites;
     private final int pageSize;
+    private final int maxPages;
 
     /** Site + its dedicated strategy; the mapper closes over the site's display name. */
     private record SiteStrategy(String name, RestApiStrategy strategy) {}
@@ -46,6 +48,7 @@ public class LeverProvider implements ExtractionStrategy {
      *
      * @param displayNames company label per site token (unknown sites fall back to the token itself)
      * @param pageSize     pagination page size (spec: default 100)
+     * @param maxPages     hard cap on pages fetched per site (mirrors InfoJobs' max-pages, default 3)
      */
     public LeverProvider(
             String baseUrl,
@@ -53,7 +56,8 @@ public class LeverProvider implements ExtractionStrategy {
             List<String> sites,
             Map<String, String> displayNames,
             ExponentialBackoffRetry retry,
-            int pageSize) {
+            int pageSize,
+            int maxPages) {
         this.providerId = "lever";
         this.retry = retry;
         this.sites = sites.stream().map(site -> {
@@ -62,6 +66,7 @@ public class LeverProvider implements ExtractionStrategy {
             return new SiteStrategy(site, strategy);
         }).toList();
         this.pageSize = pageSize;
+        this.maxPages = maxPages;
     }
 
     /**
@@ -75,13 +80,15 @@ public class LeverProvider implements ExtractionStrategy {
             ExponentialBackoffRetry retry,
             List<String> sites,
             Map<String, String> displayNames,
-            int pageSize) {
+            int pageSize,
+            int maxPages) {
         this.providerId = providerId;
         this.retry = retry;
         this.sites = sites.stream()
                 .map(site -> new SiteStrategy(site, apiStrategy))
                 .toList();
         this.pageSize = pageSize;
+        this.maxPages = maxPages;
     }
 
     @Override
@@ -116,26 +123,47 @@ public class LeverProvider implements ExtractionStrategy {
      * Fetch one site page by page. The Lever API returns at most {@code pageSize}
      * jobs per call ({@code skip}/{@code limit}, default 100); loop while a page is
      * full, deduplicating by URL across pages. A short or empty page ends the loop.
+     *
+     * <p>Two guards (PR#84 review P2-a, mirroring InfoJobs's max-pages cap):
+     * pagination stops after {@code maxPages} full pages, and stops immediately
+     * when a full page yields zero <em>new</em> URLs (the API ignoring {@code skip}
+     * and repeating the same page forever would otherwise loop without progress).
      */
     private List<RawJob> fetchSite(SiteStrategy site) {
         var allJobs = new ArrayList<RawJob>();
+        var seenUrls = new HashSet<String>();
         int skip = 0;
+        int pagesFetched = 0;
 
-        while (true) {
+        while (pagesFetched < maxPages) {
             var path = "/v0/postings/" + site.name()
                     + "?mode=json&skip=" + skip + "&limit=" + pageSize;
             var page = retry.execute(() -> site.strategy().extractWithPath(path));
 
-            var uniqueOnPage = new HashMap<String, RawJob>();
+            int newUrls = 0;
             for (var job : page) {
-                uniqueOnPage.putIfAbsent(job.url(), job);
+                if (seenUrls.add(job.url())) {
+                    allJobs.add(job);
+                    newUrls++;
+                }
             }
-            allJobs.addAll(uniqueOnPage.values());
+            pagesFetched++;
 
             if (page.size() < pageSize) {
+                // Short or empty page → last page (normal termination).
+                break;
+            }
+            if (newUrls == 0) {
+                log.warn("{}: site '{}' page {} returned no new jobs (API ignoring skip) — stopping pagination",
+                        providerId, site.name(), pagesFetched);
                 break;
             }
             skip += pageSize;
+        }
+
+        if (pagesFetched >= maxPages) {
+            log.warn("{}: site '{}' hit the max-pages cap ({}) — stopping pagination",
+                    providerId, site.name(), maxPages);
         }
 
         return List.copyOf(allJobs);
