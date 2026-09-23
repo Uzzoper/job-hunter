@@ -180,17 +180,28 @@ public final class JobPreferenceScorer {
         if (i + 2 >= tokens.length) {
             return false;
         }
-        return tokens[i].equals("anos") && tokens[i + 1].equals("de")
-                        && (tokens[i + 2].equals("experiência") || tokens[i + 2].equals("experiencia"))
-                || tokens[i].equals("years") && tokens[i + 1].equals("of")
-                        && tokens[i + 2].equals("experience");
+        return (tokens[i].equals("anos") && tokens[i + 1].equals("de")
+                && (tokens[i + 2].equals("experiência") || tokens[i + 2].equals("experiencia")))
+            || (tokens[i].equals("years") && tokens[i + 1].equals("of")
+                && tokens[i + 2].equals("experience"));
     }
 
+    /**
+     * Total function over token strings: returns the integer value when the
+     * token is a bare in-range digit string, or {@code null} otherwise. Empty
+     * tokens (produced by leading/trailing separators after the split) and
+     * digit strings that overflow {@code int} (CNPJ/phone numbers) must never
+     * throw — the caller treats a {@code null} as "no signal" (PR #84 P0).
+     */
     private static Integer parseBareInteger(String token) {
-        if (token.chars().allMatch(Character::isDigit)) {
-            return Integer.valueOf(token);
+        if (token.isEmpty() || !token.chars().allMatch(Character::isDigit)) {
+            return null;
         }
-        return null;
+        try {
+            return Integer.valueOf(token);
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
     private static Pattern compileWordPattern(String term) {
