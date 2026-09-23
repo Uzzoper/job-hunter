@@ -107,6 +107,21 @@ scraper:
     detail-fetch-delay-millis: 500
     base-job-url: https://www.linkedin.com/jobs/view/
 
+ats:
+  # ATS board providers (Greenhouse/Ashby/Lever) — disabled by default until the
+  # junior-relevance sample is confirmed (docs/specs/ats-provider.md §7).
+  enabled: false
+  timeout-seconds: 30
+  greenhouse-boards: [stone, xpinc, c6bank, gympass, quintoandar, ebanx,
+    thoughtworks, vtex, feedzai, elastic, gitlab, remotecom, grafanalabs,
+    mozilla, monzo, tailscale, wikimedia]
+  ashby-boards: [nubank, notion, cursor, preply, replit, linear, zapier]
+  lever-sites: [dlocal, outreach, metabase]
+  # Company label per board (Ashby/Lever responses carry no company). Injected via
+  # @Value("#{${ats.display-names}}") — must stay a single-line SpEL map literal
+  # (nested YAML maps flatten into per-key properties and cannot be resolved).
+  display-names: "{nubank: 'Nubank', notion: 'Notion', cursor: 'Cursor', preply: 'Preply', replit: 'Replit', linear: 'Linear', zapier: 'Zapier', dlocal: 'dLocal', outreach: 'Outreach', metabase: 'Metabase'}"
+
 auto-send:
   enabled: false
   require-review: true
