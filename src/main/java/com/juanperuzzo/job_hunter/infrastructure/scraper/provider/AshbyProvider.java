@@ -15,8 +15,8 @@ import java.util.Map;
 /**
  * Ashby board provider ({@code providerId}: "ashby") — reads the public,
  * no-auth Ashby posting API: {@code GET /posting-api/job-board/{board}}.
- * The response is a top-level JSON array (no envelope), so the shared
- * {@link RestApiStrategy} is wired with an empty json path.
+ * The response is an object envelope ({@code {"apiVersion":"1","jobs":[...]}}),
+ * so the shared {@link RestApiStrategy} is wired with the {@code jobs} json path.
  *
  * <p>Boards are configured via {@code ats.ashby-boards} and their company
  * labels via {@code ats.display-names} (Ashby responses carry no company). Each
@@ -53,7 +53,7 @@ public class AshbyProvider implements ExtractionStrategy {
         this.retry = retry;
         this.boards = boardNames.stream().map(board -> {
             var displayName = displayNames.getOrDefault(board, board);
-            var strategy = new RestApiStrategy(providerId, baseUrl, timeoutSeconds, "", node -> mapNode(node, displayName));
+            var strategy = new RestApiStrategy(providerId, baseUrl, timeoutSeconds, "jobs", node -> mapNode(node, displayName));
             return new BoardStrategy(board, strategy);
         }).toList();
     }
