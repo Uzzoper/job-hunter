@@ -40,7 +40,7 @@ class LeverProviderTest {
         displayNames = Map.of("dlocal", "dLocal", "metabase", "Metabase");
         // Lever's postings API returns a top-level array → jsonPath "" (root).
         apiStrategy = new RestApiStrategy("lever", baseUrl, 5, "", LeverProviderTest::mapNode);
-        provider = new LeverProvider("lever", apiStrategy, retry, List.of("dlocal"), displayNames, 100);
+        provider = new LeverProvider("lever", apiStrategy, retry, List.of("dlocal"), displayNames, 100, 10);
     }
 
     /** Test-side mapper mirroring the provider's field mapping (see LeverProvider.mapNode). */
@@ -105,7 +105,7 @@ class LeverProviderTest {
         @Test
         @DisplayName("extract should fetch next page while the response is a full page")
         void extract_whenFullPage_shouldFetchNextPage() {
-            var pageProvider = new LeverProvider("lever", apiStrategy, retry, List.of("metabase"), displayNames, 1);
+            var pageProvider = new LeverProvider("lever", apiStrategy, retry, List.of("metabase"), displayNames, 1, 10);
 
             stubFor(get(urlPathEqualTo("/v0/postings/metabase"))
                     .withQueryParam("mode", equalTo("json"))
@@ -138,7 +138,7 @@ class LeverProviderTest {
         @Test
         @DisplayName("extract should deduplicate by URL across pages")
         void extract_whenSameUrlAcrossPages_shouldDeduplicate() {
-            var pageProvider = new LeverProvider("lever", apiStrategy, retry, List.of("metabase"), displayNames, 1);
+            var pageProvider = new LeverProvider("lever", apiStrategy, retry, List.of("metabase"), displayNames, 1, 10);
 
             stubFor(get(urlPathEqualTo("/v0/postings/metabase"))
                     .withQueryParam("mode", equalTo("json"))
@@ -164,6 +164,68 @@ class LeverProviderTest {
 
             var jobs = pageProvider.extract();
             assertEquals(1, jobs.size(), "same URL on a later page must not duplicate");
+        }
+    }
+
+    @Nested
+    @DisplayName("Scenario 2b: pagination guards (PR#84 review P2-a)")
+    class PaginationGuards {
+
+        @Test
+        @DisplayName("extract should stop paginating after the max-pages cap is reached")
+        void extract_whenFullPagesExceedMaxPages_shouldStopAtCap() {
+            var cappedProvider = new LeverProvider("lever", apiStrategy, retry, List.of("metabase"), displayNames, 1, 2);
+
+            stubFor(get(urlPathEqualTo("/v0/postings/metabase"))
+                    .withQueryParam("mode", equalTo("json"))
+                    .withQueryParam("skip", equalTo("0"))
+                    .withQueryParam("limit", equalTo("1"))
+                    .willReturn(okJson("""
+                        [{"text": "Dev 1", "hostedUrl": "https://jobs.lever.co/metabase/1",
+                          "createdAt": 1750000000000, "descriptionPlain": "A"}]
+                        """)));
+            stubFor(get(urlPathEqualTo("/v0/postings/metabase"))
+                    .withQueryParam("mode", equalTo("json"))
+                    .withQueryParam("skip", equalTo("1"))
+                    .withQueryParam("limit", equalTo("1"))
+                    .willReturn(okJson("""
+                        [{"text": "Dev 2", "hostedUrl": "https://jobs.lever.co/metabase/2",
+                          "createdAt": 1750000000000, "descriptionPlain": "B"}]
+                        """)));
+
+            var jobs = cappedProvider.extract();
+            assertEquals(2, jobs.size(), "both full pages within the cap must be fetched");
+            verify(2, getRequestedFor(urlPathEqualTo("/v0/postings/metabase"))
+                    .withQueryParam("mode", equalTo("json")));
+        }
+
+        @Test
+        @DisplayName("extract should stop when a full page yields zero new URLs (API ignoring skip)")
+        void extract_whenFullPageHasNoNewUrls_shouldStopPagination() {
+            var guardedProvider = new LeverProvider("lever", apiStrategy, retry, List.of("metabase"), displayNames, 1, 10);
+
+            stubFor(get(urlPathEqualTo("/v0/postings/metabase"))
+                    .withQueryParam("mode", equalTo("json"))
+                    .withQueryParam("skip", equalTo("0"))
+                    .withQueryParam("limit", equalTo("1"))
+                    .willReturn(okJson("""
+                        [{"text": "Dev", "hostedUrl": "https://jobs.lever.co/metabase/1",
+                          "createdAt": 1750000000000, "descriptionPlain": "A"}]
+                        """)));
+            // API ignores skip: page 1 is "full" again but repeats the same URL.
+            stubFor(get(urlPathEqualTo("/v0/postings/metabase"))
+                    .withQueryParam("mode", equalTo("json"))
+                    .withQueryParam("skip", equalTo("1"))
+                    .withQueryParam("limit", equalTo("1"))
+                    .willReturn(okJson("""
+                        [{"text": "Dev", "hostedUrl": "https://jobs.lever.co/metabase/1",
+                          "createdAt": 1750000000000, "descriptionPlain": "A"}]
+                        """)));
+
+            var jobs = guardedProvider.extract();
+            assertEquals(1, jobs.size(), "no new URLs on a full page must stop the loop");
+            verify(2, getRequestedFor(urlPathEqualTo("/v0/postings/metabase"))
+                    .withQueryParam("mode", equalTo("json")));
         }
     }
 
@@ -234,7 +296,7 @@ class LeverProviderTest {
                           "createdAt": 1750000000000, "descriptionPlain": "A"}]
                         """)));
 
-            var multiProvider = new LeverProvider("lever", apiStrategy, retry, List.of("dlocal", "metabase"), displayNames, 100);
+            var multiProvider = new LeverProvider("lever", apiStrategy, retry, List.of("dlocal", "metabase"), displayNames, 100, 10);
             var jobs = multiProvider.extract();
 
             assertEquals(1, jobs.size());
@@ -281,7 +343,7 @@ class LeverProviderTest {
         @Test
         @DisplayName("real mapper should resolve company from display-names config")
         void realMapper_whenSiteKnown_shouldSetCompanyFromDisplayNames() {
-            var realMapperProvider = new LeverProvider(baseUrl, 5, List.of("dlocal"), displayNames, retry, 100);
+            var realMapperProvider = new LeverProvider(baseUrl, 5, List.of("dlocal"), displayNames, retry, 100, 10);
 
             stubFor(get(urlPathEqualTo("/v0/postings/dlocal"))
                     .withQueryParam("mode", equalTo("json"))
