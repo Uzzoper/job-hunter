@@ -93,11 +93,12 @@ via `@Value` in `AppConfig` (no other layer reads config):
 ats:
   enabled: false                       # default: idle until the §7 sample sign-off
   timeout-seconds: 30
-  greenhouse-boards: [stone, xpinc, c6bank, gympass, quintoandar, ebanx,
-    thoughtworks, vtex, feedzai, elastic, gitlab, remotecom, grafanalabs,
-    mozilla, monzo, tailscale, wikimedia]
-  ashby-boards: [nubank, notion, cursor, preply, replit, linear, zapier]
-  lever-sites: [dlocal, outreach, metabase]
+  # WARNING: board lists MUST stay CSV, never YAML flow style ([a, b]):
+  # @Value List<String> binding silently resolves flow style to an empty list
+  # on Spring Boot 4.0.6 (proven live during §7 sample: 0 boards vs CSV working).
+  greenhouse-boards: stone,xpinc,c6bank,gympass,quintoandar,ebanx,thoughtworks,vtex,feedzai,elastic,gitlab,remotecom,grafanalabs,mozilla,monzo,tailscale,wikimedia
+  ashby-boards: nubank,notion,cursor,preply,replit,linear,zapier
+  lever-sites: dlocal,outreach,metabase
   lever-page-size: 100                 # Lever pagination page size
   lever-max-pages: 3                   # hard cap per site (mirrors scraper.infojobs.max-pages)
   # Company label per board (Ashby/Lever responses carry no company).

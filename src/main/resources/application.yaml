@@ -112,11 +112,12 @@ ats:
   # junior-relevance sample is confirmed (docs/specs/ats-provider.md §7).
   enabled: false
   timeout-seconds: 30
-  greenhouse-boards: [stone, xpinc, c6bank, gympass, quintoandar, ebanx,
-    thoughtworks, vtex, feedzai, elastic, gitlab, remotecom, grafanalabs,
-    mozilla, monzo, tailscale, wikimedia]
-  ashby-boards: [nubank, notion, cursor, preply, replit, linear, zapier]
-  lever-sites: [dlocal, outreach, metabase]
+  # NOTE: board lists MUST stay CSV, never YAML flow style ([a, b]): @Value
+  # List<String> binding silently resolves flow style to an empty list on
+  # Spring Boot 4.0.6 (proven live: 0 boards configured vs CSV working).
+  greenhouse-boards: stone,xpinc,c6bank,gympass,quintoandar,ebanx,thoughtworks,vtex,feedzai,elastic,gitlab,remotecom,grafanalabs,mozilla,monzo,tailscale,wikimedia
+  ashby-boards: nubank,notion,cursor,preply,replit,linear,zapier
+  lever-sites: dlocal,outreach,metabase
   lever-page-size: 100            # Lever pagination page size (spec §4)
   lever-max-pages: 3              # hard cap per site, mirrors scraper.infojobs.max-pages (PR#84 P2-a)
   # Company label per board (Ashby/Lever responses carry no company). Injected via
