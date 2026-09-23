@@ -83,6 +83,7 @@ public class AshbyProvider implements ExtractionStrategy {
     @Override
     public List<RawJob> extract() {
         var uniqueJobs = new HashMap<String, RawJob>();
+        log.info("{}: {} boards/sites configured", providerId, boards.size());
 
         for (var board : boards) {
             try {
@@ -93,7 +94,7 @@ public class AshbyProvider implements ExtractionStrategy {
                     uniqueJobs.putIfAbsent(job.url(), job);
                 }
 
-                log.debug("{}: fetched {} jobs for board '{}'", providerId, jobs.size(), board.name());
+                log.info("{}: fetched {} jobs for board '{}'", providerId, jobs.size(), board.name());
             } catch (Exception e) {
                 // 404 (dead board), exhausted 429 retries or 5xx: log and skip this
                 // board — one bad board never fails the provider fetch (spec §5).

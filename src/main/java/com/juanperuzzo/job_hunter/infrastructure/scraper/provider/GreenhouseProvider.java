@@ -73,6 +73,7 @@ public class GreenhouseProvider implements ExtractionStrategy {
     @Override
     public List<RawJob> extract() {
         var uniqueJobs = new HashMap<String, RawJob>();
+        log.info("{}: {} boards/sites configured", providerId, boardTokens.size());
 
         for (var boardToken : boardTokens) {
             try {
@@ -83,7 +84,7 @@ public class GreenhouseProvider implements ExtractionStrategy {
                     uniqueJobs.putIfAbsent(job.url(), job);
                 }
 
-                log.debug("{}: fetched {} jobs for board '{}'", providerId, jobs.size(), boardToken);
+                log.info("{}: fetched {} jobs for board '{}'", providerId, jobs.size(), boardToken);
             } catch (Exception e) {
                 // 404 (dead board), exhausted 429 retries or 5xx: log and skip this
                 // board — one bad board never fails the provider fetch (spec §5).

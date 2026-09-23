@@ -99,6 +99,7 @@ public class LeverProvider implements ExtractionStrategy {
     @Override
     public List<RawJob> extract() {
         var uniqueJobs = new HashMap<String, RawJob>();
+        log.info("{}: {} boards/sites configured", providerId, sites.size());
 
         for (var site : sites) {
             try {
@@ -106,7 +107,7 @@ public class LeverProvider implements ExtractionStrategy {
                 for (var job : jobs) {
                     uniqueJobs.putIfAbsent(job.url(), job);
                 }
-                log.debug("{}: fetched {} unique jobs for site '{}'", providerId, jobs.size(), site.name());
+                log.info("{}: fetched {} unique jobs for site '{}'", providerId, jobs.size(), site.name());
             } catch (Exception e) {
                 // 404 (dead site), exhausted 429 retries or 5xx: log and skip this
                 // site — one bad site never fails the provider fetch (spec §5).
