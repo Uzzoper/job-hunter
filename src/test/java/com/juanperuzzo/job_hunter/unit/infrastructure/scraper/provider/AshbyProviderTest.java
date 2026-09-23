@@ -2,11 +2,9 @@ package com.juanperuzzo.job_hunter.unit.infrastructure.scraper.provider;
 
 import com.github.tomakehurst.wiremock.junit5.WireMockExtension;
 import com.github.tomakehurst.wiremock.junit5.WireMockRuntimeInfo;
-import com.fasterxml.jackson.databind.JsonNode;
 import com.juanperuzzo.job_hunter.application.port.out.RawJob;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.provider.AshbyProvider;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.retry.ExponentialBackoffRetry;
-import com.juanperuzzo.job_hunter.infrastructure.scraper.strategy.RestApiStrategy;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -14,13 +12,18 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 
 import java.time.Duration;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.*;
 import static org.junit.jupiter.api.Assertions.*;
 
+/**
+ * All scenarios go through the provider's real mapper and reflect the REAL Ashby
+ * posting API envelope shape {@code {"apiVersion":"1","jobs":[...]}} — the previous
+ * bare-array stubs encoded a wrong assumption that hid the object-envelope bug
+ * (live-proven: 7/7 boards returned 0 jobs, PR#84 review follow-up).
+ */
 @ExtendWith(WireMockExtension.class)
 @DisplayName("AshbyProvider tests")
 class AshbyProviderTest {
@@ -28,7 +31,6 @@ class AshbyProviderTest {
     private String baseUrl;
     private AshbyProvider provider;
     private ExponentialBackoffRetry retry;
-    private RestApiStrategy apiStrategy;
     private Map<String, String> displayNames;
 
     @BeforeEach
@@ -36,34 +38,7 @@ class AshbyProviderTest {
         baseUrl = wmRuntimeInfo.getHttpBaseUrl();
         retry = new ExponentialBackoffRetry(2, Duration.ofMillis(1), Duration.ofMillis(10), Duration.ofMillis(2));
         displayNames = Map.of("nubank", "Nubank", "notion", "Notion");
-        // Ashby's job-board API returns a top-level array → jsonPath "" (root).
-        apiStrategy = new RestApiStrategy("ashby", baseUrl, 5, "", AshbyProviderTest::mapNode);
-        provider = new AshbyProvider("ashby", apiStrategy, retry, List.of("nubank"), displayNames);
-    }
-
-    /** Test-side mapper mirroring the provider's field mapping (see AshbyProvider.mapNode). */
-    private static RawJob mapNode(JsonNode node) {
-        var title = node.path("title").asText("");
-        var url = node.path("jobUrl").asText("");
-        if (title.isBlank() || url.isBlank()) return null;
-        var rawDate = node.path("publishedAt").asText(null);
-        if (rawDate != null && rawDate.length() >= 10) rawDate = rawDate.substring(0, 10);
-        var workModel = inferWorkModel(node);
-        var metadata = new HashMap<String, String>();
-        var employmentType = node.path("employmentType").asText("");
-        if ("Intern".equalsIgnoreCase(employmentType)) {
-            metadata.put("atsEmploymentType", employmentType);
-        }
-        return new RawJob(title, null, url, node.path("descriptionPlain").asText(null), rawDate,
-                node.path("location").asText(null), workModel, "ashby", metadata);
-    }
-
-    private static String inferWorkModel(JsonNode node) {
-        var isRemote = node.path("isRemote").asBoolean(false);
-        var workplaceType = node.path("workplaceType").asText("");
-        if (isRemote || "Remote".equalsIgnoreCase(workplaceType)) return "Remoto";
-        if ("Hybrid".equalsIgnoreCase(workplaceType)) return "Híbrido";
-        return null;
+        provider = new AshbyProvider(baseUrl, 5, List.of("nubank"), displayNames, retry);
     }
 
     @Nested
@@ -71,11 +46,11 @@ class AshbyProviderTest {
     class ValidResponse {
 
         @Test
-        @DisplayName("extract should return mapped RawJob list")
+        @DisplayName("extract should return mapped RawJob list from the envelope jobs array")
         void extract_whenValidResponse_shouldReturnMappedJobs() {
             stubFor(get(urlPathEqualTo("/posting-api/job-board/nubank"))
                     .willReturn(okJson("""
-                        [
+                        {"apiVersion": "1", "jobs": [
                           {
                             "title": "Software Engineer",
                             "jobUrl": "https://jobs.ashbyhq.com/nubank/abc123",
@@ -85,7 +60,7 @@ class AshbyProviderTest {
                             "isRemote": false,
                             "workplaceType": "OnSite"
                           }
-                        ]
+                        ]}
                         """)));
 
             var jobs = provider.extract();
@@ -109,7 +84,7 @@ class AshbyProviderTest {
         void extract_whenRemoteAndIntern_shouldMapWorkModelAndMetadata() {
             stubFor(get(urlPathEqualTo("/posting-api/job-board/nubank"))
                     .willReturn(okJson("""
-                        [
+                        {"apiVersion": "1", "jobs": [
                           {
                             "title": "Intern",
                             "jobUrl": "https://jobs.ashbyhq.com/nubank/intern-1",
@@ -120,7 +95,7 @@ class AshbyProviderTest {
                             "workplaceType": "Remote",
                             "employmentType": "Intern"
                           }
-                        ]
+                        ]}
                         """)));
 
             var jobs = provider.extract();
@@ -137,7 +112,7 @@ class AshbyProviderTest {
         void extract_whenHybrid_shouldMapWorkModelToHibrido() {
             stubFor(get(urlPathEqualTo("/posting-api/job-board/nubank"))
                     .willReturn(okJson("""
-                        [
+                        {"apiVersion": "1", "jobs": [
                           {
                             "title": "Dev",
                             "jobUrl": "https://jobs.ashbyhq.com/nubank/hybrid-1",
@@ -147,7 +122,7 @@ class AshbyProviderTest {
                             "isRemote": false,
                             "workplaceType": "Hybrid"
                           }
-                        ]
+                        ]}
                         """)));
 
             var jobs = provider.extract();
@@ -161,10 +136,12 @@ class AshbyProviderTest {
     class EmptyBoard {
 
         @Test
-        @DisplayName("extract should return empty list when no jobs")
+        @DisplayName("extract should return empty list when the envelope holds no jobs")
         void extract_whenEmptyBoard_shouldReturnEmptyList() {
             stubFor(get(urlPathEqualTo("/posting-api/job-board/nubank"))
-                    .willReturn(okJson("[]")));
+                    .willReturn(okJson("""
+                        {"apiVersion": "1", "jobs": []}
+                        """)));
 
             var jobs = provider.extract();
             assertTrue(jobs.isEmpty());
@@ -182,13 +159,13 @@ class AshbyProviderTest {
                     .willReturn(notFound()));
             stubFor(get(urlPathEqualTo("/posting-api/job-board/notion"))
                     .willReturn(okJson("""
-                        [
+                        {"apiVersion": "1", "jobs": [
                           {"title": "Dev", "jobUrl": "https://jobs.ashbyhq.com/notion/1",
                            "publishedAt": "2026-07-01T10:00:00.000Z", "descriptionPlain": "Role"}
-                        ]
+                        ]}
                         """)));
 
-            var multiProvider = new AshbyProvider("ashby", apiStrategy, retry, List.of("nubank", "notion"), displayNames);
+            var multiProvider = new AshbyProvider(baseUrl, 5, List.of("nubank", "notion"), displayNames, retry);
             var jobs = multiProvider.extract();
 
             assertEquals(1, jobs.size());
@@ -220,10 +197,10 @@ class AshbyProviderTest {
         void extract_whenBlankFields_shouldSkip() {
             stubFor(get(urlPathEqualTo("/posting-api/job-board/nubank"))
                     .willReturn(okJson("""
-                        [
+                        {"apiVersion": "1", "jobs": [
                           {"title": "", "jobUrl": "https://a.com/1", "publishedAt": "2026-07-01"},
                           {"title": "No URL", "jobUrl": "", "publishedAt": "2026-07-01"}
-                        ]
+                        ]}
                         """)));
 
             var jobs = provider.extract();
@@ -237,10 +214,10 @@ class AshbyProviderTest {
 
             stubFor(get(urlPathEqualTo("/posting-api/job-board/nubank"))
                     .willReturn(okJson("""
-                        [
+                        {"apiVersion": "1", "jobs": [
                           {"title": "Dev", "jobUrl": "https://jobs.ashbyhq.com/nubank/1",
                            "publishedAt": "2026-07-01T10:00:00.000Z", "descriptionPlain": "Role"}
-                        ]
+                        ]}
                         """)));
 
             var jobs = realMapperProvider.extract();
@@ -258,17 +235,17 @@ class AshbyProviderTest {
             // ats.display-names → its company must fall back to the token, never null.
             stubFor(get(urlPathEqualTo("/posting-api/job-board/nubank"))
                     .willReturn(okJson("""
-                        [
+                        {"apiVersion": "1", "jobs": [
                           {"title": "Nubank Dev", "jobUrl": "https://jobs.ashbyhq.com/nubank/1",
                            "publishedAt": "2026-07-01T10:00:00.000Z", "descriptionPlain": "Role"}
-                        ]
+                        ]}
                         """)));
             stubFor(get(urlPathEqualTo("/posting-api/job-board/unlisted"))
                     .willReturn(okJson("""
-                        [
+                        {"apiVersion": "1", "jobs": [
                           {"title": "Unlisted Dev", "jobUrl": "https://jobs.ashbyhq.com/unlisted/1",
                            "publishedAt": "2026-07-01T10:00:00.000Z", "descriptionPlain": "Role"}
-                        ]
+                        ]}
                         """)));
 
             var jobs = realMapperProvider.extract();
