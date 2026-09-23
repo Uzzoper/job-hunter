@@ -2,26 +2,28 @@ package com.juanperuzzo.job_hunter.unit.infrastructure.scraper.provider;
 
 import com.github.tomakehurst.wiremock.junit5.WireMockExtension;
 import com.github.tomakehurst.wiremock.junit5.WireMockRuntimeInfo;
-import com.fasterxml.jackson.databind.JsonNode;
 import com.juanperuzzo.job_hunter.application.port.out.RawJob;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.provider.GreenhouseProvider;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.retry.ExponentialBackoffRetry;
-import com.juanperuzzo.job_hunter.infrastructure.scraper.strategy.RestApiStrategy;
-import org.jsoup.Jsoup;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.springframework.web.util.HtmlUtils;
 
 import java.time.Duration;
-import java.util.HashMap;
 import java.util.List;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.*;
 import static org.junit.jupiter.api.Assertions.*;
 
+/**
+ * All scenarios go through the provider's real mapper (no test-side mirror): the
+ * production constructor wires {@code GreenhouseProvider.mapNode}, keeping the
+ * mapping logic single-sourced. WorkModel assertions use real Greenhouse
+ * spelling ("Híbrido, São Paulo") so accent handling is actually exercised
+ * (PR#84 review P1-1).
+ */
 @ExtendWith(WireMockExtension.class)
 @DisplayName("GreenhouseProvider tests")
 class GreenhouseProviderTest {
@@ -29,40 +31,12 @@ class GreenhouseProviderTest {
     private String baseUrl;
     private GreenhouseProvider provider;
     private ExponentialBackoffRetry retry;
-    private RestApiStrategy apiStrategy;
 
     @BeforeEach
     void setUp(WireMockRuntimeInfo wmRuntimeInfo) {
         baseUrl = wmRuntimeInfo.getHttpBaseUrl();
         retry = new ExponentialBackoffRetry(2, Duration.ofMillis(1), Duration.ofMillis(10), Duration.ofMillis(2));
-        apiStrategy = new RestApiStrategy("greenhouse", baseUrl, 5, "jobs", GreenhouseProviderTest::mapNode);
-        provider = new GreenhouseProvider("greenhouse", apiStrategy, retry, List.of("stone"));
-    }
-
-    /** Test-side mapper mirroring the provider's field mapping (see GreenhouseProvider.mapNode). */
-    private static RawJob mapNode(JsonNode node) {
-        var title = node.path("title").asText("");
-        var url = node.path("absolute_url").asText("");
-        if (title.isBlank() || url.isBlank()) return null;
-        var company = node.path("company_name").asText(null);
-        if (company != null && company.contains(" - ")) {
-            company = company.substring(0, company.indexOf(" - ")).trim();
-        }
-        var rawDate = node.path("first_published").asText(null);
-        if (rawDate != null && rawDate.length() >= 10) rawDate = rawDate.substring(0, 10);
-        var location = node.path("location").path("name").asText(null);
-        var content = node.path("content").asText("");
-        var description = content.isBlank() ? null : Jsoup.parse(HtmlUtils.htmlUnescape(HtmlUtils.htmlUnescape(content))).text();
-        return new RawJob(title, company, url, description, rawDate, location,
-                inferWorkModel(location, description), "greenhouse", new HashMap<>());
-    }
-
-    /** Test-side workModel inference mirroring the provider's logic. */
-    private static String inferWorkModel(String location, String description) {
-        var text = ((location != null ? location : "") + " " + (description != null ? description : "")).toLowerCase();
-        if (text.contains("remoto") || text.contains("remote")) return "Remoto";
-        if (text.contains("hibrido") || text.contains("hibrida") || text.contains("hybrid")) return "Híbrido";
-        return null;
+        provider = new GreenhouseProvider(baseUrl, 5, List.of("stone"), retry);
     }
 
     @Nested
@@ -70,7 +44,7 @@ class GreenhouseProviderTest {
     class ValidResponse {
 
         @Test
-        @DisplayName("extract should return mapped RawJob list")
+        @DisplayName("extract should return mapped RawJob list with workModel inferred from real accented location")
         void extract_whenValidResponse_shouldReturnMappedJobs() {
             stubFor(get(urlPathEqualTo("/v1/boards/stone/jobs"))
                     .withQueryParam("content", equalTo("true"))
@@ -96,6 +70,8 @@ class GreenhouseProviderTest {
             assertEquals("https://boards.greenhouse.io/stone/jobs/123", job.url());
             assertEquals("2026-07-01", job.rawDate());
             assertEquals("Híbrido, São Paulo", job.location());
+            assertEquals("Híbrido", job.workModel(),
+                    "accented 'Híbrido' in the location must still infer Híbrido (PR#84 P1-1)");
             assertEquals("greenhouse", job.source());
         }
     }
@@ -118,7 +94,7 @@ class GreenhouseProviderTest {
                         {"jobs": [{"title": "Dev Java", "absolute_url": "https://a.com/1", "first_published": "2026-07-01"}]}
                         """)));
 
-            var dedupProvider = new GreenhouseProvider("greenhouse", apiStrategy, retry, List.of("stone", "gitlab"));
+            var dedupProvider = new GreenhouseProvider(baseUrl, 5, List.of("stone", "gitlab"), retry);
             var jobs = dedupProvider.extract();
             assertEquals(1, jobs.size());
         }
@@ -156,7 +132,7 @@ class GreenhouseProviderTest {
                         {"jobs": [{"title": "Dev Java", "absolute_url": "https://a.com/1", "first_published": "2026-07-01"}]}
                         """)));
 
-            var multiProvider = new GreenhouseProvider("greenhouse", apiStrategy, retry, List.of("stone", "gitlab"));
+            var multiProvider = new GreenhouseProvider(baseUrl, 5, List.of("stone", "gitlab"), retry);
             var jobs = multiProvider.extract();
 
             // Dead board skipped, live board still fetched → 1 job, never a failure.
@@ -241,6 +217,27 @@ class GreenhouseProviderTest {
             assertEquals("Estamos procurando & desenvolvedores", job.description(),
                     "HTML must be double-decoded then tags stripped");
             assertEquals("Remoto", job.workModel(), "location containing remoto infers Remoto");
+        }
+
+        @Test
+        @DisplayName("real mapper should leave workModel null when no remote or hybrid hint is present")
+        void realMapper_whenNoRemoteOrHybridHint_shouldKeepWorkModelNull() {
+            stubFor(get(urlPathEqualTo("/v1/boards/stone/jobs"))
+                    .withQueryParam("content", equalTo("true"))
+                    .willReturn(okJson("""
+                        {"jobs": [{
+                          "title": "Analista",
+                          "absolute_url": "https://boards.greenhouse.io/stone/jobs/1000",
+                          "first_published": "2026-07-01T00:00:00.000Z",
+                          "content": "&amp;lt;p&amp;gt;Vaga presencial em São Paulo.&amp;lt;/p&amp;gt;",
+                          "location": {"name": "São Paulo"}
+                        }]}
+                        """)));
+
+            var jobs = provider.extract();
+            assertEquals(1, jobs.size());
+            assertNull(jobs.get(0).workModel(),
+                    "unknown work model must never block the job — null workModel is valid");
         }
     }
 }
