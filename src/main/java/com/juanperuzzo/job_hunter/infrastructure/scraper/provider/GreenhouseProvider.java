@@ -10,6 +10,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.util.HtmlUtils;
 
+import java.text.Normalizer;
 import java.util.HashMap;
 import java.util.List;
 
@@ -141,9 +142,13 @@ public class GreenhouseProvider implements ExtractionStrategy {
      * Greenhouse has no explicit remote/hybrid flag — infer it from location and
      * description texts. {@code "Remoto"} wins over {@code "Híbrido"} when both
      * appear; never blocks on unknown (null workModel).
+     *
+     * <p>Real Greenhouse locations carry accents ({@code "Híbrido, São Paulo"}), so
+     * the combined text is diacritics-normalized (NFD + {@code \p{M}} strip) before
+     * matching — otherwise "híbrido" would never match "hibrido" (PR#84 review P1-1).
      */
     private static String inferWorkModel(String location, String description) {
-        var text = ((location != null ? location : "") + " " + (description != null ? description : "")).toLowerCase();
+        var text = normalize(location) + " " + normalize(description);
         if (text.contains("remoto") || text.contains("remote")) {
             return "Remoto";
         }
@@ -151,5 +156,15 @@ public class GreenhouseProvider implements ExtractionStrategy {
             return "Híbrido";
         }
         return null;
+    }
+
+    /** Lowercase with combining diacritics stripped, so accented PT text matches ASCII searches. */
+    private static String normalize(String value) {
+        if (value == null || value.isBlank()) {
+            return "";
+        }
+        return Normalizer.normalize(value, Normalizer.Form.NFD)
+                .replaceAll("\\p{M}", "")
+                .toLowerCase();
     }
 }
