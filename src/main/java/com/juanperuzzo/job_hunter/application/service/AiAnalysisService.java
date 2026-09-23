@@ -21,22 +21,24 @@ import java.util.List;
 
 public class AiAnalysisService implements AnalyzeJobUseCase {
 
-    private static final int MAX_RESUME_CHARS = 1500;
-    private static final int MAX_DESCRIPTION_CHARS = 1000;
-
     private final AiPort aiPort;
     private final JobAnalysisRepository jobAnalysisRepository;
     private final UserProfileRepository userProfileRepository;
     private final JobRepository jobRepository;
+    private final int maxResumeChars;
+    private final int maxDescriptionChars;
     private final ObjectMapper objectMapper;
     private static final Logger log = LoggerFactory.getLogger(AiAnalysisService.class);
 
     public AiAnalysisService(AiPort aiPort, JobAnalysisRepository jobAnalysisRepository,
-                             UserProfileRepository userProfileRepository, JobRepository jobRepository) {
+                             UserProfileRepository userProfileRepository, JobRepository jobRepository,
+                             int maxResumeChars, int maxDescriptionChars) {
         this.aiPort = aiPort;
         this.jobAnalysisRepository = jobAnalysisRepository;
         this.userProfileRepository = userProfileRepository;
         this.jobRepository = jobRepository;
+        this.maxResumeChars = maxResumeChars;
+        this.maxDescriptionChars = maxDescriptionChars;
         this.objectMapper = new ObjectMapper();
     }
 
@@ -58,8 +60,9 @@ public class AiAnalysisService implements AnalyzeJobUseCase {
             JobAnalysis parsed = parseAnalysis(response);
             // Deterministic preferences→scoring modifier: guarantees work-model
             // conflicts and excluded companies lower the persisted matchScore even
-            // if the AI ignores the injected context. Null/blank preferences → no-op.
-            int matchScore = JobPreferenceScorer.adjust(parsed.matchScore(), job, profile.preferences());
+            // if the AI ignores the injected context; the soft stack signal
+            // (match-quality spec §4) penalizes a skills list with zero overlap.
+            int matchScore = JobPreferenceScorer.adjust(parsed.matchScore(), job, profile.preferences(), profile.skills());
             var existingId = jobAnalysisRepository.findByJobIdAndUserId(job.id(), userId)
                     .map(JobAnalysis::id)
                     .orElse(null);
@@ -77,8 +80,8 @@ public class AiAnalysisService implements AnalyzeJobUseCase {
     }
 
     private String buildPrompt(Job job, UserProfile profile) {
-        String resumeExcerpt = truncate(profile.resumeText(), MAX_RESUME_CHARS);
-        String descExcerpt = truncate(job.description(), MAX_DESCRIPTION_CHARS);
+        String resumeExcerpt = truncate(profile.resumeText(), maxResumeChars, "Resume");
+        String descExcerpt = truncate(job.description(), maxDescriptionChars, "Description");
 
         String prompt = """
             You are a career assistant. Analyze this job against the candidate.
@@ -93,7 +96,8 @@ public class AiAnalysisService implements AnalyzeJobUseCase {
 
             {"matchScore": 75, "matchedSkills": ["Java"], "missingSkills": ["Go"], "companyTone": "formal", "summary": "Resume em ate 80 caracteres"}
 
-            Score: 80-100=todos requisitos, 50-79=maioria, <50=poucos matches
+            Score: 80-100=todos requisitos, 60-79=maioria, 40-59=metade, 20-39=poucos, 0-19=stack diferente
+            Score down within the band: job requiring years of experience above the candidate's junior level; job requiring a degree the candidate does not hold (candidate is a 2027 graduate)
             Tone: formal=tradicional, casual=moderno, startup=jovem/dinamico
             """.formatted(
                 String.join(", ", profile.skills()),
@@ -115,9 +119,11 @@ public class AiAnalysisService implements AnalyzeJobUseCase {
         return prompt;
     }
 
-    private String truncate(String text, int maxChars) {
+    private String truncate(String text, int maxChars, String label) {
         if (text == null) return "";
-        return text.length() <= maxChars ? text : text.substring(0, maxChars) + "...";
+        if (text.length() <= maxChars) return text;
+        log.warn("{} text is {} chars, truncating to {} for AI prompt", label, text.length(), maxChars);
+        return text.substring(0, maxChars) + "...";
     }
 
     private JobAnalysis parseAnalysis(String json) {

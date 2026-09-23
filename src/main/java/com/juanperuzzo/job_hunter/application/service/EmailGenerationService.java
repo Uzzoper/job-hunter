@@ -29,7 +29,6 @@ import java.util.stream.Collectors;
 public class EmailGenerationService implements GenerateEmailUseCase, GetEmailDraftUseCase {
 
     private static final Logger log = LoggerFactory.getLogger(EmailGenerationService.class);
-    private static final int MAX_RESUME_CHARS = 1000;
 
     /**
      * Tokenized email shown to the model as a reference. Reuses the standard
@@ -48,6 +47,7 @@ public class EmailGenerationService implements GenerateEmailUseCase, GetEmailDra
     private final TemplateEmailService templateEmailService;
     private final BotMemorySyncService botMemorySyncService;
     private final int minMatchScore;
+    private final int maxResumeChars;
 
     public EmailGenerationService(AiPort aiPort, EmailDraftRepository emailDraftRepository,
                                   UserProfileRepository userProfileRepository,
@@ -55,7 +55,7 @@ public class EmailGenerationService implements GenerateEmailUseCase, GetEmailDra
                                   JobRepository jobRepository, JobAnalysisRepository jobAnalysisRepository,
                                   TemplateEmailService templateEmailService,
                                   BotMemorySyncService botMemorySyncService,
-                                  int minMatchScore) {
+                                  int minMatchScore, int maxResumeChars) {
         this.aiPort = aiPort;
         this.emailDraftRepository = emailDraftRepository;
         this.userProfileRepository = userProfileRepository;
@@ -65,6 +65,7 @@ public class EmailGenerationService implements GenerateEmailUseCase, GetEmailDra
         this.templateEmailService = templateEmailService;
         this.botMemorySyncService = botMemorySyncService;
         this.minMatchScore = minMatchScore;
+        this.maxResumeChars = maxResumeChars;
     }
 
     @Override
@@ -99,7 +100,7 @@ public class EmailGenerationService implements GenerateEmailUseCase, GetEmailDra
             }
         }
 
-        if (analysis.matchScore() >= minMatchScore) {
+        if (analysis.matchScore() < minMatchScore) {
             return generateFromTemplate(job, user, profile, userId);
         }
 
@@ -175,9 +176,13 @@ public class EmailGenerationService implements GenerateEmailUseCase, GetEmailDra
     }
 
     private String buildPrompt(Job job, JobAnalysis analysis, User user, UserProfile profile) {
-        String resumeExcerpt = profile.resumeText().length() <= MAX_RESUME_CHARS
-                ? profile.resumeText()
-                : profile.resumeText().substring(0, MAX_RESUME_CHARS) + "...";
+        String resumeText = profile.resumeText();
+        String resumeExcerpt = resumeText.length() <= maxResumeChars
+                ? resumeText
+                : resumeText.substring(0, maxResumeChars) + "...";
+        if (resumeText.length() > maxResumeChars) {
+            log.warn("Resume text is {} chars, truncating to {} for AI prompt", resumeText.length(), maxResumeChars);
+        }
 
         String tone = analysis.companyTone().name().toLowerCase();
         String matchedSkills = String.join(", ", analysis.matchedSkills());

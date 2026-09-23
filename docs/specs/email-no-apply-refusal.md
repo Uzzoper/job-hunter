@@ -25,7 +25,7 @@ the first line as subject without validation, eligibility only checks
 ## Expected behavior
 
 ### Scenario 1: AI refuses — no fit (AI path)
-- **GIVEN** a valid `Job`, `JobAnalysis`, and user profile (AI path, `matchScore < minMatchScore`)
+- **GIVEN** a valid `Job`, `JobAnalysis`, and user profile (AI path, `matchScore >= minMatchScore`)
 - **WHEN** `generate(userId, jobId)` is called and `AiPort.complete()` returns text starting with `NO_APPLY:` (after trim)
 - **THEN** no subject/body parsing happens
 - **AND** the persisted `EmailDraft` has `status = REJECTED`, `subject = ""` (or the one-line reason?), `body` = full AI response trimmed
@@ -57,7 +57,7 @@ the first line as subject without validation, eligibility only checks
 - **GIVEN** an existing `REJECTED` draft for `(job_id, user_id)`
 - **WHEN** `generate(userId, jobId)` is called again
 - **THEN** the new AI response decides: `NO_APPLY:` → stays `REJECTED` (same `id` updated); valid email → transitions to `PENDING` (explicit reactivation, same `id`)
-- **AND** the template branch (`matchScore >= minMatchScore`) always produces `PENDING` (deterministic, never refused)
+- **AND** a newly generated template branch draft (`matchScore < minMatchScore`) is `PENDING` unless its template result carries the `NO_APPLY:` marker, in which case it is `REJECTED` like an AI refusal (Scenario 6 of `generate-email.md`; match-quality spec inversion)
 
 ---
 

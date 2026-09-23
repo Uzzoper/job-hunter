@@ -22,6 +22,11 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
+import org.slf4j.LoggerFactory;
+
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
@@ -52,10 +57,163 @@ class AiAnalysisServiceTest {
 
     @BeforeEach
     void setUp() {
-        aiAnalysisService = new AiAnalysisService(aiPort, jobAnalysisRepository, userProfileRepository, jobRepository);
+        aiAnalysisService = new AiAnalysisService(aiPort, jobAnalysisRepository, userProfileRepository, jobRepository, 8000, 8000);
         defaultProfile = new UserProfile(1L, 1L, "Experienced Java developer",
                 List.of("Java", "Spring Boot", "PostgreSQL"), CompanyTone.FORMAL, List.of(),
                 null, null, null, null, null, null);
+    }
+
+    @Nested
+    @DisplayName("Truncation: configurable limits, tail survival past the old 1000-char cut")
+    class TruncationTests {
+
+        private static final String VALID_JSON = """
+            {
+              "matchScore": 80,
+              "matchedSkills": ["Java"],
+              "missingSkills": [],
+              "companyTone": "formal",
+              "summary": "Developer position"
+            }
+            """;
+
+        private Job jobWith(String description) {
+            return new Job(1L, "Java Developer", "CompanyX",
+                    "https://example.com/job/1", description, LocalDate.now(), "test");
+        }
+
+        /** Attaches a real logback appender to the service logger, runs the action and returns the emitted messages. */
+        private List<String> captureWarnings(Runnable action) {
+            var logger = (Logger) LoggerFactory.getLogger(AiAnalysisService.class);
+            var appender = new ListAppender<ILoggingEvent>();
+            appender.start();
+            logger.addAppender(appender);
+            try {
+                action.run();
+            } finally {
+                logger.detachAppender(appender);
+            }
+            return appender.list.stream()
+                    .map(ILoggingEvent::getFormattedMessage)
+                    .toList();
+        }
+
+        @Test
+        @DisplayName("analyze should keep the stack/requirements tail when the description is above the old 1000-char cut")
+        void analyze_whenDescriptionBetweenOldAndNewCut_shouldKeepTailInPrompt() {
+            String requirementTail = "Requisitos: Java, Spring Boot, PostgreSQL. Requer 5 anos de experiência.";
+            String loops = "Descrição da vaga com detalhes de stack e requisitos exigidos. ";
+            String description = loops.repeat(25) + requirementTail; // ~1500 chars > old 1000 cut, < 8000
+            assertTrue(description.length() > 1000, "fixture must exceed the OLD cut");
+            assertTrue(description.length() < 8000, "fixture must stay under the NEW limit");
+
+            when(userProfileRepository.findByUserId(any())).thenReturn(Optional.of(defaultProfile));
+            ArgumentCaptor<String> promptCaptor = ArgumentCaptor.forClass(String.class);
+            when(aiPort.complete(promptCaptor.capture())).thenReturn(VALID_JSON);
+            when(jobAnalysisRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            when(jobRepository.findById(1L)).thenReturn(Optional.of(jobWith(description)));
+
+            aiAnalysisService.analyze(1L, 1L);
+
+            String prompt = promptCaptor.getValue();
+            assertTrue(prompt.contains("Requisitos: Java, Spring Boot, PostgreSQL"),
+                    "stack/requirements section must survive in the prompt, got: " + prompt);
+            assertTrue(prompt.contains("Requer 5 anos de experiência"),
+                    "years-of-experience tail must survive in the prompt");
+        }
+
+        @Test
+        @DisplayName("analyze should truncate the description beyond the configured limit and log a warning")
+        void analyze_whenDescriptionExceedsConfiguredLimit_shouldTruncateAndWarn() {
+            int smallLimit = 100;
+            AiAnalysisService smallLimitService = new AiAnalysisService(
+                    aiPort, jobAnalysisRepository, userProfileRepository, jobRepository, 8000, smallLimit);
+            String description = "x".repeat(150) + " REQUISITOS_FIM_DA_DESCRICAO";
+            when(userProfileRepository.findByUserId(any())).thenReturn(Optional.of(defaultProfile));
+            ArgumentCaptor<String> promptCaptor = ArgumentCaptor.forClass(String.class);
+            when(aiPort.complete(promptCaptor.capture())).thenReturn(VALID_JSON);
+            when(jobAnalysisRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            when(jobRepository.findById(1L)).thenReturn(Optional.of(jobWith(description)));
+
+            var warnings = captureWarnings(() -> smallLimitService.analyze(1L, 1L));
+
+            String prompt = promptCaptor.getValue();
+            assertTrue(prompt.contains("x".repeat(100) + "..."),
+                    "description excerpt must carry the ellipsis after the configured limit");
+            assertFalse(prompt.contains("REQUISITOS_FIM_DA_DESCRICAO"),
+                    "truncated tail must not appear in the prompt");
+            assertTrue(warnings.stream().anyMatch(m -> m.contains("truncating to 100")),
+                    "expected a truncation WARN for the description, got: " + warnings);
+        }
+
+        @Test
+        @DisplayName("analyze should truncate the resume beyond the configured limit and log a warning")
+        void analyze_whenResumeExceedsConfiguredLimit_shouldTruncateAndWarn() {
+            int smallLimit = 100;
+            AiAnalysisService smallLimitService = new AiAnalysisService(
+                    aiPort, jobAnalysisRepository, userProfileRepository, jobRepository, smallLimit, 8000);
+            UserProfile longResumeProfile = new UserProfile(1L, 1L,
+                    "y".repeat(150) + " FIM_DO_CURRICULO",
+                    List.of("Java", "Spring Boot", "PostgreSQL"), CompanyTone.FORMAL, List.of(),
+                    null, null, null, null, null, null);
+            when(userProfileRepository.findByUserId(any())).thenReturn(Optional.of(longResumeProfile));
+            ArgumentCaptor<String> promptCaptor = ArgumentCaptor.forClass(String.class);
+            when(aiPort.complete(promptCaptor.capture())).thenReturn(VALID_JSON);
+            when(jobAnalysisRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            when(jobRepository.findById(1L)).thenReturn(Optional.of(jobWith("Atuação 100% remota.")));
+
+            var warnings = captureWarnings(() -> smallLimitService.analyze(1L, 1L));
+
+            String prompt = promptCaptor.getValue();
+            assertTrue(prompt.contains("y".repeat(100) + "..."),
+                    "resume excerpt must carry the ellipsis after the configured limit");
+            assertFalse(prompt.contains("FIM_DO_CURRICULO"), "truncated resume tail must not appear in the prompt");
+            assertTrue(warnings.stream().anyMatch(m -> m.contains("truncating to 100")),
+                    "expected a truncation WARN for the resume, got: " + warnings);
+        }
+    }
+
+    @Nested
+    @DisplayName("Prompt v4.1: score-down factors for seniority and degree")
+    class PromptV41Tests {
+
+        private static final String VALID_JSON = """
+            {
+              "matchScore": 80,
+              "matchedSkills": ["Java"],
+              "missingSkills": ["Go"],
+              "companyTone": "formal",
+              "summary": "Developer position"
+            }
+            """;
+
+        @Test
+        @DisplayName("analyze should embed the v4.1 score-down factors and still parse the 5-field response")
+        void analyze_whenPromptBuilt_shouldContainV41ScoreDownFactors() {
+            when(userProfileRepository.findByUserId(any())).thenReturn(Optional.of(defaultProfile));
+            ArgumentCaptor<String> promptCaptor = ArgumentCaptor.forClass(String.class);
+            when(aiPort.complete(promptCaptor.capture())).thenReturn(VALID_JSON);
+            when(jobAnalysisRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            when(jobRepository.findById(1L)).thenReturn(Optional.of(
+                    new Job(1L, "Java Developer", "CompanyX",
+                            "https://example.com/job/1", "Description", LocalDate.now(), "test")));
+
+            JobAnalysis analysis = aiAnalysisService.analyze(1L, 1L);
+
+            String prompt = promptCaptor.getValue();
+            assertTrue(prompt.contains("years of experience above the candidate's junior level"),
+                    "prompt must carry the years-of-experience score-down factor, got: " + prompt);
+            assertTrue(prompt.contains("2027 graduate"),
+                    "prompt must carry the required-degree score-down factor, got: " + prompt);
+            assertTrue(prompt.contains("80-100") && prompt.contains("0-19"),
+                    "prompt must keep the 5-band grading, got: " + prompt);
+            // v4.1 keeps the response format UNCHANGED — the same 5 fields still parse
+            assertEquals(80, analysis.matchScore());
+            assertEquals(List.of("Java"), analysis.matchedSkills());
+            assertEquals(List.of("Go"), analysis.missingSkills());
+            assertEquals(CompanyTone.FORMAL, analysis.companyTone());
+            assertEquals("Developer position", analysis.summary());
+        }
     }
 
     @Nested

@@ -69,7 +69,7 @@
 
 - **One send per tick, by design.** `@Scheduled(fixedDelayString = "${auto-send.interval-seconds:120}000")` — the scheduler's own interval is the spacing between sends. No in-method loop with `Thread.sleep()`. Add a small random jitter (up to +30s).
 - **Priority order: highest matchScore first.** Within the same score tier, oldest first.
-- **Scheduler does not generate emails.** Email generation is handled separately by `EmailGenerationService` (high-score → template, low-score → AI). The scheduler only calls `send()`.
+- **Scheduler does not generate emails.** Email generation is handled separately by `EmailGenerationService` (high-score → AI-write, low-score → template). The scheduler only calls `send()`.
 - **`EmailStatus` gains `APPROVED`:** sits between `PENDING` and `SENT`. Only meaningful when `require-review = true`; full-auto mode reads `PENDING` directly.
 - **Daily cap:** 50 per user per calendar day (UTC). Resets at midnight.
 - **Feasibility with the Hermes gateway:** Yes. The tick interval and 50/day cap keep the scheduler comfortable regardless of email type.
@@ -137,4 +137,4 @@ auto-send:
   daily-cap: 50             # max auto-sends per user per calendar day
 ```
 
-No `min-match-score` — score determines email type (>= 60 template, < 60 personalized), not whether to send. Every eligible draft is auto-sent in priority order.
+No `min-match-score` — score determines email type (< 60 template, >= 60 AI-personalized), not whether to send. Every eligible draft is auto-sent in priority order.

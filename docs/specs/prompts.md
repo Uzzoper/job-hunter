@@ -61,6 +61,10 @@ matchScore criteria:
 - 20-39:  few requirements met, but potential exists
 - 0-19:   completely different stack
 
+Within the applicable band, score DOWN when:
+- the job requires years of experience above the candidate's junior level
+- the job requires a degree the candidate does not hold (candidate is a 2027 graduate)
+
 companyTone criteria:
 - formal:  bank, consultancy, traditional company, serious language
 - startup: young company, casual language, words like "rockstar", "ninja"
@@ -371,4 +375,5 @@ Resume text:
 | v3.2 | 2026-08 | Prompt 2 repositioned as a professional developer: reference example rewritten without trainee phrasing ("em formação", "venho me especializando", "aprimorando habilidades"), new rule 10 (professional positioning, confident CTA instead of "fico à disposição"), missing skills addressed matter-of-factly |
 | v3.3 | 2026-09 | Prompts 1 and 2 gain the `{{PREFERENCES_CONTEXT}}` block (work model, salary floor, excluded companies) when set; Prompt 1 adds a preference-aware scoring directive, Prompt 2 adds rule 12 (preference conflicts → `NO_APPLY:`) — see `preferences-scoring.md` |
 | v4.0 | 2026-09 | Prompt 2 reference example is now the template itself with `{{...}}` tokens and gains the `{{CANDIDATE_FACTS}}` block (built by `ProfilePlaceholders` — same resolver as the standard-template email, no hardcoded personal data) — see `profile-placeholders.md` |
+| v4.1 | 2026-09 | Prompt 1 band descriptions updated: `matchScore` must reflect years-of-experience mismatch and required-degree mismatch as **score-down factors**; response format unchanged (still 5 fields: `matchScore`, `matchedSkills`, `missingSkills`, `companyTone`, `summary`) — see `match-quality.md` (#77) |
 ```

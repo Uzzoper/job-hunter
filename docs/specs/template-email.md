@@ -3,13 +3,13 @@
 > **Layer:** `application` (service)  
 > **Implementation file:** `com.juanperuzzo.job_hunter.application.service.TemplateEmailService`  
 > **Corresponding test:** `TemplateEmailServiceTest.java`  
-> **Depends on:** `generate-email.md` (called by `EmailGenerationService` when `matchScore >= threshold`), `user-profile.md` (profile is the data source), `profile-placeholders.md` (placeholder resolution rules)
+> **Depends on:** `generate-email.md` (called by `EmailGenerationService` when `matchScore < threshold`), `user-profile.md` (profile is the data source), `profile-placeholders.md` (placeholder resolution rules)
 
 ---
 
 ## Context
 
-Jobs with `matchScore >= minMatchScore` (default: 60) do not need AI-personalized emails. Instead, a fixed template with the candidate's personal introduction and portfolio is used. This saves AI credits and sends faster.
+Jobs with `matchScore < minMatchScore` (default: 60) use a fixed template with the candidate's personal introduction and portfolio. High-score jobs go through the AI-write path instead (`generate-email.md` Scenario 6). The template saves AI credits and sends faster for the lower-scored candidates.
 
 `TemplateEmailService` is a stateless builder — it returns a `TemplateResult` record with subject and body. Persistence is owned by `EmailGenerationService`, which calls this service and saves the draft through the same upsert path used by the AI branch.
 
@@ -86,7 +86,7 @@ public TemplateResult generate(Job job, User user, UserProfile profile);
 
 ## Scenarios
 
-### Scenario 1: template generated for high-match job with a full profile
+### Scenario 1: template generated for a low-match job with a full profile
 - **GIVEN** a `Job` with `title = "Desenvolvedor Java Júnior"` and `company = "Acme Corp"`, and a `User`/`UserProfile` with name, phone, URLs, skills and projects
 - **WHEN** `generate(job, user, profile)` is called
 - **THEN** returns a `TemplateResult` with:
@@ -99,6 +99,6 @@ public TemplateResult generate(Job job, User user, UserProfile profile);
 - **THEN** the phone/GitHub signature lines are absent and no `{{PHONE}}` / `{{GITHUB_URL}}` leaks into the body
 
 ### Scenario 3: template used as AI reference (unchanged)
-- **GIVEN** an email generation request for a low-match job (`matchScore < threshold`)
+- **GIVEN** an email generation request on the AI path (`matchScore >= threshold`)
 - **WHEN** the AI prompt is built
 - **THEN** the template email is included as a tokenized example to guide the model's output format and tone, followed by the `CANDIDATE FACTS` block with the resolved values
