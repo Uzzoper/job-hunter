@@ -74,7 +74,7 @@ public class RestApiStrategy implements ExtractionStrategy {
 
     /**
      * One raw JSON page plus the RFC 5988 {@code Link: rel="next"} URL (null on the
-     * last page) — callers drive pagination themselves (e.g. GithubVagasProvider).
+     * last page) — callers drive pagination themselves (e.g. GithubJobsProvider).
      */
     public record Page(List<RawJob> jobs, String nextUrl) {}
 

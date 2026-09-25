@@ -3,7 +3,7 @@ package com.juanperuzzo.job_hunter.unit.infrastructure.scraper.provider;
 import com.github.tomakehurst.wiremock.junit5.WireMockExtension;
 import com.github.tomakehurst.wiremock.junit5.WireMockRuntimeInfo;
 import com.juanperuzzo.job_hunter.application.port.out.RawJob;
-import com.juanperuzzo.job_hunter.infrastructure.scraper.provider.GithubVagasProvider;
+import com.juanperuzzo.job_hunter.infrastructure.scraper.provider.GithubJobsProvider;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.retry.ExponentialBackoffRetry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -24,21 +24,21 @@ import static org.junit.jupiter.api.Assertions.*;
  * {@code Accept: application/vnd.github+json} and a {@code User-Agent} header.
  */
 @ExtendWith(WireMockExtension.class)
-@DisplayName("GithubVagasProvider tests")
-class GithubVagasProviderTest {
+@DisplayName("GithubJobsProvider tests")
+class GithubJobsProviderTest {
 
     private static final String FRONTEND_REPO = "frontendbr/vagas";
     private static final String BACKEND_REPO = "backend-br/vagas";
 
     private String baseUrl;
-    private GithubVagasProvider provider;
+    private GithubJobsProvider provider;
     private ExponentialBackoffRetry retry;
 
     @BeforeEach
     void setUp(WireMockRuntimeInfo wmRuntimeInfo) {
         baseUrl = wmRuntimeInfo.getHttpBaseUrl();
         retry = new ExponentialBackoffRetry(2, Duration.ofMillis(1), Duration.ofMillis(10), Duration.ofMillis(2));
-        provider = new GithubVagasProvider(baseUrl, 5, List.of(FRONTEND_REPO), retry);
+        provider = new GithubJobsProvider(baseUrl, 5, List.of(FRONTEND_REPO), retry);
     }
 
     private static void stubIssues(String repo, String body) {
@@ -186,7 +186,7 @@ class GithubVagasProviderTest {
                 ]
                 """);
 
-            var multiRepoProvider = new GithubVagasProvider(baseUrl, 5, List.of(FRONTEND_REPO, BACKEND_REPO), retry);
+            var multiRepoProvider = new GithubJobsProvider(baseUrl, 5, List.of(FRONTEND_REPO, BACKEND_REPO), retry);
             var jobs = multiRepoProvider.extract();
 
             assertEquals(1, jobs.size());

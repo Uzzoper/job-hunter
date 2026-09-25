@@ -35,9 +35,9 @@ import java.util.Set;
  * {@code " - "} / {@code " na "} / {@code " @ "} separator (null when absent); the raw
  * body is kept verbatim so {@code EmailExtractor} downstream can find application emails.
  */
-public class GithubVagasProvider implements ExtractionStrategy {
+public class GithubJobsProvider implements ExtractionStrategy {
 
-    private static final Logger log = LoggerFactory.getLogger(GithubVagasProvider.class);
+    private static final Logger log = LoggerFactory.getLogger(GithubJobsProvider.class);
 
     private static final String PER_PAGE = "100";
 
@@ -64,7 +64,7 @@ public class GithubVagasProvider implements ExtractionStrategy {
     private final ExponentialBackoffRetry retry;
     private final List<String> repos;
 
-    public GithubVagasProvider(
+    public GithubJobsProvider(
             String baseUrl,
             int timeoutSeconds,
             List<String> repos,
