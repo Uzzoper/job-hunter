@@ -125,6 +125,15 @@ ats:
   # (nested YAML maps flatten into per-key properties and cannot be resolved).
   display-names: "{nubank: 'Nubank', notion: 'Notion', cursor: 'Cursor', preply: 'Preply', replit: 'Replit', linear: 'Linear', zapier: 'Zapier', dlocal: 'dLocal', outreach: 'Outreach', metabase: 'Metabase'}"
 
+github:
+  # GitHub "vagas" community boards (frontendbr/backend-br) — disabled by default until
+  # the junior-relevance sample is confirmed (docs/specs/github-vagas.md §7).
+  enabled: false
+  timeout-seconds: 30
+  # Owner/repo pairs, CSV (never YAML flow style — @Value List<String> binds flow style
+  # to an empty list on Spring Boot 4.0.6, proven live on the ats.* lists).
+  repos: frontendbr/vagas,backend-br/vagas
+
 auto-send:
   enabled: false
   require-review: true

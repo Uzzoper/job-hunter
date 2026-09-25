@@ -76,6 +76,7 @@ import com.juanperuzzo.job_hunter.infrastructure.scraper.provider.ProviderRegist
 import com.juanperuzzo.job_hunter.infrastructure.scraper.provider.GreenhouseProvider;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.provider.AshbyProvider;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.provider.LeverProvider;
+import com.juanperuzzo.job_hunter.infrastructure.scraper.provider.GithubVagasProvider;
 
 @Configuration
 @EnableConfigurationProperties(LinkedInScraperProperties.class)
@@ -309,6 +310,16 @@ public class AppConfig {
     }
 
     @Bean
+    @ConditionalOnProperty(name = "github.enabled", havingValue = "true")
+    public ExtractionStrategy githubVagasProvider(
+            @Value("${github.base-url:https://api.github.com}") String baseUrl,
+            @Value("${github.timeout-seconds:30}") int timeoutSeconds,
+            @Value("${github.repos:}") List<String> repos,
+            ExponentialBackoffRetry exponentialBackoffRetry) {
+        return new GithubVagasProvider(baseUrl, timeoutSeconds, repos, exponentialBackoffRetry);
+    }
+
+    @Bean
     public ProviderRegistry providerRegistry(
             ExtractionStrategy gupyProvider,
             ExtractionStrategy infojobsProvider,
@@ -317,6 +328,7 @@ public class AppConfig {
             @Qualifier("greenhouseProvider") Optional<ExtractionStrategy> greenhouseProvider,
             @Qualifier("ashbyProvider") Optional<ExtractionStrategy> ashbyProvider,
             @Qualifier("leverProvider") Optional<ExtractionStrategy> leverProvider,
+            @Qualifier("githubVagasProvider") Optional<ExtractionStrategy> githubVagasProvider,
             ExponentialBackoffRetry exponentialBackoffRetry,
             RateLimiter rateLimiter,
             JobNormalizer jobNormalizer,
@@ -333,6 +345,8 @@ public class AppConfig {
         ashbyProvider.ifPresent(provider ->
                 registry.register(provider, exponentialBackoffRetry, rateLimiter, jobNormalizer));
         leverProvider.ifPresent(provider ->
+                registry.register(provider, exponentialBackoffRetry, rateLimiter, jobNormalizer));
+        githubVagasProvider.ifPresent(provider ->
                 registry.register(provider, exponentialBackoffRetry, rateLimiter, jobNormalizer));
         return registry;
     }

@@ -85,7 +85,7 @@ class GithubVagasProviderTest {
                     "labels": [{"name": "Híbrido"}, {"name": "PJ"}]
                   }
                 ]
-                """));
+                """);
 
             var jobs = provider.extract();
             assertEquals(2, jobs.size());
@@ -184,7 +184,7 @@ class GithubVagasProviderTest {
                   {"title": "Dev Backend", "html_url": "https://github.com/backend-br/vagas/issues/5",
                    "number": 5, "created_at": "2026-09-01T00:00:00Z", "labels": []}
                 ]
-                """));
+                """);
 
             var multiRepoProvider = new GithubVagasProvider(baseUrl, 5, List.of(FRONTEND_REPO, BACKEND_REPO), retry);
             var jobs = multiRepoProvider.extract();
@@ -232,7 +232,7 @@ class GithubVagasProviderTest {
                    "html_url": "https://github.com/frontendbr/vagas/issues/14", "number": 14,
                    "created_at": "2026-09-01T00:00:00Z", "labels": []}
                 ]
-                """));
+                """);
 
             var jobs = provider.extract();
             assertEquals(4, jobs.size());
@@ -267,7 +267,7 @@ class GithubVagasProviderTest {
                    "created_at": "2026-09-01T00:00:00Z",
                    "labels": [{"name": "CLT"}]}
                 ]
-                """));
+                """);
 
             var jobs = provider.extract();
             assertEquals(3, jobs.size());
