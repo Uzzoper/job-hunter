@@ -169,10 +169,14 @@ class ProviderBasedScraperAdapterTest {
     class TimeoutBudget {
 
         @Test
-        @DisplayName("timeoutFor should give linkedin 180s, infojobs 120s, and others the default 60s")
+        @DisplayName("timeoutFor should give linkedin 180s, infojobs/ashby/lever 120s, greenhouse 300s, others the default 60s")
         void timeoutFor_whenProvider_shouldReturnPerProviderBudget() {
             assertEquals(Duration.ofSeconds(180), ProviderBasedScraperAdapter.timeoutFor("linkedin"));
             assertEquals(Duration.ofSeconds(120), ProviderBasedScraperAdapter.timeoutFor("infojobs"));
+            assertEquals(Duration.ofSeconds(300), ProviderBasedScraperAdapter.timeoutFor("greenhouse"),
+                    "the sequential 17-board Greenhouse fetch needs a generous budget");
+            assertEquals(Duration.ofSeconds(120), ProviderBasedScraperAdapter.timeoutFor("ashby"));
+            assertEquals(Duration.ofSeconds(120), ProviderBasedScraperAdapter.timeoutFor("lever"));
             assertEquals(Duration.ofSeconds(60), ProviderBasedScraperAdapter.timeoutFor("gupy"));
             assertEquals(Duration.ofSeconds(60), ProviderBasedScraperAdapter.timeoutFor("unknown"));
         }

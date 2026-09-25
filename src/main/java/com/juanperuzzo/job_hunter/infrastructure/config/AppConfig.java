@@ -73,6 +73,9 @@ import com.juanperuzzo.job_hunter.infrastructure.scraper.provider.GupyProvider;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.provider.InfoJobsProvider;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.provider.LinkedInProvider;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.provider.ProviderRegistry;
+import com.juanperuzzo.job_hunter.infrastructure.scraper.provider.GreenhouseProvider;
+import com.juanperuzzo.job_hunter.infrastructure.scraper.provider.AshbyProvider;
+import com.juanperuzzo.job_hunter.infrastructure.scraper.provider.LeverProvider;
 
 @Configuration
 @EnableConfigurationProperties(LinkedInScraperProperties.class)
@@ -272,11 +275,48 @@ public class AppConfig {
     }
 
     @Bean
+    @ConditionalOnProperty(name = "ats.enabled", havingValue = "true")
+    public ExtractionStrategy greenhouseProvider(
+            @Value("${ats.greenhouse-base-url:https://boards-api.greenhouse.io}") String baseUrl,
+            @Value("${ats.timeout-seconds:30}") int timeoutSeconds,
+            @Value("${ats.greenhouse-boards:}") List<String> boardTokens,
+            ExponentialBackoffRetry exponentialBackoffRetry) {
+        return new GreenhouseProvider(baseUrl, timeoutSeconds, boardTokens, exponentialBackoffRetry);
+    }
+
+    @Bean
+    @ConditionalOnProperty(name = "ats.enabled", havingValue = "true")
+    public ExtractionStrategy ashbyProvider(
+            @Value("${ats.ashby-base-url:https://api.ashbyhq.com}") String baseUrl,
+            @Value("${ats.timeout-seconds:30}") int timeoutSeconds,
+            @Value("${ats.ashby-boards:}") List<String> boardNames,
+            @Value("#{${ats.display-names:{}}}") java.util.Map<String, String> displayNames,
+            ExponentialBackoffRetry exponentialBackoffRetry) {
+        return new AshbyProvider(baseUrl, timeoutSeconds, boardNames, displayNames, exponentialBackoffRetry);
+    }
+
+    @Bean
+    @ConditionalOnProperty(name = "ats.enabled", havingValue = "true")
+    public ExtractionStrategy leverProvider(
+            @Value("${ats.lever-base-url:https://api.lever.co}") String baseUrl,
+            @Value("${ats.timeout-seconds:30}") int timeoutSeconds,
+            @Value("${ats.lever-sites:}") List<String> sites,
+            @Value("#{${ats.display-names:{}}}") java.util.Map<String, String> displayNames,
+            @Value("${ats.lever-page-size:100}") int pageSize,
+            @Value("${ats.lever-max-pages:3}") int maxPages,
+            ExponentialBackoffRetry exponentialBackoffRetry) {
+        return new LeverProvider(baseUrl, timeoutSeconds, sites, displayNames, exponentialBackoffRetry, pageSize, maxPages);
+    }
+
+    @Bean
     public ProviderRegistry providerRegistry(
             ExtractionStrategy gupyProvider,
             ExtractionStrategy infojobsProvider,
             @Qualifier("linkedinProvider") Optional<ExtractionStrategy> linkedinProvider,
             @Qualifier("linkedinScraperClient") Optional<ExtractionStrategy> linkedinScraperClient,
+            @Qualifier("greenhouseProvider") Optional<ExtractionStrategy> greenhouseProvider,
+            @Qualifier("ashbyProvider") Optional<ExtractionStrategy> ashbyProvider,
+            @Qualifier("leverProvider") Optional<ExtractionStrategy> leverProvider,
             ExponentialBackoffRetry exponentialBackoffRetry,
             RateLimiter rateLimiter,
             JobNormalizer jobNormalizer,
@@ -288,6 +328,12 @@ public class AppConfig {
                 registry.register(provider, exponentialBackoffRetry, rateLimiter, linkedinJobNormalizer));
         linkedinScraperClient.ifPresent(provider ->
                 registry.register(provider, exponentialBackoffRetry, rateLimiter, linkedinJobNormalizer));
+        greenhouseProvider.ifPresent(provider ->
+                registry.register(provider, exponentialBackoffRetry, rateLimiter, jobNormalizer));
+        ashbyProvider.ifPresent(provider ->
+                registry.register(provider, exponentialBackoffRetry, rateLimiter, jobNormalizer));
+        leverProvider.ifPresent(provider ->
+                registry.register(provider, exponentialBackoffRetry, rateLimiter, jobNormalizer));
         return registry;
     }
 

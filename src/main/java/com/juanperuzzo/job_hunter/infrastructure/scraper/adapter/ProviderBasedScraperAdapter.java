@@ -34,13 +34,25 @@ public class ProviderBasedScraperAdapter implements ScraperPort {
     private static final Duration INFOJOBS_PROVIDER_TIMEOUT = Duration.ofSeconds(120);
 
     /**
+     * Greenhouse fetches up to 17 boards sequentially (each board a separate request,
+     * one of them ~400 jobs with the ~3.8 MB double-encoded content payload), so it needs
+     * a much larger budget than the 60s default; ashby/lever fetch fewer boards, keeping
+     * the InfoJobs-parity 120s budget.
+     */
+    private static final Duration GREENHOUSE_PROVIDER_TIMEOUT = Duration.ofSeconds(300);
+
+    private static final Duration ATS_PROVIDER_TIMEOUT = Duration.ofSeconds(120);
+
+    /**
      * Resolves the fetch timeout budget for a given provider id. gupy keeps the
-     * default 60s; linkedin gets 180s; infojobs gets 120s.
+     * default 60s; linkedin gets 180s; infojobs, ashby and lever get 120s;
+     * greenhouse gets 300s.
      */
     public static Duration timeoutFor(String providerId) {
         return switch (providerId) {
             case "linkedin" -> LINKEDIN_PROVIDER_TIMEOUT;
-            case "infojobs" -> INFOJOBS_PROVIDER_TIMEOUT;
+            case "infojobs", "ashby", "lever" -> ATS_PROVIDER_TIMEOUT;
+            case "greenhouse" -> GREENHOUSE_PROVIDER_TIMEOUT;
             default -> DEFAULT_PROVIDER_TIMEOUT;
         };
     }
