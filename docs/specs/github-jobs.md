@@ -1,6 +1,6 @@
 # GitHub Jobs Provider (frontendbr / backend-br) — Spec
 
-Issue: TBD (sprint 2, after #76) · Status: proposed (awaiting approval — no code without it)
+Issue: #86 (sprint 2, after #76) · Status: approved and implemented
 
 ## 1. Context
 
