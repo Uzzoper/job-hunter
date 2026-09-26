@@ -18,10 +18,10 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * GitHub "vagas" board provider ({@code providerId}: "github") — reads the public,
+ * GitHub "jobs" board provider ({@code providerId}: "github") — reads the public,
  * no-auth GitHub Issues REST API for community job boards such as
  * {@code frontendbr/vagas} and {@code backend-br/vagas}
- * (docs/specs/github-vagas.md): {@code GET /repos/{owner}/{repo}/issues?state=open&per_page=100}.
+ * (docs/specs/github-jobs.md): {@code GET /repos/{owner}/{repo}/issues?state=open&per_page=100}.
  * One open issue is one job; pull requests carry a {@code pull_request} key and are skipped.
  *
  * <p>Follows the same multi-board pattern as the ATS providers: a constructor-injected
@@ -54,7 +54,7 @@ public class GithubJobsProvider implements ExtractionStrategy {
      * Labels carrying contract/flexibility/seniority signals (CLT/PJ, special role
      * levels) — never a location (spec §4). Everything else ("Remoto", "Híbrido",
      * "São Paulo", …) is treated as a location label, matching how the observed
-     * boards label their postings (docs/specs/github-vagas.md §1).
+     * boards label their postings (docs/specs/github-jobs.md §1).
      */
     private static final Set<String> NON_LOCATION_LABELS = Set.of(
             "clt", "pj", "senior", "pleno", "especialista", "estagio", "junior", "jr");

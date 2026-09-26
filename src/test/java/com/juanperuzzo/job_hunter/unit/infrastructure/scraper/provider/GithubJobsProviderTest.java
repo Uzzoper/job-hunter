@@ -18,7 +18,7 @@ import static com.github.tomakehurst.wiremock.client.WireMock.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Contract: docs/specs/github-vagas.md. The GitHub Issues REST API returns a
+ * Contract: docs/specs/github-jobs.md. The GitHub Issues REST API returns a
  * top-level JSON array (no envelope); every issue with a {@code pull_request}
  * key is a PR, not a job, and must be skipped. Requests must carry the
  * {@code Accept: application/vnd.github+json} and a {@code User-Agent} header.

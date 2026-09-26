@@ -1,4 +1,4 @@
-# GitHub Vagas Provider (frontendbr / backend-br) — Spec
+# GitHub Jobs Provider (frontendbr / backend-br) — Spec
 
 Issue: TBD (sprint 2, after #76) · Status: proposed (awaiting approval — no code without it)
 
@@ -99,6 +99,6 @@ absent → null); workModel matrix (label/prefix/none). Naming
 
 ## 8. Out of scope
 
-GitHub auth token, other vagas repos (react-brasil, vuejs-br, androiddevbr —
+GitHub auth token, other community jobs repos (react-brasil, vuejs-br, androiddevbr —
 one-line yaml additions later, same code), posting/commenting on issues,
 Vagas.com volume provider (separate future spec), cutoff/prompt/scorer changes.

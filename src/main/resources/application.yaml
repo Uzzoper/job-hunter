@@ -126,8 +126,8 @@ ats:
   display-names: "{nubank: 'Nubank', notion: 'Notion', cursor: 'Cursor', preply: 'Preply', replit: 'Replit', linear: 'Linear', zapier: 'Zapier', dlocal: 'dLocal', outreach: 'Outreach', metabase: 'Metabase'}"
 
 github:
-  # GitHub "vagas" community boards (frontendbr/backend-br) — disabled by default until
-  # the junior-relevance sample is confirmed (docs/specs/github-vagas.md §7).
+  # GitHub "jobs" community boards (frontendbr/backend-br) — disabled by default until
+  # the junior-relevance sample is confirmed (docs/specs/github-jobs.md §7).
   enabled: false
   timeout-seconds: 30
   # Owner/repo pairs, CSV (never YAML flow style — @Value List<String> binds flow style
