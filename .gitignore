@@ -39,6 +39,8 @@ application-local.yaml
 
 # OpenCode planning artifacts
 .sisyphus/
+# OpenCode local workspace (scratch images, tool output, node scratch deps — never commit)
+.opencode/
 # Local Maven repository cache
 .m2/
 
