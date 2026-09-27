@@ -1,6 +1,6 @@
 # EmailExtractor Recall Audit + Improvement — Spec
 
-Issue: #75 · Status: proposed (awaiting approval — no code without it)
+Issue: #75 · Status: approved · Implemented on `dev` (see commits below and §6 counts)
 
 ## 1. Context
 
@@ -63,19 +63,35 @@ in §6. The delta answers "are there really more emails than we have now".
 
 ## 6. Acceptance criteria (from #75)
 
-- [ ] Recall/precision/false-positive measured BEFORE (committed fixtures +
+- [x] Recall/precision/false-positive measured BEFORE (committed fixtures +
       measurement test, no behavior change) and AFTER, both numbers recorded
-      here: baseline recall ___, precision ___, after recall ___, precision ___.
-- [ ] Preference rule documented: `mailto:` > hiring-local-part >
-      generic-first; title before description.
-- [ ] Unit tests green (fixture-driven + targeted matrices for new
+      here: baseline recall 0.885 (23/26), precision 0.958 (23/24), after
+      recall 1.000 (26/26), precision 1.000 (26/26). False positives: 0/8 in
+      both runs (fixture corpus: 34 fixtures, 26 with an expected email, 8
+      without; 7 real excerpts from `./data/jobhunter.db`, 27 synthesized —
+      the DB has no obfuscated forms to sample, so those were synthesized and
+      the provenance is recorded per fixture in `fixtures.json`).
+- [x] Preference rule documented: `mailto:` > hiring-local-part >
+      generic-first; title before description (addendum: ranking is
+      within-text, per-`extract` call — the two-stage title→description pass
+      structure is unchanged). Documented on `EmailExtractor` class Javadoc.
+- [x] Unit tests green (fixture-driven + targeted matrices for new
       obfuscations and ranking; plain JUnit 5, no Spring, no network).
-- [ ] Zero invented addresses: every persisted email is a literal text match
+      `EmailExtractorTest` (20 cases) + fixture measurement, full suite 753 green.
+- [x] Zero invented addresses: every persisted email is a literal text match
       (property-style test: shuffled/decoy texts never yield an address not
-      present in input).
-- [ ] Backfill dry-run counts recorded here (old extractor: scanned ___,
-      filled ___; new extractor: scanned ___, filled ___).
-- [ ] Backfill apply fills only nulls, never overwrites, rerunnable green;
+      present in input) — permutation battery (240 shuffled fragment sets all
+      null) + exact-reconstruction variants; a mixed `arroba`+`ponto`
+      permutation only ever decodes in source-contiguous order, which is the
+      intended word-obfuscation decoding, not an invention.
+- [x] Backfill dry-run counts recorded here (old extractor: scanned 937,
+      filled 0; new extractor: scanned 937, filled 0 — measured by running
+      each extractor binary over `./data/jobhunter.db`; both leave all 937
+      null-contactEmail jobs null: the live DB has no obfuscated forms, no
+      mailto: anchors and no multi-address texts, and its 5 `@`-bearing
+      descriptions are decoys (spam-domain instruction, `@RestController`
+      code excerpt, Instagram handles)).
+- [x] Backfill apply fills only nulls, never overwrites, rerunnable green;
       unit tests with mocked repo (dry-run writes nothing).
 
 ## 7. Out of scope
