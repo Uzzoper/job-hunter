@@ -2,6 +2,7 @@ package com.juanperuzzo.job_hunter.unit.web;
 
 import com.juanperuzzo.job_hunter.application.port.in.AnalyzeJobUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.ApproveDraftUseCase;
+import com.juanperuzzo.job_hunter.application.port.in.BackfillContactEmailsUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.CompanyEnrichmentUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.EnrichmentResult;
 import com.juanperuzzo.job_hunter.application.port.in.FetchJobsUseCase;
@@ -108,6 +109,9 @@ class JobControllerTest {
 
     @MockitoBean
     private RecordExternalApplyUseCase recordExternalApplyUseCase;
+
+    @MockitoBean
+    private BackfillContactEmailsUseCase backfillContactEmailsUseCase;
 
     @MockitoBean
     private TokenProvider tokenProvider;
@@ -580,6 +584,40 @@ class JobControllerTest {
                 .andExpect(jsonPath("$.checked").value(0));
 
         verify(companyEnrichmentUseCase).enrichMissingEmails(50);
+    }
+
+    @Test
+    @DisplayName("backfillEmails should default dryRun to true and return preview counts")
+    void backfillEmails_whenDryRunDefault_shouldReturnPreviewCounts() throws Exception {
+        authenticateAs(1L);
+
+        var result = new BackfillContactEmailsUseCase.Result(10, 6, 4);
+        when(backfillContactEmailsUseCase.run(true)).thenReturn(result);
+
+        mockMvc.perform(post("/api/jobs/backfill-emails"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.scanned").value(10))
+                .andExpect(jsonPath("$.filled").value(6))
+                .andExpect(jsonPath("$.stillNull").value(4));
+
+        verify(backfillContactEmailsUseCase).run(true);
+    }
+
+    @Test
+    @DisplayName("backfillEmails should apply the fills when dryRun=false")
+    void backfillEmails_whenApply_shouldPersistFills() throws Exception {
+        authenticateAs(1L);
+
+        var result = new BackfillContactEmailsUseCase.Result(2, 2, 0);
+        when(backfillContactEmailsUseCase.run(false)).thenReturn(result);
+
+        mockMvc.perform(post("/api/jobs/backfill-emails").param("dryRun", "false"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.scanned").value(2))
+                .andExpect(jsonPath("$.filled").value(2))
+                .andExpect(jsonPath("$.stillNull").value(0));
+
+        verify(backfillContactEmailsUseCase).run(false);
     }
 
     @Test
