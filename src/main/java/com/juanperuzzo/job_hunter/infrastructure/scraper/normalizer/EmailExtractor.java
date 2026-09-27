@@ -38,6 +38,8 @@ public final class EmailExtractor {
     private static final Pattern OBFUSCATED_DOT_PARENTHESES = Pattern.compile("\\s*\\(dot\\)\\s*", Pattern.CASE_INSENSITIVE);
     private static final Pattern OBFUSCATED_ARROBA_BRACKET = Pattern.compile("\\s*\\[arroba\\]\\s*", Pattern.CASE_INSENSITIVE);
     private static final Pattern OBFUSCATED_ARROBA_PARENTHESES = Pattern.compile("\\s*\\(arroba\\)\\s*", Pattern.CASE_INSENSITIVE);
+    private static final Pattern OBFUSCATED_ARROBA_WORD = Pattern.compile("\\s+arroba\\s+", Pattern.CASE_INSENSITIVE);
+    private static final Pattern OBFUSCATED_DOT_WORD = Pattern.compile("\\s+ponto\\s+", Pattern.CASE_INSENSITIVE);
     private static final Pattern ZERO_WIDTH_CHARS = Pattern.compile("[\\u200B\\u200C\\u200D\\uFEFF]");
 
     private EmailExtractor() {
@@ -130,8 +132,14 @@ public final class EmailExtractor {
 
     /**
      * Normalize a text copy for extraction: turn common obfuscations
-     * ([at], (at), padded AT, [dot], (dot), [arroba], (arroba), numeric entities)
-     * into their real separators and strip zero-width characters.
+     * ([at], (at), padded AT, [dot], (dot), [arroba], (arroba), bare-word
+     * arroba/ponto, numeric entities) into their real separators and strip
+     * zero-width characters.
+     * <p>
+     * Bare-word forms use conservative spacing ({@code \s+arroba\s+},
+     * {@code \s+ponto\s+}) so normal prose (e.g. "ponto de encontro") never
+     * decodes without also producing a literal {@code @} — {@link #EMAIL_PATTERN}
+     * still requires one, so a bare {@code ponto} alone can never invent an address.
      */
     private static String deobfuscate(String text) {
         if (text == null || text.isBlank()) {
@@ -145,6 +153,8 @@ public final class EmailExtractor {
         result = OBFUSCATED_DOT_PARENTHESES.matcher(result).replaceAll(".");
         result = OBFUSCATED_ARROBA_BRACKET.matcher(result).replaceAll("@");
         result = OBFUSCATED_ARROBA_PARENTHESES.matcher(result).replaceAll("@");
+        result = OBFUSCATED_ARROBA_WORD.matcher(result).replaceAll("@");
+        result = OBFUSCATED_DOT_WORD.matcher(result).replaceAll(".");
 
         return ZERO_WIDTH_CHARS.matcher(result).replaceAll("");
     }
