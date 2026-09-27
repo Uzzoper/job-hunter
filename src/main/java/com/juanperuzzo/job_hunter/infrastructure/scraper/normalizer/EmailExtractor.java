@@ -2,6 +2,7 @@ package com.juanperuzzo.job_hunter.infrastructure.scraper.normalizer;
 
 import org.jsoup.Jsoup;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.regex.Pattern;
@@ -15,6 +16,15 @@ import java.util.regex.Pattern;
  * copy, with the same filters (noreply/donotreply/no-reply/apply + placeholder domains)
  * applied in both passes. Behavior mirrors what was previously duplicated in each caller;
  * moving it here guarantees the two extractors stay in lock-step.
+ *
+ * <p><strong>Preference rule</strong> (email-extractor-recall spec, Phase 2):
+ * {@code mailto: pass > regex pass}, then within a pass/scan, hiring-local-part
+ * ({@code vagas}, {@code vaga}, {@code rh}, {@code recrutamento}, … see
+ * {@link #HIRING_LOCAL_PART_PREFIXES}) beats generic ({@code contato@}, {@code info@},
+ * {@code sac@}, personal names); scan order (title before description, DOM/position
+ * order) breaks ties. Exclusions and placeholder-domain addresses never become
+ * candidates. Only literals survive: an address is returned only if its exact
+ * characters occur in the text after de-obfuscation.
  */
 public final class EmailExtractor {
 
@@ -30,6 +40,18 @@ public final class EmailExtractor {
     private static final List<String> PLACEHOLDER_DOMAINS = List.of(
             "example.com", "exemplo.com", "test.com", "domain.com",
             "yourdomain.com", "seuemail.com");
+
+    /**
+     * Local-part prefixes that identify a recruiting/company contact address.
+     * A candidate whose normalized local part starts with any of these outranks a
+     * generic one (contato@, info@, sac@, personal nome.sobrenome@). Matching is a
+     * case-insensitive prefix check on the ASCII local part the regex already matched
+     * (accented/space forms like "talent acquisition" can never appear in a matched
+     * local part — they are kept for spec fidelity and stay harmless).
+     */
+    private static final List<String> HIRING_LOCAL_PART_PREFIXES = List.of(
+            "vagas", "vaga", "rh", "recrutamento", "selecao", "talentos", "carreiras",
+            "jobs", "hiring", "careers", "people", "talent", "talent acquisition");
 
     private static final Pattern OBFUSCATED_AT_BRACKET = Pattern.compile("\\s*\\[at\\]\\s*", Pattern.CASE_INSENSITIVE);
     private static final Pattern OBFUSCATED_AT_PARENTHESES = Pattern.compile("\\s*\\(at\\)\\s*", Pattern.CASE_INSENSITIVE);
@@ -86,14 +108,17 @@ public final class EmailExtractor {
     }
 
     /**
-     * Scan {@code a[href^=mailto:]} anchors in DOM order and return the first
-     * mailto recipient that passes {@link #isContactEmail(String)}.
+     * Scan {@code a[href^=mailto:]} anchors in DOM order, collect every recipient that
+     * passes {@link #isContactEmail(String)}, and return the best-ranked one — an empty
+     * candidate list yields {@code null}. Ranking follows the documented preference
+     * rule (hiring-local-part beats generic; position breaks ties).
      */
     private static String extractMailto(String html) {
         if (html == null || html.isBlank()) {
             return null;
         }
 
+        var candidates = new ArrayList<String>();
         var doc = Jsoup.parse(html);
         for (var anchor : doc.select("a[href^=mailto:]")) {
             var href = anchor.attr("href");
@@ -113,10 +138,10 @@ public final class EmailExtractor {
             }
 
             if (isContactEmail(email)) {
-                return email;
+                candidates.add(email);
             }
         }
-        return null;
+        return rankWinner(candidates);
     }
 
     /**
@@ -159,19 +184,48 @@ public final class EmailExtractor {
         return ZERO_WIDTH_CHARS.matcher(result).replaceAll("");
     }
 
+    /**
+     * Collect every email the regex finds in scan order that passes
+     * {@link #isContactEmail(String)} and return the best-ranked one — {@code null}
+     * when none qualify. Ranking follows the documented preference rule
+     * (hiring-local-part beats generic; position breaks ties).
+     */
     private static String extractFirstEmail(String text) {
         if (text == null || text.isBlank()) {
             return null;
         }
 
+        var candidates = new ArrayList<String>();
         var matcher = EMAIL_PATTERN.matcher(text);
         while (matcher.find()) {
             var email = matcher.group();
             if (isContactEmail(email)) {
-                return email;
+                candidates.add(email);
             }
         }
-        return null;
+        return rankWinner(candidates);
+    }
+
+    /**
+     * Best candidate by the documented preference rule:
+     * {@code mailto: pass > regex pass}, then within a pass/scan, hiring-local-part
+     * beats generic; scan order (title before description, DOM/position order) breaks
+     * ties. Exclusions and placeholder domains are applied before ranking, so an
+     * excluded/placeholder address is never a candidate.
+     */
+    private static String rankWinner(List<String> candidates) {
+        if (candidates.isEmpty()) {
+            return null;
+        }
+        return candidates.stream()
+                .filter(EmailExtractor::isHiringLocalPart)
+                .findFirst()
+                .orElse(candidates.get(0));
+    }
+
+    private static boolean isHiringLocalPart(String email) {
+        var localPart = email.substring(0, email.indexOf('@')).toLowerCase(Locale.ROOT);
+        return HIRING_LOCAL_PART_PREFIXES.stream().anyMatch(localPart::startsWith);
     }
 
     private static boolean isContactEmail(String email) {

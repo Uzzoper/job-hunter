@@ -351,14 +351,14 @@ class JobNormalizerTest {
         }
 
         @Test
-        @DisplayName("should extract first email when description has multiple")
-        void shouldExtractFirstEmailWhenMultiple() {
+        @DisplayName("should prefer the hiring local-part address when the description has multiple")
+        void shouldPreferHiringEmailWhenMultiple() {
             var job = normalizer.normalize(new RawJob(
                     "Desenvolvedor Java", "Company", "https://example.com/job",
                     "Contact joao@empresa.com or rh@empresa.com",
                     "2026-07-01", null, null, "test", null));
             assertNotNull(job);
-            assertEquals("joao@empresa.com", job.contactEmail());
+            assertEquals("rh@empresa.com", job.contactEmail());
         }
 
         @Test
