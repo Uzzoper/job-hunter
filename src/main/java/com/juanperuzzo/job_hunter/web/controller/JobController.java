@@ -2,6 +2,7 @@ package com.juanperuzzo.job_hunter.web.controller;
 
 import com.juanperuzzo.job_hunter.application.port.in.AnalyzeJobUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.ApproveDraftUseCase;
+import com.juanperuzzo.job_hunter.application.port.in.BackfillContactEmailsUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.CompanyEnrichmentUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.FetchJobsUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.FetchSourceJobsUseCase;
@@ -21,6 +22,7 @@ import com.juanperuzzo.job_hunter.web.dto.EmailDraftResponse;
 import com.juanperuzzo.job_hunter.web.dto.EnrichmentResultResponse;
 import com.juanperuzzo.job_hunter.web.dto.ExternalApplyResponse;
 import com.juanperuzzo.job_hunter.web.dto.FetchResultResponse;
+import com.juanperuzzo.job_hunter.web.dto.BackfillResultResponse;
 import com.juanperuzzo.job_hunter.web.dto.JobResponse;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -47,6 +49,7 @@ public class JobController {
     private final TailorResumeUseCase tailorResumeUseCase;
     private final CompanyEnrichmentUseCase companyEnrichmentUseCase;
     private final RecordExternalApplyUseCase recordExternalApplyUseCase;
+    private final BackfillContactEmailsUseCase backfillContactEmailsUseCase;
     private final CurrentUserProvider currentUserService;
 
     public JobController(
@@ -62,6 +65,7 @@ public class JobController {
             TailorResumeUseCase tailorResumeUseCase,
             CompanyEnrichmentUseCase companyEnrichmentUseCase,
             RecordExternalApplyUseCase recordExternalApplyUseCase,
+            BackfillContactEmailsUseCase backfillContactEmailsUseCase,
             CurrentUserProvider currentUserService) {
         this.fetchJobsUseCase = fetchJobsUseCase;
         this.fetchSourceJobsUseCase = fetchSourceJobsUseCase;
@@ -75,6 +79,7 @@ public class JobController {
         this.tailorResumeUseCase = tailorResumeUseCase;
         this.companyEnrichmentUseCase = companyEnrichmentUseCase;
         this.recordExternalApplyUseCase = recordExternalApplyUseCase;
+        this.backfillContactEmailsUseCase = backfillContactEmailsUseCase;
         this.currentUserService = currentUserService;
     }
 
@@ -176,6 +181,13 @@ public class JobController {
             @RequestParam(defaultValue = "${scraper.enricher.batch-default-limit:50}") int limit) {
         var result = companyEnrichmentUseCase.enrichMissingEmails(limit);
         return ResponseEntity.ok(EnrichmentResultResponse.from(result));
+    }
+
+    @PostMapping("/backfill-emails")
+    public ResponseEntity<BackfillResultResponse> backfillEmails(
+            @RequestParam(defaultValue = "true") boolean dryRun) {
+        var result = backfillContactEmailsUseCase.run(dryRun);
+        return ResponseEntity.ok(BackfillResultResponse.from(result));
     }
 
     @PostMapping("/{id}/email/approve")
