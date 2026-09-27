@@ -1,0 +1,308 @@
+[
+  {
+    "id": "f01",
+    "category": "plain",
+    "title": "Analista de Desenvolvimento Pleno",
+    "description": "Interessados devem enviar currículo — por favor, poderei entrar em contato pelo e-mail dpo@mtp.com.br.",
+    "expected": "dpo@mtp.com.br",
+    "real": true,
+    "source": "Live DB job (./data/jobhunter.db), plain-text description"
+  },
+  {
+    "id": "f02",
+    "category": "plain",
+    "title": "Especialista de Produto",
+    "description": "Candidate-se rapidamente pelo email: vaga-372290@vagas.abler.in",
+    "expected": "vaga-372290@vagas.abler.in",
+    "real": true,
+    "source": "Live DB job, plain-text description"
+  },
+  {
+    "id": "f03",
+    "category": "plain",
+    "title": "Desenvolvedor(a) Fullstack",
+    "description": "Envia o teu CV para grua@primeit.pt",
+    "expected": "grua@primeit.pt",
+    "real": true,
+    "source": "Live DB job, plain-text description"
+  },
+  {
+    "id": "f04",
+    "category": "plain",
+    "title": "Consultor(a) SAP",
+    "description": "Currículos: talentacquisition@nava.com.br",
+    "expected": "talentacquisition@nava.com.br",
+    "real": true,
+    "source": "Live DB job, plain-text description"
+  },
+  {
+    "id": "f05",
+    "category": "decoy",
+    "title": "Vendedor(a) Externo",
+    "description": "Siga nosso Instagram @mercafacil.com para acompanhar as vagas.",
+    "expected": null,
+    "real": true,
+    "source": "Live DB job, spam-domain mention without local part"
+  },
+  {
+    "id": "f06",
+    "category": "decoy",
+    "title": "Analista de Marketing",
+    "description": "Veja mais no nosso Instagram @w3haus e no LinkedIn.",
+    "expected": null,
+    "real": true,
+    "source": "Live DB job, Instagram handle without domain suffix"
+  },
+  {
+    "id": "f07",
+    "category": "decoy",
+    "title": "Desenvolvedor Java",
+    "description": "Exemplo de código: @RestController public class HomeController { }",
+    "expected": null,
+    "real": true,
+    "source": "Live DB job, annotation in code excerpt"
+  },
+  {
+    "id": "f08",
+    "category": "plain",
+    "title": "Vaga para Desenvolvedor Backend",
+    "description": "Interessados enviar CV para rh@empresa.com.br.",
+    "expected": "rh@empresa.com.br",
+    "real": false,
+    "source": "Synthesized — plain address"
+  },
+  {
+    "id": "f09",
+    "category": "mailto",
+    "title": "Analista Financeiro",
+    "description": "Clique em <a href=\"mailto:rh@empresa.com.br?subject=Analista%20Financeiro\">candidatar-se</a>.",
+    "expected": "rh@empresa.com.br",
+    "real": false,
+    "source": "Synthesized — mailto anchor keeps first, query params dropped"
+  },
+  {
+    "id": "f10",
+    "category": "bracket-at",
+    "title": "Desenvolvedor Frontend",
+    "description": "Envie seu CV para rh[at]empresa.com.br.",
+    "expected": "rh@empresa.com.br",
+    "real": false,
+    "source": "Synthesized — [at] obfuscation"
+  },
+  {
+    "id": "f11",
+    "category": "paren-at",
+    "title": "Analista de Dados",
+    "description": "Mande um email para rh(at)empresa.com.br.",
+    "expected": "rh@empresa.com.br",
+    "real": false,
+    "source": "Synthesized — (at) obfuscation"
+  },
+  {
+    "id": "f12",
+    "category": "bracket-dot",
+    "title": "Engenheiro de Software",
+    "description": "rh@empresa[dot]com[dot]br",
+    "expected": "rh@empresa.com.br",
+    "real": false,
+    "source": "Synthesized — [dot] obfuscation"
+  },
+  {
+    "id": "f13",
+    "category": "paren-dot",
+    "title": "Desenvolvedor Mobile",
+    "description": "rh@empresa(dot)com(dot)br",
+    "expected": "rh@empresa.com.br",
+    "real": false,
+    "source": "Synthesized — (dot) obfuscation"
+  },
+  {
+    "id": "f14",
+    "category": "paren-arroba",
+    "title": "Desenvolvedor PHP",
+    "description": "rh(arroba)empresa.com.br",
+    "expected": "rh@empresa.com.br",
+    "real": false,
+    "source": "Synthesized — (arroba) obfuscation"
+  },
+  {
+    "id": "f15",
+    "category": "bare-arroba",
+    "title": "Desenvolvedor Node",
+    "description": "Entre em contato: vaga arroba empresa ponto com",
+    "expected": "vaga@empresa.com",
+    "real": false,
+    "source": "Synthesized — bare word arroba/ponto (missing obfuscation, current gap)"
+  },
+  {
+    "id": "f16",
+    "category": "bare-at",
+    "title": "Analista de Sistemas",
+    "description": "Mensagens para rh at empresa ponto com",
+    "expected": "rh@empresa.com",
+    "real": false,
+    "source": "Synthesized — bare word at (handled) + ponto (missing, current gap)"
+  },
+  {
+    "id": "f17",
+    "category": "zero-width",
+    "title": "Suporte Técnico",
+    "description": "rh@empresa\u200C.com.br",
+    "expected": "rh@empresa.com.br",
+    "real": false,
+    "source": "Synthesized — zero-width char before domain dot"
+  },
+  {
+    "id": "f18",
+    "category": "zero-width",
+    "title": "Estagiário de TI",
+    "description": "rh\u200C[at]empresa.com.br",
+    "expected": "rh@empresa.com.br",
+    "real": false,
+    "source": "Synthesized — zero-width char inside local part before [at]"
+  },
+  {
+    "id": "f19",
+    "category": "multi-address",
+    "title": "Desenvolvedor Python",
+    "description": "Para dúvidas use contato@empresa.com.br ou envie seu CV para vagas@empresa.com.br.",
+    "expected": "vagas@empresa.com.br",
+    "real": false,
+    "source": "Synthesized — generic first, hiring local part second (ranking gap)"
+  },
+  {
+    "id": "f20",
+    "category": "mailto",
+    "title": "Product Manager",
+    "description": "<a href=\"mailto:recrutamento@empresa.com.br\">Apply</a> — em caso de dúvidas: contato@empresa.com.br.",
+    "expected": "recrutamento@empresa.com.br",
+    "real": false,
+    "source": "Synthesized — mailto pass wins over plain-text regex"
+  },
+  {
+    "id": "f21",
+    "category": "multi-address",
+    "title": "Vaga — info@empresa.com.br",
+    "description": "Envie seu currículo para vagas@empresa.com.br.",
+    "expected": "info@empresa.com.br",
+    "real": false,
+    "source": "Synthesized — title scanned before description (title wins)"
+  },
+  {
+    "id": "f22",
+    "category": "excluded",
+    "title": "DevOps Engineer",
+    "description": "noreply@empresa.com.br ou rh@empresa.com.br",
+    "expected": "rh@empresa.com.br",
+    "real": false,
+    "source": "Synthesized — noreply skipped, real address kept"
+  },
+  {
+    "id": "f23",
+    "category": "no-email",
+    "title": "Assistente Administrativo",
+    "description": "Nos vemos no ponto de encontro às 18h para o café.",
+    "expected": null,
+    "real": false,
+    "source": "Synthesized — 'ponto de encontro' must never form an address after bare-ponto handling"
+  },
+  {
+    "id": "f24",
+    "category": "no-email",
+    "title": "Recepcionista",
+    "description": "Venha fazer parte do nosso time.",
+    "expected": null,
+    "real": false,
+    "source": "Synthesized — prose without emails"
+  },
+  {
+    "id": "f25",
+    "category": "excluded",
+    "title": "Backend Developer",
+    "description": "noreply@empresa.com.br",
+    "expected": null,
+    "real": false,
+    "source": "Synthesized — noreply-only text"
+  },
+  {
+    "id": "f26",
+    "category": "excluded",
+    "title": "Frontend Developer",
+    "description": "apply@empresa.com.br",
+    "expected": null,
+    "real": false,
+    "source": "Synthesized — apply-only text"
+  },
+  {
+    "id": "f27",
+    "category": "placeholder",
+    "title": "Analista de RH",
+    "description": "contato@example.com",
+    "expected": null,
+    "real": false,
+    "source": "Synthesized — placeholder domain"
+  },
+  {
+    "id": "f28",
+    "category": "plain",
+    "title": "Analista de Marketing",
+    "description": "Fale com o João: joao.silva@empresa.com.br",
+    "expected": "joao.silva@empresa.com.br",
+    "real": false,
+    "source": "Synthesized — personal address"
+  },
+  {
+    "id": "f29",
+    "category": "multi-address",
+    "title": "Coordenador de Projetos",
+    "description": "contato@empresa.com.br e sac@empresa.com.br",
+    "expected": "contato@empresa.com.br",
+    "real": false,
+    "source": "Synthesized — all-generic addresses, first stable pick kept"
+  },
+  {
+    "id": "f30",
+    "category": "mailto",
+    "title": "Estagiário de Marketing",
+    "description": "<a href=\"mailto:apply@empresa.com.br\">Candidate-se</a> ou envie para rh@empresa.com.br.",
+    "expected": "rh@empresa.com.br",
+    "real": false,
+    "source": "Synthesized — excluded mailto anchor falls through to real plain address"
+  },
+  {
+    "id": "f31",
+    "category": "plain",
+    "title": "Desenvolvedor Júnior — remoto@empresa.com.br",
+    "description": "Vaga remota para todo o Brasil.",
+    "expected": "remoto@empresa.com.br",
+    "real": false,
+    "source": "Synthesized — email embedded in the title"
+  },
+  {
+    "id": "f32",
+    "category": "entity",
+    "title": "DBA",
+    "description": "rh&#64;empresa.com.br",
+    "expected": "rh@empresa.com.br",
+    "real": false,
+    "source": "Synthesized — numeric HTML entity obfuscation"
+  },
+  {
+    "id": "f33",
+    "category": "mailto",
+    "title": "<a href=\"mailto:vagas@empresa.com.br\">Candidate-se</a>",
+    "description": "Dúvidas: contato@empresa.com.br",
+    "expected": "vagas@empresa.com.br",
+    "real": false,
+    "source": "Synthesized — mailto anchor scanned in the title first"
+  },
+  {
+    "id": "f34",
+    "category": "bracket-arroba",
+    "title": "Desenvolvedor Go",
+    "description": "rh[arroba]empresa.com.br",
+    "expected": "rh@empresa.com.br",
+    "real": false,
+    "source": "Synthesized — [arroba] obfuscation"
+  }
+]
