@@ -68,4 +68,58 @@ class EmailExtractorTest {
             assertEquals("rh@empresa.com.br", EmailExtractor.extract("", "rh at empresa.com.br"));
         }
     }
+
+    @Nested
+    @DisplayName("multi-address ranking by local part")
+    class MultiAddressRanking {
+
+        @Test
+        @DisplayName("should pick the hiring address when it appears after a generic one")
+        void extract_whenHiringAddressAfterGenericInSameText_shouldPickHiring() {
+            assertEquals("vagas@empresa.com.br",
+                    EmailExtractor.extract("", "Para dúvidas use contato@empresa.com.br ou envie seu CV para vagas@empresa.com.br."));
+        }
+
+        @Test
+        @DisplayName("should pick the hiring address when it appears after a personal one")
+        void extract_whenHiringAddressAfterPersonal_shouldPickHiring() {
+            assertEquals("rh@empresa.com.br",
+                    EmailExtractor.extract("", "Fale com João: joao.silva@empresa.com.br ou envie para rh@empresa.com.br"));
+        }
+
+        @Test
+        @DisplayName("should keep the first address when all candidates are generic")
+        void extract_whenAllGenericAddresses_shouldPickFirst() {
+            assertEquals("contato@empresa.com.br",
+                    EmailExtractor.extract("", "contato@empresa.com.br e sac@empresa.com.br"));
+        }
+
+        @Test
+        @DisplayName("should keep the first address when several candidates are hiring-specific")
+        void extract_whenMultipleHiringAddresses_shouldPickFirstInOrder() {
+            assertEquals("vagas@empresa.com.br",
+                    EmailExtractor.extract("", "vagas@empresa.com.br ou rh@empresa.com.br"));
+        }
+
+        @Test
+        @DisplayName("should keep the title winner when the description holds a hiring address")
+        void extract_whenGenericInTitleAndHiringInDescription_shouldKeepTitleWinner() {
+            assertEquals("info@empresa.com.br",
+                    EmailExtractor.extract("Vaga — info@empresa.com.br", "Envie seu currículo para vagas@empresa.com.br."));
+        }
+
+        @Test
+        @DisplayName("should keep the mailto winner even when a hiring address appears in plain text")
+        void extract_whenGenericMailtoAndHiringInPlainText_shouldKeepMailtoWinner() {
+            assertEquals("contato@empresa.com.br",
+                    EmailExtractor.extract("", "<a href=\"mailto:contato@empresa.com.br\">Apply</a> — ou envie para rh@empresa.com.br."));
+        }
+
+        @Test
+        @DisplayName("should rank hiring mailto anchors above generic ones in the same text")
+        void extract_whenMailtoHasHiringAndGenericAnchors_shouldPickHiring() {
+            assertEquals("vagas@empresa.com.br",
+                    EmailExtractor.extract("", "<a href=\"mailto:contato@empresa.com.br\">Contato</a> <a href=\"mailto:vagas@empresa.com.br\">Candidatar</a>"));
+        }
+    }
 }
