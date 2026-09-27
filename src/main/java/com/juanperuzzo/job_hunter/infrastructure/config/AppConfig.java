@@ -31,11 +31,13 @@ import com.juanperuzzo.job_hunter.application.port.out.UserRepository;
 import com.juanperuzzo.job_hunter.application.port.out.JobAnalysisRepository;
 import com.juanperuzzo.job_hunter.application.port.out.UserProfileRepository;
 import com.juanperuzzo.job_hunter.application.port.out.BotMemoryPort;
+import com.juanperuzzo.job_hunter.application.port.out.ContactEmailExtractorPort;
 import com.juanperuzzo.job_hunter.application.service.BotMemorySyncService;
 import com.juanperuzzo.job_hunter.application.service.ApproveDraftService;
 import com.juanperuzzo.job_hunter.application.service.RecordExternalApplyService;
 import com.juanperuzzo.job_hunter.application.service.AuthService;
 import com.juanperuzzo.job_hunter.application.service.AutoSendEligibilityService;
+import com.juanperuzzo.job_hunter.application.service.BackfillContactEmailsService;
 import com.juanperuzzo.job_hunter.application.service.ResumeUploadService;
 import com.juanperuzzo.job_hunter.application.service.TemplateEmailService;
 import com.juanperuzzo.job_hunter.application.service.UserProfileService;
@@ -66,6 +68,7 @@ import java.nio.file.Path;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.adapter.ProviderBasedScraperAdapter;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.enricher.CompanySiteEnricher;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.normalizer.DateParser;
+import com.juanperuzzo.job_hunter.infrastructure.scraper.normalizer.EmailExtractor;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.normalizer.JobNormalizer;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.normalizer.OwnerEmailGuard;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.client.LinkedInScraperClient;
@@ -433,6 +436,20 @@ public class AppConfig {
                 return passwordEncoder.matches(rawPassword, hash);
             }
         };
+    }
+
+    @Bean
+    public BackfillContactEmailsService backfillContactEmailsService(
+            JobRepository jobRepository,
+            ContactEmailExtractorPort contactEmailExtractorPort) {
+        return new BackfillContactEmailsService(jobRepository, contactEmailExtractorPort);
+    }
+
+    @Bean
+    public ContactEmailExtractorPort contactEmailExtractorPort() {
+        // Single shared pipeline: the backfill runs the exact extract(title, description)
+        // used at ingestion time, so dry-run/apply numbers reflect production behavior.
+        return EmailExtractor::extract;
     }
 
     @Bean
