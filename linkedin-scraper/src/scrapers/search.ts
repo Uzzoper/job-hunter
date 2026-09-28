@@ -1,6 +1,31 @@
 import { BrowserManager } from "../services/browser.js";
 import { JobCard } from "../types.js";
 
+/** How many scroll/load rounds to attempt before giving up on a results list. */
+export const MAX_PAGINATION_ROUNDS = 6;
+
+/**
+ * How many consecutive rounds that add zero new cards are needed before the
+ * pagination loop stops. A single "0 new" round is NOT enough: lazy-loaded
+ * results can take a round to render, and stopping on the first empty round
+ * is exactly the production defect that capped results early.
+ */
+export const CONSECUTIVE_EMPTY_ROUNDS_BEFORE_STOP = 2;
+
+/**
+ * Candidate selectors for LinkedIn's "show more" / "see more jobs" affordance.
+ * Guest sessions render a button at the bottom of the results list (the exact
+ * markup varies by layout/locale/AB test), so the first visible candidate wins.
+ */
+const SHOW_MORE_SELECTORS = [
+  "button[aria-label*='See more jobs']",
+  "button[aria-label*='Ver mais vagas']",
+  "button[aria-label*='Show more']",
+  "button[aria-label*='Mostrar mais']",
+  "button.infinite-scroller__show-more-button",
+  "button.jobs-search-results-list__show-more",
+];
+
 /** Build the LinkedIn search URL, preserving repeated geoId parameters. */
 export function buildSearchUrl(
   keywords: string,
@@ -128,19 +153,19 @@ export class SearchScraper {
     initialCards.forEach((card) => allCards.set(card.url, card));
     this.logger.log(`[search] initial extraction: ${initialCards.length} cards`);
 
-    // Pagination: scroll results container to load more, up to 3 additional scrolls
-    for (let i = 0; i < 3; i++) {
-      this.logger.log(`[search] pagination scroll ${i + 1}/3...`);
+    // Pagination: click "show more"/"see more jobs" when present, scroll the
+    // results container to load more, and break only after N consecutive rounds
+    // add zero new cards. NOTE ON THE PRODUCTION ~60-JOB CEILING: a guest
+    // session stops loading new cards at roughly 60 results (LinkedIn's
+    // guest-visibility cap / login wall), which is why production plateaus at
+    // "found 60 cards, 0 new" regardless of how many rounds we attempt. That is
+    // LinkedIn visibility, NOT a pagination bug; reaching more requires a
+    // logged-in session (follow-up, not implemented here).
+    let consecutiveEmptyRounds = 0;
 
-      await page.evaluate(() => {
-        const container =
-          document.querySelector(".jobs-search-results-list") ||
-          document.querySelector("main ul");
-        if (container) {
-          container.scrollTop = container.scrollHeight;
-        }
-      });
-
+    for (let i = 0; i < MAX_PAGINATION_ROUNDS; i++) {
+      const clickedShowMore = await this.clickShowMoreIfPresent(page);
+      await this.scrollResultsList(page);
       await page.waitForTimeout(3000);
 
       const newCards = await this.scrapeCurrentCards(page);
@@ -153,12 +178,20 @@ export class SearchScraper {
       });
 
       this.logger.log(
-        `[search] pagination scroll ${i + 1}/3: found ${newCards.length} cards, ${addedCount} new`
+        `[search] pagination round ${i + 1}/${MAX_PAGINATION_ROUNDS}` +
+          `${clickedShowMore ? " (clicked show more)" : ""}: found ${newCards.length} cards, ${addedCount} new`
       );
 
       if (addedCount === 0) {
-        this.logger.log("[search] no new cards after scroll, stopping pagination");
-        break;
+        consecutiveEmptyRounds++;
+        if (consecutiveEmptyRounds >= CONSECUTIVE_EMPTY_ROUNDS_BEFORE_STOP) {
+          this.logger.log(
+            `[search] no new cards for ${CONSECUTIVE_EMPTY_ROUNDS_BEFORE_STOP} consecutive rounds, stopping pagination`
+          );
+          break;
+        }
+      } else {
+        consecutiveEmptyRounds = 0;
       }
     }
 
@@ -170,6 +203,39 @@ export class SearchScraper {
       postedAt: card.postedDate,
       summary: "",
     }));
+  }
+
+  /** Scroll the results list to the bottom (falling back to a window scroll). */
+  private async scrollResultsList(page: import("playwright").Page): Promise<void> {
+    await page.evaluate(() => {
+      const container =
+        document.querySelector(".jobs-search-results-list") ||
+        document.querySelector("main ul");
+      if (container) {
+        container.scrollTop = container.scrollHeight;
+      }
+      window.scrollTo(0, document.body.scrollHeight);
+    });
+  }
+
+  /**
+   * Click LinkedIn's "show more"/"see more jobs" button when one is visible.
+   * @returns true when a show-more button was clicked
+   */
+  private async clickShowMoreIfPresent(page: import("playwright").Page): Promise<boolean> {
+    for (const selector of SHOW_MORE_SELECTORS) {
+      const locator = page.locator(selector).first();
+      const visible = await locator.isVisible().catch(() => false);
+      if (visible) {
+        await locator.click().catch(() => {
+          this.logger.warn(`[search] failed to click show-more button "${selector}"`);
+        });
+        // Give the lazy-loaded cards time to render before scrolling/scraping.
+        await page.waitForTimeout(1500);
+        return true;
+      }
+    }
+    return false;
   }
 
   /**

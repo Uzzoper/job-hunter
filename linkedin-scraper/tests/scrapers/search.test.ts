@@ -172,13 +172,14 @@ describe("SearchScraper pagination", () => {
 
   it("should keep scrolling past the old hard cap of 3 rounds while cards keep arriving", async () => {
     // each round adds one more card, never zero-new => the loop must run for
-    // MAX_PAGINATION_ROUNDS rounds (more than the previous hard-coded 3).
+    // MAX_PAGINATION_ROUNDS rounds (more than the previous hard-coded 3). The
+    // final scrape picks up the last batch, so every provided card accumulates.
     const batches = Array.from({ length: MAX_PAGINATION_ROUNDS + 1 }, (_, i) =>
       cards(Array.from({ length: i + 1 }, (_, k) => k + 1)),
     );
     const { jobs, harness } = await runSearch({ batches });
 
     expect(harness.scrollCalls.count).toBe(MAX_PAGINATION_ROUNDS);
-    expect(jobs).toHaveLength(MAX_PAGINATION_ROUNDS);
+    expect(jobs).toHaveLength(MAX_PAGINATION_ROUNDS + 1);
   });
 });
