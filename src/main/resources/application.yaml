@@ -94,10 +94,11 @@ scraper:
     service-url: http://linkedin-scraper:3000
     connect-timeout-seconds: 5
     base-url: https://www.linkedin.com
-    # Order matters: the merge loop fills max-jobs in list order, so junior
-    # terms come first (P1-3 — a broad "desenvolvedor" first would fill the
-    # cap with senior-heavy results before junior terms contribute).
-    keywords: "junior,estágio,programador,desenvolvedor,dev,software,ti,tecnologia,analista"
+    # Order matters: the merge loop fills max-jobs in list order, each term
+    # contributing up to its per-keyword quota (ceil(max-jobs / keywords.size())),
+    # so junior compounds come first (P1-3 — a broad "desenvolvedor" first would
+    # spend its quota share on senior-heavy results before junior terms contribute).
+    keywords: "desenvolvedor junior,dev junior,programador junior,estagio desenvolvedor"
     locations: "Brazil,São Paulo,Rio de Janeiro,Curitiba,Remote"
     # Single LinkedIn geo ID (Brazil). Verified live: repeated geoIds return an
     # empty search page, and the other IDs were not Brazil (Peru/UK/invalid).
