@@ -11,6 +11,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
+import org.springframework.web.client.RestClient;
 
 import java.util.List;
 
@@ -44,7 +46,8 @@ class LinkedInScraperClientTest {
                 "past_week",
                 1,
                 500,
-                "https://www.linkedin.com/jobs/view/"
+                "https://www.linkedin.com/jobs/view/",
+                90
         );
         client = new LinkedInScraperClient(properties);
     }
@@ -200,26 +203,49 @@ class LinkedInScraperClientTest {
     }
 
     @Nested
-    @DisplayName("Scenario 5: connection timeout")
+    @DisplayName("Scenario 5: detail read timeout")
     class ConnectionTimeout {
 
         @Test
-        @DisplayName("extract should skip the keyword and return an empty list on connection timeout")
-        void extract_whenConnectionTimeout_shouldReturnEmptyList() {
+        @DisplayName("extract should keep the job without description when the detail read timeout (30s) fires")
+        void extract_whenDetailReadTimeout_shouldKeepJobWithoutDescription() {
             stubFor(get(urlPathEqualTo("/api/jobs"))
                     .withQueryParam("keywords", equalTo("desenvolvedor"))
                     .withQueryParam("location", equalTo("Brazil"))
+                    .willReturn(okJson("""
+                        {
+                          "success": true,
+                          "data": [
+                            { "id": "12345", "title": "Dev Junior", "company": "A",
+                              "location": "SP", "postedAt": "", "summary": "" }
+                          ]
+                        }
+                        """)));
+            stubFor(get(urlPathEqualTo("/api/jobs/12345"))
                     .willReturn(aResponse()
                             .withStatus(200)
                             .withFixedDelay(40000)
                             .withBody("""
                                 {
                                   "success": true,
-                                  "data": []
+                                  "data": {
+                                    "id": "12345",
+                                    "title": "Dev Junior",
+                                    "company": "A",
+                                    "location": "SP",
+                                    "postedAt": "",
+                                    "summary": "",
+                                    "description": "<p>this body never arrives on time</p>"
+                                  }
                                 }
                                 """)));
 
-            assertTrue(client.extract().isEmpty());
+            // enrichment uses the shared 30s read timeout: the 40s-delayed detail
+            // body times out, the job survives without a description (pacing kept)
+            var jobs = client.extract();
+
+            assertEquals(1, jobs.size());
+            assertEquals("", jobs.get(0).description());
         }
     }
 
@@ -489,7 +515,8 @@ List<RawJob> jobs = client.extract();
                     "past_week",
                     1,
                     0,
-                    "https://www.linkedin.com/jobs/view/"
+                    "https://www.linkedin.com/jobs/view/",
+                    90
             ));
         }
 
@@ -844,6 +871,69 @@ List<RawJob> jobs = client.extract();
             assertEquals(3, jobs.size());
             assertTrue(jobs.stream().anyMatch(j -> j.title().equals("Dev-1")));
             assertTrue(jobs.stream().noneMatch(j -> j.title().equals("Dev-4")));
+        }
+    }
+
+    @Nested
+    @DisplayName("Read timeout split (search 90s, detail/enrichment 30s)")
+    class ReadTimeoutSplit {
+
+        @Test
+        @DisplayName("searchRestClient should use the search-specific 90s read timeout with 5s connect")
+        void searchRestClient_whenConfigured_shouldUseSearchTimeoutSeconds() throws Exception {
+            var factory = requestFactoryOf(client, "searchRestClient");
+
+            assertEquals(90_000, factory.getReadTimeout());
+            assertEquals(5_000, factory.getConnectTimeout());
+        }
+
+        @Test
+        @DisplayName("detail restClient should keep the shared 30s read timeout with 5s connect")
+        void detailRestClient_whenConfigured_shouldKeepTimeoutSeconds() throws Exception {
+            var factory = requestFactoryOf(client, "restClient");
+
+            assertEquals(30_000, factory.getReadTimeout());
+            assertEquals(5_000, factory.getConnectTimeout());
+        }
+
+        @Test
+        @DisplayName("extract should be bounded by the search-specific timeout, not the shared one")
+        void extract_whenSearchTimeoutShorterThanBodyDelay_shouldSkipKeyword() {
+            // search-specific read timeout 1s, shared detail timeout 30s
+            client = new LinkedInScraperClient(new LinkedInScraperProperties(
+                    true, "service", baseUrl, 30, 5, 25, "https://www.linkedin.com",
+                    List.of("desenvolvedor"), "Brazil", List.of("106057199"),
+                    List.of("entry_level"), List.of("remote"), "past_week", 1, 0,
+                    "https://www.linkedin.com/jobs/view/", 1));
+
+            stubFor(get(urlPathEqualTo("/api/jobs"))
+                    .withQueryParam("keywords", equalTo("desenvolvedor"))
+                    .withQueryParam("location", equalTo("Brazil"))
+                    .willReturn(aResponse()
+                            .withStatus(200)
+                            .withFixedDelay(2500)
+                            .withBody("""
+                                {
+                                  "success": true,
+                                  "data": [
+                                    { "id": "1", "title": "Dev Junior", "company": "A",
+                                      "location": "SP", "postedAt": "", "summary": "" }
+                                  ]
+                                }
+                                """)));
+
+            // the 1s search-specific read timeout fires before the 2.5s delayed body
+            // arrives; had search reused the shared 30s timeout, the job would return
+            assertTrue(client.extract().isEmpty());
+        }
+
+        private static SimpleClientHttpRequestFactory requestFactoryOf(LinkedInScraperClient target, String clientField) throws Exception {
+            var clientFieldRef = LinkedInScraperClient.class.getDeclaredField(clientField);
+            clientFieldRef.setAccessible(true);
+            var restClient = (RestClient) clientFieldRef.get(target);
+            var factoryFieldRef = restClient.getClass().getDeclaredField("requestFactory");
+            factoryFieldRef.setAccessible(true);
+            return (SimpleClientHttpRequestFactory) factoryFieldRef.get(restClient);
         }
     }
 }
