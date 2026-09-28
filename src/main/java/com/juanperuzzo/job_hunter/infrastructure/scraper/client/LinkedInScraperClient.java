@@ -67,6 +67,10 @@ public class LinkedInScraperClient implements ExtractionStrategy {
         // ATS per-board resilience of GreenhouseProvider: a failed keyword is
         // logged with a warning and skipped, previously fetched results are kept.
         // A fully failed run yields an empty list, like a search with no matches.
+        // P1-2: the outer loop stops as soon as maxJobs is reached so later
+        // keywords are not searched needlessly. With the default maxJobs=60 this
+        // keeps the 9-keyword fan-out inside the 180s adapter timeout budget
+        // without bumping the timeout (deliberately unchanged, out of scope).
         var uniqueJobs = new LinkedHashMap<String, RawJob>();
         for (var keyword : keywords) {
             var trimmed = keyword.trim();
@@ -84,6 +88,9 @@ public class LinkedInScraperClient implements ExtractionStrategy {
                 log.debug("{}: fetched {} jobs for keyword '{}'", PROVIDER_ID, batch.size(), trimmed);
             } catch (Exception e) {
                 log.warn("{}: skipping keyword '{}' after failure: {}", PROVIDER_ID, trimmed, e.getMessage());
+            }
+            if (uniqueJobs.size() >= properties.maxJobs()) {
+                break;
             }
         }
 
