@@ -620,9 +620,67 @@ List<RawJob> jobs = client.extract();
         }
 
         @Test
-        @DisplayName("extract should truncate the merged per-keyword results to maxJobs before enrichment")
-        void extract_whenMergedResultsExceedMaxJobs_shouldTruncateToMaxJobs() {
-            client = clientWith(List.of("a", "b"), 2);
+        @DisplayName("extract should cap each keyword at its quota so the merged total never exceeds maxJobs")
+        void extract_whenAllKeywordsExceedQuota_shouldNeverExceedMaxJobs() {
+            // quota = ceil(maxJobs / keywords.size()) = ceil(4 / 2) = 2 per keyword
+            client = clientWith(List.of("a", "b"), 4);
+
+            stubFor(get(urlPathEqualTo("/api/jobs"))
+                    .withQueryParam("keywords", equalTo("a"))
+                    .willReturn(okJson("""
+                            {
+                              "success": true,
+                              "data": [
+                                { "id": "1", "title": "A-1", "company": "A",
+                                  "location": "SP", "postedAt": "", "summary": "" },
+                                { "id": "2", "title": "A-2", "company": "A",
+                                  "location": "SP", "postedAt": "", "summary": "" },
+                                { "id": "3", "title": "A-3", "company": "A",
+                                  "location": "SP", "postedAt": "", "summary": "" },
+                                { "id": "4", "title": "A-4", "company": "A",
+                                  "location": "SP", "postedAt": "", "summary": "" }
+                              ]
+                            }
+                            """)));
+            stubFor(get(urlPathEqualTo("/api/jobs"))
+                    .withQueryParam("keywords", equalTo("b"))
+                    .willReturn(okJson("""
+                            {
+                              "success": true,
+                              "data": [
+                                { "id": "10", "title": "B-1", "company": "B",
+                                  "location": "RJ", "postedAt": "", "summary": "" },
+                                { "id": "11", "title": "B-2", "company": "B",
+                                  "location": "RJ", "postedAt": "", "summary": "" },
+                                { "id": "12", "title": "B-3", "company": "B",
+                                  "location": "RJ", "postedAt": "", "summary": "" },
+                                { "id": "13", "title": "B-4", "company": "B",
+                                  "location": "RJ", "postedAt": "", "summary": "" }
+                              ]
+                            }
+                            """)));
+
+            List<RawJob> jobs = client.extract();
+
+            // each keyword keeps exactly its quota (first 2 of each batch, ordered pass);
+            // "b" IS queried because "a" alone (2 jobs) did not fill the total cap of 4
+            assertEquals(4, jobs.size());
+            assertTrue(jobs.stream().anyMatch(j -> j.title().equals("A-1")));
+            assertTrue(jobs.stream().anyMatch(j -> j.title().equals("A-2")));
+            assertTrue(jobs.stream().anyMatch(j -> j.title().equals("B-1")));
+            assertTrue(jobs.stream().anyMatch(j -> j.title().equals("B-2")));
+            assertTrue(jobs.stream().noneMatch(j -> j.title().equals("A-3")));
+            assertTrue(jobs.stream().noneMatch(j -> j.title().equals("B-3")));
+            verify(getRequestedFor(urlPathEqualTo("/api/jobs"))
+                    .withQueryParam("keywords", equalTo("b")));
+        }
+
+        @Test
+        @DisplayName("extract should stop querying further keywords once the merged results reach maxJobs")
+        void extract_whenCapReachedBeforeLaterKeyword_shouldStopFurtherSearches() {
+            // quota = ceil(2 / 3) = 1 per keyword: "a" and "b" each take their share
+            // and reach the total cap, so the third keyword is never searched
+            client = clientWith(List.of("a", "b", "c"), 2);
 
             stubFor(get(urlPathEqualTo("/api/jobs"))
                     .withQueryParam("keywords", equalTo("a"))
@@ -642,50 +700,15 @@ List<RawJob> jobs = client.extract();
                               "success": true,
                               "data": [
                                 { "id": "2", "title": "Segundo", "company": "B",
-                                  "location": "RJ", "postedAt": "", "summary": "" },
-                                { "id": "3", "title": "Terceiro", "company": "C",
-                                  "location": "MG", "postedAt": "", "summary": "" },
-                                { "id": "4", "title": "Quarto", "company": "D",
-                                  "location": "RS", "postedAt": "", "summary": "" }
-                              ]
-                            }
-                            """)));
-
-            List<RawJob> jobs = client.extract();
-
-            assertEquals(2, jobs.size());
-            assertTrue(jobs.stream().anyMatch(j -> j.title().equals("Primeiro")));
-            assertTrue(jobs.stream().anyMatch(j -> j.title().equals("Segundo")));
-            assertTrue(jobs.stream().noneMatch(j -> j.title().equals("Terceiro")));
-            // "b" IS queried here because keyword "a" alone (1 job) did not reach
-            // the maxJobs cap; truncation still happens after merging both batches.
-            verify(getRequestedFor(urlPathEqualTo("/api/jobs"))
-                    .withQueryParam("keywords", equalTo("b")));
-        }
-
-        @Test
-        @DisplayName("extract should not query further keywords once the merged results have reached maxJobs")
-        void extract_whenCapReachedBeforeLaterKeyword_shouldStopFurtherSearches() {
-            client = clientWith(List.of("a", "b"), 2);
-
-            stubFor(get(urlPathEqualTo("/api/jobs"))
-                    .withQueryParam("keywords", equalTo("a"))
-                    .willReturn(okJson("""
-                            {
-                              "success": true,
-                              "data": [
-                                { "id": "1", "title": "Primeiro", "company": "A",
-                                  "location": "SP", "postedAt": "", "summary": "" },
-                                { "id": "2", "title": "Segundo", "company": "B",
                                   "location": "RJ", "postedAt": "", "summary": "" }
                               ]
                             }
                             """)));
-            // "b" is left stubbed so this test isolates the cap-stop from keyword
+            // "c" is left stubbed so this test isolates the cap-stop from keyword
             // failures: a regression to always-run would still fetch it and trip
             // the verify(0) below.
             stubFor(get(urlPathEqualTo("/api/jobs"))
-                    .withQueryParam("keywords", equalTo("b"))
+                    .withQueryParam("keywords", equalTo("c"))
                     .willReturn(okJson("""
                             {
                               "success": true,
@@ -703,7 +726,124 @@ List<RawJob> jobs = client.extract();
             assertTrue(jobs.stream().anyMatch(j -> j.title().equals("Segundo")));
             assertTrue(jobs.stream().noneMatch(j -> j.title().equals("Terceiro")));
             verify(0, getRequestedFor(urlPathEqualTo("/api/jobs"))
-                    .withQueryParam("keywords", equalTo("b")));
+                    .withQueryParam("keywords", equalTo("c")));
+        }
+
+        @Test
+        @DisplayName("extract should cap a fat first keyword at its quota so later keywords still contribute")
+        void extract_whenFatFirstKeywordExceedsQuota_shouldNotStarveLaterKeywords() {
+            // quota = ceil(9 / 3) = 3 per keyword; "fat" returns 6 but keeps only its first 3
+            client = clientWith(List.of("fat", "thin1", "thin2"), 9);
+
+            stubFor(get(urlPathEqualTo("/api/jobs"))
+                    .withQueryParam("keywords", equalTo("fat"))
+                    .willReturn(okJson("""
+                            {
+                              "success": true,
+                              "data": [
+                                { "id": "1", "title": "Fat-1", "company": "A", "location": "SP", "postedAt": "", "summary": "" },
+                                { "id": "2", "title": "Fat-2", "company": "A", "location": "SP", "postedAt": "", "summary": "" },
+                                { "id": "3", "title": "Fat-3", "company": "A", "location": "SP", "postedAt": "", "summary": "" },
+                                { "id": "4", "title": "Fat-4", "company": "A", "location": "SP", "postedAt": "", "summary": "" },
+                                { "id": "5", "title": "Fat-5", "company": "A", "location": "SP", "postedAt": "", "summary": "" },
+                                { "id": "6", "title": "Fat-6", "company": "A", "location": "SP", "postedAt": "", "summary": "" }
+                              ]
+                            }
+                            """)));
+            stubFor(get(urlPathEqualTo("/api/jobs"))
+                    .withQueryParam("keywords", equalTo("thin1"))
+                    .willReturn(okJson("""
+                            {
+                              "success": true,
+                              "data": [
+                                { "id": "10", "title": "Thin-1", "company": "B", "location": "RJ", "postedAt": "", "summary": "" }
+                              ]
+                            }
+                            """)));
+            stubFor(get(urlPathEqualTo("/api/jobs"))
+                    .withQueryParam("keywords", equalTo("thin2"))
+                    .willReturn(okJson("""
+                            {
+                              "success": true,
+                              "data": [
+                                { "id": "20", "title": "Thin-2", "company": "C", "location": "MG", "postedAt": "", "summary": "" }
+                              ]
+                            }
+                            """)));
+
+            List<RawJob> jobs = client.extract();
+
+            assertEquals(5, jobs.size());
+            assertTrue(jobs.stream().anyMatch(j -> j.title().equals("Fat-1")));
+            assertTrue(jobs.stream().anyMatch(j -> j.title().equals("Fat-3")));
+            assertTrue(jobs.stream().noneMatch(j -> j.title().equals("Fat-4")));
+            assertTrue(jobs.stream().anyMatch(j -> j.title().equals("Thin-1")));
+            assertTrue(jobs.stream().anyMatch(j -> j.title().equals("Thin-2")));
+        }
+
+        @Test
+        @DisplayName("extract should keep every job a thin keyword contributes when it returns less than its quota")
+        void extract_whenThinKeywordReturnsLessThanQuota_shouldContributeAllItHas() {
+            // quota = ceil(10 / 2) = 5 per keyword; neither batch reaches its quota
+            client = clientWith(List.of("thin", "sparse"), 10);
+
+            stubFor(get(urlPathEqualTo("/api/jobs"))
+                    .withQueryParam("keywords", equalTo("thin"))
+                    .willReturn(okJson("""
+                            {
+                              "success": true,
+                              "data": [
+                                { "id": "1", "title": "Thin-A", "company": "A", "location": "SP", "postedAt": "", "summary": "" },
+                                { "id": "2", "title": "Thin-B", "company": "A", "location": "SP", "postedAt": "", "summary": "" }
+                              ]
+                            }
+                            """)));
+            stubFor(get(urlPathEqualTo("/api/jobs"))
+                    .withQueryParam("keywords", equalTo("sparse"))
+                    .willReturn(okJson("""
+                            {
+                              "success": true,
+                              "data": [
+                                { "id": "10", "title": "Sparse-1", "company": "B", "location": "RJ", "postedAt": "", "summary": "" },
+                                { "id": "11", "title": "Sparse-2", "company": "B", "location": "RJ", "postedAt": "", "summary": "" }
+                              ]
+                            }
+                            """)));
+
+            List<RawJob> jobs = client.extract();
+
+            assertEquals(4, jobs.size());
+            assertTrue(jobs.stream().anyMatch(j -> j.title().equals("Thin-A")));
+            assertTrue(jobs.stream().anyMatch(j -> j.title().equals("Thin-B")));
+            assertTrue(jobs.stream().anyMatch(j -> j.title().equals("Sparse-1")));
+            assertTrue(jobs.stream().anyMatch(j -> j.title().equals("Sparse-2")));
+        }
+
+        @Test
+        @DisplayName("extract should keep legacy behavior for a single keyword (quota equals maxJobs)")
+        void extract_whenSingleKeyword_shouldKeepLegacyCapBehavior() {
+            client = clientWith(List.of("dev"), 3);
+
+            stubFor(get(urlPathEqualTo("/api/jobs"))
+                    .withQueryParam("keywords", equalTo("dev"))
+                    .willReturn(okJson("""
+                            {
+                              "success": true,
+                              "data": [
+                                { "id": "1", "title": "Dev-1", "company": "A", "location": "SP", "postedAt": "", "summary": "" },
+                                { "id": "2", "title": "Dev-2", "company": "A", "location": "SP", "postedAt": "", "summary": "" },
+                                { "id": "3", "title": "Dev-3", "company": "A", "location": "SP", "postedAt": "", "summary": "" },
+                                { "id": "4", "title": "Dev-4", "company": "A", "location": "SP", "postedAt": "", "summary": "" },
+                                { "id": "5", "title": "Dev-5", "company": "A", "location": "SP", "postedAt": "", "summary": "" }
+                              ]
+                            }
+                            """)));
+
+            List<RawJob> jobs = client.extract();
+
+            assertEquals(3, jobs.size());
+            assertTrue(jobs.stream().anyMatch(j -> j.title().equals("Dev-1")));
+            assertTrue(jobs.stream().noneMatch(j -> j.title().equals("Dev-4")));
         }
     }
 }
