@@ -134,8 +134,8 @@ class LinkedInScraperClientTest {
     class EmptySearchResponse {
 
         @Test
-        @DisplayName("extract should throw ScraperException when empty response body")
-        void extract_whenEmptyResponse_shouldThrowScraperException() {
+        @DisplayName("extract should skip the keyword and return an empty list on an empty response body")
+        void extract_whenEmptyResponse_shouldReturnEmptyList() {
             stubFor(get(urlPathEqualTo("/api/jobs"))
                     .withQueryParam("keywords", equalTo("desenvolvedor"))
                     .withQueryParam("location", equalTo("Brazil"))
@@ -143,8 +143,7 @@ class LinkedInScraperClientTest {
                             .withStatus(200)
                             .withBody("")));
 
-            var exception = assertThrows(ScraperException.class, () -> client.extract());
-            assertTrue(exception.getMessage().contains("returned empty response"));
+            assertTrue(client.extract().isEmpty());
         }
     }
 
@@ -153,8 +152,8 @@ class LinkedInScraperClientTest {
     class Http429 {
 
         @Test
-        @DisplayName("extract should throw ScraperException with retry hint on HTTP 429")
-        void extract_whenServiceReturns429_shouldThrowScraperException() {
+        @DisplayName("extract should skip the keyword and return an empty list on HTTP 429")
+        void extract_whenServiceReturns429_shouldReturnEmptyList() {
             stubFor(get(urlPathEqualTo("/api/jobs"))
                     .withQueryParam("keywords", equalTo("desenvolvedor"))
                     .withQueryParam("location", equalTo("Brazil"))
@@ -170,8 +169,7 @@ class LinkedInScraperClientTest {
                                 }
                                 """)));
 
-            ScraperException exception = assertThrows(ScraperException.class, () -> client.extract());
-            assertTrue(exception.getMessage().contains("429") || exception.getMessage().contains("RATE_LIMITED"));
+            assertTrue(client.extract().isEmpty());
         }
     }
 
@@ -180,8 +178,8 @@ class LinkedInScraperClientTest {
     class Http503 {
 
         @Test
-        @DisplayName("extract should throw ScraperException on HTTP 503")
-        void extract_whenServiceReturns503_shouldThrowScraperException() {
+        @DisplayName("extract should skip the keyword and return an empty list on HTTP 503")
+        void extract_whenServiceReturns503_shouldReturnEmptyList() {
             stubFor(get(urlPathEqualTo("/api/jobs"))
                     .withQueryParam("keywords", equalTo("desenvolvedor"))
                     .withQueryParam("location", equalTo("Brazil"))
@@ -197,7 +195,7 @@ class LinkedInScraperClientTest {
                                 }
                                 """)));
 
-            assertThrows(ScraperException.class, () -> client.extract());
+            assertTrue(client.extract().isEmpty());
         }
     }
 
@@ -206,8 +204,8 @@ class LinkedInScraperClientTest {
     class ConnectionTimeout {
 
         @Test
-        @DisplayName("extract should throw ScraperException on connection timeout")
-        void extract_whenConnectionTimeout_shouldThrowScraperException() {
+        @DisplayName("extract should skip the keyword and return an empty list on connection timeout")
+        void extract_whenConnectionTimeout_shouldReturnEmptyList() {
             stubFor(get(urlPathEqualTo("/api/jobs"))
                     .withQueryParam("keywords", equalTo("desenvolvedor"))
                     .withQueryParam("location", equalTo("Brazil"))
@@ -221,7 +219,7 @@ class LinkedInScraperClientTest {
                                 }
                                 """)));
 
-            assertThrows(ScraperException.class, () -> client.extract());
+            assertTrue(client.extract().isEmpty());
         }
     }
 
@@ -580,6 +578,45 @@ List<RawJob> jobs = client.extract();
             assertEquals(1, jobs.stream()
                     .filter(j -> j.metadata().get("jobId").equals("20"))
                     .count());
+        }
+
+        @Test
+        @DisplayName("extract should keep earlier keyword results when a later keyword is rate-limited")
+        void extract_whenMidLoopKeywordRateLimited_shouldKeepEarlierKeywordResults() {
+            client = clientWith(List.of("desenvolvedor", "junior"), 25);
+
+            stubFor(get(urlPathEqualTo("/api/jobs"))
+                    .withQueryParam("keywords", equalTo("desenvolvedor"))
+                    .willReturn(okJson("""
+                            {
+                              "success": true,
+                              "data": [
+                                { "id": "1", "title": "Desenvolvedor Sênior", "company": "A",
+                                  "location": "SP", "postedAt": "", "summary": "" }
+                              ]
+                            }
+                            """)));
+            stubFor(get(urlPathEqualTo("/api/jobs"))
+                    .withQueryParam("keywords", equalTo("junior"))
+                    .willReturn(status(429)
+                            .withHeader("Content-Type", "application/json")
+                            .withBody("""
+                                {
+                                  "success": false,
+                                  "error": {
+                                    "code": "RATE_LIMITED",
+                                    "message": "LinkedIn bot challenge detected. Please try again later."
+                                  }
+                                }
+                                """)));
+
+            List<RawJob> jobs = client.extract();
+
+            assertEquals(1, jobs.size());
+            assertTrue(jobs.stream().anyMatch(j -> j.title().contains("Sênior")));
+            // the rate-limited keyword must still have been attempted
+            verify(getRequestedFor(urlPathEqualTo("/api/jobs"))
+                    .withQueryParam("keywords", equalTo("junior")));
         }
 
         @Test
