@@ -456,17 +456,143 @@ class LinkedInScraperClientTest {
                                 }
                                 """)));
 
+List<RawJob> jobs = client.extract();
+
+        assertEquals(2, jobs.size());
+
+        RawJob job1 = jobs.get(0);
+        assertEquals("Desenvolvedor Java Júnior", job1.title());
+        assertTrue(job1.description().contains("Desenvolvedor Java Júnior"));
+
+        RawJob job2 = jobs.get(1);
+        assertEquals("Desenvolvedor Python Júnior", job2.title());
+        assertEquals("", job2.description());
+    }
+}
+
+    @Nested
+    @DisplayName("Per-keyword query loop (production defect: only the first configured keyword was sent)")
+    class MultiKeywordLoop {
+
+        private LinkedInScraperClient clientWith(List<String> keywords, int maxJobs) {
+            return new LinkedInScraperClient(new LinkedInScraperProperties(
+                    true,
+                    "service",
+                    baseUrl,
+                    30,
+                    5,
+                    maxJobs,
+                    "https://www.linkedin.com",
+                    keywords,
+                    "Brazil",
+                    List.of("106057199"),
+                    List.of("entry_level"),
+                    List.of("remote"),
+                    "past_week",
+                    1,
+                    0,
+                    "https://www.linkedin.com/jobs/view/"
+            ));
+        }
+
+        @Test
+        @DisplayName("extract should query the scraper service once per configured keyword, not only the first one")
+        void extract_whenMultipleKeywords_shouldQueryServicePerKeyword() {
+            client = clientWith(List.of("desenvolvedor", "junior"), 25);
+
+            stubFor(get(urlPathEqualTo("/api/jobs"))
+                    .withQueryParam("keywords", equalTo("desenvolvedor"))
+                    .withQueryParam("location", equalTo("Brazil"))
+                    .willReturn(okJson("""
+                            { "id": "1", "title": "Desenvolvedor Sênior", "company": "A",
+                              "location": "São Paulo, SP", "postedAt": "", "summary": "" }
+                            """)));
+            stubFor(get(urlPathEqualTo("/api/jobs"))
+                    .withQueryParam("keywords", equalTo("junior"))
+                    .withQueryParam("location", equalTo("Brazil"))
+                    .willReturn(okJson("""
+                            { "id": "2", "title": "Desenvolvedor Júnior", "company": "B",
+                              "location": "Rio de Janeiro, RJ", "postedAt": "", "summary": "" }
+                            """)));
+
             List<RawJob> jobs = client.extract();
 
             assertEquals(2, jobs.size());
+            assertTrue(jobs.stream().anyMatch(j -> j.title().contains("Sênior")));
+            assertTrue(jobs.stream().anyMatch(j -> j.title().contains("Júnior")));
+            verify(getRequestedFor(urlPathEqualTo("/api/jobs"))
+                    .withQueryParam("keywords", equalTo("desenvolvedor")));
+            verify(getRequestedFor(urlPathEqualTo("/api/jobs"))
+                    .withQueryParam("keywords", equalTo("junior")));
+        }
 
-            RawJob job1 = jobs.get(0);
-            assertEquals("Desenvolvedor Java Júnior", job1.title());
-            assertTrue(job1.description().contains("Desenvolvedor Java Júnior"));
+        @Test
+        @DisplayName("extract should deduplicate identical job URLs returned by different keywords")
+        void extract_whenOverlappingUrlsAcrossKeywords_shouldDedupeByUrl() {
+            client = clientWith(List.of("dev", "java"), 25);
 
-            RawJob job2 = jobs.get(1);
-            assertEquals("Desenvolvedor Python Júnior", job2.title());
-            assertEquals("", job2.description());
+            stubFor(get(urlPathEqualTo("/api/jobs"))
+                    .withQueryParam("keywords", equalTo("dev"))
+                    .willReturn(okJson("""
+                            { "id": "42", "title": "Desenvolvedor", "company": "Shared",
+                              "location": "SP", "postedAt": "", "summary": "" },
+                            { "id": "10", "title": "Dev Pleno", "company": "Co",
+                              "location": "SP", "postedAt": "", "summary": "" }
+                            """)));
+            stubFor(get(urlPathEqualTo("/api/jobs"))
+                    .withQueryParam("keywords", equalTo("java"))
+                    .willReturn(okJson("""
+                            { "id": "42", "title": "Desenvolvedor", "company": "Shared",
+                              "location": "SP", "postedAt": "", "summary": "" },
+                            { "id": "20", "title": "Java Analyst", "company": "Co",
+                              "location": "SP", "postedAt": "", "summary": "" }
+                            """)));
+
+            List<RawJob> jobs = client.extract();
+
+            assertEquals(3, jobs.size());
+            assertEquals(1, jobs.stream()
+                    .filter(j -> j.metadata().get("jobId").equals("42"))
+                    .count());
+            assertEquals(1, jobs.stream()
+                    .filter(j -> j.metadata().get("jobId").equals("10"))
+                    .count());
+            assertEquals(1, jobs.stream()
+                    .filter(j -> j.metadata().get("jobId").equals("20"))
+                    .count());
+        }
+
+        @Test
+        @DisplayName("extract should truncate the merged per-keyword results to maxJobs before enrichment")
+        void extract_whenMergedResultsExceedMaxJobs_shouldTruncateToMaxJobs() {
+            client = clientWith(List.of("a", "b"), 2);
+
+            stubFor(get(urlPathEqualTo("/api/jobs"))
+                    .withQueryParam("keywords", equalTo("a"))
+                    .willReturn(okJson("""
+                            { "id": "1", "title": "Primeiro", "company": "A",
+                              "location": "SP", "postedAt": "", "summary": "" }
+                            """)));
+            stubFor(get(urlPathEqualTo("/api/jobs"))
+                    .withQueryParam("keywords", equalTo("b"))
+                    .willReturn(okJson("""
+                            { "id": "2", "title": "Segundo", "company": "B",
+                              "location": "RJ", "postedAt": "", "summary": "" },
+                            { "id": "3", "title": "Terceiro", "company": "C",
+                              "location": "MG", "postedAt": "", "summary": "" },
+                            { "id": "4", "title": "Quarto", "company": "D",
+                              "location": "RS", "postedAt": "", "summary": "" }
+                            """)));
+
+            List<RawJob> jobs = client.extract();
+
+            assertEquals(2, jobs.size());
+            assertTrue(jobs.stream().anyMatch(j -> j.title().equals("Primeiro")));
+            assertTrue(jobs.stream().anyMatch(j -> j.title().equals("Segundo")));
+            assertTrue(jobs.stream().noneMatch(j -> j.title().equals("Terceiro")));
+            // every configured keyword must still be queried even when an earlier one filled the cap
+            verify(getRequestedFor(urlPathEqualTo("/api/jobs"))
+                    .withQueryParam("keywords", equalTo("b")));
         }
     }
 }
