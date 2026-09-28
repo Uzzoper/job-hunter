@@ -883,8 +883,8 @@ List<RawJob> jobs = client.extract();
         void searchRestClient_whenConfigured_shouldUseSearchTimeoutSeconds() throws Exception {
             var factory = requestFactoryOf(client, "searchRestClient");
 
-            assertEquals(90_000, factory.getReadTimeout());
-            assertEquals(5_000, factory.getConnectTimeout());
+            assertEquals(90_000, timeoutField(factory, "readTimeout"));
+            assertEquals(5_000, timeoutField(factory, "connectTimeout"));
         }
 
         @Test
@@ -892,8 +892,8 @@ List<RawJob> jobs = client.extract();
         void detailRestClient_whenConfigured_shouldKeepTimeoutSeconds() throws Exception {
             var factory = requestFactoryOf(client, "restClient");
 
-            assertEquals(30_000, factory.getReadTimeout());
-            assertEquals(5_000, factory.getConnectTimeout());
+            assertEquals(30_000, timeoutField(factory, "readTimeout"));
+            assertEquals(5_000, timeoutField(factory, "connectTimeout"));
         }
 
         @Test
@@ -931,9 +931,19 @@ List<RawJob> jobs = client.extract();
             var clientFieldRef = LinkedInScraperClient.class.getDeclaredField(clientField);
             clientFieldRef.setAccessible(true);
             var restClient = (RestClient) clientFieldRef.get(target);
-            var factoryFieldRef = restClient.getClass().getDeclaredField("requestFactory");
+            // Spring 7's DefaultRestClient stores the factory under "clientRequestFactory"
+            // (the volatile "interceptingRequestFactory" only wraps it when interceptors exist)
+            var factoryFieldRef = restClient.getClass().getDeclaredField("clientRequestFactory");
             factoryFieldRef.setAccessible(true);
             return (SimpleClientHttpRequestFactory) factoryFieldRef.get(restClient);
+        }
+
+        // Spring 7's SimpleClientHttpRequestFactory has no public getters, only
+        // private int fields (setters only) — introspect the fields directly.
+        private static int timeoutField(SimpleClientHttpRequestFactory factory, String field) throws Exception {
+            var fieldRef = SimpleClientHttpRequestFactory.class.getDeclaredField(field);
+            fieldRef.setAccessible(true);
+            return fieldRef.getInt(factory);
         }
     }
 }
