@@ -504,15 +504,25 @@ List<RawJob> jobs = client.extract();
                     .withQueryParam("keywords", equalTo("desenvolvedor"))
                     .withQueryParam("location", equalTo("Brazil"))
                     .willReturn(okJson("""
-                            { "id": "1", "title": "Desenvolvedor Sênior", "company": "A",
-                              "location": "São Paulo, SP", "postedAt": "", "summary": "" }
+                            {
+                              "success": true,
+                              "data": [
+                                { "id": "1", "title": "Desenvolvedor Sênior", "company": "A",
+                                  "location": "São Paulo, SP", "postedAt": "", "summary": "" }
+                              ]
+                            }
                             """)));
             stubFor(get(urlPathEqualTo("/api/jobs"))
                     .withQueryParam("keywords", equalTo("junior"))
                     .withQueryParam("location", equalTo("Brazil"))
                     .willReturn(okJson("""
-                            { "id": "2", "title": "Desenvolvedor Júnior", "company": "B",
-                              "location": "Rio de Janeiro, RJ", "postedAt": "", "summary": "" }
+                            {
+                              "success": true,
+                              "data": [
+                                { "id": "2", "title": "Desenvolvedor Júnior", "company": "B",
+                                  "location": "Rio de Janeiro, RJ", "postedAt": "", "summary": "" }
+                              ]
+                            }
                             """)));
 
             List<RawJob> jobs = client.extract();
@@ -534,18 +544,28 @@ List<RawJob> jobs = client.extract();
             stubFor(get(urlPathEqualTo("/api/jobs"))
                     .withQueryParam("keywords", equalTo("dev"))
                     .willReturn(okJson("""
-                            { "id": "42", "title": "Desenvolvedor", "company": "Shared",
-                              "location": "SP", "postedAt": "", "summary": "" },
-                            { "id": "10", "title": "Dev Pleno", "company": "Co",
-                              "location": "SP", "postedAt": "", "summary": "" }
+                            {
+                              "success": true,
+                              "data": [
+                                { "id": "42", "title": "Desenvolvedor", "company": "Shared",
+                                  "location": "SP", "postedAt": "", "summary": "" },
+                                { "id": "10", "title": "Dev Pleno", "company": "Co",
+                                  "location": "SP", "postedAt": "", "summary": "" }
+                              ]
+                            }
                             """)));
             stubFor(get(urlPathEqualTo("/api/jobs"))
                     .withQueryParam("keywords", equalTo("java"))
                     .willReturn(okJson("""
-                            { "id": "42", "title": "Desenvolvedor", "company": "Shared",
-                              "location": "SP", "postedAt": "", "summary": "" },
-                            { "id": "20", "title": "Java Analyst", "company": "Co",
-                              "location": "SP", "postedAt": "", "summary": "" }
+                            {
+                              "success": true,
+                              "data": [
+                                { "id": "42", "title": "Desenvolvedor", "company": "Shared",
+                                  "location": "SP", "postedAt": "", "summary": "" },
+                                { "id": "20", "title": "Java Analyst", "company": "Co",
+                                  "location": "SP", "postedAt": "", "summary": "" }
+                              ]
+                            }
                             """)));
 
             List<RawJob> jobs = client.extract();
@@ -570,18 +590,28 @@ List<RawJob> jobs = client.extract();
             stubFor(get(urlPathEqualTo("/api/jobs"))
                     .withQueryParam("keywords", equalTo("a"))
                     .willReturn(okJson("""
-                            { "id": "1", "title": "Primeiro", "company": "A",
-                              "location": "SP", "postedAt": "", "summary": "" }
+                            {
+                              "success": true,
+                              "data": [
+                                { "id": "1", "title": "Primeiro", "company": "A",
+                                  "location": "SP", "postedAt": "", "summary": "" }
+                              ]
+                            }
                             """)));
             stubFor(get(urlPathEqualTo("/api/jobs"))
                     .withQueryParam("keywords", equalTo("b"))
                     .willReturn(okJson("""
-                            { "id": "2", "title": "Segundo", "company": "B",
-                              "location": "RJ", "postedAt": "", "summary": "" },
-                            { "id": "3", "title": "Terceiro", "company": "C",
-                              "location": "MG", "postedAt": "", "summary": "" },
-                            { "id": "4", "title": "Quarto", "company": "D",
-                              "location": "RS", "postedAt": "", "summary": "" }
+                            {
+                              "success": true,
+                              "data": [
+                                { "id": "2", "title": "Segundo", "company": "B",
+                                  "location": "RJ", "postedAt": "", "summary": "" },
+                                { "id": "3", "title": "Terceiro", "company": "C",
+                                  "location": "MG", "postedAt": "", "summary": "" },
+                                { "id": "4", "title": "Quarto", "company": "D",
+                                  "location": "RS", "postedAt": "", "summary": "" }
+                              ]
+                            }
                             """)));
 
             List<RawJob> jobs = client.extract();
