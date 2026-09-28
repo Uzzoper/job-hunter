@@ -57,27 +57,34 @@ public class LinkedInScraperClient implements ExtractionStrategy {
         var keywords = properties.keywords().isEmpty() ? List.of("desenvolvedor") : properties.keywords();
         var location = properties.locations().isBlank() ? "Brazil" : properties.locations().split(",")[0].trim();
 
-        // Per-keyword query loop (production defect fix): a bare "desenvolvedor"
-        // search is ranked senior-heavy by LinkedIn, and the previous code sent
-        // ONLY the first configured keyword. Mirroring the GupyProvider keyword
-        // loop, every configured junior term ("junior", "estágio", "programador",
-        // ...) is now its own search request; results are merged by unique URL.
-        // Fail-fast on the first error keeps the loud-failure semantics of the
-        // previous single call (a dead/bot-blocked service must not pass silently).
+        // Per-keyword query loop (production defects fixed): a bare "desenvolvedor"
+        // search is ranked senior-heavy by LinkedIn, so every configured junior
+        // term ("junior", "estágio", "programador", ...) is its own search
+        // request and results are merged by unique URL (mirroring the GupyProvider
+        // keyword loop).
+        // P1-1: one transient keyword failure (429/5xx/timeout) must NOT discard
+        // already-fetched keywords — catch-and-continue per keyword mirrors the
+        // ATS per-board resilience of GreenhouseProvider: a failed keyword is
+        // logged with a warning and skipped, previously fetched results are kept.
+        // A fully failed run yields an empty list, like a search with no matches.
         var uniqueJobs = new LinkedHashMap<String, RawJob>();
         for (var keyword : keywords) {
             var trimmed = keyword.trim();
             if (trimmed.isBlank()) {
                 continue;
             }
-            var batch = fetchJobsForKeyword(trimmed, location);
-            for (var job : batch) {
-                if (uniqueJobs.size() >= properties.maxJobs()) {
-                    break;
+            try {
+                var batch = fetchJobsForKeyword(trimmed, location);
+                for (var job : batch) {
+                    if (uniqueJobs.size() >= properties.maxJobs()) {
+                        break;
+                    }
+                    uniqueJobs.putIfAbsent(job.url(), job);
                 }
-                uniqueJobs.putIfAbsent(job.url(), job);
+                log.debug("{}: fetched {} jobs for keyword '{}'", PROVIDER_ID, batch.size(), trimmed);
+            } catch (Exception e) {
+                log.warn("{}: skipping keyword '{}' after failure: {}", PROVIDER_ID, trimmed, e.getMessage());
             }
-            log.debug("{}: fetched {} jobs for keyword '{}'", PROVIDER_ID, batch.size(), trimmed);
         }
 
         var results = new ArrayList<>(uniqueJobs.values());
