@@ -29,6 +29,7 @@ public class LinkedInScraperClient implements ExtractionStrategy {
     private static final String DEFAULT_BASE_JOB_URL = "https://www.linkedin.com/jobs/view/";
 
     private final RestClient restClient;
+    private final RestClient searchRestClient;
     private final ObjectMapper objectMapper;
     private final LinkedInScraperProperties properties;
 
@@ -36,6 +37,8 @@ public class LinkedInScraperClient implements ExtractionStrategy {
         this.properties = properties;
         this.objectMapper = new ObjectMapper();
 
+        // Detail/enrichment calls keep the shared 30s read timeout: each job page
+        // is a single lightweight call, paced by detail-fetch-delay-millis.
         var requestFactory = new org.springframework.http.client.SimpleClientHttpRequestFactory();
         requestFactory.setConnectTimeout(properties.connectTimeoutSeconds() * 1000);
         requestFactory.setReadTimeout(properties.timeoutSeconds() * 1000);
@@ -43,6 +46,22 @@ public class LinkedInScraperClient implements ExtractionStrategy {
         this.restClient = RestClient.builder()
                 .baseUrl(properties.serviceUrl())
                 .requestFactory(requestFactory)
+                .defaultHeader("Accept", "application/json")
+                .build();
+
+        // Search calls get their own 90s read timeout: heavy /api/jobs searches
+        // paginate through ~60-90 cards (guest visibility, up to 6 rounds) and
+        // legitimately take longer than 30s. Production validation proved the
+        // best query ("desenvolvedor junior", 90 cards) died on the shared 30s
+        // read timeout while lighter searches survived — the timeout MUST be
+        // search-specific, not raised globally, or enrichment slows to match.
+        var searchRequestFactory = new org.springframework.http.client.SimpleClientHttpRequestFactory();
+        searchRequestFactory.setConnectTimeout(properties.connectTimeoutSeconds() * 1000);
+        searchRequestFactory.setReadTimeout(properties.searchTimeoutSeconds() * 1000);
+
+        this.searchRestClient = RestClient.builder()
+                .baseUrl(properties.serviceUrl())
+                .requestFactory(searchRequestFactory)
                 .defaultHeader("Accept", "application/json")
                 .build();
     }
@@ -165,7 +184,7 @@ public class LinkedInScraperClient implements ExtractionStrategy {
         var uri = uriBuilder.build().encode().toUri();
 
         try {
-            var response = restClient.get()
+            var response = searchRestClient.get()
                     .uri(uri)
                     .retrieve()
                     .onStatus(HttpStatusCode::isError, (req, res) -> {

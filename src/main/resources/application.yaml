@@ -107,7 +107,8 @@ scraper:
     work-type: "remote,hybrid,on-site"
     time-range: "past_week"
     max-jobs: 60
-    timeout-seconds: 30
+    timeout-seconds: 30          # detail/enrichment read timeout (deliberate pacing, unchanged)
+    search-timeout-seconds: 90   # heavy paginated /api/jobs search read timeout (production fix — must be search-specific)
     detail-fetch-delay-millis: 500
     base-job-url: https://www.linkedin.com/jobs/view/
 
