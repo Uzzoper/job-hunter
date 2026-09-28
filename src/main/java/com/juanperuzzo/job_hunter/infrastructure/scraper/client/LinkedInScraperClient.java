@@ -16,6 +16,7 @@ import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 
 public class LinkedInScraperClient implements ExtractionStrategy {
@@ -53,11 +54,71 @@ public class LinkedInScraperClient implements ExtractionStrategy {
 
     @Override
     public List<RawJob> extract() {
-        var keywords = properties.keywords().isEmpty() ? "desenvolvedor" : properties.keywords().get(0);
+        var keywords = properties.keywords().isEmpty() ? List.of("desenvolvedor") : properties.keywords();
         var location = properties.locations().isBlank() ? "Brazil" : properties.locations().split(",")[0].trim();
 
+        // Per-keyword query loop (production defect fix): a bare "desenvolvedor"
+        // search is ranked senior-heavy by LinkedIn, and the previous code sent
+        // ONLY the first configured keyword. Mirroring the GupyProvider keyword
+        // loop, every configured junior term ("junior", "estágio", "programador",
+        // ...) is now its own search request; results are merged by unique URL.
+        // Fail-fast on the first error keeps the loud-failure semantics of the
+        // previous single call (a dead/bot-blocked service must not pass silently).
+        var uniqueJobs = new LinkedHashMap<String, RawJob>();
+        for (var keyword : keywords) {
+            var trimmed = keyword.trim();
+            if (trimmed.isBlank()) {
+                continue;
+            }
+            var batch = fetchJobsForKeyword(trimmed, location);
+            for (var job : batch) {
+                if (uniqueJobs.size() >= properties.maxJobs()) {
+                    break;
+                }
+                uniqueJobs.putIfAbsent(job.url(), job);
+            }
+            log.debug("{}: fetched {} jobs for keyword '{}'", PROVIDER_ID, batch.size(), trimmed);
+        }
+
+        var results = new ArrayList<>(uniqueJobs.values());
+        // Limit to maxJobs BEFORE enrichment to avoid wasteful detail calls. The
+        // default maxJobs=60 matches the ~60-card guest-visibility ceiling LinkedIn
+        // shows before a login wall (see linkedin-scraper search.ts pagination
+        // note): this is a deliberate bound, kept until a logged-in session path
+        // is implemented, not a knob to raise blindly.
+        if (results.size() > properties.maxJobs()) {
+            results = new ArrayList<>(results.subList(0, properties.maxJobs()));
+        }
+
+        var enriched = new ArrayList<RawJob>();
+        for (int i = 0; i < results.size(); i++) {
+            var card = results.get(i);
+            var jobId = card.metadata().get("jobId");
+            if (jobId != null && !jobId.isBlank()) {
+                try {
+                    if (i > 0) {
+                        Thread.sleep(properties.detailFetchDelayMillis());
+                    }
+                    var detail = extractDetail(jobId);
+                    card = mergeDetailIntoRawJob(card, detail);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    log.warn("{} enrichment interrupted for job {}", PROVIDER_ID, jobId);
+                } catch (Exception e) {
+                    log.warn("{} failed to enrich job {}: {}", PROVIDER_ID, jobId, e.getMessage());
+                }
+            }
+            enriched.add(card);
+        }
+
+        log.info("{}: fetched {} jobs", PROVIDER_ID, enriched.size());
+        return enriched;
+    }
+
+    /** Search the scraper service for a single keyword and map its JSON response. */
+    private List<RawJob> fetchJobsForKeyword(String keyword, String location) {
         var uriBuilder = UriComponentsBuilder.fromPath(SEARCH_PATH)
-                .queryParam("keywords", keywords)
+                .queryParam("keywords", keyword)
                 .queryParam("location", location);
         // LinkedIn honors a single geoId per search; repeated values return an
         // empty result page (verified live). First configured ID wins, mirroring
@@ -113,35 +174,7 @@ public class LinkedInScraperClient implements ExtractionStrategy {
                     log.warn("{} failed to map node: {}", PROVIDER_ID, e.getMessage());
                 }
             }
-
-            // Limit to maxJobs BEFORE enrichment to avoid wasteful detail calls
-            if (results.size() > properties.maxJobs()) {
-                results = new ArrayList<>(results.subList(0, properties.maxJobs()));
-            }
-
-            var enriched = new ArrayList<RawJob>();
-            for (int i = 0; i < results.size(); i++) {
-                var card = results.get(i);
-                var jobId = card.metadata().get("jobId");
-                if (jobId != null && !jobId.isBlank()) {
-                    try {
-                        if (i > 0) {
-                            Thread.sleep(properties.detailFetchDelayMillis());
-                        }
-                        var detail = extractDetail(jobId);
-                        card = mergeDetailIntoRawJob(card, detail);
-                    } catch (InterruptedException e) {
-                        Thread.currentThread().interrupt();
-                        log.warn("{} enrichment interrupted for job {}", PROVIDER_ID, jobId);
-                    } catch (Exception e) {
-                        log.warn("{} failed to enrich job {}: {}", PROVIDER_ID, jobId, e.getMessage());
-                    }
-                }
-                enriched.add(card);
-            }
-
-            log.info("{}: fetched {} jobs", PROVIDER_ID, enriched.size());
-            return enriched;
+            return results;
 
         } catch (ScraperException e) {
             throw e;
