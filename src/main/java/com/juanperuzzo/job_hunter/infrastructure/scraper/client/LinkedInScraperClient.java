@@ -18,6 +18,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.stream.Collectors;
 
 public class LinkedInScraperClient implements ExtractionStrategy {
 
@@ -180,6 +181,16 @@ public class LinkedInScraperClient implements ExtractionStrategy {
                     .map(String::trim)
                     .findFirst()
                     .ifPresent(geoId -> uriBuilder.queryParam("geoId", geoId));
+        }
+        // Search facets (linkedin-search-facets spec): work-type/seniority/
+        // time-range are forwarded verbatim to the scraper service, which maps
+        // ONLY the live-verified native codes (Amendment A). Blank facets add
+        // no parameter at all (scenario 5); multi-value lists are comma-joined
+        // into one parameter value (scenario 6).
+        appendFacetParam(uriBuilder, "workType", properties.workType());
+        appendFacetParam(uriBuilder, "seniority", properties.seniority());
+        if (properties.timeRange() != null && !properties.timeRange().isBlank()) {
+            uriBuilder.queryParam("timeRange", properties.timeRange().trim());
         }
         var uri = uriBuilder.build().encode().toUri();
 
@@ -366,6 +377,24 @@ public class LinkedInScraperClient implements ExtractionStrategy {
         if (url == null || url.isBlank()) return null;
         var trimmed = url.trim();
         return trimmed.endsWith("/") ? trimmed.substring(0, trimmed.length() - 1) : trimmed;
+    }
+
+    /**
+     * Append a facet query parameter from a possibly-null/blank list of values.
+     * Values are trimmed and comma-joined into a single parameter value; when
+     * every value is blank the parameter is omitted entirely.
+     */
+    private static void appendFacetParam(UriComponentsBuilder builder, String name, List<String> values) {
+        if (values == null) {
+            return;
+        }
+        var joined = values.stream()
+                .filter(value -> value != null && !value.isBlank())
+                .map(String::trim)
+                .collect(Collectors.joining(","));
+        if (!joined.isBlank()) {
+            builder.queryParam(name, joined);
+        }
     }
 
     private String baseJobUrl() {
