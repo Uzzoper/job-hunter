@@ -927,6 +927,128 @@ List<RawJob> jobs = client.extract();
             assertTrue(client.extract().isEmpty());
         }
 
+        @Nested
+    @DisplayName("Search facet forwarding (spec scenarios 1-3, 5-6: work-type/seniority/time-range)")
+    class SearchFacets {
+
+        private LinkedInScraperClient clientWith(List<String> workType, List<String> seniority, String timeRange) {
+            return new LinkedInScraperClient(new LinkedInScraperProperties(
+                    true,
+                    "service",
+                    baseUrl,
+                    30,
+                    5,
+                    5,
+                    "https://www.linkedin.com",
+                    List.of("desenvolvedor"),
+                    "Brazil",
+                    List.of(),
+                    seniority,
+                    workType,
+                    timeRange,
+                    1,
+                    0,
+                    "https://www.linkedin.com/jobs/view/",
+                    90
+            ));
+        }
+
+        @Test
+        @DisplayName("extract should forward the work-type facet as one comma-joined parameter (scenario 6)")
+        void extract_whenWorkTypeConfigured_shouldForwardCommaJoinedValues() {
+            client = clientWith(List.of("remote", "hybrid"), List.of(), "");
+
+            stubFor(get(urlPathEqualTo("/api/jobs"))
+                    .withQueryParam("keywords", equalTo("desenvolvedor"))
+                    .withQueryParam("workType", equalTo("remote,hybrid"))
+                    .willReturn(okJson("""
+                            {
+                              "success": true,
+                              "data": []
+                            }
+                            """)));
+
+            assertTrue(client.extract().isEmpty());
+            verify(getRequestedFor(urlPathEqualTo("/api/jobs"))
+                    .withQueryParam("workType", equalTo("remote,hybrid")));
+            verify(0, getRequestedFor(urlPathEqualTo("/api/jobs"))
+                    .withQueryParam("seniority", matching(".*")));
+            verify(0, getRequestedFor(urlPathEqualTo("/api/jobs"))
+                    .withQueryParam("timeRange", matching(".*")));
+        }
+
+        @Test
+        @DisplayName("extract should forward the seniority facet as a query parameter (scenario 2)")
+        void extract_whenSeniorityConfigured_shouldForwardParameter() {
+            client = clientWith(List.of(), List.of("entry_level"), "");
+
+            stubFor(get(urlPathEqualTo("/api/jobs"))
+                    .withQueryParam("keywords", equalTo("desenvolvedor"))
+                    .withQueryParam("seniority", equalTo("entry_level"))
+                    .willReturn(okJson("""
+                            {
+                              "success": true,
+                              "data": []
+                            }
+                            """)));
+
+            assertTrue(client.extract().isEmpty());
+            verify(getRequestedFor(urlPathEqualTo("/api/jobs"))
+                    .withQueryParam("seniority", equalTo("entry_level")));
+            verify(0, getRequestedFor(urlPathEqualTo("/api/jobs"))
+                    .withQueryParam("workType", matching(".*")));
+            verify(0, getRequestedFor(urlPathEqualTo("/api/jobs"))
+                    .withQueryParam("timeRange", matching(".*")));
+        }
+
+        @Test
+        @DisplayName("extract should forward the time-range facet as a query parameter (scenario 3)")
+        void extract_whenTimeRangeConfigured_shouldForwardParameter() {
+            client = clientWith(List.of(), List.of(), "past_month");
+
+            stubFor(get(urlPathEqualTo("/api/jobs"))
+                    .withQueryParam("keywords", equalTo("desenvolvedor"))
+                    .withQueryParam("timeRange", equalTo("past_month"))
+                    .willReturn(okJson("""
+                            {
+                              "success": true,
+                              "data": []
+                            }
+                            """)));
+
+            assertTrue(client.extract().isEmpty());
+            verify(getRequestedFor(urlPathEqualTo("/api/jobs"))
+                    .withQueryParam("timeRange", equalTo("past_month")));
+            verify(0, getRequestedFor(urlPathEqualTo("/api/jobs"))
+                    .withQueryParam("workType", matching(".*")));
+            verify(0, getRequestedFor(urlPathEqualTo("/api/jobs"))
+                    .withQueryParam("seniority", matching(".*")));
+        }
+
+        @Test
+        @DisplayName("extract should add no facet parameter at all when all three are blank (scenario 5)")
+        void extract_whenFacetsBlank_shouldNotForwardAnyFacetParameter() {
+            client = clientWith(List.of(), List.of(), "");
+
+            stubFor(get(urlPathEqualTo("/api/jobs"))
+                    .withQueryParam("keywords", equalTo("desenvolvedor"))
+                    .willReturn(okJson("""
+                            {
+                              "success": true,
+                              "data": []
+                            }
+                            """)));
+
+            assertTrue(client.extract().isEmpty());
+            verify(0, getRequestedFor(urlPathEqualTo("/api/jobs"))
+                    .withQueryParam("workType", matching(".*")));
+            verify(0, getRequestedFor(urlPathEqualTo("/api/jobs"))
+                    .withQueryParam("seniority", matching(".*")));
+            verify(0, getRequestedFor(urlPathEqualTo("/api/jobs"))
+                    .withQueryParam("timeRange", matching(".*")));
+        }
+    }
+
         private static SimpleClientHttpRequestFactory requestFactoryOf(LinkedInScraperClient target, String clientField) throws Exception {
             var clientFieldRef = LinkedInScraperClient.class.getDeclaredField(clientField);
             clientFieldRef.setAccessible(true);
