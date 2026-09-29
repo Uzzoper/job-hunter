@@ -26,11 +26,35 @@ const SHOW_MORE_SELECTORS = [
   "button.jobs-search-results-list__show-more",
 ];
 
+/** Search facets forwarded from the Java caller (blank = unconfigured). */
+export interface SearchFacets {
+  workType?: string;
+  seniority?: string;
+  timeRange?: string;
+}
+
+/**
+ * LinkedIn's native time-range codes — VERIFIED LIVE on the guest search page
+ * (spec linkedin-search-facets.md, Amendment A, 2026-09-28): f_TPR=r2592000
+ * collapses the result set to postings dated within a month, r604800 within a
+ * week, r86400 within a day. f_WT (work type) and f_E (seniority) returned
+ * byte-identical result sets in every tested form (f_WT=2 / f_WT=2&f_WT=3 /
+ * f_E=1 / f_E=2, with refresh=true, sortBy, both geoId forms, second keyword)
+ * — the guest SSR page does NOT honor them — so those facets ship as
+ * pass-through (forwarded but unmapped) with a log.warn, never as a guess.
+ */
+const VERIFIED_TIME_RANGE_CODES: Record<string, string> = {
+  past_day: "r86400",
+  past_week: "r604800",
+  past_month: "r2592000",
+};
+
 /** Build the LinkedIn search URL, preserving repeated geoId parameters. */
 export function buildSearchUrl(
   keywords: string,
   location?: string,
   geoIds: string[] = [],
+  facets?: SearchFacets,
 ): string {
   const params = new URLSearchParams();
   params.set("keywords", keywords);
@@ -42,6 +66,26 @@ export function buildSearchUrl(
     if (trimmed.length > 0) {
       params.append("geoId", trimmed);
     }
+  }
+  if (facets?.timeRange) {
+    const nativeCode = VERIFIED_TIME_RANGE_CODES[facets.timeRange];
+    if (nativeCode) {
+      params.append("f_TPR", nativeCode);
+    } else {
+      console.warn(
+        `[search] timeRange="${facets.timeRange}" is not a verified native code; no f_TPR param added`
+      );
+    }
+  }
+  if (facets?.workType) {
+    console.warn(
+      `[search] workType="${facets.workType}" forwarded but NOT applied: no LinkedIn f_WT code verified on the guest SSR page (Amendment A 2026-09-28)`
+    );
+  }
+  if (facets?.seniority) {
+    console.warn(
+      `[search] seniority="${facets.seniority}" forwarded but NOT applied: no LinkedIn f_E code verified on the guest SSR page (Amendment A 2026-09-28)`
+    );
   }
   return `https://www.linkedin.com/jobs/search?${params.toString()}`;
 }
@@ -63,14 +107,17 @@ export class SearchScraper {
    * @param keywords - Search keywords (e.g., "java junior")
    * @param location - Optional location (e.g., "Brazil")
    * @param geoIds - Optional LinkedIn geographic IDs forwarded as repeated query parameters
+   * @param facets - Optional search facets (work-type/seniority/time-range) forwarded
+   *                 to the LinkedIn URL; only live-verified native codes are applied
    * @returns Array of JobCard objects
    */
   async search(
     keywords: string,
     location?: string,
     geoIds: string[] = [],
+    facets?: SearchFacets,
   ): Promise<JobCard[]> {
-    const searchUrl = buildSearchUrl(keywords, location, geoIds);
+    const searchUrl = buildSearchUrl(keywords, location, geoIds, facets);
     const context = await this.browserManager.newContext();
     const page = await context.newPage();
 
@@ -87,7 +134,7 @@ export class SearchScraper {
       await this.randomDelay();
 
       this.logger.log(
-        `[search] keywords="${keywords}", location="${location ?? ""}", geoIds="${geoIds.join(",")}", count=${jobCards.length}`
+        `[search] keywords="${keywords}", location="${location ?? ""}", geoIds="${geoIds.join(",")}", facets="${JSON.stringify(facets ?? {})}", count=${jobCards.length}`
       );
 
       return jobCards;
