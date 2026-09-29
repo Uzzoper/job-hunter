@@ -104,7 +104,13 @@ scraper:
     # empty search page, and the other IDs were not Brazil (Peru/UK/invalid).
     geo-ids: "106057199"
     seniority: "entry_level"
-    work-type: "remote,hybrid,on-site"
+    # Amendment B (linkedin-search-facets spec): forwarding all three work models
+    # was a no-op filter; narrowed to remote+hybrid (the elimination gate already
+    # rejects onsite downstream). Facets are forwarded to the scraper service,
+    # which maps only live-verified native codes (Amendment A — f_TPR time-range
+    # is verified; f_WT/f_E are NOT honored by the guest SSR page and pass through
+    # with a log.warn until a logged-in session verifies them).
+    work-type: "remote,hybrid"
     time-range: "past_week"
     max-jobs: 60
     timeout-seconds: 30          # detail/enrichment read timeout (deliberate pacing, unchanged)
