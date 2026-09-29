@@ -16,7 +16,9 @@ import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.stream.Collectors;
 
 public class LinkedInScraperClient implements ExtractionStrategy {
 
@@ -28,6 +30,7 @@ public class LinkedInScraperClient implements ExtractionStrategy {
     private static final String DEFAULT_BASE_JOB_URL = "https://www.linkedin.com/jobs/view/";
 
     private final RestClient restClient;
+    private final RestClient searchRestClient;
     private final ObjectMapper objectMapper;
     private final LinkedInScraperProperties properties;
 
@@ -35,6 +38,8 @@ public class LinkedInScraperClient implements ExtractionStrategy {
         this.properties = properties;
         this.objectMapper = new ObjectMapper();
 
+        // Detail/enrichment calls keep the shared 30s read timeout: each job page
+        // is a single lightweight call, paced by detail-fetch-delay-millis.
         var requestFactory = new org.springframework.http.client.SimpleClientHttpRequestFactory();
         requestFactory.setConnectTimeout(properties.connectTimeoutSeconds() * 1000);
         requestFactory.setReadTimeout(properties.timeoutSeconds() * 1000);
@@ -42,6 +47,22 @@ public class LinkedInScraperClient implements ExtractionStrategy {
         this.restClient = RestClient.builder()
                 .baseUrl(properties.serviceUrl())
                 .requestFactory(requestFactory)
+                .defaultHeader("Accept", "application/json")
+                .build();
+
+        // Search calls get their own 90s read timeout: heavy /api/jobs searches
+        // paginate through ~60-90 cards (guest visibility, up to 6 rounds) and
+        // legitimately take longer than 30s. Production validation proved the
+        // best query ("desenvolvedor junior", 90 cards) died on the shared 30s
+        // read timeout while lighter searches survived — the timeout MUST be
+        // search-specific, not raised globally, or enrichment slows to match.
+        var searchRequestFactory = new org.springframework.http.client.SimpleClientHttpRequestFactory();
+        searchRequestFactory.setConnectTimeout(properties.connectTimeoutSeconds() * 1000);
+        searchRequestFactory.setReadTimeout(properties.searchTimeoutSeconds() * 1000);
+
+        this.searchRestClient = RestClient.builder()
+                .baseUrl(properties.serviceUrl())
+                .requestFactory(searchRequestFactory)
                 .defaultHeader("Accept", "application/json")
                 .build();
     }
@@ -53,11 +74,103 @@ public class LinkedInScraperClient implements ExtractionStrategy {
 
     @Override
     public List<RawJob> extract() {
-        var keywords = properties.keywords().isEmpty() ? "desenvolvedor" : properties.keywords().get(0);
+        var keywords = properties.keywords().isEmpty() ? List.of("desenvolvedor") : properties.keywords();
         var location = properties.locations().isBlank() ? "Brazil" : properties.locations().split(",")[0].trim();
 
+        // Per-keyword query loop (production defects fixed): bare senior-heavy
+        // terms like "desenvolvedor" are rank-biased by LinkedIn, so every
+        // configured junior compound ("desenvolvedor junior", "estágio
+        // desenvolvedor", ...) is its own search request and results are merged
+        // by unique URL (mirroring the GupyProvider keyword loop).
+        // P1-1: one transient keyword failure (429/5xx/timeout) must NOT discard
+        // already-fetched keywords — catch-and-continue per keyword mirrors the
+        // ATS per-board resilience of GreenhouseProvider: a failed keyword is
+        // logged with a warning and skipped, previously fetched results are kept.
+        // A fully failed run yields an empty list, like a search with no matches.
+        // P1-2: the outer loop stops as soon as maxJobs is reached so later
+        // keywords are not searched needlessly. This keeps the keyword fan-out
+        // inside the 180s adapter timeout budget without bumping the timeout
+        // (deliberately unchanged, out of scope).
+        // P1-4 (production validation): with P1-2's cap-stop + max-jobs=60 the
+        // FIRST keyword alone filled the cap and later keywords never
+        // contributed. Each keyword now gets a fair share of maxJobs:
+        //     quota = ceil(maxJobs / keywords.size())
+        // and keeps at most quota jobs, merged in a single ordered pass (yaml
+        // order is junior-first, P1-3). A fat first keyword can no longer starve
+        // later ones, and the cap-stop break still bounds the total by maxJobs.
+        var effectiveKeywords = keywords.stream()
+                .map(String::trim)
+                .filter(keyword -> !keyword.isBlank())
+                .toList();
+        if (effectiveKeywords.isEmpty()) {
+            log.warn("{}: no configured keywords, returning no jobs", PROVIDER_ID);
+            return List.of();
+        }
+        var perKeywordQuota = (int) Math.ceil((double) properties.maxJobs() / effectiveKeywords.size());
+        var uniqueJobs = new LinkedHashMap<String, RawJob>();
+        for (var keyword : effectiveKeywords) {
+            try {
+                var batch = fetchJobsForKeyword(keyword, location);
+                var addedForKeyword = 0;
+                for (var job : batch) {
+                    if (addedForKeyword >= perKeywordQuota) {
+                        break;
+                    }
+                    if (uniqueJobs.size() >= properties.maxJobs()) {
+                        break;
+                    }
+                    if (uniqueJobs.putIfAbsent(job.url(), job) == null) {
+                        addedForKeyword++;
+                    }
+                }
+                log.debug("{}: fetched {} jobs for keyword '{}'", PROVIDER_ID, batch.size(), keyword);
+            } catch (Exception e) {
+                log.warn("{}: skipping keyword '{}' after failure: {}", PROVIDER_ID, keyword, e.getMessage());
+            }
+            if (uniqueJobs.size() >= properties.maxJobs()) {
+                break;
+            }
+        }
+
+        var results = new ArrayList<>(uniqueJobs.values());
+        // Limit to maxJobs BEFORE enrichment to avoid wasteful detail calls. The
+        // default maxJobs=60 matches the ~60-card guest-visibility ceiling LinkedIn
+        // shows before a login wall (see linkedin-scraper search.ts pagination
+        // note): this is a deliberate bound, kept until a logged-in session path
+        // is implemented, not a knob to raise blindly.
+        if (results.size() > properties.maxJobs()) {
+            results = new ArrayList<>(results.subList(0, properties.maxJobs()));
+        }
+
+        var enriched = new ArrayList<RawJob>();
+        for (int i = 0; i < results.size(); i++) {
+            var card = results.get(i);
+            var jobId = card.metadata().get("jobId");
+            if (jobId != null && !jobId.isBlank()) {
+                try {
+                    if (i > 0) {
+                        Thread.sleep(properties.detailFetchDelayMillis());
+                    }
+                    var detail = extractDetail(jobId);
+                    card = mergeDetailIntoRawJob(card, detail);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    log.warn("{} enrichment interrupted for job {}", PROVIDER_ID, jobId);
+                } catch (Exception e) {
+                    log.warn("{} failed to enrich job {}: {}", PROVIDER_ID, jobId, e.getMessage());
+                }
+            }
+            enriched.add(card);
+        }
+
+        log.info("{}: fetched {} jobs", PROVIDER_ID, enriched.size());
+        return enriched;
+    }
+
+    /** Search the scraper service for a single keyword and map its JSON response. */
+    private List<RawJob> fetchJobsForKeyword(String keyword, String location) {
         var uriBuilder = UriComponentsBuilder.fromPath(SEARCH_PATH)
-                .queryParam("keywords", keywords)
+                .queryParam("keywords", keyword)
                 .queryParam("location", location);
         // LinkedIn honors a single geoId per search; repeated values return an
         // empty result page (verified live). First configured ID wins, mirroring
@@ -69,10 +182,20 @@ public class LinkedInScraperClient implements ExtractionStrategy {
                     .findFirst()
                     .ifPresent(geoId -> uriBuilder.queryParam("geoId", geoId));
         }
+        // Search facets (linkedin-search-facets spec): work-type/seniority/
+        // time-range are forwarded verbatim to the scraper service, which maps
+        // ONLY the live-verified native codes (Amendment A). Blank facets add
+        // no parameter at all (scenario 5); multi-value lists are comma-joined
+        // into one parameter value (scenario 6).
+        appendFacetParam(uriBuilder, "workType", properties.workType());
+        appendFacetParam(uriBuilder, "seniority", properties.seniority());
+        if (properties.timeRange() != null && !properties.timeRange().isBlank()) {
+            uriBuilder.queryParam("timeRange", properties.timeRange().trim());
+        }
         var uri = uriBuilder.build().encode().toUri();
 
         try {
-            var response = restClient.get()
+            var response = searchRestClient.get()
                     .uri(uri)
                     .retrieve()
                     .onStatus(HttpStatusCode::isError, (req, res) -> {
@@ -113,35 +236,7 @@ public class LinkedInScraperClient implements ExtractionStrategy {
                     log.warn("{} failed to map node: {}", PROVIDER_ID, e.getMessage());
                 }
             }
-
-            // Limit to maxJobs BEFORE enrichment to avoid wasteful detail calls
-            if (results.size() > properties.maxJobs()) {
-                results = new ArrayList<>(results.subList(0, properties.maxJobs()));
-            }
-
-            var enriched = new ArrayList<RawJob>();
-            for (int i = 0; i < results.size(); i++) {
-                var card = results.get(i);
-                var jobId = card.metadata().get("jobId");
-                if (jobId != null && !jobId.isBlank()) {
-                    try {
-                        if (i > 0) {
-                            Thread.sleep(properties.detailFetchDelayMillis());
-                        }
-                        var detail = extractDetail(jobId);
-                        card = mergeDetailIntoRawJob(card, detail);
-                    } catch (InterruptedException e) {
-                        Thread.currentThread().interrupt();
-                        log.warn("{} enrichment interrupted for job {}", PROVIDER_ID, jobId);
-                    } catch (Exception e) {
-                        log.warn("{} failed to enrich job {}: {}", PROVIDER_ID, jobId, e.getMessage());
-                    }
-                }
-                enriched.add(card);
-            }
-
-            log.info("{}: fetched {} jobs", PROVIDER_ID, enriched.size());
-            return enriched;
+            return results;
 
         } catch (ScraperException e) {
             throw e;
@@ -282,6 +377,24 @@ public class LinkedInScraperClient implements ExtractionStrategy {
         if (url == null || url.isBlank()) return null;
         var trimmed = url.trim();
         return trimmed.endsWith("/") ? trimmed.substring(0, trimmed.length() - 1) : trimmed;
+    }
+
+    /**
+     * Append a facet query parameter from a possibly-null/blank list of values.
+     * Values are trimmed and comma-joined into a single parameter value; when
+     * every value is blank the parameter is omitted entirely.
+     */
+    private static void appendFacetParam(UriComponentsBuilder builder, String name, List<String> values) {
+        if (values == null) {
+            return;
+        }
+        var joined = values.stream()
+                .filter(value -> value != null && !value.isBlank())
+                .map(String::trim)
+                .collect(Collectors.joining(","));
+        if (!joined.isBlank()) {
+            builder.queryParam(name, joined);
+        }
     }
 
     private String baseJobUrl() {

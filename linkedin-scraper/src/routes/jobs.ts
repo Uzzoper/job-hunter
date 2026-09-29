@@ -7,7 +7,7 @@
 
 import { Router, type Request, type Response } from "express";
 import type { ApiResponse, JobCard, JobDetail } from "../types.js";
-import { SearchScraper } from "../scrapers/search.js";
+import { SearchScraper, type SearchFacets } from "../scrapers/search.js";
 import { DetailScraper } from "../scrapers/detail.js";
 
 // ---------------------------------------------------------------------------
@@ -102,7 +102,8 @@ export function createJobsRouter(
   // GET /api/jobs?keywords=...&location=...&geoId=...
   // -----------------------------------------------------------------------
   router.get("/", async (req: Request, res: Response) => {
-    const { keywords, location, geoId } = req.query;
+    const { keywords, location, geoId, workType, seniority, timeRange } =
+      req.query;
 
     // Validate required keywords param
     if (
@@ -125,7 +126,24 @@ export function createJobsRouter(
           : undefined;
       const geoIds = queryStringList(geoId);
 
-      const jobs = await searchScraper.search(keywords.trim(), locationStr, geoIds);
+      // Facets are forwarded verbatim (blank values omitted); the SearchScraper
+      // maps only the live-verified native codes (spec linkedin-search-facets.md).
+      const facets: SearchFacets = {};
+      if (typeof workType === "string" && workType.trim().length > 0) {
+        facets.workType = workType.trim();
+      }
+      if (typeof seniority === "string" && seniority.trim().length > 0) {
+        facets.seniority = seniority.trim();
+      }
+      if (typeof timeRange === "string" && timeRange.trim().length > 0) {
+        facets.timeRange = timeRange.trim();
+      }
+
+      const keywordsStr = keywords.trim();
+      const jobs =
+        Object.keys(facets).length > 0
+          ? await searchScraper.search(keywordsStr, locationStr, geoIds, facets)
+          : await searchScraper.search(keywordsStr, locationStr, geoIds);
 
       const body: ApiResponse<JobCard[]> = { success: true, data: jobs };
       res.json(body);
