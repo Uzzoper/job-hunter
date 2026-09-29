@@ -70,8 +70,10 @@ Consequence: only the time-range codes are hardcoded. `work-type` and
 
 `work-type: "remote,hybrid,on-site"` Fermata everything: forwarding all three
 values is a no-op filter. Change the committed default to `"remote,hybrid"`
-(the eliminatory gate already rejects onsite downstream, so nothing eligible
-is lost). `seniority: "entry_level"` and `time-range` stay as configured.
+to express intent (remote-first search); onsite jobs are already down-ranked
+downstream by the scorer's work-model modifiers, and `f_WT` is currently
+unmapped anyway, so this default is preparatory until a logged-in session
+honors it. `seniority: "entry_level"` and `time-range` stay as configured.
 
 ---
 
