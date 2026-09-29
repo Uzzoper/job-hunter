@@ -2,6 +2,7 @@ import { describe, it, expect, jest, beforeEach } from "@jest/globals";
 import express from "express";
 import request from "supertest";
 import { createJobsRouter } from "../../src/routes/jobs.js";
+import type { SearchFacets } from "../../src/scrapers/search.js";
 import type { JobCard, JobDetail } from "../../src/types.js";
 
 // ---------------------------------------------------------------------------
@@ -13,6 +14,7 @@ const mockSearchScraper = {
     keywords: string,
     location?: string,
     geoIds?: string[],
+    facets?: SearchFacets,
   ) => Promise<JobCard[]>>(),
 };
 
@@ -219,6 +221,66 @@ describe("GET /api/jobs", () => {
         message: "An unexpected error occurred",
       },
     });
+  });
+
+  // -----------------------------------------------------------------------
+  // Facet forwarding (spec scenarios 1-3, 6)
+  // -----------------------------------------------------------------------
+
+  it("should forward workType, seniority and timeRange facets when provided", async () => {
+    mockSearchScraper.search.mockResolvedValue([]);
+
+    await request(createApp()).get(
+      "/api/jobs?keywords=java&workType=remote&seniority=entry_level&timeRange=past_month",
+    );
+
+    expect(mockSearchScraper.search).toHaveBeenCalledWith(
+      "java",
+      undefined,
+      [],
+      { workType: "remote", seniority: "entry_level", timeRange: "past_month" },
+    );
+  });
+
+  it("should pass comma-joined work-type values as a single facet value", async () => {
+    mockSearchScraper.search.mockResolvedValue([]);
+
+    await request(createApp()).get(
+      "/api/jobs?keywords=java&workType=remote%2Chybrid",
+    );
+
+    expect(mockSearchScraper.search).toHaveBeenCalledWith(
+      "java",
+      undefined,
+      [],
+      { workType: "remote,hybrid" },
+    );
+  });
+
+  it("should omit the facets argument entirely when no facet params are present", async () => {
+    mockSearchScraper.search.mockResolvedValue([]);
+
+    await request(createApp()).get("/api/jobs?keywords=java");
+
+    expect(mockSearchScraper.search).toHaveBeenCalledWith(
+      "java",
+      undefined,
+      [],
+    );
+  });
+
+  it("should not forward blank facet values as configured facets", async () => {
+    mockSearchScraper.search.mockResolvedValue([]);
+
+    await request(createApp()).get(
+      "/api/jobs?keywords=java&workType=&seniority=%20&timeRange=",
+    );
+
+    expect(mockSearchScraper.search).toHaveBeenCalledWith(
+      "java",
+      undefined,
+      [],
+    );
   });
 });
 

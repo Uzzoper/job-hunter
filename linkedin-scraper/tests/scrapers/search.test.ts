@@ -25,6 +25,67 @@ describe("buildSearchUrl", () => {
 });
 
 // ---------------------------------------------------------------------------
+// buildSearchUrl facets (spec scenarios 3-6, Amendment A verified codes)
+// ---------------------------------------------------------------------------
+
+describe("buildSearchUrl facets", () => {
+  it("should append the verified native time-range code for past-month", () => {
+    const url = buildSearchUrl("dev junior", "Brazil", [], {
+      timeRange: "past_month",
+    });
+
+    expect(url).toContain("f_TPR=r2592000");
+  });
+
+  it("should append the verified native time-range code for past-week", () => {
+    const url = buildSearchUrl("dev junior", "Brazil", [], {
+      timeRange: "past_week",
+    });
+
+    expect(url).toContain("f_TPR=r604800");
+  });
+
+  it("should append the verified native time-range code for past-day", () => {
+    const url = buildSearchUrl("dev junior", "Brazil", [], {
+      timeRange: "past_day",
+    });
+
+    expect(url).toContain("f_TPR=r86400");
+  });
+
+  it("should never append f_WT/f_E params for unverified work-type and seniority facets", () => {
+    const url = buildSearchUrl("dev junior", "Brazil", [], {
+      workType: "remote,hybrid",
+      seniority: "entry_level",
+      timeRange: "past_month",
+    });
+
+    expect(url).not.toContain("f_WT");
+    expect(url).not.toContain("f_E");
+    expect(url).toContain("f_TPR=r2592000");
+  });
+
+  it("should keep the URL unchanged when facets are unconfigured (scenario 5)", () => {
+    const withEmptyFacets = buildSearchUrl("dev junior", "Brazil", [
+      "106057199",
+    ], {});
+    const withoutFacets = buildSearchUrl("dev junior", "Brazil", [
+      "106057199",
+    ]);
+
+    expect(withEmptyFacets).toBe(withoutFacets);
+  });
+
+  it("should not append an f_TPR param for an unknown time-range value", () => {
+    const url = buildSearchUrl("dev junior", "Brazil", [], {
+      timeRange: "past_year",
+    });
+
+    expect(url).not.toContain("f_TPR");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Pagination helpers
 // ---------------------------------------------------------------------------
 
