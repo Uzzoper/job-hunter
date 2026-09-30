@@ -49,6 +49,15 @@ fonts/gstatic, CDNs), or non-http(s) schemes. Normalize with
 Per-host try/catch (404/timeout/malformed → skip host, `log.warn`); existing
 retry + rate limiter reused; a host failure never fails the provider fetch.
 
+> **Link-quality v2 (production 2026-09-30):** dot-presence is NOT a validity
+> test — `Node.js`/`React.js`/`Angular.js`/`Vue.js`/`Next.js`/`watson.data`
+> all contain dots and polluted 53 rows. Reject hosts in a tech-token denylist
+> (`node.js`, `react.js`, `angular.js`, `vue.js`, `next.js`, `watson.data`,
+> …) plus any host whose TLD is not alphabetic of length ≥ 2. Strip tracking
+> params `gclid`, `gad`, `fbclid`, `msclkid` and `utm_*` before storing.
+> Generic handler exceptions must be logged with stack trace (a transient
+> post-boot 500 went undiagnosed for lack of it).
+
 ## 4. Tests (TDD, WireMock, no Spring context in unit tests)
 
 Detail fixture with company link → metadata set on all same-host jobs;
