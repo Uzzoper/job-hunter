@@ -71,8 +71,36 @@ Naming `methodName_scenario_expectedResult` + `@DisplayName`.
       — `CompanySiteEnricher`/`JobNormalizer`/`UrlNormalizer` untouched; full
       `./mvnw test` suite green.
 
-## 6. Out of scope
+## 6. Out of scope (fetch path)
 
 Crawler/sender changes, other providers, cutoff/prompt/scorer changes,
 email sending. (#75 extractor and this spec compose: domains feed the
 enricher, descriptions feed the extractor.)
+
+## 7. Amendment — backfill for legacy rows (approved 2026-09-30)
+
+Production measurement proved the fetch path only attaches domains to NEW
+rows (dedupe skips stored URLs): +4 domains on 18 new rows while 15/18 hosts
+would resolve. The backlog (thousands of stored Gupy rows with null website)
+needs a revisit pass:
+
+- New outbound port (e.g. `CompanyDomainResolverPort`): host-grouping +
+  link policy extracted from `GupyProvider` into a shared collaborator —
+  fetch path and backfill use the same code, no duplication.
+- New `BackfillCompanyWebsitesUseCase` + `POST
+  /api/jobs/backfill-websites?dryRun` (auth required like siblings; `dryRun`
+  defaults `true`). Scans Gupy rows with null `companyWebsite`, resolves,
+  returns `{scanned, filled, stillNull}`; writes NOTHING on dry-run;
+  persists only null→found transitions otherwise (never overwrites,
+  idempotent, rerunnable).
+- Chunked: `maxHosts` param (default 50) per call; repeat until `stillNull`
+  stops shrinking. No adapter-timeout involvement (endpoint-scoped, not
+  fetch-scoped).
+- Link-quality fixes bundled: reject dotless hosts (`Node.js` case); strip
+  tracking query params (`gclid`/`utm`) before storing.
+- Tests: unit with mocked ports (dry-run writes nothing; apply fills only
+  nulls; rerun stable); WireMock resolver tests for the new link shapes.
+  Plain JUnit 5 + Mockito, no Spring, no network.
+- Acceptance: dry-run counts recorded here (before ___, after ___); apply
+  fills only nulls; full suite green. New deployments never need this
+  (fetch path covers from day one); backfill is a one-time migration remedy.
