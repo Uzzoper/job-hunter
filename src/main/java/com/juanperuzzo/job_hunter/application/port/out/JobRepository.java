@@ -28,4 +28,15 @@ public interface JobRepository {
      * @return candidate jobs needing enrichment
      */
     List<Job> findJobsNeedingEnrichment(int limit);
+
+    /**
+     * Find jobs from a source that still have no company website, ordered by
+     * {@code id} ascending. Backfill candidates for {@code BackfillCompanyWebsitesUseCase}
+     * (gupy-detail-domains spec §7): only null-website rows are returned, so an apply
+     * can never overwrite an existing website.
+     *
+     * @param source source identifier (e.g. {@code gupy})
+     * @return candidate jobs with a null company website
+     */
+    List<Job> findBySourceAndCompanyWebsiteIsNull(String source);
 }
