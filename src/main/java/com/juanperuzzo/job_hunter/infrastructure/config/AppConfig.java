@@ -7,6 +7,7 @@ import com.juanperuzzo.job_hunter.application.port.out.EmailDraftRepository;
 import com.juanperuzzo.job_hunter.application.port.out.EmailSenderPort;
 import com.juanperuzzo.job_hunter.application.port.out.JobRepository;
 import com.juanperuzzo.job_hunter.application.port.out.CompanySiteEnrichmentPort;
+import com.juanperuzzo.job_hunter.application.port.out.CompanyDomainResolverPort;
 import com.juanperuzzo.job_hunter.application.port.out.NormalizerPort;
 import com.juanperuzzo.job_hunter.application.port.out.PdfRendererPort;
 import com.juanperuzzo.job_hunter.application.port.out.ScraperPort;
@@ -80,6 +81,7 @@ import com.juanperuzzo.job_hunter.infrastructure.scraper.provider.GreenhouseProv
 import com.juanperuzzo.job_hunter.infrastructure.scraper.provider.AshbyProvider;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.provider.LeverProvider;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.provider.GithubJobsProvider;
+import com.juanperuzzo.job_hunter.infrastructure.scraper.resolver.HttpCompanyDomainResolver;
 
 @Configuration
 @EnableConfigurationProperties(LinkedInScraperProperties.class)
@@ -257,10 +259,23 @@ public class AppConfig {
             @Value("${scraper.gupy.limit}") int limit,
             @Value("${scraper.gupy.max-detail-domains:100}") int maxDetailDomains,
             ExponentialBackoffRetry exponentialBackoffRetry,
-            RestClient scraperRestClient,
-            RateLimiter rateLimiter) {
+            CompanyDomainResolverPort companyDomainResolverPort) {
         return new GupyProvider(baseUrl, timeoutSeconds, keywords, limit, exponentialBackoffRetry,
-                scraperRestClient, rateLimiter, maxDetailDomains);
+                companyDomainResolverPort, maxDetailDomains);
+    }
+
+    /**
+     * Shared company-domain resolver (gupy-detail-domains spec §7): host-grouping +
+     * link policy used by both the Gupy fetch path and the company-website backfill.
+     * Reuses the shared scraper {@link RestClient}, retry and provider-wide
+     * {@link RateLimiter} (detail fetches stay throttled with the rest of scraping).
+     */
+    @Bean
+    public CompanyDomainResolverPort companyDomainResolverPort(
+            RestClient scraperRestClient,
+            ExponentialBackoffRetry exponentialBackoffRetry,
+            RateLimiter rateLimiter) {
+        return new HttpCompanyDomainResolver(scraperRestClient, exponentialBackoffRetry, rateLimiter);
     }
 
     @Bean

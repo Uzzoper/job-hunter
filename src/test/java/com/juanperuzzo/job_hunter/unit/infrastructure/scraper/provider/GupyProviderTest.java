@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.juanperuzzo.job_hunter.application.port.out.RawJob;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.provider.GupyProvider;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.ratelimit.TokenBucketRateLimiter;
+import com.juanperuzzo.job_hunter.infrastructure.scraper.resolver.HttpCompanyDomainResolver;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.retry.ExponentialBackoffRetry;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.strategy.RestApiStrategy;
 import org.junit.jupiter.api.BeforeEach;
@@ -353,8 +354,9 @@ class GupyProviderTest {
         private GupyProvider detailProvider(int maxDetailDomains) {
             var detailRestClient = RestClient.builder().baseUrl(baseUrl).build();
             var detailRateLimiter = new TokenBucketRateLimiter(100, 10, java.util.Map.of());
+            var resolver = new HttpCompanyDomainResolver(detailRestClient, retry, detailRateLimiter);
             return new GupyProvider("gupy", apiStrategy, retry, List.of("desenvolvedor"), 20,
-                    detailRestClient, detailRateLimiter, maxDetailDomains);
+                    resolver, maxDetailDomains);
         }
 
         @Test
