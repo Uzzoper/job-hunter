@@ -47,6 +47,24 @@ public class HttpCompanyDomainResolver implements CompanyDomainResolverPort {
             "googleapis.com", "gstatic.com", "cloudflare.com", "cloudfront.net",
             "fastly.net", "akamaihd.net", "jsdelivr.net", "unpkg.com");
 
+    /**
+     * Tech-token hosts polluted production rows in 2026-09-30: detail pages link
+     * to framework/tool documentation ({@code Node.js}, {@code React.js},
+     * {@code watson.data} — 53 rows), and every one of them contains dots, so the
+     * dot-presence test alone cannot filter them. Matched on label boundaries
+     * (host equals the token or is a subdomain of it), never as a bare suffix, so
+     * lookalikes such as {@code myvue.js} or {@code next.com.br} survive.
+     * Extend as new tokens appear in production data.
+     */
+    private static final List<String> TECH_TOKEN_HOSTS = List.of(
+            "node.js", "react.js", "angular.js", "vue.js", "next.js", "nuxt.js",
+            "svelte.js", "ember.js", "backbone.js", "jquery.js", "axios.js",
+            "lodash.js", "redux.js", "webpack.js", "gulp.js", "grunt.js",
+            "babel.js", "typescript.js", "watson.data");
+
+    /** Minimum length of an acceptable TLD ({@code .c} is never a company site). */
+    private static final int MIN_TLD_LENGTH = 2;
+
     private final RestClient detailRestClient;
     private final ExponentialBackoffRetry retry;
     private final RateLimiter rateLimiter;
@@ -123,13 +141,18 @@ public class HttpCompanyDomainResolver implements CompanyDomainResolverPort {
     /**
      * First eligible company link on a detail page (gupy-detail-domains spec §3+
      * §7 link-quality fixes). Collects {@code href="http(s)://..."} anchors in
-     * document order and keeps the first whose host is not the portal host
-     * itself, any job-portal/social/tracker/asset host, or a dotless host
-     * (e.g. the {@code Node.js} case). Tracking query params ({@code gclid}/
-     * {@code utm_*}) are stripped before the trailing-slash normalization.
-     * Returns the full link URL — the stored {@code companyWebsite} stays an
-     * absolute URL so {@code JobNormalizer} and {@code CompanySiteEnricher}
-     * consume it unchanged — or null when no eligible link exists.
+     * document order and keeps the first eligible one.
+     * <p>
+     * Eligibility is decided by the {@code host}: it must carry a dot, end in an
+     * alphabetic TLD of length {@value #MIN_TLD_LENGTH}+, and not be a tech-token
+     * host ({@value #TECH_TOKEN_HOSTS} — the {@code Node.js}/{@code React.js} case
+     * where dot-presence is not a validity signal). The host must additionally not
+     * be the portal host itself nor any job-portal/social/tracker/asset host.
+     * Tracking query params ({@code gclid}/{@code utm_*}) are stripped before the
+     * trailing-slash normalization. Returns the full link URL — the stored
+     * {@code companyWebsite} stays an absolute URL so {@code JobNormalizer} and
+     * {@code CompanySiteEnricher} consume it unchanged — or null when no eligible
+     * link exists.
      */
     private static String extractCompanyWebsite(String html, String fetchedHost) {
         if (html == null || html.isBlank()) {
@@ -142,12 +165,42 @@ public class HttpCompanyDomainResolver implements CompanyDomainResolverPort {
                 continue;
             }
             var host = UrlNormalizer.host(href);
-            if (host == null || !host.contains(".") || isExcludedCompanyLinkHost(host, fetchedHost)) {
+            if (host == null || !isEligibleCompanyHost(host) || isExcludedCompanyLinkHost(host, fetchedHost)) {
                 continue;
             }
             return UrlNormalizer.noTrailingSlash(stripTrackingParams(href));
         }
         return null;
+    }
+
+    /**
+     * Host validity for a company link (gupy-detail-domains spec §3, link-quality
+     * v2): a dot, a purely alphabetic TLD of length {@value #MIN_TLD_LENGTH}+, and
+     * no tech-token host. Fails closed — a host that fails any check is skipped,
+     * and the next eligible link on the page is considered instead.
+     *
+     * @param host lowercase host as returned by {@link UrlNormalizer#host(String)}
+     */
+    private static boolean isEligibleCompanyHost(String host) {
+        var lastDot = host.lastIndexOf('.');
+        if (lastDot <= 0) {
+            return false;
+        }
+        var tld = host.substring(lastDot + 1);
+        if (tld.length() < MIN_TLD_LENGTH || !isAlphabetic(tld)) {
+            return false;
+        }
+        return TECH_TOKEN_HOSTS.stream().noneMatch(token -> host.equals(token) || host.endsWith("." + token));
+    }
+
+    private static boolean isAlphabetic(String value) {
+        for (int i = 0; i < value.length(); i++) {
+            var c = value.charAt(i);
+            if (c < 'a' || c > 'z') {
+                return false;
+            }
+        }
+        return !value.isEmpty();
     }
 
     /**
