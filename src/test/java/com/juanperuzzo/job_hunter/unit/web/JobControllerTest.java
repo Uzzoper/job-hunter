@@ -3,6 +3,7 @@ package com.juanperuzzo.job_hunter.unit.web;
 import com.juanperuzzo.job_hunter.application.port.in.AnalyzeJobUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.ApproveDraftUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.BackfillContactEmailsUseCase;
+import com.juanperuzzo.job_hunter.application.port.in.BackfillCompanyWebsitesUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.CompanyEnrichmentUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.EnrichmentResult;
 import com.juanperuzzo.job_hunter.application.port.in.FetchJobsUseCase;
@@ -112,6 +113,9 @@ class JobControllerTest {
 
     @MockitoBean
     private BackfillContactEmailsUseCase backfillContactEmailsUseCase;
+
+    @MockitoBean
+    private BackfillCompanyWebsitesUseCase backfillCompanyWebsitesUseCase;
 
     @MockitoBean
     private TokenProvider tokenProvider;
@@ -618,6 +622,42 @@ class JobControllerTest {
                 .andExpect(jsonPath("$.stillNull").value(0));
 
         verify(backfillContactEmailsUseCase).run(false);
+    }
+
+    @Test
+    @DisplayName("backfillWebsites should default dryRun to true and maxHosts to 50")
+    void backfillWebsites_whenDefaults_shouldRunDryRunWithMaxHosts50() throws Exception {
+        authenticateAs(1L);
+
+        var result = new BackfillCompanyWebsitesUseCase.Result(10, 6, 4);
+        when(backfillCompanyWebsitesUseCase.run(true, 50)).thenReturn(result);
+
+        mockMvc.perform(post("/api/jobs/backfill-websites"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.scanned").value(10))
+                .andExpect(jsonPath("$.filled").value(6))
+                .andExpect(jsonPath("$.stillNull").value(4));
+
+        verify(backfillCompanyWebsitesUseCase).run(true, 50);
+    }
+
+    @Test
+    @DisplayName("backfillWebsites should apply the fills with a custom maxHosts when requested")
+    void backfillWebsites_whenApplyAndCustomMaxHosts_shouldForwardParams() throws Exception {
+        authenticateAs(1L);
+
+        var result = new BackfillCompanyWebsitesUseCase.Result(2, 2, 0);
+        when(backfillCompanyWebsitesUseCase.run(false, 10)).thenReturn(result);
+
+        mockMvc.perform(post("/api/jobs/backfill-websites")
+                        .param("dryRun", "false")
+                        .param("maxHosts", "10"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.scanned").value(2))
+                .andExpect(jsonPath("$.filled").value(2))
+                .andExpect(jsonPath("$.stillNull").value(0));
+
+        verify(backfillCompanyWebsitesUseCase).run(false, 10);
     }
 
     @Test

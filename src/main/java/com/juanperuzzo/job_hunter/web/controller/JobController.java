@@ -3,6 +3,7 @@ package com.juanperuzzo.job_hunter.web.controller;
 import com.juanperuzzo.job_hunter.application.port.in.AnalyzeJobUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.ApproveDraftUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.BackfillContactEmailsUseCase;
+import com.juanperuzzo.job_hunter.application.port.in.BackfillCompanyWebsitesUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.CompanyEnrichmentUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.FetchJobsUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.FetchSourceJobsUseCase;
@@ -50,6 +51,7 @@ public class JobController {
     private final CompanyEnrichmentUseCase companyEnrichmentUseCase;
     private final RecordExternalApplyUseCase recordExternalApplyUseCase;
     private final BackfillContactEmailsUseCase backfillContactEmailsUseCase;
+    private final BackfillCompanyWebsitesUseCase backfillCompanyWebsitesUseCase;
     private final CurrentUserProvider currentUserService;
 
     public JobController(
@@ -66,6 +68,7 @@ public class JobController {
             CompanyEnrichmentUseCase companyEnrichmentUseCase,
             RecordExternalApplyUseCase recordExternalApplyUseCase,
             BackfillContactEmailsUseCase backfillContactEmailsUseCase,
+            BackfillCompanyWebsitesUseCase backfillCompanyWebsitesUseCase,
             CurrentUserProvider currentUserService) {
         this.fetchJobsUseCase = fetchJobsUseCase;
         this.fetchSourceJobsUseCase = fetchSourceJobsUseCase;
@@ -80,6 +83,7 @@ public class JobController {
         this.companyEnrichmentUseCase = companyEnrichmentUseCase;
         this.recordExternalApplyUseCase = recordExternalApplyUseCase;
         this.backfillContactEmailsUseCase = backfillContactEmailsUseCase;
+        this.backfillCompanyWebsitesUseCase = backfillCompanyWebsitesUseCase;
         this.currentUserService = currentUserService;
     }
 
@@ -187,6 +191,14 @@ public class JobController {
     public ResponseEntity<BackfillResultResponse> backfillEmails(
             @RequestParam(defaultValue = "true") boolean dryRun) {
         var result = backfillContactEmailsUseCase.run(dryRun);
+        return ResponseEntity.ok(BackfillResultResponse.from(result));
+    }
+
+    @PostMapping("/backfill-websites")
+    public ResponseEntity<BackfillResultResponse> backfillWebsites(
+            @RequestParam(defaultValue = "true") boolean dryRun,
+            @RequestParam(defaultValue = "50") int maxHosts) {
+        var result = backfillCompanyWebsitesUseCase.run(dryRun, maxHosts);
         return ResponseEntity.ok(BackfillResultResponse.from(result));
     }
 
