@@ -4,11 +4,13 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.juanperuzzo.job_hunter.application.port.out.RawJob;
 import com.juanperuzzo.job_hunter.domain.PortalDomains;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.normalizer.UrlNormalizer;
+import com.juanperuzzo.job_hunter.infrastructure.scraper.ratelimit.RateLimiter;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.retry.ExponentialBackoffRetry;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.strategy.ExtractionStrategy;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.strategy.RestApiStrategy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
 
 import java.net.URLEncoder;
@@ -20,12 +22,16 @@ public class GupyProvider implements ExtractionStrategy {
 
     private static final Logger log = LoggerFactory.getLogger(GupyProvider.class);
     private static final String JSON_PATH = "data";
+    private static final String DETAIL_RATE_LIMIT_KEY = "gupy-detail";
 
     private final String providerId;
     private final RestApiStrategy apiStrategy;
     private final ExponentialBackoffRetry retry;
     private final List<String> keywords;
     private final int limit;
+    private final RestClient detailRestClient;
+    private final RateLimiter rateLimiter;
+    private final int maxDetailDomains;
 
     public GupyProvider(
             String baseUrl,
@@ -33,11 +39,7 @@ public class GupyProvider implements ExtractionStrategy {
             List<String> keywords,
             int limit,
             ExponentialBackoffRetry retry) {
-        this.providerId = "gupy";
-        this.keywords = keywords;
-        this.limit = limit;
-        this.retry = retry;
-        this.apiStrategy = new RestApiStrategy(providerId, baseUrl, timeoutSeconds, JSON_PATH, this::mapNode);
+        this(baseUrl, timeoutSeconds, keywords, limit, retry, null, null, 0);
     }
 
     public GupyProvider(
@@ -46,11 +48,45 @@ public class GupyProvider implements ExtractionStrategy {
             ExponentialBackoffRetry retry,
             List<String> keywords,
             int limit) {
+        this(providerId, apiStrategy, retry, keywords, limit, null, null, 0);
+    }
+
+    public GupyProvider(
+            String baseUrl,
+            int timeoutSeconds,
+            List<String> keywords,
+            int limit,
+            ExponentialBackoffRetry retry,
+            RestClient detailRestClient,
+            RateLimiter rateLimiter,
+            int maxDetailDomains) {
+        this.providerId = "gupy";
+        this.keywords = keywords;
+        this.limit = limit;
+        this.retry = retry;
+        this.apiStrategy = new RestApiStrategy("gupy", baseUrl, timeoutSeconds, JSON_PATH, this::mapNode);
+        this.detailRestClient = detailRestClient;
+        this.rateLimiter = rateLimiter;
+        this.maxDetailDomains = maxDetailDomains;
+    }
+
+    public GupyProvider(
+            String providerId,
+            RestApiStrategy apiStrategy,
+            ExponentialBackoffRetry retry,
+            List<String> keywords,
+            int limit,
+            RestClient detailRestClient,
+            RateLimiter rateLimiter,
+            int maxDetailDomains) {
         this.providerId = providerId;
         this.apiStrategy = apiStrategy;
         this.retry = retry;
         this.keywords = keywords;
         this.limit = limit;
+        this.detailRestClient = detailRestClient;
+        this.rateLimiter = rateLimiter;
+        this.maxDetailDomains = maxDetailDomains;
     }
 
     @Override

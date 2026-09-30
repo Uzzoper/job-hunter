@@ -5,6 +5,7 @@ import com.github.tomakehurst.wiremock.junit5.WireMockRuntimeInfo;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.juanperuzzo.job_hunter.application.port.out.RawJob;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.provider.GupyProvider;
+import com.juanperuzzo.job_hunter.infrastructure.scraper.ratelimit.TokenBucketRateLimiter;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.retry.ExponentialBackoffRetry;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.strategy.RestApiStrategy;
 import org.junit.jupiter.api.BeforeEach;
@@ -12,6 +13,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.springframework.web.client.RestClient;
 
 import java.time.Duration;
 import java.util.HashMap;
@@ -340,6 +342,154 @@ class GupyProviderTest {
             var jobs = provider.extract();
             assertEquals(1, jobs.size());
             assertEquals("Remoto", jobs.get(0).workModel());
+        }
+    }
+
+    @Nested
+    @DisplayName("Scenario 11: detail-page company domains")
+    class DetailPageCompanyDomains {
+
+        /** Provider with detail-domain resolution enabled (no cap by default). */
+        private GupyProvider detailProvider(int maxDetailDomains) {
+            var detailRestClient = RestClient.builder().baseUrl(baseUrl).build();
+            var detailRateLimiter = new TokenBucketRateLimiter(100, 10, java.util.Map.of());
+            return new GupyProvider("gupy", apiStrategy, retry, List.of("desenvolvedor"), 20,
+                    detailRestClient, detailRateLimiter, maxDetailDomains);
+        }
+
+        @Test
+        @DisplayName("extract should attach the first eligible company link to all same-host jobs")
+        void extract_whenDetailPageHasCompanyLink_shouldSetMetadataOnAllSameHostJobs() {
+            var provider = detailProvider(100);
+
+            stubFor(get(urlPathEqualTo("/api/v1/jobs"))
+                    .willReturn(okJson("""
+                        {"data": [
+                          {"name": "Dev Java", "jobUrl": "%s/gupy/techco/jobs/1", "publishedDate": "2026-07-01"},
+                          {"name": "Dev Spring", "jobUrl": "%s/gupy/techco/jobs/2", "publishedDate": "2026-07-01"}
+                        ]}
+                        """.formatted(baseUrl, baseUrl))));
+            // Social link comes first in the page — it must be skipped, the company link wins.
+            stubFor(get(urlEqualTo("/gupy/techco/jobs/1")).willReturn(ok("""
+                    <html><body>
+                      <a href="https://www.linkedin.com/company/techco">LinkedIn</a>
+                      <a href="https://www.techco.com.br/">Site</a>
+                    </body></html>
+                    """)));
+
+            var jobs = provider.extract();
+
+            assertEquals(2, jobs.size());
+            assertEquals("https://www.techco.com.br", jobs.get(0).metadata().get("companyWebsite"),
+                    "the detail-page company link must be attached (social links skipped)");
+            assertEquals("https://www.techco.com.br", jobs.get(1).metadata().get("companyWebsite"),
+                    "the resolved domain must be attached to every job of the same host");
+            verify(1, getRequestedFor(urlEqualTo("/gupy/techco/jobs/1")));
+        }
+
+        @Test
+        @DisplayName("extract should not set companyWebsite when the detail page has only portal/social links")
+        void extract_whenDetailPageHasOnlyPortalOrSocialLinks_shouldNotSetCompanyWebsite() {
+            var provider = detailProvider(100);
+
+            stubFor(get(urlPathEqualTo("/api/v1/jobs"))
+                    .willReturn(okJson("""
+                        {"data": [
+                          {"name": "Dev Java", "jobUrl": "%s/gupy/brand/jobs/1", "publishedDate": "2026-07-01"}
+                        ]}
+                        """.formatted(baseUrl))));
+            stubFor(get(urlEqualTo("/gupy/brand/jobs/1")).willReturn(ok("""
+                    <html><body>
+                      <a href="https://brand.gupy.io/">Portal</a>
+                      <a href="https://www.linkedin.com/company/brand">LinkedIn</a>
+                      <a href="https://www.facebook.com/brand">Facebook</a>
+                      <a href="https://www.instagram.com/brand">Instagram</a>
+                    </body></html>
+                    """)));
+
+            var jobs = provider.extract();
+
+            assertEquals(1, jobs.size());
+            assertNull(jobs.get(0).metadata().get("companyWebsite"),
+                    "portal and social/tracker hosts must never be stored as companyWebsite");
+        }
+
+        @Test
+        @DisplayName("extract should not set companyWebsite when the detail page returns 404")
+        void extract_whenDetailPageReturns404_shouldNotSetCompanyWebsite() {
+            var provider = detailProvider(100);
+
+            stubFor(get(urlPathEqualTo("/api/v1/jobs"))
+                    .willReturn(okJson("""
+                        {"data": [
+                          {"name": "Dev Java", "jobUrl": "%s/gupy/ghost/jobs/1", "publishedDate": "2026-07-01"}
+                        ]}
+                        """.formatted(baseUrl))));
+            stubFor(get(urlEqualTo("/gupy/ghost/jobs/1"))
+                    .willReturn(aResponse().withStatus(404)));
+
+            var jobs = provider.extract();
+
+            assertEquals(1, jobs.size());
+            assertNull(jobs.get(0).metadata().get("companyWebsite"),
+                    "a failed detail fetch must leave the job unchanged — a host failure never fails the provider");
+        }
+
+        @Test
+        @DisplayName("extract should fetch the detail page exactly once for N jobs sharing one host")
+        void extract_whenManyJobsShareOneHost_shouldFetchDetailExactlyOnce() {
+            var provider = detailProvider(100);
+
+            stubFor(get(urlPathEqualTo("/api/v1/jobs"))
+                    .willReturn(okJson("""
+                        {"data": [
+                          {"name": "Dev 1", "jobUrl": "%s/gupy/techco/jobs/1", "publishedDate": "2026-07-01"},
+                          {"name": "Dev 2", "jobUrl": "%s/gupy/techco/jobs/2", "publishedDate": "2026-07-01"},
+                          {"name": "Dev 3", "jobUrl": "%s/gupy/techco/jobs/3", "publishedDate": "2026-07-01"}
+                        ]}
+                        """.formatted(baseUrl, baseUrl, baseUrl))));
+            stubFor(get(urlEqualTo("/gupy/techco/jobs/1")).willReturn(ok("""
+                    <html><body><a href="https://www.techco.com.br/">Site</a></body></html>
+                    """)));
+
+            var jobs = provider.extract();
+
+            assertEquals(3, jobs.size());
+            verify(1, getRequestedFor(urlEqualTo("/gupy/techco/jobs/1")));
+            for (var job : jobs) {
+                assertEquals("https://www.techco.com.br", job.metadata().get("companyWebsite"));
+            }
+        }
+
+        @Test
+        @DisplayName("extract should resolve only up to the max-detail-domains cap and skip overflow hosts")
+        void extract_whenHostsExceedCap_shouldOnlyResolveUpToCap() {
+            var provider = detailProvider(1);
+            var port = baseUrl.substring(baseUrl.lastIndexOf(':') + 1);
+
+            stubFor(get(urlPathEqualTo("/api/v1/jobs"))
+                    .willReturn(okJson("""
+                        {"data": [
+                          {"name": "Dev Local", "jobUrl": "%s/gupy/techco/jobs/1", "publishedDate": "2026-07-01"},
+                          {"name": "Dev Loop", "jobUrl": "http://127.0.0.1:%s/gupy/dotnet/jobs/2", "publishedDate": "2026-07-01"}
+                        ]}
+                        """.formatted(baseUrl, port))));
+            stubFor(get(urlEqualTo("/gupy/techco/jobs/1")).willReturn(ok("""
+                    <html><body><a href="https://www.techco.com.br/">Site</a></body></html>
+                    """)));
+            stubFor(get(urlEqualTo("/gupy/dotnet/jobs/2")).willReturn(ok("""
+                    <html><body><a href="https://www.dotnet.com.br/">Site</a></body></html>
+                    """)));
+
+            var jobs = provider.extract();
+
+            // Exactly one host is resolved (whichever is first); the overflow host is
+            // skipped without being fetched.
+            var withWebsite = jobs.stream()
+                    .filter(job -> job.metadata().get("companyWebsite") != null)
+                    .toList();
+            assertEquals(1, withWebsite.size(), "only one host may be resolved under the cap");
+            verify(1, getRequestedFor(urlMatching("/gupy/(techco|dotnet)/jobs/[12]")));
         }
     }
 }
