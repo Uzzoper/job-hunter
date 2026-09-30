@@ -370,12 +370,17 @@ class GupyProviderTest {
                         ]}
                         """.formatted(baseUrl, baseUrl))));
             // Social link comes first in the page — it must be skipped, the company link wins.
-            stubFor(get(urlEqualTo("/gupy/techco/jobs/1")).willReturn(ok("""
+            // Every job of the host is stubbed: extract() dedups via a HashMap, so the
+            // "first" job URL of a host is not deterministic — but the host-level
+            // contract is: exactly one detail fetch total, whichever URL.
+            var detailPage = """
                     <html><body>
                       <a href="https://www.linkedin.com/company/techco">LinkedIn</a>
                       <a href="https://www.techco.com.br/">Site</a>
                     </body></html>
-                    """)));
+                    """;
+            stubFor(get(urlEqualTo("/gupy/techco/jobs/1")).willReturn(ok(detailPage)));
+            stubFor(get(urlEqualTo("/gupy/techco/jobs/2")).willReturn(ok(detailPage)));
 
             var jobs = provider.extract();
 
@@ -384,7 +389,7 @@ class GupyProviderTest {
                     "the detail-page company link must be attached (social links skipped)");
             assertEquals("https://www.techco.com.br", jobs.get(1).metadata().get("companyWebsite"),
                     "the resolved domain must be attached to every job of the same host");
-            verify(1, getRequestedFor(urlEqualTo("/gupy/techco/jobs/1")));
+            verify(1, getRequestedFor(urlMatching("/gupy/techco/jobs/[12]")));
         }
 
         @Test
@@ -448,14 +453,19 @@ class GupyProviderTest {
                           {"name": "Dev 3", "jobUrl": "%s/gupy/techco/jobs/3", "publishedDate": "2026-07-01"}
                         ]}
                         """.formatted(baseUrl, baseUrl, baseUrl))));
-            stubFor(get(urlEqualTo("/gupy/techco/jobs/1")).willReturn(ok("""
+            // One detail fetch must serve every job of the same host — whichever job URL is
+            // the host's "first" (HashMap order is not deterministic → all three stubbed).
+            var detailPage = """
                     <html><body><a href="https://www.techco.com.br/">Site</a></body></html>
-                    """)));
+                    """;
+            stubFor(get(urlEqualTo("/gupy/techco/jobs/1")).willReturn(ok(detailPage)));
+            stubFor(get(urlEqualTo("/gupy/techco/jobs/2")).willReturn(ok(detailPage)));
+            stubFor(get(urlEqualTo("/gupy/techco/jobs/3")).willReturn(ok(detailPage)));
 
             var jobs = provider.extract();
 
             assertEquals(3, jobs.size());
-            verify(1, getRequestedFor(urlEqualTo("/gupy/techco/jobs/1")));
+            verify(1, getRequestedFor(urlMatching("/gupy/techco/jobs/[123]")));
             for (var job : jobs) {
                 assertEquals("https://www.techco.com.br", job.metadata().get("companyWebsite"));
             }
