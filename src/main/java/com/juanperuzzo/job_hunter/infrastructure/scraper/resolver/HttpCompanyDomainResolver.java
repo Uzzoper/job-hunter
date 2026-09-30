@@ -65,6 +65,13 @@ public class HttpCompanyDomainResolver implements CompanyDomainResolverPort {
     /** Minimum length of an acceptable TLD ({@code .c} is never a company site). */
     private static final int MIN_TLD_LENGTH = 2;
 
+    /**
+     * Exact query-param names dropped before storing a company link (matched
+     * case-insensitively); {@code utm_*} is dropped by prefix instead.
+     */
+    private static final List<String> TRACKING_PARAM_NAMES = List.of(
+            "gclid", "gad", "fbclid", "msclkid");
+
     private final RestClient detailRestClient;
     private final ExponentialBackoffRetry retry;
     private final RateLimiter rateLimiter;
@@ -220,9 +227,10 @@ public class HttpCompanyDomainResolver implements CompanyDomainResolverPort {
     }
 
     /**
-     * Drop Google Ads ({@code gclid}) and UTM ({@code utm_*}) query params from a
-     * URL before storing it; non-tracking params are preserved. Returns the URL
-     * unchanged when it has no query string.
+     * Drop ad-tracking query params ({@code gclid}, {@code gad}, {@code fbclid},
+     * {@code msclkid} and {@code utm_*}, matched case-insensitively) from a URL
+     * before storing it; every other param is preserved in its original order.
+     * Returns the URL unchanged when it has no query string.
      */
     private static String stripTrackingParams(String url) {
         var queryStart = url.indexOf('?');
@@ -237,12 +245,16 @@ public class HttpCompanyDomainResolver implements CompanyDomainResolverPort {
             }
             var eq = pair.indexOf('=');
             var name = eq < 0 ? pair : pair.substring(0, eq);
-            var lower = name.toLowerCase(Locale.ROOT);
-            if (lower.equals("gclid") || lower.startsWith("utm_")) {
+            if (isTrackingParam(name)) {
                 continue;
             }
             kept.add(pair);
         }
         return kept.isEmpty() ? base : base + "?" + String.join("&", kept);
+    }
+
+    private static boolean isTrackingParam(String name) {
+        var lower = name.toLowerCase(Locale.ROOT);
+        return lower.startsWith("utm_") || TRACKING_PARAM_NAMES.contains(lower);
     }
 }
