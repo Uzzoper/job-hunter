@@ -255,8 +255,12 @@ public class AppConfig {
             @Value("${scraper.gupy.timeout-seconds}") int timeoutSeconds,
             @Value("#{'${scraper.gupy.keywords}'.split(',')}") List<String> keywords,
             @Value("${scraper.gupy.limit}") int limit,
-            ExponentialBackoffRetry exponentialBackoffRetry) {
-        return new GupyProvider(baseUrl, timeoutSeconds, keywords, limit, exponentialBackoffRetry);
+            @Value("${scraper.gupy.max-detail-domains:100}") int maxDetailDomains,
+            ExponentialBackoffRetry exponentialBackoffRetry,
+            RestClient scraperRestClient,
+            RateLimiter rateLimiter) {
+        return new GupyProvider(baseUrl, timeoutSeconds, keywords, limit, exponentialBackoffRetry,
+                scraperRestClient, rateLimiter, maxDetailDomains);
     }
 
     @Bean

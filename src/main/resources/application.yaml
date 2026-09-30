@@ -67,6 +67,9 @@ scraper:
     keywords: desenvolvedor,programador,estágio,junior,ti,tecnologia,dev,software,analista
     limit: 100
     timeout-seconds: 10
+    # gupy-detail-domains spec (#74): companyWebsite is resolved from one detail page
+    # per career-page host; hosts beyond this cap per fetch are logged and skipped.
+    max-detail-domains: 100
   infojobs:
     base-url: https://www.infojobs.com.br
     keywords: desenvolvedor,programador,estágio,junior,ti,tecnologia,dev,software,analista
