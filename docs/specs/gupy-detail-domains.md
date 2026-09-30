@@ -101,6 +101,8 @@ needs a revisit pass:
 - Tests: unit with mocked ports (dry-run writes nothing; apply fills only
   nulls; rerun stable); WireMock resolver tests for the new link shapes.
   Plain JUnit 5 + Mockito, no Spring, no network.
-- Acceptance: dry-run counts recorded here (before ___, after ___); apply
-  fills only nulls; full suite green. New deployments never need this
-  (fetch path covers from day one); backfill is a one-time migration remedy.
+- Acceptance: dry-run counts recorded here (before ___, after ___) — to be
+  recorded on the first production `POST /api/jobs/backfill-websites` dry-run;
+  apply fills only nulls; full suite green (measured 2026-09-30: 788 tests, 0
+  failures). New deployments never need this (fetch path covers from day one);
+  backfill is a one-time migration remedy.
