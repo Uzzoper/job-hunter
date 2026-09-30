@@ -24,10 +24,12 @@ class HttpCompanyDomainResolverTest {
 
     private String baseUrl;
     private HttpCompanyDomainResolver resolver;
+    private int jobSeq;
 
     @BeforeEach
     void setUp(WireMockRuntimeInfo wmRuntimeInfo) {
         baseUrl = wmRuntimeInfo.getHttpBaseUrl();
+        jobSeq = 0;
         var retry = new ExponentialBackoffRetry(2, Duration.ofMillis(1), Duration.ofMillis(10), Duration.ofMillis(2));
         resolver = new HttpCompanyDomainResolver(
                 RestClient.builder().baseUrl(baseUrl).build(),
@@ -146,5 +148,115 @@ class HttpCompanyDomainResolverTest {
     void resolve_whenEmptyListOrNonPositiveCap_shouldReturnEmptyMap() {
         assertTrue(resolver.resolveCompanyWebsites(List.of(), 100).isEmpty());
         assertTrue(resolver.resolveCompanyWebsites(List.of(baseUrl + "/gupy/techco/jobs/1"), 0).isEmpty());
+    }
+
+    @Test
+    @DisplayName("resolve should reject a node.js docs link and pick the next eligible company link")
+    void resolve_whenLinkHostIsNodeJsToken_shouldRejectTechTokenHost() {
+        assertLinkRejectedAndFallbackUsed("https://node.js/en/learn");
+    }
+
+    @Test
+    @DisplayName("resolve should reject a react.js link and pick the next eligible company link")
+    void resolve_whenLinkHostIsReactJsToken_shouldRejectTechTokenHost() {
+        assertLinkRejectedAndFallbackUsed("https://react.js/docs");
+    }
+
+    @Test
+    @DisplayName("resolve should reject an angular.js link and pick the next eligible company link")
+    void resolve_whenLinkHostIsAngularJsToken_shouldRejectTechTokenHost() {
+        assertLinkRejectedAndFallbackUsed("https://angular.js/guide");
+    }
+
+    @Test
+    @DisplayName("resolve should reject a vue.js link and pick the next eligible company link")
+    void resolve_whenLinkHostIsVueJsToken_shouldRejectTechTokenHost() {
+        assertLinkRejectedAndFallbackUsed("https://vue.js/guide");
+    }
+
+    @Test
+    @DisplayName("resolve should reject a next.js link and pick the next eligible company link")
+    void resolve_whenLinkHostIsNextJsToken_shouldRejectTechTokenHost() {
+        assertLinkRejectedAndFallbackUsed("https://next.js/docs");
+    }
+
+    @Test
+    @DisplayName("resolve should reject a watson.data link and pick the next eligible company link")
+    void resolve_whenLinkHostIsWatsonDataToken_shouldRejectTechTokenHost() {
+        assertLinkRejectedAndFallbackUsed("https://watson.data/docs");
+    }
+
+    @Test
+    @DisplayName("resolve should reject a subdomain of a denylisted tech-token host")
+    void resolve_whenLinkHostIsSubdomainOfTechToken_shouldRejectTechTokenHost() {
+        assertLinkRejectedAndFallbackUsed("https://docs.node.js/learn");
+    }
+
+    @Test
+    @DisplayName("resolve should reject a host whose TLD is a single character")
+    void resolve_whenLinkTldIsSingleChar_shouldRejectHost() {
+        assertLinkRejectedAndFallbackUsed("https://empresa.c/");
+    }
+
+    @Test
+    @DisplayName("resolve should reject a host whose TLD is not alphabetic")
+    void resolve_whenLinkTldIsNotAlphabetic_shouldRejectHost() {
+        assertLinkRejectedAndFallbackUsed("https://empresa.123/");
+    }
+
+    @Test
+    @DisplayName("resolve should reject an IP-address host")
+    void resolve_whenLinkHostIsIpAddress_shouldRejectHost() {
+        assertLinkRejectedAndFallbackUsed("https://192.168.0.1/");
+    }
+
+    @Test
+    @DisplayName("resolve should keep a legitimate Brazilian company host with an alphabetic TLD")
+    void resolve_whenLinkHostIsLegitCompanyDomain_shouldKeepIt() {
+        assertLinkKept("https://empresa.com.br/", "https://empresa.com.br");
+    }
+
+    @Test
+    @DisplayName("resolve should keep lookalike hosts that merely end with a denylisted token")
+    void resolve_whenLinkHostIsLookalikeOfTechToken_shouldKeepIt() {
+        assertLinkKept("https://myvue.js/", "https://myvue.js");
+        assertLinkKept("https://next.com.br/", "https://next.com.br");
+        assertLinkKept("https://datanet.com.br/", "https://datanet.com.br");
+        assertLinkKept("https://nodejs.com.br/", "https://nodejs.com.br");
+    }
+
+    /**
+     * Stubs a detail page carrying {@code rejectedHref} followed by a legitimate
+     * company link, then asserts the rejected host never becomes the stored
+     * website and the fallback link wins.
+     */
+    private void assertLinkRejectedAndFallbackUsed(String rejectedHref) {
+        var path = nextJobPath();
+        stubFor(get(urlEqualTo(path)).willReturn(ok("<html><body>"
+                + "<a href=\"" + rejectedHref + "\">Docs</a>"
+                + "<a href=\"https://www.techco.com.br/\">Site</a>"
+                + "</body></html>")));
+
+        var jobUrl = baseUrl + path;
+        var result = resolver.resolveCompanyWebsites(List.of(jobUrl), 100);
+
+        assertEquals("https://www.techco.com.br", result.get(jobUrl),
+                "host must be rejected and the next eligible link must win: " + rejectedHref);
+    }
+
+    /** Stubs a detail page carrying a single company link and asserts it is stored. */
+    private void assertLinkKept(String href, String expected) {
+        var path = nextJobPath();
+        stubFor(get(urlEqualTo(path)).willReturn(ok(
+                "<html><body><a href=\"" + href + "\">Site</a></body></html>")));
+
+        var jobUrl = baseUrl + path;
+        var result = resolver.resolveCompanyWebsites(List.of(jobUrl), 100);
+
+        assertEquals(expected, result.get(jobUrl), "legitimate host must be kept: " + href);
+    }
+
+    private String nextJobPath() {
+        return "/gupy/techco/jobs/" + (++jobSeq);
     }
 }
