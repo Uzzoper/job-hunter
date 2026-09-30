@@ -51,4 +51,9 @@ public record Job(
     public Job withContactEmail(String newContactEmail) {
         return new Job(id, title, company, url, description, postedAt, source, newContactEmail, companyWebsite);
     }
+
+    /** Return a copy of this job with a new {@code companyWebsite}, preserving all other fields. */
+    public Job withCompanyWebsite(String newCompanyWebsite) {
+        return new Job(id, title, company, url, description, postedAt, source, contactEmail, newCompanyWebsite);
+    }
 }

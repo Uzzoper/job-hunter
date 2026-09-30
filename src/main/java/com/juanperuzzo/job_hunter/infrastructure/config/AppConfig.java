@@ -39,6 +39,7 @@ import com.juanperuzzo.job_hunter.application.service.RecordExternalApplyService
 import com.juanperuzzo.job_hunter.application.service.AuthService;
 import com.juanperuzzo.job_hunter.application.service.AutoSendEligibilityService;
 import com.juanperuzzo.job_hunter.application.service.BackfillContactEmailsService;
+import com.juanperuzzo.job_hunter.application.service.BackfillCompanyWebsitesService;
 import com.juanperuzzo.job_hunter.application.service.ResumeUploadService;
 import com.juanperuzzo.job_hunter.application.service.TemplateEmailService;
 import com.juanperuzzo.job_hunter.application.service.UserProfileService;
@@ -462,6 +463,13 @@ public class AppConfig {
             JobRepository jobRepository,
             ContactEmailExtractorPort contactEmailExtractorPort) {
         return new BackfillContactEmailsService(jobRepository, contactEmailExtractorPort);
+    }
+
+    @Bean
+    public BackfillCompanyWebsitesService backfillCompanyWebsitesService(
+            JobRepository jobRepository,
+            CompanyDomainResolverPort companyDomainResolverPort) {
+        return new BackfillCompanyWebsitesService(jobRepository, companyDomainResolverPort);
     }
 
     @Bean
