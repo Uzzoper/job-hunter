@@ -225,6 +225,52 @@ class HttpCompanyDomainResolverTest {
         assertLinkKept("https://nodejs.com.br/", "https://nodejs.com.br");
     }
 
+    @Test
+    @DisplayName("resolve should strip a gad param before storing the website")
+    void resolve_whenLinkHasGadParam_shouldStripItBeforeStoring() {
+        assertTrackingStripped("gad=xyz");
+    }
+
+    @Test
+    @DisplayName("resolve should strip a fbclid param before storing the website")
+    void resolve_whenLinkHasFbclidParam_shouldStripItBeforeStoring() {
+        assertTrackingStripped("fbclid=xyz");
+    }
+
+    @Test
+    @DisplayName("resolve should strip an msclkid param before storing the website")
+    void resolve_whenLinkHasMsclkidParam_shouldStripItBeforeStoring() {
+        assertTrackingStripped("msclkid=xyz");
+    }
+
+    @Test
+    @DisplayName("resolve should strip utm params before storing the website")
+    void resolve_whenLinkHasUtmParams_shouldStripThemBeforeStoring() {
+        assertTrackingStripped("utm_source=news&utm_medium=email");
+    }
+
+    @Test
+    @DisplayName("resolve should strip tracking params case-insensitively")
+    void resolve_whenTrackingParamIsUpperCase_shouldStripItBeforeStoring() {
+        assertTrackingStripped("GCLID=xyz&UTM_Campaign=devfair");
+    }
+
+    @Test
+    @DisplayName("resolve should preserve non-tracking params and their order when stripping")
+    void resolve_whenLinkMixesTrackingAndOtherParams_shouldKeepOthersInOrder() {
+        assertLinkKept("https://www.techco.com.br/contato?id=7&gclid=x&ref=y&fbclid=z&pagina=2",
+                "https://www.techco.com.br/contato?id=7&ref=y&pagina=2");
+    }
+
+    /**
+     * Stubs a detail page whose only company link carries {@code trackingQuery} and
+     * asserts the stored website drops it entirely.
+     */
+    private void assertTrackingStripped(String trackingQuery) {
+        assertLinkKept("https://www.techco.com.br/ofertas?" + trackingQuery,
+                "https://www.techco.com.br/ofertas");
+    }
+
     /**
      * Stubs a detail page carrying {@code rejectedHref} followed by a legitimate
      * company link, then asserts the rejected host never becomes the stored
