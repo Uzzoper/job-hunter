@@ -71,10 +71,11 @@ public class HttpCompanyDomainResolver implements CompanyDomainResolverPort {
      * a real TLD are listed.
      *
      * <p>Only extensions whose name is NOT a delegated TLD are listed. {@code net}
-     * (gTLD), {@code zip} (Google gTLD), {@code md} (Moldova ccTLD) and {@code cs}
-     * (Czechia ccTLD) were removed after a review found they silently rejected
-     * legitimate company sites; the {@code ASP.NET} pollution is handled by the
-     * {@value #TECH_TOKEN_HOSTS} entry instead.
+     * (gTLD), {@code zip} (Google gTLD) and {@code md} (Moldova ccTLD) were
+     * removed after a review found they silently rejected legitimate company
+     * sites; {@code cs} (retired Czechoslovakia/Serbia-Montenegro code, not
+     * currently delegated) was removed on the same grounds. The {@code ASP.NET}
+     * pollution is handled by the {@value #TECH_TOKEN_HOSTS} entry instead.
      *
      * <p>Deliberate remaining ccTLD tradeoffs: {@code py} (Paraguay) and {@code sh}
      * (Saint Helena) are assigned TLDs, but in a job posting a link to
@@ -284,8 +285,9 @@ public class HttpCompanyDomainResolver implements CompanyDomainResolverPort {
 
     /**
      * Label-boundary host match: the host itself or any subdomain of it. Never a
-     * bare suffix, so {@code myvue.js} is not a {@code vue.js} subdomain and
-     * {@code st.co} is not a {@code t.co} subdomain.
+     * bare suffix, so {@code st.co} is not a {@code t.co} subdomain. (A host
+     * like {@code myvue.js} also survives this check in isolation, but the TLD
+     * rule rejects {@code .js} hosts downstream regardless.)
      */
     private static boolean matchesHostOrSubdomain(String host, String token) {
         return host.equals(token) || host.endsWith("." + token);
