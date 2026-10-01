@@ -57,6 +57,14 @@ retry + rate limiter reused; a host failure never fails the provider fetch.
 > params `gclid`, `gad`, `fbclid`, `msclkid` and `utm_*` before storing.
 > Generic handler exceptions must be logged with stack trace (a transient
 > post-boot 500 went undiagnosed for lack of it).
+>
+> **Link-quality v3 (production 2026-09-30, second probe):** file/tech
+> extensions pass the alpha-TLD rule (`gera.Java`, `ASP.NET`) and shortener
+> hosts are real domains (`bit.ly/...`). Reject TLDs in a file/tech-extension
+> denylist (`js`, `java`, `ts`, `py`, `json`, `xml`, `css`, `html`, …) and
+> shortener hosts (`bit.ly`, `tinyurl.com`, `t.co`, `goo.gl`, …). Raise the
+> enrich batch cap 50 → 200 (yaml, reversible) — with 1.199 valid domains
+> pending email, the batch cap (not resolution) is the funnel bottleneck.
 
 ## 4. Tests (TDD, WireMock, no Spring context in unit tests)
 
