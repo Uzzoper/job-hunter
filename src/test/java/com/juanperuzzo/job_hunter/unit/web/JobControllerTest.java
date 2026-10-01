@@ -576,18 +576,18 @@ class JobControllerTest {
     }
 
     @Test
-    @DisplayName("enrichEmails should default limit to 50 when param omitted")
+    @DisplayName("enrichEmails should default limit to 200 when param omitted")
     void enrichEmails_whenNoLimit_shouldUseDefault() throws Exception {
         authenticateAs(1L);
 
         var result = new EnrichmentResult(0, 0, 0, 0);
-        when(companyEnrichmentUseCase.enrichMissingEmails(50)).thenReturn(result);
+        when(companyEnrichmentUseCase.enrichMissingEmails(200)).thenReturn(result);
 
         mockMvc.perform(post("/api/jobs/enrich-emails"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.checked").value(0));
 
-        verify(companyEnrichmentUseCase).enrichMissingEmails(50);
+        verify(companyEnrichmentUseCase).enrichMissingEmails(200);
     }
 
     @Test
