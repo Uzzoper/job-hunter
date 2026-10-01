@@ -61,7 +61,7 @@ public class HttpCompanyDomainResolver implements CompanyDomainResolverPort {
             "node.js", "react.js", "angular.js", "vue.js", "next.js", "nuxt.js",
             "svelte.js", "ember.js", "backbone.js", "jquery.js", "axios.js",
             "lodash.js", "redux.js", "webpack.js", "gulp.js", "grunt.js",
-            "babel.js", "typescript.js", "watson.data");
+            "babel.js", "typescript.js", "watson.data", "asp.net");
 
     /**
      * TLDs that are file or technology extensions and therefore never a company
@@ -70,23 +70,30 @@ public class HttpCompanyDomainResolver implements CompanyDomainResolverPort {
      * {@code ASP.NET}). Curated, not exhaustive: only extensions whose name is not
      * a real TLD are listed.
      *
-     * <p>Deliberate ccTLD tradeoffs: {@code py} (Paraguay) and {@code sh} (Saint
-     * Helena) are assigned TLDs, but in a job posting a link to {@code empresa.py}
-     * or {@code empresa.sh} is a script, not a recruiter — and failing closed only
-     * costs an unresolvable row, never a wrong company site. Real TLDs that merely
-     * sound technical are intentionally absent: {@code io}, {@code ai}, {@code co},
-     * {@code dev}, {@code app}, {@code tech}, {@code data}, {@code sh}-adjacent
-     * gTLDs. Add entries as new pollution appears.
+     * <p>Only extensions whose name is NOT a delegated TLD are listed. {@code net}
+     * (gTLD), {@code zip} (Google gTLD), {@code md} (Moldova ccTLD) and {@code cs}
+     * (Czechia ccTLD) were removed after a review found they silently rejected
+     * legitimate company sites; the {@code ASP.NET} pollution is handled by the
+     * {@value #TECH_TOKEN_HOSTS} entry instead.
+     *
+     * <p>Deliberate remaining ccTLD tradeoffs: {@code py} (Paraguay) and {@code sh}
+     * (Saint Helena) are assigned TLDs, but in a job posting a link to
+     * {@code empresa.py} or {@code empresa.sh} is a script, not a recruiter — and
+     * failing closed only costs an unresolvable row, never a wrong company site.
+     * Real TLDs that merely sound technical are intentionally absent: {@code io},
+     * {@code ai}, {@code co}, {@code dev}, {@code app}, {@code tech}, {@code data},
+     * {@code cs}, {@code md}. Add entries as new pollution appears, but verify the
+     * extension is not a delegated TLD first.
      */
     private static final Set<String> FILE_EXTENSION_TLDS = Set.of(
             // Markup / styles / data / config documents
             "html", "htm", "css", "scss", "xml", "json", "yaml", "yml", "toml",
-            "ini", "cfg", "conf", "md", "sql", "log", "csv",
+            "ini", "cfg", "conf", "sql", "log", "csv",
             // Source code
-            "js", "jsx", "ts", "tsx", "java", "jsp", "asp", "aspx", "net", "php",
-            "py", "rb", "cs", "go", "sh", "bat", "ps1", "ipynb",
+            "js", "jsx", "ts", "tsx", "java", "jsp", "asp", "aspx", "php",
+            "py", "rb", "go", "sh", "bat", "ps1", "ipynb",
             // Binary documents / assets
-            "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "zip", "rar", "tar",
+            "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "rar", "tar",
             "gz", "exe", "dll", "apk", "dmg", "png", "jpg", "jpeg", "gif", "svg",
             "ico", "webp", "woff", "woff2", "ttf", "eot");
 
@@ -194,8 +201,11 @@ public class HttpCompanyDomainResolver implements CompanyDomainResolverPort {
      * extension, and not be a tech-token host ({@value #TECH_TOKEN_HOSTS} — the
      * {@code Node.js}/{@code React.js} case where dot-presence is not a validity
      * signal, or {@code gera.Java}/{@code ASP.NET}, whose TLDs are extensions).
-     * The host must additionally not be the portal host itself, any job-portal or
-     * URL-shortener host, nor a social/tracker/asset host.
+     * {@code asp.net} lives here and not in {@link #FILE_EXTENSION_TLDS} because
+     * {@code net} IS a delegated gTLD — rejecting the whole TLD would silently drop
+     * legitimate company sites while this exact host keeps the motivating case
+     * covered. The host must additionally not be the portal host itself, any
+     * job-portal or URL-shortener host, nor a social/tracker/asset host.
      * Tracking query params ({@code gclid}/{@code utm_*}) are stripped before the
      * trailing-slash normalization. Returns the full link URL — the stored
      * {@code companyWebsite} stays an absolute URL so {@code JobNormalizer} and
