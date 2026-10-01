@@ -219,10 +219,59 @@ class HttpCompanyDomainResolverTest {
     @Test
     @DisplayName("resolve should keep lookalike hosts that merely end with a denylisted token")
     void resolve_whenLinkHostIsLookalikeOfTechToken_shouldKeepIt() {
-        assertLinkKept("https://myvue.js/", "https://myvue.js");
         assertLinkKept("https://next.com.br/", "https://next.com.br");
         assertLinkKept("https://datanet.com.br/", "https://datanet.com.br");
         assertLinkKept("https://nodejs.com.br/", "https://nodejs.com.br");
+    }
+
+    @Test
+    @DisplayName("resolve should reject every file/tech-extension TLD from the denylist")
+    void resolve_whenLinkTldIsFileOrTechExtension_shouldRejectEveryDenylistedTld() {
+        for (var tld : List.of("js", "java", "ts", "py", "json", "xml", "css", "html",
+                "net", "php", "sh", "yaml", "pdf")) {
+            assertLinkRejectedAndFallbackUsed("https://empresa." + tld + "/pagina");
+        }
+    }
+
+    @Test
+    @DisplayName("resolve should reject a mixed-case gera.Java link and pick the next eligible company link")
+    void resolve_whenLinkHostIsMixedCaseJavaExtension_shouldRejectHost() {
+        assertLinkRejectedAndFallbackUsed("https://gera.Java/aplicacao");
+    }
+
+    @Test
+    @DisplayName("resolve should reject an ASP.NET link and pick the next eligible company link")
+    void resolve_whenLinkHostIsAspNet_shouldRejectHost() {
+        assertLinkRejectedAndFallbackUsed("https://asp.net/docs");
+    }
+
+    @Test
+    @DisplayName("resolve should reject a bit.ly short link and pick the next eligible company link")
+    void resolve_whenLinkHostIsBitLy_shouldRejectShortenerHost() {
+        assertLinkRejectedAndFallbackUsed("https://bit.ly/xyz");
+    }
+
+    @Test
+    @DisplayName("resolve should reject every shortener host, subdomains included")
+    void resolve_whenLinkHostIsShortenerOrItsSubdomain_shouldRejectShortenerHost() {
+        for (var host : List.of("tinyurl.com", "t.co", "goo.gl", "youtu.be", "is.gd",
+                "cutt.ly", "abc.bit.ly")) {
+            assertLinkRejectedAndFallbackUsed("https://" + host + "/xyz");
+        }
+    }
+
+    @Test
+    @DisplayName("resolve should reject myvue.js: a token lookalike still carries a file-extension TLD")
+    void resolve_whenLinkHostIsTokenLookalikeWithExtensionTld_shouldRejectHost() {
+        assertLinkRejectedAndFallbackUsed("https://myvue.js/");
+    }
+
+    @Test
+    @DisplayName("resolve should keep legit company hosts on ccTLDs with tech-ish subdomains")
+    void resolve_whenLinkHostIsTechLookingButLegit_shouldKeepIt() {
+        assertLinkKept("https://dashboard.techco.io/", "https://dashboard.techco.io");
+        assertLinkKept("https://dev.empresa.com.br/", "https://dev.empresa.com.br");
+        assertLinkKept("https://empresa.ai/", "https://empresa.ai");
     }
 
     @Test
