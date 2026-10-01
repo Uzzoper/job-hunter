@@ -16,6 +16,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * HTTP-backed {@link CompanyDomainResolverPort}: resolves a company website per
@@ -53,14 +54,52 @@ public class HttpCompanyDomainResolver implements CompanyDomainResolverPort {
      * {@code watson.data} — 53 rows), and every one of them contains dots, so the
      * dot-presence test alone cannot filter them. Matched on label boundaries
      * (host equals the token or is a subdomain of it), never as a bare suffix, so
-     * lookalikes such as {@code myvue.js} or {@code next.com.br} survive.
-     * Extend as new tokens appear in production data.
+     * lookalikes such as {@code next.com.br} survive. Extend as new tokens appear
+     * in production data.
      */
     private static final List<String> TECH_TOKEN_HOSTS = List.of(
             "node.js", "react.js", "angular.js", "vue.js", "next.js", "nuxt.js",
             "svelte.js", "ember.js", "backbone.js", "jquery.js", "axios.js",
             "lodash.js", "redux.js", "webpack.js", "gulp.js", "grunt.js",
             "babel.js", "typescript.js", "watson.data");
+
+    /**
+     * TLDs that are file or technology extensions and therefore never a company
+     * site — they pass the alphabetic-TLD rule while being document/code paths
+     * (link-quality v3: production pollution from {@code gera.Java} and
+     * {@code ASP.NET}). Curated, not exhaustive: only extensions whose name is not
+     * a real TLD are listed.
+     *
+     * <p>Deliberate ccTLD tradeoffs: {@code py} (Paraguay) and {@code sh} (Saint
+     * Helena) are assigned TLDs, but in a job posting a link to {@code empresa.py}
+     * or {@code empresa.sh} is a script, not a recruiter — and failing closed only
+     * costs an unresolvable row, never a wrong company site. Real TLDs that merely
+     * sound technical are intentionally absent: {@code io}, {@code ai}, {@code co},
+     * {@code dev}, {@code app}, {@code tech}, {@code data}, {@code sh}-adjacent
+     * gTLDs. Add entries as new pollution appears.
+     */
+    private static final Set<String> FILE_EXTENSION_TLDS = Set.of(
+            // Markup / styles / data / config documents
+            "html", "htm", "css", "scss", "xml", "json", "yaml", "yml", "toml",
+            "ini", "cfg", "conf", "md", "sql", "log", "csv",
+            // Source code
+            "js", "jsx", "ts", "tsx", "java", "jsp", "asp", "aspx", "net", "php",
+            "py", "rb", "cs", "go", "sh", "bat", "ps1", "ipynb",
+            // Binary documents / assets
+            "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "zip", "rar", "tar",
+            "gz", "exe", "dll", "apk", "dmg", "png", "jpg", "jpeg", "gif", "svg",
+            "ico", "webp", "woff", "woff2", "ttf", "eot");
+
+    /**
+     * URL-shortener hosts: real domains with alphabetic TLDs, so neither the TLD
+     * rule nor the tech-token list catches them, yet they are never a company site
+     * (link-quality v3: production pollution from {@code bit.ly/xyz}). Matched on
+     * label boundaries, subdomains included.
+     */
+    private static final Set<String> SHORTENER_HOSTS = Set.of(
+            "bit.ly", "tinyurl.com", "t.co", "goo.gl", "ow.ly", "is.gd", "buff.ly",
+            "cutt.ly", "tiny.cc", "shorturl.at", "rebrand.ly", "lnkd.in",
+            "youtu.be", "t.ly", "rb.gy", "s.id");
 
     /** Minimum length of an acceptable TLD ({@code .c} is never a company site). */
     private static final int MIN_TLD_LENGTH = 2;
@@ -151,10 +190,12 @@ public class HttpCompanyDomainResolver implements CompanyDomainResolverPort {
      * document order and keeps the first eligible one.
      * <p>
      * Eligibility is decided by the {@code host}: it must carry a dot, end in an
-     * alphabetic TLD of length {@value #MIN_TLD_LENGTH}+, and not be a tech-token
-     * host ({@value #TECH_TOKEN_HOSTS} — the {@code Node.js}/{@code React.js} case
-     * where dot-presence is not a validity signal). The host must additionally not
-     * be the portal host itself nor any job-portal/social/tracker/asset host.
+     * alphabetic TLD of length {@value #MIN_TLD_LENGTH}+ that is not a file/tech
+     * extension, and not be a tech-token host ({@value #TECH_TOKEN_HOSTS} — the
+     * {@code Node.js}/{@code React.js} case where dot-presence is not a validity
+     * signal, or {@code gera.Java}/{@code ASP.NET}, whose TLDs are extensions).
+     * The host must additionally not be the portal host itself, any job-portal or
+     * URL-shortener host, nor a social/tracker/asset host.
      * Tracking query params ({@code gclid}/{@code utm_*}) are stripped before the
      * trailing-slash normalization. Returns the full link URL — the stored
      * {@code companyWebsite} stays an absolute URL so {@code JobNormalizer} and
@@ -182,9 +223,10 @@ public class HttpCompanyDomainResolver implements CompanyDomainResolverPort {
 
     /**
      * Host validity for a company link (gupy-detail-domains spec §3, link-quality
-     * v2): a dot, a purely alphabetic TLD of length {@value #MIN_TLD_LENGTH}+, and
-     * no tech-token host. Fails closed — a host that fails any check is skipped,
-     * and the next eligible link on the page is considered instead.
+     * v2/v3): a dot, a purely alphabetic TLD of length {@value #MIN_TLD_LENGTH}+
+     * that is not a file/tech extension, and no tech-token host. Fails closed — a
+     * host that fails any check is skipped, and the next eligible link on the page
+     * is considered instead.
      *
      * @param host lowercase host as returned by {@link UrlNormalizer#host(String)}
      */
@@ -194,10 +236,10 @@ public class HttpCompanyDomainResolver implements CompanyDomainResolverPort {
             return false;
         }
         var tld = host.substring(lastDot + 1);
-        if (tld.length() < MIN_TLD_LENGTH || !isAlphabetic(tld)) {
+        if (tld.length() < MIN_TLD_LENGTH || !isAlphabetic(tld) || FILE_EXTENSION_TLDS.contains(tld)) {
             return false;
         }
-        return TECH_TOKEN_HOSTS.stream().noneMatch(token -> host.equals(token) || host.endsWith("." + token));
+        return TECH_TOKEN_HOSTS.stream().noneMatch(token -> matchesHostOrSubdomain(host, token));
     }
 
     private static boolean isAlphabetic(String value) {
@@ -213,7 +255,8 @@ public class HttpCompanyDomainResolver implements CompanyDomainResolverPort {
     /**
      * Link-policy eligibility: true when the link host must never be stored as a
      * company site — the portal host itself, any job-portal suffix (gupy/infojobs/
-     * vaga-ja via {@link PortalDomains}), and the social/tracker + asset/CDN hosts.
+     * vaga-ja via {@link PortalDomains}), a URL shortener, and the social/tracker +
+     * asset/CDN hosts.
      */
     private static boolean isExcludedCompanyLinkHost(String host, String fetchedHost) {
         if (fetchedHost != null && host.equals(fetchedHost)) {
@@ -222,8 +265,20 @@ public class HttpCompanyDomainResolver implements CompanyDomainResolverPort {
         if (PortalDomains.isPortal(host)) {
             return true;
         }
+        if (SHORTENER_HOSTS.stream().anyMatch(token -> matchesHostOrSubdomain(host, token))) {
+            return true;
+        }
         return EXCLUDED_COMPANY_HOST_SUFFIXES.stream()
-                .anyMatch(suffix -> host.equals(suffix) || host.endsWith("." + suffix));
+                .anyMatch(suffix -> matchesHostOrSubdomain(host, suffix));
+    }
+
+    /**
+     * Label-boundary host match: the host itself or any subdomain of it. Never a
+     * bare suffix, so {@code myvue.js} is not a {@code vue.js} subdomain and
+     * {@code st.co} is not a {@code t.co} subdomain.
+     */
+    private static boolean matchesHostOrSubdomain(String host, String token) {
+        return host.equals(token) || host.endsWith("." + token);
     }
 
     /**
