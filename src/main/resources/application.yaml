@@ -89,7 +89,10 @@ scraper:
     cache-ttl-hours: 24
     contact-paths: /contato,/contact,/trabalhe-conosco,/carreiras
     # async-company-enrichment spec: batch enrichment endpoint bounds (jobs per run).
-    batch-default-limit: 50
+    # Raised 50 -> 200 (gupy-detail-domains §3, link-quality v3): with 1199 valid
+    # domains already resolved and pending email, the batch cap — not domain
+    # resolution — is the funnel bottleneck. Reversible: lower it back to 50.
+    batch-default-limit: 200
     batch-max-limit: 200
   linkedin:
     enabled: true
