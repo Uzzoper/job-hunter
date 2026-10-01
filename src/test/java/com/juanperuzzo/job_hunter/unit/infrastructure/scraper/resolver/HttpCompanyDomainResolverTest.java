@@ -228,7 +228,7 @@ class HttpCompanyDomainResolverTest {
     @DisplayName("resolve should reject every file/tech-extension TLD from the denylist")
     void resolve_whenLinkTldIsFileOrTechExtension_shouldRejectEveryDenylistedTld() {
         for (var tld : List.of("js", "java", "ts", "py", "json", "xml", "css", "html",
-                "net", "php", "sh", "yaml", "pdf")) {
+                "php", "sh", "yaml", "pdf")) {
             assertLinkRejectedAndFallbackUsed("https://empresa." + tld + "/pagina");
         }
     }
@@ -240,9 +240,25 @@ class HttpCompanyDomainResolverTest {
     }
 
     @Test
+    @DisplayName("resolve should keep legitimate company hosts on real TLDs that look like file extensions")
+    void resolve_whenLinkTldIsRealTldLookingLikeExtension_shouldKeepHost() {
+        assertLinkKept("https://empresa.net/", "https://empresa.net");
+        assertLinkKept("https://blog.empresa.net/", "https://blog.empresa.net");
+        assertLinkKept("https://empresa.md/", "https://empresa.md");
+        assertLinkKept("https://empresa.zip/", "https://empresa.zip");
+        assertLinkKept("https://empresa.cs/", "https://empresa.cs");
+    }
+
+    @Test
     @DisplayName("resolve should reject an ASP.NET link and pick the next eligible company link")
     void resolve_whenLinkHostIsAspNet_shouldRejectHost() {
         assertLinkRejectedAndFallbackUsed("https://asp.net/docs");
+    }
+
+    @Test
+    @DisplayName("resolve should reject a subdomain of asp.net and pick the next eligible company link")
+    void resolve_whenLinkHostIsSubdomainOfAspNet_shouldRejectHost() {
+        assertLinkRejectedAndFallbackUsed("https://learn.asp.net/docs");
     }
 
     @Test
