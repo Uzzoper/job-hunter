@@ -5,8 +5,11 @@ import com.juanperuzzo.job_hunter.infrastructure.ai.HermesAgentClient;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -174,5 +177,96 @@ class HermesAgentClientTest {
 
         wireMockServer.verify(postRequestedFor(urlEqualTo("/chat/completions"))
                 .withHeader("Authorization", equalTo("Bearer test-hermes-key")));
+    }
+
+    @Nested
+    @DisplayName("Reasoning models: deliberation must never reach consumers")
+    class ReasoningBlockTests {
+
+        @Test
+        @DisplayName("complete should strip a leading think block and return only the payload")
+        void complete_whenLeadingThinkBlock_shouldStripItAndReturnPayload() {
+            stubContent("<think>The candidate has Java experience, so I will score it high.</think>\\n\\nSubject: Candidatura — Desenvolvedor Java");
+
+            var result = hermesAgentClient.complete("Test prompt");
+
+            assertEquals("Subject: Candidatura — Desenvolvedor Java", result,
+                    "the reasoning block must never reach a consumer");
+        }
+
+        @Test
+        @DisplayName("complete should strip a trailing reasoning block and return only the payload")
+        void complete_whenTrailingReasoningBlock_shouldStripItAndReturnPayload() {
+            stubContent("{\\\"matchScore\\\": 80}\\n\\n<reasoning>Scored 80 after weighing the gaps.</reasoning>");
+
+            var result = hermesAgentClient.complete("Test prompt");
+
+            assertEquals("{\\\"matchScore\\\": 80}", result);
+        }
+
+        @Test
+        @DisplayName("complete should strip every known reasoning tag variant")
+        void complete_whenReasoningTagVariants_shouldStripThemAll() {
+            for (var tag : List.of("thinking", "thought", "reflection", "scratchpad", "THINK")) {
+                stubContent("<" + tag + ">deliberation here</" + tag.toLowerCase(java.util.Locale.ROOT) + ">\\n\\nPAYLOAD");
+
+                assertEquals("PAYLOAD", hermesAgentClient.complete("Test prompt"),
+                        "reasoning tag <" + tag + "> must be stripped");
+            }
+        }
+
+        @Test
+        @DisplayName("complete should strip a leading markdown-quoted deliberation block")
+        void complete_whenLeadingMarkdownQuote_shouldStripQuoteBlock() {
+            stubContent("> **Reasoning**\\n> Weighing the stack requirements first.\\n\\nDear Hiring Manager,");
+
+            var result = hermesAgentClient.complete("Test prompt");
+
+            assertEquals("Dear Hiring Manager,", result);
+        }
+
+        @Test
+        @DisplayName("complete should keep payload text that merely contains angle brackets or a quote")
+        void complete_whenPayloadHasAngleBracketsOrQuotes_shouldKeepThem() {
+            stubContent("Experience with Java > 8, Kotlin, and <T> generics\\n> quoted line inside payload");
+
+            var result = hermesAgentClient.complete("Test prompt");
+
+            assertEquals("Experience with Java > 8, Kotlin, and <T> generics\n> quoted line inside payload",
+                    result, "a mid-payload quote or angle bracket must survive untouched");
+        }
+
+        @Test
+        @DisplayName("complete should throw AiException on finish_reason error even when the content carries reasoning")
+        void complete_whenEmbeddedErrorWithReasoning_shouldThrowBeforeStripping() {
+            wireMockServer.stubFor(post(urlEqualTo("/chat/completions"))
+                    .willReturn(aResponse()
+                            .withStatus(200)
+                            .withHeader("Content-Type", "application/json")
+                            .withBody("""
+                                    {
+                                        "choices": [{
+                                            "message": {
+                                                "content": "<think>retrying</think>upstream provider saturated"
+                                            },
+                                            "finish_reason": "error"
+                                        }]
+                                    }
+                                    """)));
+
+            var thrown = assertThrows(AiException.class, () -> hermesAgentClient.complete("Test prompt"));
+
+            assertTrue(thrown.getMessage().contains("upstream provider saturated"),
+                    "the error check must run before any stripping, and report the raw message");
+        }
+
+        /** Stubs a 200 response whose single choice content is {@code content} (already JSON-escaped). */
+        private void stubContent(String content) {
+            wireMockServer.stubFor(post(urlEqualTo("/chat/completions"))
+                    .willReturn(aResponse()
+                            .withStatus(200)
+                            .withHeader("Content-Type", "application/json")
+                            .withBody("{\"choices\": [{\"message\": {\"content\": \"" + content + "\"}}]}")));
+        }
     }
 }

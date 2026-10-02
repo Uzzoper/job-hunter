@@ -1263,4 +1263,69 @@ class EmailGenerationServiceTest {
             return emailGenerationService.generate(1L, jobId);
         }
     }
+
+    @Nested
+    @DisplayName("Reasoning models: deliberation must not leak into the subject or body")
+    class ReasoningToleranceTests {
+
+        private static final String VALID_EMAIL = """
+            Subject: Candidatura — Desenvolvedor Java na Empresa X
+
+            Olá. Tudo bem?
+
+            Gostaria de me candidatar à vaga de Desenvolvedor Java na Empresa X.
+
+            Atenciosamente,
+            Juan Peruzzo
+            """;
+
+        @Test
+        @DisplayName("generate should ignore a leading think block when parsing the email")
+        void generate_whenResponseHasReasoningPrefix_shouldNotLeakItIntoSubjectOrBody() {
+            String aiResponse = "<think>The role is junior Java, so a Portuguese email fits.</think>\n\n" + VALID_EMAIL;
+
+            EmailDraft draft = generateWithAiResponse(aiResponse);
+
+            assertEquals("Subject: Candidatura — Desenvolvedor Java na Empresa X", draft.subject());
+            assertFalse(draft.body().contains("<think>"), draft.body());
+            assertTrue(draft.body().startsWith("Olá. Tudo bem?"), draft.body());
+        }
+
+        @Test
+        @DisplayName("generate should ignore a trailing reasoning block when parsing the email")
+        void generate_whenResponseHasReasoningSuffix_shouldNotLeakItIntoBody() {
+            String aiResponse = VALID_EMAIL + "\n\n<reasoning>Signed off politely, no company contact found.</reasoning>";
+
+            EmailDraft draft = generateWithAiResponse(aiResponse);
+
+            assertEquals("Subject: Candidatura — Desenvolvedor Java na Empresa X", draft.subject());
+            assertFalse(draft.body().contains("reasoning"), draft.body());
+            assertTrue(draft.body().endsWith("Juan Peruzzo"), draft.body());
+        }
+
+        /** Drives the AI branch (score above the threshold) and returns the persisted draft. */
+        private EmailDraft generateWithAiResponse(String aiResponse) {
+            when(aiPort.complete(any())).thenReturn(aiResponse);
+            when(emailDraftRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            UserProfile profile = new UserProfile(null, 1L,
+                    "Experienced Java developer with Spring Boot expertise.",
+                    List.of("Java", "Spring Boot", "PostgreSQL"),
+                    CompanyTone.FORMAL,
+                    List.of(), null, null, null, null, null, null);
+            when(userProfileRepository.findByUserId(any())).thenReturn(Optional.of(profile));
+
+            Long jobId = 91L;
+            Job job = new Job(jobId, "Java Developer", "Empresa X",
+                    "https://example.com/job/91", "Description", LocalDate.now(), "gupy");
+            JobAnalysis analysis = new JobAnalysis(null, null, null, 75,
+                    List.of("Java", "Spring Boot"),
+                    List.of("Kubernetes"),
+                    CompanyTone.FORMAL,
+                    "Java developer position");
+            when(jobRepository.findById(jobId)).thenReturn(Optional.of(job));
+            when(jobAnalysisRepository.findByJobIdAndUserId(jobId, 1L)).thenReturn(Optional.of(analysis));
+
+            return emailGenerationService.generate(1L, jobId);
+        }
+    }
 }
