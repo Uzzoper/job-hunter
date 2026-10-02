@@ -19,6 +19,8 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -145,6 +147,82 @@ class BackfillCompanyWebsitesServiceTest {
         when(jobRepository.findBySourceAndCompanyWebsiteIsNull("gupy")).thenReturn(List.of());
 
         var result = service.run(false, 50);
+
+        assertEquals(0, result.scanned());
+        assertEquals(0, result.filled());
+        assertEquals(0, result.stillNull());
+        verifyNoInteractions(companyDomainResolver);
+        verify(jobRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("run with afterId should page past a dead head that would otherwise starve every round")
+    void run_whenDeadHeadExists_shouldPagePastItWithAfterId() {
+        // Production livelock: scanning from the start with maxHosts=1 only ever resolved
+        // dead1, so stillNull never fell and hosts after the head were never examined.
+        var afterHead = job(101L, "https://techco.gupy.io/jobs/101");
+        when(jobRepository.findBySourceAndCompanyWebsiteIsNullAfterId("gupy", 100L))
+                .thenReturn(List.of(afterHead));
+        when(companyDomainResolver.resolveCompanyWebsites(List.of(afterHead.url()), 1))
+                .thenReturn(Map.of(afterHead.url(), "https://www.techco.com.br"));
+
+        var result = service.run(false, 1, 100L);
+
+        assertEquals(1, result.scanned());
+        assertEquals(1, result.filled());
+        assertEquals(0, result.stillNull());
+        verify(jobRepository).findBySourceAndCompanyWebsiteIsNullAfterId("gupy", 100L);
+        verify(jobRepository, never()).findBySourceAndCompanyWebsiteIsNull(anyString());
+    }
+
+    @Test
+    @DisplayName("run with afterId should resolve every host of the requested range and persist only those")
+    void run_whenAfterIdGiven_shouldResolveLaterHostsAndPersistThem() {
+        var later1 = job(101L, "https://techco.gupy.io/jobs/101");
+        var later2 = job(102L, "https://techco.gupy.io/jobs/102");
+        var later3 = job(103L, "https://brand.gupy.io/jobs/103");
+        when(jobRepository.findBySourceAndCompanyWebsiteIsNullAfterId("gupy", 100L))
+                .thenReturn(List.of(later1, later2, later3));
+        when(companyDomainResolver.resolveCompanyWebsites(anyList(), eq(50)))
+                .thenReturn(Map.of(later1.url(), "https://www.techco.com.br",
+                        later2.url(), "https://www.techco.com.br"));
+
+        var result = service.run(false, 50, 100L);
+
+        assertEquals(3, result.scanned());
+        assertEquals(2, result.filled());
+        assertEquals(1, result.stillNull());
+        verify(companyDomainResolver).resolveCompanyWebsites(
+                List.of(later1.url(), later2.url(), later3.url()), 50);
+        var captor = ArgumentCaptor.forClass(Job.class);
+        verify(jobRepository, times(2)).save(captor.capture());
+        assertEquals(List.of(later1.url(), later2.url()),
+                captor.getAllValues().stream().map(Job::url).toList());
+    }
+
+    @Test
+    @DisplayName("run with a null afterId should scan from the start with the legacy unbounded query")
+    void run_whenAfterIdNull_shouldScanFromStartWithLegacyQuery() {
+        var j1 = job(1L, "https://techco.gupy.io/jobs/1");
+        when(jobRepository.findBySourceAndCompanyWebsiteIsNull("gupy")).thenReturn(List.of(j1));
+        when(companyDomainResolver.resolveCompanyWebsites(List.of(j1.url()), 50))
+                .thenReturn(Map.of(j1.url(), "https://www.techco.com.br"));
+
+        var result = service.run(true, 50, null);
+
+        assertEquals(1, result.scanned());
+        assertEquals(1, result.filled());
+        verify(jobRepository).findBySourceAndCompanyWebsiteIsNull("gupy");
+        verify(jobRepository, never()).findBySourceAndCompanyWebsiteIsNullAfterId(anyString(), anyLong());
+    }
+
+    @Test
+    @DisplayName("run with afterId past the last row should report zeros without calling the resolver")
+    void run_whenAfterIdBeyondLastRow_shouldReturnZerosWithoutCallingResolver() {
+        when(jobRepository.findBySourceAndCompanyWebsiteIsNullAfterId("gupy", 9999L))
+                .thenReturn(List.of());
+
+        var result = service.run(false, 50, 9999L);
 
         assertEquals(0, result.scanned());
         assertEquals(0, result.filled());
