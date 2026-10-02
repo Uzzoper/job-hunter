@@ -42,6 +42,12 @@ public class EmailGenerationService implements GenerateEmailUseCase, GetEmailDra
     private static final int SUBJECT_SCAN_LINES = 5;
 
     /**
+     * Refusal marker the model must emit verbatim to skip a job. Case-sensitive, exact caps —
+     * matching the historical {@code startsWith} check.
+     */
+    private static final String NO_APPLY_PREFIX = "NO_APPLY:";
+
+    /**
      * Tokenized email shown to the model as a reference. Reuses the standard
      * template constants so the prompt example and the actual template can
      * never drift apart (profile-placeholders spec, scenario 4).
@@ -281,7 +287,7 @@ public class EmailGenerationService implements GenerateEmailUseCase, GetEmailDra
     private EmailDraft parseEmailDraft(Long id, Long jobId, Long userId, String aiResponse, String recipientEmail) {
         String response = aiResponse.trim();
 
-        if (response.startsWith("NO_APPLY:")) {
+        if (indexOfNoApplyMarker(response) >= 0) {
             return new EmailDraft(id, jobId, userId, "", response, EmailStatus.REJECTED, LocalDateTime.now(), null, recipientEmail);
         }
 
@@ -302,6 +308,31 @@ public class EmailGenerationService implements GenerateEmailUseCase, GetEmailDra
         }
 
         return new EmailDraft(id, jobId, userId, subject, body, EmailStatus.PENDING, LocalDateTime.now(), null, recipientEmail);
+    }
+
+    /**
+     * Locates the refusal marker among the leading lines so a refusal that opens with chatter
+     * ("Claro, segue:\nNO_APPLY: …") still rejects the draft instead of falling through to the
+     * subject/body split and persisting a sendable PENDING draft for a no-fit job.
+     *
+     * <p>Case-sensitive and exact-caps, same as the previous {@code startsWith} check: a lowercase
+     * or embedded {@code no_apply:} is not a marker. Mirrors the subject-line scan, so a marker
+     * beyond the scanned lines stays unrecognised.
+     */
+    private static int indexOfNoApplyMarker(String response) {
+        int start = 0;
+        for (int line = 0; line < SUBJECT_SCAN_LINES; line++) {
+            int lineEnd = response.indexOf('\n', start);
+            String current = lineEnd < 0 ? response.substring(start) : response.substring(start, lineEnd);
+            if (current.stripLeading().startsWith(NO_APPLY_PREFIX)) {
+                return start;
+            }
+            if (lineEnd < 0) {
+                break;
+            }
+            start = lineEnd + 1;
+        }
+        return -1;
     }
 
     /**
