@@ -208,7 +208,7 @@ Resume text:
     private TailoredResume parseTailoredResume(String response, String resumeText) {
         try {
             // anchor on objective: reasoning blocks may quote JSON of their own before the payload
-            String json = AiJsonPayloads.firstObjectWithField(response, "objective");
+            String json = AiJsonPayloads.lastObjectWithField(response, "objective");
             if (json == null) {
                 throw new AiException("AI response contains no valid JSON");
             }

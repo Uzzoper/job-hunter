@@ -132,7 +132,7 @@ public class AiAnalysisService implements AnalyzeJobUseCase {
                 throw new AiException("AI returned empty or null response");
             }
             // anchor on matchScore: reasoning blocks may quote JSON of their own before the payload
-            String potentialJson = AiJsonPayloads.firstObjectWithField(json, "matchScore");
+            String potentialJson = AiJsonPayloads.lastObjectWithField(json, "matchScore");
             if (potentialJson == null) {
                 throw new AiException("No JSON object found in AI response");
             }

@@ -27,7 +27,7 @@ final class AiJsonPayloads {
      * falling back to the first object found so malformed payloads keep failing with the caller's
      * own error message instead of a generic one. Returns {@code null} when no object exists.
      */
-    static String firstObjectWithField(String raw, String requiredField) {
+    static String lastObjectWithField(String raw, String requiredField) {
         String firstObject = null;
         String lastWithField = null;
         for (String candidate : objectsIn(raw)) {
