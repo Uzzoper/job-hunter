@@ -11,10 +11,15 @@ import com.juanperuzzo.job_hunter.application.port.in.BackfillContactEmailsUseCa
 public record BackfillResultResponse(int scanned, int filled, int stillNull) {
 
     public static BackfillResultResponse from(BackfillContactEmailsUseCase.Result result) {
-        return new BackfillResultResponse(result.scanned(), result.filled(), result.stillNull());
+        return of(result.scanned(), result.filled(), result.stillNull());
     }
 
     public static BackfillResultResponse from(BackfillCompanyWebsitesUseCase.Result result) {
-        return new BackfillResultResponse(result.scanned(), result.filled(), result.stillNull());
+        return of(result.scanned(), result.filled(), result.stillNull());
+    }
+
+    /** Single mapping point so both backfill endpoints cannot drift apart. */
+    private static BackfillResultResponse of(int scanned, int filled, int stillNull) {
+        return new BackfillResultResponse(scanned, filled, stillNull);
     }
 }

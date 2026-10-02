@@ -194,11 +194,21 @@ public class JobController {
         return ResponseEntity.ok(BackfillResultResponse.from(result));
     }
 
+    /**
+     * Backfill company websites on stored Gupy rows (gupy-detail-domains spec §7).
+     *
+     * <p>{@code afterId} pages the scan by row id (exclusive lower bound, rows ordered
+     * by id): the resolver caps at the first {@code maxHosts} distinct hosts, so a dead
+     * head would otherwise be retried on every round and starve everything behind it.
+     * Omit it to scan from the start; the bot pages explicit id ranges and finishes with
+     * a final sweep without {@code afterId}.
+     */
     @PostMapping("/backfill-websites")
     public ResponseEntity<BackfillResultResponse> backfillWebsites(
             @RequestParam(defaultValue = "true") boolean dryRun,
-            @RequestParam(defaultValue = "50") int maxHosts) {
-        var result = backfillCompanyWebsitesUseCase.run(dryRun, maxHosts);
+            @RequestParam(defaultValue = "50") int maxHosts,
+            @RequestParam(required = false) Long afterId) {
+        var result = backfillCompanyWebsitesUseCase.run(dryRun, maxHosts, afterId);
         return ResponseEntity.ok(BackfillResultResponse.from(result));
     }
 
