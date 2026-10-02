@@ -24,11 +24,19 @@ import org.slf4j.LoggerFactory;
 
 import java.time.LocalDateTime;
 import java.util.Objects;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 public class EmailGenerationService implements GenerateEmailUseCase, GetEmailDraftUseCase {
 
     private static final Logger log = LoggerFactory.getLogger(EmailGenerationService.class);
+
+    /**
+     * Leading subject label of a response line, in English ({@code Subject:}) or
+     * Brazilian Portuguese ({@code Assunto:}). Case-sensitive, whitespace optional
+     * after the colon — same strictness as the rest of the response parsing.
+     */
+    private static final Pattern SUBJECT_LABEL = Pattern.compile("^(Subject|Assunto)\\s*:");
 
     /**
      * Tokenized email shown to the model as a reference. Reuses the standard
@@ -251,15 +259,22 @@ public class EmailGenerationService implements GenerateEmailUseCase, GetEmailDra
         return prompt;
     }
 
-    /**
-     * Parses the raw AI response into an {@code EmailDraft}.
-     * <p>
-     * If the trimmed response starts with the refusal prefix {@code NO_APPLY:}
-     * (case-sensitive), no subject/body parsing happens: the draft is persisted as
-     * {@code REJECTED} with an empty subject and the full trimmed response as body,
-     * keeping the refusal reason auditable and never producing a fake sendable subject.
-     * Otherwise it follows the {@code Subject: } split logic and produces a {@code PENDING} draft.
-     */
+/**
+ * Parses the raw AI response into an {@code EmailDraft}.
+ * <p>
+ * If the trimmed response starts with the refusal prefix {@code NO_APPLY:}
+ * (case-sensitive), no subject/body parsing happens: the draft is persisted as
+ * {@code REJECTED} with an empty subject and the full trimmed response as body,
+ * keeping the refusal reason auditable and never producing a fake sendable subject.
+ * Otherwise it follows the {@code Subject: } split logic and produces a {@code PENDING} draft.
+ * <p>
+ * Prompt 2 mandates an English {@code "Subject: "} prefix while the body must be
+ * Brazilian Portuguese, so the model sometimes emits {@code "Assunto: "} instead —
+ * observed live as an {@code "Assunto: Candidatura — …"} line opening the sent body.
+ * Both ends are normalized here: a leading {@code Subject:}/{@code Assunto:} prefix is
+ * stripped and re-applied as {@code "Subject: <text>"}, and any remaining
+ * {@code ^(Subject|Assunto)\s*:} line at the top of the body is dropped.
+ */
     private EmailDraft parseEmailDraft(Long id, Long jobId, Long userId, String aiResponse, String recipientEmail) {
         String response = aiResponse.trim();
 
@@ -272,17 +287,44 @@ public class EmailGenerationService implements GenerateEmailUseCase, GetEmailDra
 
         int subjectEnd = response.indexOf('\n');
         if (subjectEnd > 0) {
-            subject = response.substring(0, subjectEnd).trim();
-            body = response.substring(subjectEnd).trim();
+            subject = normalizeSubject(response.substring(0, subjectEnd).trim());
+            body = stripLeadingSubjectLines(response.substring(subjectEnd).trim());
         } else {
-            subject = response.trim();
+            subject = normalizeSubject(response.trim());
             body = "";
         }
 
-        if (!subject.startsWith("Subject: ")) {
-            subject = "Subject: " + subject;
-        }
-
         return new EmailDraft(id, jobId, userId, subject, body, EmailStatus.PENDING, LocalDateTime.now(), null, recipientEmail);
+    }
+
+/**
+     * Stores the subject in the normalized {@code "Subject: <text>"} form, accepting a
+     * leading {@code "Subject:"} or {@code "Assunto:"} label (with optional whitespace
+     * after the colon) and stripping it — so a Portuguese subject line is never persisted
+     * as {@code "Subject: Assunto: Candidatura — …"} nor as a bare, unprefixed line.
+     */
+    private static String normalizeSubject(String subject) {
+        var matcher = SUBJECT_LABEL.matcher(subject);
+        var text = matcher.find() ? subject.substring(matcher.end()).trim() : subject;
+        return "Subject: " + text;
+    }
+
+    /**
+     * Drops every leading subject-label line from the body (the model sometimes repeats
+     * the subject below the first line), so no {@code "Assunto: …"} or {@code "Subject: …"}
+     * prefix survives as the first line of the persisted — and therefore sent — body.
+     */
+    private static String stripLeadingSubjectLines(String body) {
+        String remaining = body;
+        boolean dropped;
+        do {
+            dropped = false;
+            var lines = remaining.split("\n", 2);
+            if (lines.length == 2 && SUBJECT_LABEL.matcher(lines[0].trim()).find()) {
+                remaining = lines[1].trim();
+                dropped = true;
+            }
+        } while (dropped);
+        return remaining;
     }
 }
