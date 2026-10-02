@@ -630,7 +630,7 @@ class JobControllerTest {
         authenticateAs(1L);
 
         var result = new BackfillCompanyWebsitesUseCase.Result(10, 6, 4);
-        when(backfillCompanyWebsitesUseCase.run(true, 50)).thenReturn(result);
+        when(backfillCompanyWebsitesUseCase.run(true, 50, null)).thenReturn(result);
 
         mockMvc.perform(post("/api/jobs/backfill-websites"))
                 .andExpect(status().isOk())
@@ -638,7 +638,7 @@ class JobControllerTest {
                 .andExpect(jsonPath("$.filled").value(6))
                 .andExpect(jsonPath("$.stillNull").value(4));
 
-        verify(backfillCompanyWebsitesUseCase).run(true, 50);
+        verify(backfillCompanyWebsitesUseCase).run(true, 50, null);
     }
 
     @Test
@@ -647,7 +647,7 @@ class JobControllerTest {
         authenticateAs(1L);
 
         var result = new BackfillCompanyWebsitesUseCase.Result(2, 2, 0);
-        when(backfillCompanyWebsitesUseCase.run(false, 10)).thenReturn(result);
+        when(backfillCompanyWebsitesUseCase.run(false, 10, null)).thenReturn(result);
 
         mockMvc.perform(post("/api/jobs/backfill-websites")
                         .param("dryRun", "false")
@@ -657,7 +657,26 @@ class JobControllerTest {
                 .andExpect(jsonPath("$.filled").value(2))
                 .andExpect(jsonPath("$.stillNull").value(0));
 
-        verify(backfillCompanyWebsitesUseCase).run(false, 10);
+        verify(backfillCompanyWebsitesUseCase).run(false, 10, null);
+    }
+
+    @Test
+    @DisplayName("backfillWebsites should forward afterId to page the scan past covered ranges")
+    void backfillWebsites_whenAfterIdGiven_shouldForwardAfterIdToUseCase() throws Exception {
+        authenticateAs(1L);
+
+        var result = new BackfillCompanyWebsitesUseCase.Result(3, 3, 0);
+        when(backfillCompanyWebsitesUseCase.run(false, 50, 100L)).thenReturn(result);
+
+        mockMvc.perform(post("/api/jobs/backfill-websites")
+                        .param("dryRun", "false")
+                        .param("afterId", "100"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.scanned").value(3))
+                .andExpect(jsonPath("$.filled").value(3))
+                .andExpect(jsonPath("$.stillNull").value(0));
+
+        verify(backfillCompanyWebsitesUseCase).run(false, 50, 100L);
     }
 
     @Test
