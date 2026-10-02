@@ -23,6 +23,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.time.LocalDateTime;
+import java.util.Arrays;
 import java.util.Objects;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -306,7 +307,7 @@ public class EmailGenerationService implements GenerateEmailUseCase, GetEmailDra
         int subjectEnd = response.indexOf('\n', subjectStart);
         if (subjectEnd > subjectStart) {
             subject = normalizeSubject(response.substring(subjectStart, subjectEnd).trim());
-            body = stripLeadingSubjectLines(response.substring(subjectEnd).trim());
+            body = stripStraySubjectLabelLines(response.substring(subjectEnd).trim());
         } else {
             subject = normalizeSubject(response.substring(subjectStart).trim());
             body = "";
@@ -374,6 +375,19 @@ public class EmailGenerationService implements GenerateEmailUseCase, GetEmailDra
     }
 
     /**
+     * Drops stray subject-label lines from the body so no {@code "Assunto: …"} or
+     * {@code "Subject: …"} artefact survives in the persisted — and therefore sent — body:
+     * every leading label line (the model sometimes repeats the subject below the first line) and
+     * every trailing label-only line, such as a dangling {@code "Assunto:"} left at the end.
+     *
+     * <p>A trailing line that still carries text is legitimate content and is kept, and a body
+     * made of a single line is never emptied.
+     */
+    private static String stripStraySubjectLabelLines(String body) {
+        return stripTrailingLabelOnlyLines(stripLeadingSubjectLines(body));
+    }
+
+    /**
      * Drops every leading subject-label line from the body (the model sometimes repeats
      * the subject below the first line), so no {@code "Assunto: …"} or {@code "Subject: …"}
      * prefix survives as the first line of the persisted — and therefore sent — body.
@@ -390,5 +404,33 @@ public class EmailGenerationService implements GenerateEmailUseCase, GetEmailDra
             }
         } while (dropped);
         return remaining;
+    }
+
+    /**
+     * Drops the trailing lines while they are blank or a subject label carrying no text, so a
+     * body ending on {@code "Assunto:"} (or on several of them) loses the artefact instead of
+     * sending it to the recruiter. Requires at least one remaining line, hence the length guard.
+     */
+    private static String stripTrailingLabelOnlyLines(String body) {
+        String remaining = body.strip();
+        boolean dropped;
+        do {
+            dropped = false;
+            String[] lines = remaining.split("\n", -1);
+            if (lines.length > 1) {
+                String last = lines[lines.length - 1].strip();
+                if (last.isEmpty() || isLabelOnly(last)) {
+                    remaining = String.join("\n", Arrays.copyOfRange(lines, 0, lines.length - 1)).strip();
+                    dropped = true;
+                }
+            }
+        } while (dropped);
+        return remaining;
+    }
+
+    /** True when {@code line} is a subject label with nothing after it (e.g. a dangling {@code "Assunto:"}). */
+    private static boolean isLabelOnly(String line) {
+        var matcher = SUBJECT_LABEL.matcher(line);
+        return matcher.find() && line.substring(matcher.end()).isBlank();
     }
 }
