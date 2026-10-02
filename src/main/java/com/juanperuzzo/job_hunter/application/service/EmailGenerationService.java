@@ -38,6 +38,9 @@ public class EmailGenerationService implements GenerateEmailUseCase, GetEmailDra
      */
     private static final Pattern SUBJECT_LABEL = Pattern.compile("^(Subject|Assunto)\\s*:");
 
+    /** Leading lines scanned for the subject label before falling back to the first line. */
+    private static final int SUBJECT_SCAN_LINES = 5;
+
     /**
      * Tokenized email shown to the model as a reference. Reuses the standard
      * template constants so the prompt example and the actual template can
@@ -285,16 +288,41 @@ public class EmailGenerationService implements GenerateEmailUseCase, GetEmailDra
         String subject;
         String body;
 
-        int subjectEnd = response.indexOf('\n');
-        if (subjectEnd > 0) {
-            subject = normalizeSubject(response.substring(0, subjectEnd).trim());
+        int subjectStart = indexOfSubjectLine(response);
+        if (subjectStart < 0) {
+            subjectStart = 0;
+        }
+        int subjectEnd = response.indexOf('\n', subjectStart);
+        if (subjectEnd > subjectStart) {
+            subject = normalizeSubject(response.substring(subjectStart, subjectEnd).trim());
             body = stripLeadingSubjectLines(response.substring(subjectEnd).trim());
         } else {
-            subject = normalizeSubject(response.trim());
+            subject = normalizeSubject(response.substring(subjectStart).trim());
             body = "";
         }
 
         return new EmailDraft(id, jobId, userId, subject, body, EmailStatus.PENDING, LocalDateTime.now(), null, recipientEmail);
+    }
+
+    /**
+     * Locates the subject line among the leading lines so chatter before it (models often answer
+     * "Aqui está o e-mail:" first) never lands in the persisted subject. Falls back to position
+     * zero when no labelled line appears, keeping the historical first-line-as-subject behaviour.
+     */
+    private static int indexOfSubjectLine(String response) {
+        int start = 0;
+        for (int line = 0; line < SUBJECT_SCAN_LINES; line++) {
+            int lineEnd = response.indexOf('\n', start);
+            String current = (lineEnd < 0 ? response.substring(start) : response.substring(start, lineEnd)).trim();
+            if (SUBJECT_LABEL.matcher(current).find()) {
+                return start;
+            }
+            if (lineEnd < 0) {
+                break;
+            }
+            start = lineEnd + 1;
+        }
+        return -1;
     }
 
 /**
