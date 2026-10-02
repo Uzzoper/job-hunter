@@ -1,6 +1,7 @@
 package com.juanperuzzo.job_hunter.infrastructure.scraper.provider;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.juanperuzzo.job_hunter.application.port.out.CompanyDomainResolverPort;
 import com.juanperuzzo.job_hunter.application.port.out.RawJob;
 import com.juanperuzzo.job_hunter.domain.PortalDomains;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.normalizer.UrlNormalizer;
@@ -13,6 +14,7 @@ import org.springframework.web.client.RestClientResponseException;
 
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 
@@ -26,6 +28,8 @@ public class GupyProvider implements ExtractionStrategy {
     private final ExponentialBackoffRetry retry;
     private final List<String> keywords;
     private final int limit;
+    private final CompanyDomainResolverPort companyDomainResolver;
+    private final int maxDetailDomains;
 
     public GupyProvider(
             String baseUrl,
@@ -33,11 +37,7 @@ public class GupyProvider implements ExtractionStrategy {
             List<String> keywords,
             int limit,
             ExponentialBackoffRetry retry) {
-        this.providerId = "gupy";
-        this.keywords = keywords;
-        this.limit = limit;
-        this.retry = retry;
-        this.apiStrategy = new RestApiStrategy(providerId, baseUrl, timeoutSeconds, JSON_PATH, this::mapNode);
+        this(baseUrl, timeoutSeconds, keywords, limit, retry, null, 0);
     }
 
     public GupyProvider(
@@ -46,11 +46,41 @@ public class GupyProvider implements ExtractionStrategy {
             ExponentialBackoffRetry retry,
             List<String> keywords,
             int limit) {
+        this(providerId, apiStrategy, retry, keywords, limit, null, 0);
+    }
+
+    public GupyProvider(
+            String baseUrl,
+            int timeoutSeconds,
+            List<String> keywords,
+            int limit,
+            ExponentialBackoffRetry retry,
+            CompanyDomainResolverPort companyDomainResolver,
+            int maxDetailDomains) {
+        this.providerId = "gupy";
+        this.keywords = keywords;
+        this.limit = limit;
+        this.retry = retry;
+        this.apiStrategy = new RestApiStrategy("gupy", baseUrl, timeoutSeconds, JSON_PATH, this::mapNode);
+        this.companyDomainResolver = companyDomainResolver;
+        this.maxDetailDomains = maxDetailDomains;
+    }
+
+    public GupyProvider(
+            String providerId,
+            RestApiStrategy apiStrategy,
+            ExponentialBackoffRetry retry,
+            List<String> keywords,
+            int limit,
+            CompanyDomainResolverPort companyDomainResolver,
+            int maxDetailDomains) {
         this.providerId = providerId;
         this.apiStrategy = apiStrategy;
         this.retry = retry;
         this.keywords = keywords;
         this.limit = limit;
+        this.companyDomainResolver = companyDomainResolver;
+        this.maxDetailDomains = maxDetailDomains;
     }
 
     @Override
@@ -88,8 +118,54 @@ public class GupyProvider implements ExtractionStrategy {
         }
 
         var result = List.copyOf(uniqueJobs.values());
-        log.info("{}: total unique jobs fetched: {}", providerId, result.size());
-        return result;
+        var resolved = resolveCompanyDomains(result);
+        log.info("{}: total unique jobs fetched: {}", providerId, resolved.size());
+        return resolved;
+    }
+
+    /**
+     * Resolve a company website per career-page host and attach it as
+     * {@code companyWebsite} metadata to every job of that host
+     * (gupy-detail-domains spec, issue #74).
+     *
+     * <p>The domain is per company, not per job: the shared
+     * {@link CompanyDomainResolverPort} groups jobs by the host of their listing
+     * URL (first-seen order), fetches exactly one detail page per host (the first
+     * job's URL), and the first eligible company link from that page is reused for
+     * all jobs of the same host — hundreds of hosts, not thousands of fetches. At
+     * most {@code maxDetailDomains} hosts are resolved per fetch; overflow hosts
+     * are logged and skipped.
+     *
+     * <p>Per-host failures (404/timeout/malformed) are non-fatal: the host is
+     * skipped with a warning and its jobs keep their list-level metadata — a host
+     * failure never fails the provider fetch. When detail resolution is disabled
+     * (no resolver or no positive cap) the jobs are returned unchanged.
+     */
+    private List<RawJob> resolveCompanyDomains(List<RawJob> jobs) {
+        if (jobs.isEmpty() || companyDomainResolver == null || maxDetailDomains <= 0) {
+            return jobs;
+        }
+
+        var jobUrls = jobs.stream().map(RawJob::url).toList();
+        var resolvedWebsites = companyDomainResolver.resolveCompanyWebsites(jobUrls, maxDetailDomains);
+        if (resolvedWebsites.isEmpty()) {
+            return jobs;
+        }
+
+        var results = new ArrayList<RawJob>(jobs.size());
+        for (var job : jobs) {
+            var website = resolvedWebsites.get(job.url());
+            results.add(website == null ? job : withCompanyWebsite(job, website));
+        }
+        return results;
+    }
+
+    private static RawJob withCompanyWebsite(RawJob job, String website) {
+        var metadata = new HashMap<>(job.metadata());
+        metadata.put("companyWebsite", website);
+        return new RawJob(
+                job.title(), job.company(), job.url(), job.description(),
+                job.rawDate(), job.location(), job.workModel(), job.source(), metadata);
     }
 
     /**
@@ -130,8 +206,8 @@ public class GupyProvider implements ExtractionStrategy {
 
         // Scenario 10: the list API has no real company-website field — careerPageUrl is
         // always a Gupy-hosted portal page (e.g. https://techco.gupy.io). Portal URLs are
-        // never stored as companyWebsite (null instead); real-site extraction from detail
-        // pages is a separate future spike.
+        // never stored as companyWebsite (null instead); real-site extraction happens in
+        // resolveCompanyDomains(), which fetches one detail page per host (#74).
         var metadata = new HashMap<String, String>();
         var careerPageUrl = node.path("careerPageUrl").asText("");
         if (!careerPageUrl.isBlank() && !isPortalUrl(careerPageUrl)) {

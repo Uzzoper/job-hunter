@@ -7,6 +7,7 @@ import com.juanperuzzo.job_hunter.application.port.out.EmailDraftRepository;
 import com.juanperuzzo.job_hunter.application.port.out.EmailSenderPort;
 import com.juanperuzzo.job_hunter.application.port.out.JobRepository;
 import com.juanperuzzo.job_hunter.application.port.out.CompanySiteEnrichmentPort;
+import com.juanperuzzo.job_hunter.application.port.out.CompanyDomainResolverPort;
 import com.juanperuzzo.job_hunter.application.port.out.NormalizerPort;
 import com.juanperuzzo.job_hunter.application.port.out.PdfRendererPort;
 import com.juanperuzzo.job_hunter.application.port.out.ScraperPort;
@@ -38,6 +39,7 @@ import com.juanperuzzo.job_hunter.application.service.RecordExternalApplyService
 import com.juanperuzzo.job_hunter.application.service.AuthService;
 import com.juanperuzzo.job_hunter.application.service.AutoSendEligibilityService;
 import com.juanperuzzo.job_hunter.application.service.BackfillContactEmailsService;
+import com.juanperuzzo.job_hunter.application.service.BackfillCompanyWebsitesService;
 import com.juanperuzzo.job_hunter.application.service.ResumeUploadService;
 import com.juanperuzzo.job_hunter.application.service.TemplateEmailService;
 import com.juanperuzzo.job_hunter.application.service.UserProfileService;
@@ -80,6 +82,7 @@ import com.juanperuzzo.job_hunter.infrastructure.scraper.provider.GreenhouseProv
 import com.juanperuzzo.job_hunter.infrastructure.scraper.provider.AshbyProvider;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.provider.LeverProvider;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.provider.GithubJobsProvider;
+import com.juanperuzzo.job_hunter.infrastructure.scraper.resolver.HttpCompanyDomainResolver;
 
 @Configuration
 @EnableConfigurationProperties(LinkedInScraperProperties.class)
@@ -255,8 +258,25 @@ public class AppConfig {
             @Value("${scraper.gupy.timeout-seconds}") int timeoutSeconds,
             @Value("#{'${scraper.gupy.keywords}'.split(',')}") List<String> keywords,
             @Value("${scraper.gupy.limit}") int limit,
-            ExponentialBackoffRetry exponentialBackoffRetry) {
-        return new GupyProvider(baseUrl, timeoutSeconds, keywords, limit, exponentialBackoffRetry);
+            @Value("${scraper.gupy.max-detail-domains:100}") int maxDetailDomains,
+            ExponentialBackoffRetry exponentialBackoffRetry,
+            CompanyDomainResolverPort companyDomainResolverPort) {
+        return new GupyProvider(baseUrl, timeoutSeconds, keywords, limit, exponentialBackoffRetry,
+                companyDomainResolverPort, maxDetailDomains);
+    }
+
+    /**
+     * Shared company-domain resolver (gupy-detail-domains spec §7): host-grouping +
+     * link policy used by both the Gupy fetch path and the company-website backfill.
+     * Reuses the shared scraper {@link RestClient}, retry and provider-wide
+     * {@link RateLimiter} (detail fetches stay throttled with the rest of scraping).
+     */
+    @Bean
+    public CompanyDomainResolverPort companyDomainResolverPort(
+            RestClient scraperRestClient,
+            ExponentialBackoffRetry exponentialBackoffRetry,
+            RateLimiter rateLimiter) {
+        return new HttpCompanyDomainResolver(scraperRestClient, exponentialBackoffRetry, rateLimiter);
     }
 
     @Bean
@@ -443,6 +463,13 @@ public class AppConfig {
             JobRepository jobRepository,
             ContactEmailExtractorPort contactEmailExtractorPort) {
         return new BackfillContactEmailsService(jobRepository, contactEmailExtractorPort);
+    }
+
+    @Bean
+    public BackfillCompanyWebsitesService backfillCompanyWebsitesService(
+            JobRepository jobRepository,
+            CompanyDomainResolverPort companyDomainResolverPort) {
+        return new BackfillCompanyWebsitesService(jobRepository, companyDomainResolverPort);
     }
 
     @Bean

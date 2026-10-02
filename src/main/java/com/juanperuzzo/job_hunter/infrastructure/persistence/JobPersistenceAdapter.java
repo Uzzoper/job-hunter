@@ -63,6 +63,20 @@ public class JobPersistenceAdapter implements JobRepository {
                 .toList();
     }
 
+    @Override
+    public List<Job> findBySourceAndCompanyWebsiteIsNull(String source) {
+        return jpaRepository.findBySourceAndCompanyWebsiteIsNull(source).stream()
+                .map(this::toDomain)
+                .toList();
+    }
+
+    @Override
+    public List<Job> findBySourceAndCompanyWebsiteIsNullAfterId(String source, long afterId) {
+        return jpaRepository.findBySourceAndCompanyWebsiteIsNullAfterId(source, afterId).stream()
+                .map(this::toDomain)
+                .toList();
+    }
+
     private JobEntity toEntity(Job job) {
         return new JobEntity(
                 job.id(),

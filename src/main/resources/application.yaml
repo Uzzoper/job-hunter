@@ -67,6 +67,11 @@ scraper:
     keywords: desenvolvedor,programador,estágio,junior,ti,tecnologia,dev,software,analista
     limit: 100
     timeout-seconds: 10
+    # gupy-detail-domains spec (#74): companyWebsite is resolved from one detail page
+    # per career-page host; hosts beyond this cap per fetch are logged and skipped.
+    # Keep this cap >= limit above: a fetch can never overflow its own cap, which
+    # is what the backfill straggler guarantee ("covered going forward") relies on.
+    max-detail-domains: 100
   infojobs:
     base-url: https://www.infojobs.com.br
     keywords: desenvolvedor,programador,estágio,junior,ti,tecnologia,dev,software,analista
@@ -86,7 +91,10 @@ scraper:
     cache-ttl-hours: 24
     contact-paths: /contato,/contact,/trabalhe-conosco,/carreiras
     # async-company-enrichment spec: batch enrichment endpoint bounds (jobs per run).
-    batch-default-limit: 50
+    # Raised 50 -> 200 (gupy-detail-domains §3, link-quality v3): with 1199 valid
+    # domains already resolved and pending email, the batch cap — not domain
+    # resolution — is the funnel bottleneck. Reversible: lower it back to 50.
+    batch-default-limit: 200
     batch-max-limit: 200
   linkedin:
     enabled: true

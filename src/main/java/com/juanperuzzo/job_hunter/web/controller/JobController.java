@@ -3,6 +3,7 @@ package com.juanperuzzo.job_hunter.web.controller;
 import com.juanperuzzo.job_hunter.application.port.in.AnalyzeJobUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.ApproveDraftUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.BackfillContactEmailsUseCase;
+import com.juanperuzzo.job_hunter.application.port.in.BackfillCompanyWebsitesUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.CompanyEnrichmentUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.FetchJobsUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.FetchSourceJobsUseCase;
@@ -50,6 +51,7 @@ public class JobController {
     private final CompanyEnrichmentUseCase companyEnrichmentUseCase;
     private final RecordExternalApplyUseCase recordExternalApplyUseCase;
     private final BackfillContactEmailsUseCase backfillContactEmailsUseCase;
+    private final BackfillCompanyWebsitesUseCase backfillCompanyWebsitesUseCase;
     private final CurrentUserProvider currentUserService;
 
     public JobController(
@@ -66,6 +68,7 @@ public class JobController {
             CompanyEnrichmentUseCase companyEnrichmentUseCase,
             RecordExternalApplyUseCase recordExternalApplyUseCase,
             BackfillContactEmailsUseCase backfillContactEmailsUseCase,
+            BackfillCompanyWebsitesUseCase backfillCompanyWebsitesUseCase,
             CurrentUserProvider currentUserService) {
         this.fetchJobsUseCase = fetchJobsUseCase;
         this.fetchSourceJobsUseCase = fetchSourceJobsUseCase;
@@ -80,6 +83,7 @@ public class JobController {
         this.companyEnrichmentUseCase = companyEnrichmentUseCase;
         this.recordExternalApplyUseCase = recordExternalApplyUseCase;
         this.backfillContactEmailsUseCase = backfillContactEmailsUseCase;
+        this.backfillCompanyWebsitesUseCase = backfillCompanyWebsitesUseCase;
         this.currentUserService = currentUserService;
     }
 
@@ -178,7 +182,7 @@ public class JobController {
 
     @PostMapping("/enrich-emails")
     public ResponseEntity<EnrichmentResultResponse> enrichEmails(
-            @RequestParam(defaultValue = "${scraper.enricher.batch-default-limit:50}") int limit) {
+            @RequestParam(defaultValue = "${scraper.enricher.batch-default-limit:200}") int limit) {
         var result = companyEnrichmentUseCase.enrichMissingEmails(limit);
         return ResponseEntity.ok(EnrichmentResultResponse.from(result));
     }
@@ -187,6 +191,24 @@ public class JobController {
     public ResponseEntity<BackfillResultResponse> backfillEmails(
             @RequestParam(defaultValue = "true") boolean dryRun) {
         var result = backfillContactEmailsUseCase.run(dryRun);
+        return ResponseEntity.ok(BackfillResultResponse.from(result));
+    }
+
+    /**
+     * Backfill company websites on stored Gupy rows (gupy-detail-domains spec §7).
+     *
+     * <p>{@code afterId} pages the scan by row id (exclusive lower bound, rows ordered
+     * by id): the resolver caps at the first {@code maxHosts} distinct hosts, so a dead
+     * head would otherwise be retried on every round and starve everything behind it.
+     * Omit it to scan from the start; the bot pages explicit id ranges and finishes with
+     * a final sweep without {@code afterId}.
+     */
+    @PostMapping("/backfill-websites")
+    public ResponseEntity<BackfillResultResponse> backfillWebsites(
+            @RequestParam(defaultValue = "true") boolean dryRun,
+            @RequestParam(defaultValue = "50") int maxHosts,
+            @RequestParam(required = false) Long afterId) {
+        var result = backfillCompanyWebsitesUseCase.run(dryRun, maxHosts, afterId);
         return ResponseEntity.ok(BackfillResultResponse.from(result));
     }
 

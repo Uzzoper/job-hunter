@@ -3,6 +3,7 @@ package com.juanperuzzo.job_hunter.unit.web;
 import com.juanperuzzo.job_hunter.application.port.in.AnalyzeJobUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.ApproveDraftUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.BackfillContactEmailsUseCase;
+import com.juanperuzzo.job_hunter.application.port.in.BackfillCompanyWebsitesUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.CompanyEnrichmentUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.EnrichmentResult;
 import com.juanperuzzo.job_hunter.application.port.in.FetchJobsUseCase;
@@ -112,6 +113,9 @@ class JobControllerTest {
 
     @MockitoBean
     private BackfillContactEmailsUseCase backfillContactEmailsUseCase;
+
+    @MockitoBean
+    private BackfillCompanyWebsitesUseCase backfillCompanyWebsitesUseCase;
 
     @MockitoBean
     private TokenProvider tokenProvider;
@@ -572,18 +576,18 @@ class JobControllerTest {
     }
 
     @Test
-    @DisplayName("enrichEmails should default limit to 50 when param omitted")
+    @DisplayName("enrichEmails should default limit to 200 when param omitted")
     void enrichEmails_whenNoLimit_shouldUseDefault() throws Exception {
         authenticateAs(1L);
 
         var result = new EnrichmentResult(0, 0, 0, 0);
-        when(companyEnrichmentUseCase.enrichMissingEmails(50)).thenReturn(result);
+        when(companyEnrichmentUseCase.enrichMissingEmails(200)).thenReturn(result);
 
         mockMvc.perform(post("/api/jobs/enrich-emails"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.checked").value(0));
 
-        verify(companyEnrichmentUseCase).enrichMissingEmails(50);
+        verify(companyEnrichmentUseCase).enrichMissingEmails(200);
     }
 
     @Test
@@ -618,6 +622,61 @@ class JobControllerTest {
                 .andExpect(jsonPath("$.stillNull").value(0));
 
         verify(backfillContactEmailsUseCase).run(false);
+    }
+
+    @Test
+    @DisplayName("backfillWebsites should default dryRun to true and maxHosts to 50")
+    void backfillWebsites_whenDefaults_shouldRunDryRunWithMaxHosts50() throws Exception {
+        authenticateAs(1L);
+
+        var result = new BackfillCompanyWebsitesUseCase.Result(10, 6, 4);
+        when(backfillCompanyWebsitesUseCase.run(true, 50, null)).thenReturn(result);
+
+        mockMvc.perform(post("/api/jobs/backfill-websites"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.scanned").value(10))
+                .andExpect(jsonPath("$.filled").value(6))
+                .andExpect(jsonPath("$.stillNull").value(4));
+
+        verify(backfillCompanyWebsitesUseCase).run(true, 50, null);
+    }
+
+    @Test
+    @DisplayName("backfillWebsites should apply the fills with a custom maxHosts when requested")
+    void backfillWebsites_whenApplyAndCustomMaxHosts_shouldForwardParams() throws Exception {
+        authenticateAs(1L);
+
+        var result = new BackfillCompanyWebsitesUseCase.Result(2, 2, 0);
+        when(backfillCompanyWebsitesUseCase.run(false, 10, null)).thenReturn(result);
+
+        mockMvc.perform(post("/api/jobs/backfill-websites")
+                        .param("dryRun", "false")
+                        .param("maxHosts", "10"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.scanned").value(2))
+                .andExpect(jsonPath("$.filled").value(2))
+                .andExpect(jsonPath("$.stillNull").value(0));
+
+        verify(backfillCompanyWebsitesUseCase).run(false, 10, null);
+    }
+
+    @Test
+    @DisplayName("backfillWebsites should forward afterId to page the scan past covered ranges")
+    void backfillWebsites_whenAfterIdGiven_shouldForwardAfterIdToUseCase() throws Exception {
+        authenticateAs(1L);
+
+        var result = new BackfillCompanyWebsitesUseCase.Result(3, 3, 0);
+        when(backfillCompanyWebsitesUseCase.run(false, 50, 100L)).thenReturn(result);
+
+        mockMvc.perform(post("/api/jobs/backfill-websites")
+                        .param("dryRun", "false")
+                        .param("afterId", "100"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.scanned").value(3))
+                .andExpect(jsonPath("$.filled").value(3))
+                .andExpect(jsonPath("$.stillNull").value(0));
+
+        verify(backfillCompanyWebsitesUseCase).run(false, 50, 100L);
     }
 
     @Test
