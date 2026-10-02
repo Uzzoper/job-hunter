@@ -130,6 +130,12 @@ needs a revisit pass:
     revisited by a later page. They need no visit: the live fetch path
     resolves `companyWebsite` for every new row as it arrives, so stragglers
     are covered going forward rather than by this endpoint.
+  - **Paging discipline (review finding):** completeness depends on caller
+    sizing, not just paging. The resolver caps at the FIRST `maxHosts`
+    distinct hosts of the returned page, so callers must use `maxHosts` ≥
+    distinct hosts per page AND repeat final sweeps until two consecutive
+    zeros — otherwise skipped-beyond-cap hosts are silently never attempted
+    (observable via `stillNull`, not self-healing).
 - Link-quality fixes bundled: reject dotless hosts (`Node.js` case); strip
   tracking query params (`gclid`/`utm`) before storing.
 - Tests: unit with mocked ports (dry-run writes nothing; apply fills only
