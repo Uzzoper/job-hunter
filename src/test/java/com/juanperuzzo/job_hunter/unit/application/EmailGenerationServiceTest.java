@@ -906,6 +906,33 @@ class EmailGenerationServiceTest {
         }
 
         @Test
+        @DisplayName("generate should write only the bare reason to bot memory when the refusal opens with chatter")
+        void generate_whenChatterPrefixedNoApplyRefusal_shouldWriteBareReasonToBotMemory() {
+            when(aiPort.complete(any())).thenReturn("Claro, segue:\nNO_APPLY: stack entirely outside candidate");
+            when(emailDraftRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            UserProfile profile = new UserProfile(null, 1L,
+                    "Experienced Java developer.", List.of("Java"), CompanyTone.FORMAL, List.of(),
+                    null, null, null, null, null, null);
+            when(userProfileRepository.findByUserId(any())).thenReturn(Optional.of(profile));
+
+            Long jobId = 22L;
+            Job job = new Job(jobId, "COBOL Dev", "CompanyM",
+                    "https://example.com/job/22", "Description", LocalDate.now(), "test");
+            JobAnalysis analysis = new JobAnalysis(null, null, null, 65,
+                    List.of(), List.of("Java"),
+                    CompanyTone.FORMAL,
+                    "Mainframe role");
+
+            when(jobRepository.findById(jobId)).thenReturn(Optional.of(job));
+            when(jobAnalysisRepository.findByJobIdAndUserId(jobId, 1L)).thenReturn(Optional.of(analysis));
+
+            EmailDraft draft = emailGenerationService.generate(1L, jobId);
+
+            assertEquals(EmailStatus.REJECTED, draft.status());
+            verify(botMemorySyncService).writeMemoryEntry(1L, "stack entirely outside candidate");
+        }
+
+        @Test
         @DisplayName("generate should still return the REJECTED draft when the memory write fails")
         void generate_whenMemoryWriteFails_shouldStillReturnRejectedDraft() {
             when(aiPort.complete(any())).thenReturn("NO_APPLY: sales role, non-tech");
