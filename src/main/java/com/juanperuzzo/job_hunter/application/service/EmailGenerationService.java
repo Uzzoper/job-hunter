@@ -154,12 +154,17 @@ public class EmailGenerationService implements GenerateEmailUseCase, GetEmailDra
         }
     }
 
-    /** Extracts the reason text after the {@code NO_APPLY:} prefix (falls back to the whole response). */
+    /**
+     * Extracts the reason text after the {@code NO_APPLY:} prefix (falls back to the whole
+     * response). Scans the leading lines with the same marker lookup as the refusal detection,
+     * so a chatter-prefixed refusal also yields the bare reason instead of the full response.
+     */
     private static String refusalReason(String aiResponse) {
         String response = aiResponse.trim();
-        String prefix = "NO_APPLY:";
-        if (response.startsWith(prefix)) {
-            String reason = response.substring(prefix.length()).trim();
+        int markerLineStart = indexOfNoApplyMarker(response);
+        if (markerLineStart >= 0) {
+            int markerStart = response.indexOf(NO_APPLY_PREFIX, markerLineStart);
+            String reason = response.substring(markerStart + NO_APPLY_PREFIX.length()).trim();
             return reason.isEmpty() ? response : reason;
         }
         return response;
