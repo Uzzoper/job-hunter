@@ -1335,6 +1335,63 @@ class EmailGenerationServiceTest {
         }
 
         @Test
+        @DisplayName("generate should drop a lone subject label left at the end of the body")
+        void generate_whenBodyEndsWithLoneSubjectLabel_shouldDropIt() {
+            String aiResponse = """
+                Subject: Candidatura — Desenvolvedor Java na Empresa X
+
+                Olá. Tudo bem?
+
+                Atenciosamente,
+                Juan Peruzzo
+
+                Assunto:""";
+
+            EmailDraft draft = generateWithAiResponse(aiResponse);
+
+            assertFalse(draft.body().contains("Assunto:"), draft.body());
+            assertEquals("Olá. Tudo bem?\n\nAtenciosamente,\nJuan Peruzzo", draft.body(),
+                    "a trailing label-only line must never be persisted — and therefore sent");
+        }
+
+        @Test
+        @DisplayName("generate should drop every consecutive lone subject label at the end of the body")
+        void generate_whenBodyEndsWithConsecutiveLoneSubjectLabels_shouldDropThemAll() {
+            String aiResponse = """
+                Subject: Candidatura — Desenvolvedor Java na Empresa X
+
+                Olá. Tudo bem?
+
+                Assunto:
+
+                Subject:""";
+
+            EmailDraft draft = generateWithAiResponse(aiResponse);
+
+            assertEquals("Olá. Tudo bem?", draft.body(),
+                    "consecutive trailing label-only lines must all be dropped");
+        }
+
+        @Test
+        @DisplayName("generate should keep the last body line when it still carries subject text")
+        void generate_whenLastBodyLineCarriesSubjectText_shouldKeepIt() {
+            String aiResponse = """
+                Subject: Candidatura — Desenvolvedor Java na Empresa X
+
+                Olá. Tudo bem?
+
+                Atenciosamente,
+                Juan Peruzzo
+
+                Assunto: Candidatura — Desenvolvedor Java na Empresa X""";
+
+            EmailDraft draft = generateWithAiResponse(aiResponse);
+
+            assertTrue(draft.body().endsWith("Assunto: Candidatura — Desenvolvedor Java na Empresa X"),
+                    "only a label-only line is an artefact: a labelled line with text is legitimate: " + draft.body());
+        }
+
+        @Test
         @DisplayName("generate should keep the NO_APPLY refusal REJECTED with an empty subject")
         void generate_whenNoFit_shouldStillReturnRejectedDraftWithEmptySubject() {
             String aiResponse = "NO_APPLY: non-tech role, customer service via WhatsApp";
