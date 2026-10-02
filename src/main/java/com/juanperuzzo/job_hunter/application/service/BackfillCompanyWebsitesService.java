@@ -14,14 +14,20 @@ import org.slf4j.LoggerFactory;
  * use case scans them and resolves via the exact same resolver the fetch path
  * uses — no duplicated host-grouping or link policy.
  *
- * <p>The scan set is exactly {@code findBySourceAndCompanyWebsiteIsNull}:
- * existing websites are never candidates, so nothing can ever overwrite them.
+ * <p>The scan set is exactly {@code findBySourceAndCompanyWebsiteIsNull} (or its
+ * {@code findBySourceAndCompanyWebsiteIsNullAfterId} paged variant): existing
+ * websites are never candidates, so nothing can ever overwrite them.
  * Dry-run returns the same counts as apply without persisting, giving an
  * idempotent, rerunnable preview; on apply only the null→found transitions are
  * written (URL-based {@link Job} identity is preserved by
- * {@code withCompanyWebsite}, which copies every other field). {@code maxHosts}
- * bounds the hosts resolved per call — repeat until {@code stillNull} stops
- * shrinking.
+ * {@code withCompanyWebsite}, which copies every other field).
+ *
+ * <p>{@code maxHosts} bounds the hosts resolved per call. {@code afterId} pages the
+ * scan by {@code id} so a dead head cannot starve the run: the resolver caps at the
+ * first {@code maxHosts} distinct hosts, so unresolvable hosts at the front of the
+ * scan would be retried forever and nothing behind them would ever be reached.
+ * Rows created mid-backfill inside an already-covered range are left to the live
+ * fetch path, which resolves websites for new rows as they arrive.
  */
 public class BackfillCompanyWebsitesService implements BackfillCompanyWebsitesUseCase {
 
@@ -39,8 +45,10 @@ public class BackfillCompanyWebsitesService implements BackfillCompanyWebsitesUs
     }
 
     @Override
-    public Result run(boolean dryRun, int maxHosts) {
-        var candidates = jobRepository.findBySourceAndCompanyWebsiteIsNull(SOURCE);
+    public Result run(boolean dryRun, int maxHosts, Long afterId) {
+        var candidates = afterId == null
+                ? jobRepository.findBySourceAndCompanyWebsiteIsNull(SOURCE)
+                : jobRepository.findBySourceAndCompanyWebsiteIsNullAfterId(SOURCE, afterId);
         var scanned = candidates.size();
         var filled = 0;
 
@@ -60,8 +68,8 @@ public class BackfillCompanyWebsitesService implements BackfillCompanyWebsitesUs
         }
 
         var result = new Result(scanned, filled, scanned - filled);
-        log.info("Company-website backfill (dryRun={}, maxHosts={}): scanned={}, filled={}, stillNull={}",
-                dryRun, maxHosts, result.scanned(), result.filled(), result.stillNull());
+        log.info("Company-website backfill (dryRun={}, maxHosts={}, afterId={}): scanned={}, filled={}, stillNull={}",
+                dryRun, maxHosts, afterId, result.scanned(), result.filled(), result.stillNull());
         return result;
     }
 }
