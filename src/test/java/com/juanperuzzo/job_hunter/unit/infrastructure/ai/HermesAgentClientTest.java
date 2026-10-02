@@ -201,7 +201,7 @@ class HermesAgentClientTest {
 
             var result = hermesAgentClient.complete("Test prompt");
 
-            assertEquals("{\\\"matchScore\\\": 80}", result);
+            assertEquals("{\"matchScore\": 80}", result);
         }
 
         @Test

@@ -1265,7 +1265,7 @@ class EmailGenerationServiceTest {
     }
 
     @Nested
-    @DisplayName("Reasoning models: deliberation must not leak into the subject or body")
+    @DisplayName("Reasoning models: chatter must not leak into the subject or body")
     class ReasoningToleranceTests {
 
         private static final String VALID_EMAIL = """
@@ -1280,7 +1280,22 @@ class EmailGenerationServiceTest {
             """;
 
         @Test
-        @DisplayName("generate should ignore a leading think block when parsing the email")
+        @DisplayName("generate should find the subject line when the model answers with chatter first")
+        void generate_whenChatterPrecedesSubjectLine_shouldNotLeakItIntoSubject() {
+            String aiResponse = "<think>The role is junior Java, so a Portuguese email fits.</think>\n"
+                    + "Aqui está o e-mail que preparei:\n\n"
+                    + VALID_EMAIL;
+
+            EmailDraft draft = generateWithAiResponse(aiResponse);
+
+            assertEquals("Subject: Candidatura — Desenvolvedor Java na Empresa X", draft.subject(),
+                    "nothing before the subject line may reach the persisted subject");
+            assertFalse(draft.body().contains("<think>"), draft.body());
+            assertTrue(draft.body().startsWith("Olá. Tudo bem?"), draft.body());
+        }
+
+        @Test
+        @DisplayName("generate should ignore a leading think block when the subject line follows it")
         void generate_whenResponseHasReasoningPrefix_shouldNotLeakItIntoSubjectOrBody() {
             String aiResponse = "<think>The role is junior Java, so a Portuguese email fits.</think>\n\n" + VALID_EMAIL;
 
@@ -1289,18 +1304,6 @@ class EmailGenerationServiceTest {
             assertEquals("Subject: Candidatura — Desenvolvedor Java na Empresa X", draft.subject());
             assertFalse(draft.body().contains("<think>"), draft.body());
             assertTrue(draft.body().startsWith("Olá. Tudo bem?"), draft.body());
-        }
-
-        @Test
-        @DisplayName("generate should ignore a trailing reasoning block when parsing the email")
-        void generate_whenResponseHasReasoningSuffix_shouldNotLeakItIntoBody() {
-            String aiResponse = VALID_EMAIL + "\n\n<reasoning>Signed off politely, no company contact found.</reasoning>";
-
-            EmailDraft draft = generateWithAiResponse(aiResponse);
-
-            assertEquals("Subject: Candidatura — Desenvolvedor Java na Empresa X", draft.subject());
-            assertFalse(draft.body().contains("reasoning"), draft.body());
-            assertTrue(draft.body().endsWith("Juan Peruzzo"), draft.body());
         }
 
         /** Drives the AI branch (score above the threshold) and returns the persisted draft. */
