@@ -54,9 +54,11 @@
 - The prompt includes the user's resume and skills from `user_profiles` (not the user's display name)
 - The email must mention at least 1 candidate project (listed in the prompt template)
 - Maximum 3-5 paragraphs in the `body`
-- The `subject` is extracted from the first line of the AI response (prefix `"Subject: "`)
-- The `body` is the remainder of the response after removing the subject line
-- `EmailDraft` is saved with `userId`, `jobId`, and `status = PENDING` — or `REJECTED` when the AI returns the `NO_APPLY:` refusal (see `email-no-apply-refusal.md`)
+- The `subject` is extracted from the first of the **first 5 leading lines** that carries a subject label — `Subject:` (English) or `Assunto:` (Portuguese), matched after indentation is stripped. Reasoning models often answer with chatter first ("Claro, segue:"), so position 0 is not assumed
+- When no scanned line carries a label, the parser falls back to the historical behaviour: the **first line** becomes the subject
+- The subject is always stored normalized as `"Subject: <text>"`: a leading `Subject:`/`Assunto:` label is stripped and re-applied in the English form, so `"Assunto: Candidatura — …"` is never persisted as `"Subject: Assunto: …"` nor as a bare unprefixed line
+- The `body` is the remainder of the response after removing the subject line, with stray label artefacts removed: every leading label line and every trailing **label-only** line (a dangling `Assunto:` at the end) are dropped. A trailing line that still carries text is legitimate content and is kept
+- `EmailDraft` is saved with `userId`, `jobId`, and `status = PENDING` — or `REJECTED` when the AI returns the `NO_APPLY:` refusal anywhere in the first 5 leading lines (see `email-no-apply-refusal.md`)
 - Per-user uniqueness: one draft per `(job_id, user_id)` enforced at database level (see `email-no-apply-refusal.md` for the reconciled migration numbering — the earlier `V3` mention here predates the actual `V3__add_rejected_to_email_status.sql`)
 - When `matchScore >= minMatchScore`, the AI-write path personalizes the email (high-score jobs deserve tailored outreach); when `matchScore < minMatchScore`, a fixed template replaces the AI call entirely (saves AI credits, deterministic output)
 - Idempotency check on create (see `email-idempotency.md`): if a `SENT` draft already exists for `(jobId, job.contactEmail)`, generation is skipped and the existing `SENT` is returned (`DEBUG` log); new drafts snapshot `recipientEmail = job.contactEmail()`
