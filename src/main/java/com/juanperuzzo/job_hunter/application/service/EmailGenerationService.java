@@ -25,6 +25,7 @@ import org.slf4j.LoggerFactory;
 import java.time.LocalDateTime;
 import java.util.Arrays;
 import java.util.Objects;
+import java.util.function.Predicate;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
@@ -39,8 +40,11 @@ public class EmailGenerationService implements GenerateEmailUseCase, GetEmailDra
      */
     private static final Pattern SUBJECT_LABEL = Pattern.compile("^(Subject|Assunto)\\s*:");
 
-    /** Leading lines scanned for the subject label before falling back to the first line. */
-    private static final int SUBJECT_SCAN_LINES = 5;
+    /**
+     * Width of the leading-line scan shared by the subject-label and refusal-marker lookups:
+     * at most this many lines are inspected before falling back.
+     */
+    private static final int LEADING_LINE_SCAN = 5;
 
     /**
      * Refusal marker the model must emit verbatim to skip a job. Case-sensitive, exact caps —
@@ -322,23 +326,11 @@ public class EmailGenerationService implements GenerateEmailUseCase, GetEmailDra
      * subject/body split and persisting a sendable PENDING draft for a no-fit job.
      *
      * <p>Case-sensitive and exact-caps, same as the previous {@code startsWith} check: a lowercase
-     * or embedded {@code no_apply:} is not a marker. Mirrors the subject-line scan, so a marker
-     * beyond the scanned lines stays unrecognised.
+     * or embedded {@code no_apply:} is not a marker. Shares the bounded scan with the subject-label
+     * lookup, so a marker beyond the scanned lines stays unrecognised.
      */
     private static int indexOfNoApplyMarker(String response) {
-        int start = 0;
-        for (int line = 0; line < SUBJECT_SCAN_LINES; line++) {
-            int lineEnd = response.indexOf('\n', start);
-            String current = lineEnd < 0 ? response.substring(start) : response.substring(start, lineEnd);
-            if (current.stripLeading().startsWith(NO_APPLY_PREFIX)) {
-                return start;
-            }
-            if (lineEnd < 0) {
-                break;
-            }
-            start = lineEnd + 1;
-        }
-        return -1;
+        return indexOfLeadingLine(response, line -> line.startsWith(NO_APPLY_PREFIX));
     }
 
     /**
@@ -347,11 +339,22 @@ public class EmailGenerationService implements GenerateEmailUseCase, GetEmailDra
      * zero when no labelled line appears, keeping the historical first-line-as-subject behaviour.
      */
     private static int indexOfSubjectLine(String response) {
+        return indexOfLeadingLine(response, line -> SUBJECT_LABEL.matcher(line).find());
+    }
+
+    /**
+     * Walks at most {@link #LEADING_LINE_SCAN} leading lines of {@code response} and returns the
+     * start offset of the first one accepted by {@code linePredicate}, or {@code -1} when none
+     * matches. Each line is matched after {@code stripLeading()}, so indentation before a label or
+     * the refusal marker is tolerated. Both the subject-label and refusal-marker lookups share this
+     * walk, so they cannot drift apart in width or trimming semantics.
+     */
+    private static int indexOfLeadingLine(String response, Predicate<String> linePredicate) {
         int start = 0;
-        for (int line = 0; line < SUBJECT_SCAN_LINES; line++) {
+        for (int line = 0; line < LEADING_LINE_SCAN; line++) {
             int lineEnd = response.indexOf('\n', start);
-            String current = (lineEnd < 0 ? response.substring(start) : response.substring(start, lineEnd)).trim();
-            if (SUBJECT_LABEL.matcher(current).find()) {
+            String current = lineEnd < 0 ? response.substring(start) : response.substring(start, lineEnd);
+            if (linePredicate.test(current.stripLeading())) {
                 return start;
             }
             if (lineEnd < 0) {
