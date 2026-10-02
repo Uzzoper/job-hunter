@@ -1335,6 +1335,27 @@ class EmailGenerationServiceTest {
         }
 
         @Test
+        @DisplayName("generate should apply the same 5-line scan to the subject label and to the refusal marker")
+        void generate_whenLabelSitsOnTheLastScannedLine_shouldBeFoundByTheSharedScan() {
+            String aiResponse = """
+                Analisando os requisitos da vaga:
+
+                A stack pedida e Java com Spring Boot.
+                Nao encontrei e-mail de contato.
+                Subject: Candidatura — Desenvolvedor Java na Empresa X
+
+                Olá. Tudo bem?""";
+
+            EmailDraft draft = generateWithAiResponse(aiResponse);
+
+            assertEquals(EmailStatus.PENDING, draft.status(),
+                    "the same bounded scan must not read line 5 as a refusal marker");
+            assertEquals("Subject: Candidatura — Desenvolvedor Java na Empresa X", draft.subject(),
+                    "a label on the last scanned line must still be found by the subject scan");
+            assertTrue(draft.body().startsWith("Olá. Tudo bem?"), draft.body());
+        }
+
+        @Test
         @DisplayName("generate should drop a lone subject label left at the end of the body")
         void generate_whenBodyEndsWithLoneSubjectLabel_shouldDropIt() {
             String aiResponse = """
