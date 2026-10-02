@@ -689,6 +689,87 @@ class EmailGenerationServiceTest {
 
             assertEquals(EmailStatus.PENDING, draft.status());
         }
+
+        @Test
+        @DisplayName("generate should reject a no-fit job when the NO_APPLY marker is preceded by chatter")
+        void generate_whenNoApplyMarkerIsPrecededByChatter_shouldReturnRejectedDraft() {
+            String aiResponse = """
+                Claro, segue:
+                NO_APPLY: non-tech role, customer service via WhatsApp""";
+
+            EmailDraft draft = generateWithRefusalResponse(aiResponse, 71L);
+
+            assertEquals(EmailStatus.REJECTED, draft.status(),
+                    "a refusal marker on the second line must still reject the draft");
+            assertEquals("", draft.subject(), "a refusal must never persist a sendable subject");
+            assertEquals(aiResponse, draft.body(),
+                    "the full trimmed response, chatter prefix included, stays auditable in the body");
+            verify(emailDraftRepository).save(draft);
+        }
+
+        @Test
+        @DisplayName("generate should reject a no-fit job when the NO_APPLY marker sits on the third line")
+        void generate_whenNoApplyMarkerIsOnThirdLine_shouldReturnRejectedDraft() {
+            String aiResponse = """
+                Analisando a vaga:
+                
+
+                NO_APPLY: stack entirely outside candidate""";
+
+            EmailDraft draft = generateWithRefusalResponse(aiResponse, 72L);
+
+            assertEquals(EmailStatus.REJECTED, draft.status(),
+                    "the marker is scanned across the leading lines, not only at position 0");
+            assertEquals("", draft.subject());
+            assertEquals(aiResponse, draft.body());
+        }
+
+        @Test
+        @DisplayName("generate should keep PENDING when the NO_APPLY marker sits beyond the scanned lines (documents the remaining hole)")
+        void generate_whenNoApplyMarkerIsBeyondTheScannedLines_shouldRemainPending() {
+            String aiResponse = """
+                Claro, segue a minha analise:
+                
+
+                O cargo pede Salesforce.
+                Nao tenho experiencia com essa plataforma.
+                
+
+                NO_APPLY: salesforce-only role""";
+
+            EmailDraft draft = generateWithRefusalResponse(aiResponse, 73L);
+
+            assertEquals(EmailStatus.PENDING, draft.status(),
+                    "only the first " + 5 + " lines are scanned for the marker, so line 6 falls through");
+            assertEquals("Subject: Claro, segue a minha analise:", draft.subject(),
+                    "without a marker the first line still becomes the subject");
+            assertTrue(draft.body().contains("NO_APPLY: salesforce-only role"),
+                    "the unrecognised marker stays in the body, which is the documented remaining hole");
+        }
+
+        /** Drives the AI branch (score above the threshold) with {@code aiResponse} and returns the persisted draft. */
+        private EmailDraft generateWithRefusalResponse(String aiResponse, long jobId) {
+            when(aiPort.complete(any())).thenReturn(aiResponse);
+            when(emailDraftRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            UserProfile validProfile = new UserProfile(null, 1L,
+                "Experienced Java developer with Spring Boot expertise.",
+                List.of("Java", "Spring Boot", "PostgreSQL"),
+                CompanyTone.FORMAL,
+                List.of(), null, null, null, null, null, null);
+            when(userProfileRepository.findByUserId(any())).thenReturn(Optional.of(validProfile));
+
+            Job job = new Job(jobId, "Customer Service", "CompanyZ",
+                "https://example.com/job/" + jobId, "Description", LocalDate.now(), "test");
+            JobAnalysis analysis = new JobAnalysis(null, null, null, 75,
+                List.of(),
+                List.of("Java", "Spring Boot"),
+                CompanyTone.FORMAL,
+                "Customer service role, non-tech");
+            when(jobRepository.findById(jobId)).thenReturn(Optional.of(job));
+            when(jobAnalysisRepository.findByJobIdAndUserId(jobId, 1L)).thenReturn(Optional.of(analysis));
+
+            return emailGenerationService.generate(1L, jobId);
+        }
     }
 
     @Nested
