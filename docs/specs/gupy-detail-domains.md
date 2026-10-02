@@ -110,13 +110,31 @@ needs a revisit pass:
   returns `{scanned, filled, stillNull}`; writes NOTHING on dry-run;
   persists only null→found transitions otherwise (never overwrites,
   idempotent, rerunnable).
-- Chunked: `maxHosts` param (default 50) per call; repeat until `stillNull`
-  stops shrinking. No adapter-timeout involvement (endpoint-scoped, not
-  fetch-scoped).
+- Chunked: `maxHosts` param (default 50) per call. No adapter-timeout
+  involvement (endpoint-scoped, not fetch-scoped).
+- **Starvation amendment (review finding, 2026-09-30):** "repeat until
+  `stillNull` stops shrinking" was unsatisfiable without paging. The scan is
+  `ORDER BY id` and the resolver caps at the FIRST `maxHosts` distinct hosts,
+  so when those hosts yield no eligible link (portal-only page, 404, all links
+  filtered) every round re-examines the same dead head, `stillNull` never
+  falls, and no host behind the head is ever reached — a livelock, not slow
+  progress. `POST /api/jobs/backfill-websites` therefore takes an optional
+  `afterId` (exclusive lower bound on row id; scan becomes `... AND id >
+  :afterId ORDER BY id`):
+  - `afterId` omitted = scan from the start (original behavior).
+  - The bot pages explicit id ranges, advancing `afterId` past the range it
+    just covered, and finishes with a final sweep without `afterId` to catch
+    rows that shifted underneath it.
+  - No migration and no schema change: `id` is already the ordering key.
+  - Rows inserted mid-backfill inside an already-covered range are not
+    revisited by a later page. They need no visit: the live fetch path
+    resolves `companyWebsite` for every new row as it arrives, so stragglers
+    are covered going forward rather than by this endpoint.
 - Link-quality fixes bundled: reject dotless hosts (`Node.js` case); strip
   tracking query params (`gclid`/`utm`) before storing.
 - Tests: unit with mocked ports (dry-run writes nothing; apply fills only
-  nulls; rerun stable); WireMock resolver tests for the new link shapes.
+  nulls; rerun stable; `afterId` bypasses a dead head, `afterId` null = legacy
+  scan); WireMock resolver tests for the new link shapes.
   Plain JUnit 5 + Mockito, no Spring, no network.
 - Acceptance: dry-run counts recorded here (before ___, after ___) — to be
   recorded on the first production `POST /api/jobs/backfill-websites` dry-run;
