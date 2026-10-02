@@ -1150,4 +1150,117 @@ class EmailGenerationServiceTest {
             return prompt.substring(start, end);
         }
     }
+
+    @Nested
+    @DisplayName("Subject line normalization: Portuguese \"Assunto:\" must never leak into the body")
+    class SubjectNormalizationTests {
+
+        private static final String PT_SUBJECT = "Candidatura — Desenvolvedor Java na Empresa X";
+
+        @Test
+        @DisplayName("generate should drop a duplicated Portuguese Assunto line from the body")
+        void generate_whenResponseHasSubjectAndAssuntoLines_shouldDropAssuntoFromBody() {
+            String aiResponse = """
+                Subject: Candidatura — Desenvolvedor Java na Empresa X
+
+                Assunto: Candidatura — Desenvolvedor Java na Empresa X
+
+                Olá. Tudo bem?
+
+                Gostaria de me candidatar à vaga de Desenvolvedor Java na Empresa X.
+
+                Atenciosamente,
+                Juan Peruzzo
+                """;
+
+            EmailDraft draft = generateWithAiResponse(aiResponse);
+
+            assertEquals("Subject: " + PT_SUBJECT, draft.subject());
+            assertFalse(draft.body().contains("Assunto:"),
+                    "the Portuguese subject line leaked into the sent body in production");
+            assertTrue(draft.body().startsWith("Olá. Tudo bem?"),
+                    "the body must start at the greeting, past every subject line: " + draft.body());
+            assertEquals(EmailStatus.PENDING, draft.status());
+        }
+
+        @Test
+        @DisplayName("generate should normalize a Portuguese Assunto subject line to the Subject prefix")
+        void generate_whenSubjectLineIsPortuguese_shouldNormalizeToSubjectPrefix() {
+            String aiResponse = """
+                Assunto: Candidatura — Desenvolvedor Java na Empresa X
+
+                Olá. Tudo bem?
+
+                Gostaria de me candidatar à vaga de Desenvolvedor Java na Empresa X.
+
+                Atenciosamente,
+                Juan Peruzzo
+                """;
+
+            EmailDraft draft = generateWithAiResponse(aiResponse);
+
+            assertEquals("Subject: " + PT_SUBJECT, draft.subject(),
+                    "a PT subject line must be stored as \"Subject: <text>\", never \"Subject: Assunto: <text>\"");
+            assertFalse(draft.body().contains("Assunto:"));
+            assertTrue(draft.body().startsWith("Olá. Tudo bem?"), draft.body());
+        }
+
+        @Test
+        @DisplayName("generate should leave a well-formed English Subject line and its body untouched")
+        void generate_whenResponseIsWellFormed_shouldKeepSubjectAndBodyUnchanged() {
+            String aiResponse = """
+                Subject: Application for Java Developer Position
+
+                Dear Hiring Manager,
+
+                I am writing to express my interest in the position.
+
+                Sincerely,
+                Juan Peruzzo
+                """;
+
+            EmailDraft draft = generateWithAiResponse(aiResponse);
+
+            assertEquals("Subject: Application for Java Developer Position", draft.subject());
+            assertTrue(draft.body().startsWith("Dear Hiring Manager,"), draft.body());
+            assertFalse(draft.body().contains("Subject:"), "the subject line must never stay in the body");
+        }
+
+        @Test
+        @DisplayName("generate should keep the NO_APPLY refusal REJECTED with an empty subject")
+        void generate_whenNoFit_shouldStillReturnRejectedDraftWithEmptySubject() {
+            String aiResponse = "NO_APPLY: non-tech role, customer service via WhatsApp";
+
+            EmailDraft draft = generateWithAiResponse(aiResponse);
+
+            assertEquals(EmailStatus.REJECTED, draft.status());
+            assertEquals("", draft.subject(), "the refusal path must keep an empty subject");
+            assertEquals(aiResponse, draft.body(), "the full refusal reason stays auditable in the body");
+        }
+
+        /** Drives the AI branch (score above the threshold) and returns the persisted draft. */
+        private EmailDraft generateWithAiResponse(String aiResponse) {
+            when(aiPort.complete(any())).thenReturn(aiResponse);
+            when(emailDraftRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            UserProfile profile = new UserProfile(null, 1L,
+                    "Experienced Java developer with Spring Boot expertise.",
+                    List.of("Java", "Spring Boot", "PostgreSQL"),
+                    CompanyTone.FORMAL,
+                    List.of(), null, null, null, null, null, null);
+            when(userProfileRepository.findByUserId(any())).thenReturn(Optional.of(profile));
+
+            Long jobId = 90L;
+            Job job = new Job(jobId, "Java Developer", "Empresa X",
+                    "https://example.com/job/90", "Description", LocalDate.now(), "gupy");
+            JobAnalysis analysis = new JobAnalysis(null, null, null, 75,
+                    List.of("Java", "Spring Boot"),
+                    List.of("Kubernetes"),
+                    CompanyTone.FORMAL,
+                    "Java developer position");
+            when(jobRepository.findById(jobId)).thenReturn(Optional.of(job));
+            when(jobAnalysisRepository.findByJobIdAndUserId(jobId, 1L)).thenReturn(Optional.of(analysis));
+
+            return emailGenerationService.generate(1L, jobId);
+        }
+    }
 }
