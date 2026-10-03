@@ -45,6 +45,7 @@
 ## Business rules
 
 - Only a draft with `status == PENDING` (full-auto) or `APPROVED` (review-gate) may be sent; `REJECTED` drafts (see `email-no-apply-refusal.md`) throw `RefusedDraftException` (422) before any send attempt; duplicate delivery for an already-sent `(job_id, recipient_email)` pair throws `EmailAlreadySentException` (see Scenario 5 and `email-idempotency.md`)
+- **Blank-body guard:** a draft whose body is `null` or blank (only whitespace) also throws `RefusedDraftException` (422) — same exception type as a refused draft, checked right after the status guards and before the recipient lookup, so `EmailSenderPort.send` is never called and nothing is persisted. Defense in depth: parse leniency is deliberate (see `generate-email.md`), so an undeliverable body is caught at send time rather than mailed. No fallback body is ever generated, and a blank subject alone is *not* refused — the approve screen surfaces it
 - On success, `status` and `sentAt` are updated in the same persistence call (no partial state)
 - No automatic/scheduled triggering here — this spec only covers an explicit, user- or scheduler-initiated single send (e.g. `POST /api/jobs/{id}/email/send`, `jh-cli email send <job-id>`, or one call from `auto-send-scheduler.md`)
 

@@ -83,7 +83,7 @@ public class ResumeUploadService {
 
 **Used in:** `ResumeUploadService`
 **Model:** Hermes gateway (`${HERMES_MODEL}`, default `default`); truncation via `ai.resume-extraction.max-chars`
-**Expected response:** plain JSON (no markdown, no text before or after)
+**Expected response:** plain JSON (no markdown, no text before or after). **JSON extraction rule:** parsing tolerates deviation — every brace-balanced object in the response is collected (string-aware, markdown fences removed) and the **last** one carrying the `skills` field wins, so a reasoning block that quotes a schema-shaped object before the real payload cannot shadow it; fallback is the first object found, and no object at all raises `AiException` ("AI response contains no valid JSON"). Shared helper: `AiJsonPayloads.lastObjectWithField`; `skills`/`projects`/`contact` remain individually optional
 
 ```
 You are a career assistant that extracts structured data from resumes.

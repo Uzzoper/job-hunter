@@ -281,8 +281,10 @@ public class EmailGenerationService implements GenerateEmailUseCase, GetEmailDra
 /**
  * Parses the raw AI response into an {@code EmailDraft}.
  * <p>
- * If the trimmed response starts with the refusal prefix {@code NO_APPLY:}
- * (case-sensitive), no subject/body parsing happens: the draft is persisted as
+ * If the refusal prefix {@code NO_APPLY:} (case-sensitive) opens any of the
+ * first 5 leading lines of the trimmed response — not only position 0, since
+ * reasoning models answer with chatter first ("Claro, segue:\nNO_APPLY: …") —
+ * no subject/body parsing happens: the draft is persisted as
  * {@code REJECTED} with an empty subject and the full trimmed response as body,
  * keeping the refusal reason auditable and never producing a fake sendable subject.
  * Otherwise it follows the {@code Subject: } split logic and produces a {@code PENDING} draft.
@@ -383,8 +385,9 @@ public class EmailGenerationService implements GenerateEmailUseCase, GetEmailDra
      * every leading label line (the model sometimes repeats the subject below the first line) and
      * every trailing label-only line, such as a dangling {@code "Assunto:"} left at the end.
      *
-     * <p>A trailing line that still carries text is legitimate content and is kept, and a body
-     * made of a single line is never emptied.
+     * <p>A trailing line that still carries text is legitimate content and is kept. A body that
+     * <em>is</em> a single label line (leading or trailing) is dropped whole, leaving an empty
+     * body: no fallback content is invented and the draft stays {@code PENDING}.
      */
     private static String stripStraySubjectLabelLines(String body) {
         return stripTrailingLabelOnlyLines(stripLeadingSubjectLines(body));
