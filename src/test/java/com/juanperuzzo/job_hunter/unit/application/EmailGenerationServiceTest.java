@@ -1335,6 +1335,36 @@ class EmailGenerationServiceTest {
         }
 
         @Test
+        @DisplayName("generate should drop a label-only body even when it is the whole body")
+        void generate_whenWholeBodyIsALabelLine_shouldDropItAndKeepEmptyBody() {
+            String aiResponse = """
+                Subject: Vaga
+                Assunto: Vaga""";
+
+            EmailDraft draft = generateWithAiResponse(aiResponse);
+
+            assertEquals("Subject: Vaga", draft.subject());
+            assertEquals("", draft.body(),
+                    "a body that is only a repeated subject label must be dropped, not persisted");
+            assertEquals(EmailStatus.PENDING, draft.status(),
+                    "the draft stays PENDING with an empty body for the approve screen — no fallback content is invented");
+        }
+
+        @Test
+        @DisplayName("generate should keep a legitimate single-line body")
+        void generate_whenWholeBodyIsALegitimateLine_shouldKeepIt() {
+            String aiResponse = """
+                Subject: Vaga
+                Olá, tudo bem?""";
+
+            EmailDraft draft = generateWithAiResponse(aiResponse);
+
+            assertEquals("Subject: Vaga", draft.subject());
+            assertEquals("Olá, tudo bem?", draft.body(),
+                    "a single-line body that is not a label must survive untouched");
+        }
+
+        @Test
         @DisplayName("generate should apply the same 5-line scan to the subject label and to the refusal marker")
         void generate_whenLabelSitsOnTheLastScannedLine_shouldBeFoundByTheSharedScan() {
             String aiResponse = """
