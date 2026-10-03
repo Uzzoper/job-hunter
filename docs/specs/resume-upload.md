@@ -48,7 +48,7 @@
 - **File size:** Maximum 2MB (enforced by Spring `spring.servlet.multipart.max-file-size`).
 - **`resumeText`:** The raw text extracted by PDFBox becomes the new `resumeText` (AI does not rewrite it).
 - **AI prompt truncation:** Resumes longer than `ai.resume-extraction.max-chars` (default 8000) are truncated before being sent to the AI. A warning is logged. The full text is still stored as `resumeText` in the profile.
-- **`skills` + `projects`:** Extracted by AI from the raw PDF text. The AI prompt must ask for these two fields only.
+- **`skills` + `projects`:** Extracted by AI from the raw PDF text. The AI prompt must ask for these two fields only, and both are **mandatory in the response** (empty array allowed, absent/`null` → `AiException`/`502` per Scenario 5). `contact` is not part of Prompt 3 and is parsed tolerantly when present.
 - **`tone`:** Never extracted from the resume. Keeps the user's current `tone`, defaults to `FORMAL` if no profile exists yet.
 - **PDF storage:** Saved to `${app.upload-dir}/{userId}/resume.pdf`. Overwrites any previous file for that user.
 - **Profile replacement:** A successful upload completely replaces `resumeText`, `skills`, and `projects`. It is equivalent to calling `PUT /api/profile` with the extracted values.
@@ -83,7 +83,7 @@ public class ResumeUploadService {
 
 **Used in:** `ResumeUploadService`
 **Model:** Hermes gateway (`${HERMES_MODEL}`, default `default`); truncation via `ai.resume-extraction.max-chars`
-**Expected response:** plain JSON (no markdown, no text before or after). **JSON extraction rule:** parsing tolerates deviation — every brace-balanced object in the response is collected (string-aware, markdown fences removed) and the **last** one carrying the `skills` field wins, so a reasoning block that quotes a schema-shaped object before the real payload cannot shadow it; fallback is the first object found, and no object at all raises `AiException` ("AI response contains no valid JSON"). Shared helper: `AiJsonPayloads.lastObjectWithField`; `skills`/`projects`/`contact` remain individually optional
+**Expected response:** plain JSON (no markdown, no text before or after). **JSON extraction rule:** parsing tolerates deviation — every brace-balanced object in the response is collected (string-aware, markdown fences removed) and the **last** one carrying the `skills` field wins, so a reasoning block that quotes a schema-shaped object before the real payload cannot shadow it; fallback is the first object found, and no object at all raises `AiException` ("AI response contains no valid JSON"). Shared helper: `AiJsonPayloads.lastObjectWithField`. **Mandatory fields:** `skills` and `projects` must both be present (Scenario 5 — absent or `null` fails with `AiException` → `502`); an empty array is a valid value, since the prompt instructs the model to return one when nothing was found. `contact` is never requested by Prompt 3 and stays optional. Validation runs **after** selection: if the object the model answered with lacks a mandatory field, that is the error — a scratch object quoted inside a reasoning block is never persisted as a silent fallback
 
 ```
 You are a career assistant that extracts structured data from resumes.
