@@ -53,6 +53,7 @@
 - The prompt includes the user's saved profile (resume, skills, tone) from `user_profiles`
 - Prompt structure follows `docs/specs/prompts.md` (implementation may inline equivalent instructions)
 - The result is always parsed from JSON — the AI is instructed not to include markdown
+- **JSON extraction rule:** the parser does not slice from the first `{` to the last `}`. It collects every brace-balanced object in the response (string-aware, markdown fences removed) and keeps the **last** one carrying the `matchScore` field — reasoning models emit deliberation first, and that deliberation may quote a schema-shaped object of its own. Falling back to the first object found keeps malformed payloads failing with the normal `AiException`; no object at all raises `AiException` ("No JSON object found in AI response"). Shared helper: `AiJsonPayloads.lastObjectWithField`
 
 ---
 

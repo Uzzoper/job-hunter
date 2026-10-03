@@ -105,6 +105,52 @@ class ResumeTailoringServiceTest {
     }
 
     @Test
+    @DisplayName("tailorResume should parse the real payload when the reasoning block carries its own JSON")
+    void tailorResume_whenReasoningContainsJsonBeforePayload_shouldParseRealPayload() {
+        newService(8000);
+        var pdfBytes = new byte[]{37, 80, 68, 70, 1, 2, 3};
+        String polluted = "<think>I first sketched {\"objective\": \"scratch objective\", \"skills\": [\"Go\"]} "
+                + "but rejected it.</think>\n\n" + validAiJson();
+
+        when(jobRepository.findById(JOB_ID)).thenReturn(Optional.of(job()));
+        when(jobAnalysisRepository.findByJobIdAndUserId(JOB_ID, USER_ID)).thenReturn(Optional.of(analysis()));
+        when(userProfileRepository.findByUserId(USER_ID)).thenReturn(Optional.of(profile()));
+        when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user()));
+        when(aiPort.complete(anyString())).thenReturn(polluted);
+        when(pdfRendererPort.renderPdf(anyString())).thenReturn(pdfBytes);
+
+        service.tailorResume(USER_ID, JOB_ID);
+
+        verify(pdfRendererPort).renderPdf(htmlCaptor.capture());
+        assertTrue(htmlCaptor.getValue().contains("Desenvolvedor Java Júnior com foco em Spring Boot"),
+                "the JSON quoted inside the reasoning block must not be parsed as the payload");
+        assertFalse(htmlCaptor.getValue().contains("scratch objective"),
+                "reasoning content must never reach the rendered resume");
+    }
+
+    @Test
+    @DisplayName("tailorResume should parse the payload when prose surrounds it")
+    void tailorResume_whenProseSurroundsJson_shouldStillParseIt() {
+        newService(8000);
+        var pdfBytes = new byte[]{37, 80, 68, 70, 1, 2, 3};
+        String polluted = "Sure! Here is the tailored resume:\n\n" + validAiJson() + "\n\nLet me know if you want changes.";
+
+        when(jobRepository.findById(JOB_ID)).thenReturn(Optional.of(job()));
+        when(jobAnalysisRepository.findByJobIdAndUserId(JOB_ID, USER_ID)).thenReturn(Optional.of(analysis()));
+        when(userProfileRepository.findByUserId(USER_ID)).thenReturn(Optional.of(profile()));
+        when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user()));
+        when(aiPort.complete(anyString())).thenReturn(polluted);
+        when(pdfRendererPort.renderPdf(anyString())).thenReturn(pdfBytes);
+
+        var result = service.tailorResume(USER_ID, JOB_ID);
+
+        assertSame(pdfBytes, result);
+        verify(pdfRendererPort).renderPdf(htmlCaptor.capture());
+        assertFalse(htmlCaptor.getValue().contains("Let me know"),
+                "trailing prose must not reach the rendered resume");
+    }
+
+    @Test
     @DisplayName("tailorResume should throw ProfileNotConfiguredException when no profile exists")
     void tailorResume_whenNoProfile_shouldThrowProfileNotConfigured() {
         newService(8000);

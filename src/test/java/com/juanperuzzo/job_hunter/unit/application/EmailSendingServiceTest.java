@@ -154,6 +154,32 @@ class EmailSendingServiceTest {
     }
 
     @Test
+    @DisplayName("should throw RefusedDraftException when an approved draft has a blank body and never call the sender")
+    void send_whenBlankBody_shouldThrowRefusedDraftAndNeverCallSender() {
+        var approved = new EmailDraft(DRAFT_ID, JOB_ID, USER_ID, "Subject: Candidatura", "", EmailStatus.APPROVED, LocalDateTime.now());
+
+        when(emailDraftRepository.findByJobIdAndUserId(JOB_ID, USER_ID)).thenReturn(Optional.of(approved));
+
+        var thrown = assertThrows(RefusedDraftException.class, () -> emailSendingService.send(USER_ID, JOB_ID));
+        assertTrue(thrown.getMessage().contains("blank body"), thrown.getMessage());
+        verify(emailSenderPort, never()).send(any(), any(), any(), any());
+        verify(emailDraftRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("should throw RefusedDraftException when an approved draft body is whitespace only and never call the sender")
+    void send_whenWhitespaceOnlyBody_shouldThrowRefusedDraftAndNeverCallSender() {
+        var approved = new EmailDraft(DRAFT_ID, JOB_ID, USER_ID, "Subject: Candidatura", "   \n\t  \n", EmailStatus.APPROVED, LocalDateTime.now());
+
+        when(emailDraftRepository.findByJobIdAndUserId(JOB_ID, USER_ID)).thenReturn(Optional.of(approved));
+
+        var thrown = assertThrows(RefusedDraftException.class, () -> emailSendingService.send(USER_ID, JOB_ID));
+        assertTrue(thrown.getMessage().contains("blank body"), thrown.getMessage());
+        verify(emailSenderPort, never()).send(any(), any(), any(), any());
+        verify(emailDraftRepository, never()).save(any());
+    }
+
+    @Test
     @DisplayName("should throw EmailAlreadySentException when another draft already SENT for the same (jobId, recipient)")
     void send_whenPairAlreadySent_shouldThrowAlreadySentAndNeverCallSender() {
         var pending = new EmailDraft(DRAFT_ID, JOB_ID, USER_ID, "Subject", "Body", EmailStatus.PENDING, LocalDateTime.now());

@@ -94,6 +94,31 @@ class EmailGenerationServiceTest {
                 userRepository, jobRepository, jobAnalysisRepository, templateEmailService, botMemorySyncService, 60, 8000);
     }
 
+    /** Drives the AI branch (score above the threshold) and returns the persisted draft. */
+    private EmailDraft generateWithAiResponse(String aiResponse) {
+        when(aiPort.complete(any())).thenReturn(aiResponse);
+        when(emailDraftRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        UserProfile profile = new UserProfile(null, 1L,
+                "Experienced Java developer with Spring Boot expertise.",
+                List.of("Java", "Spring Boot", "PostgreSQL"),
+                CompanyTone.FORMAL,
+                List.of(), null, null, null, null, null, null);
+        when(userProfileRepository.findByUserId(any())).thenReturn(Optional.of(profile));
+
+        Long jobId = 90L;
+        Job job = new Job(jobId, "Java Developer", "Empresa X",
+                "https://example.com/job/90", "Description", LocalDate.now(), "gupy");
+        JobAnalysis analysis = new JobAnalysis(null, null, null, 75,
+                List.of("Java", "Spring Boot"),
+                List.of("Kubernetes"),
+                CompanyTone.FORMAL,
+                "Java developer position");
+        when(jobRepository.findById(jobId)).thenReturn(Optional.of(job));
+        when(jobAnalysisRepository.findByJobIdAndUserId(jobId, 1L)).thenReturn(Optional.of(analysis));
+
+        return emailGenerationService.generate(1L, jobId);
+    }
+
     @Nested
     @DisplayName("Truncation: configurable resume limit, tail cut with a warning")
     class TruncationTests {
@@ -689,6 +714,87 @@ class EmailGenerationServiceTest {
 
             assertEquals(EmailStatus.PENDING, draft.status());
         }
+
+        @Test
+        @DisplayName("generate should reject a no-fit job when the NO_APPLY marker is preceded by chatter")
+        void generate_whenNoApplyMarkerIsPrecededByChatter_shouldReturnRejectedDraft() {
+            String aiResponse = """
+                Claro, segue:
+                NO_APPLY: non-tech role, customer service via WhatsApp""";
+
+            EmailDraft draft = generateWithRefusalResponse(aiResponse, 71L);
+
+            assertEquals(EmailStatus.REJECTED, draft.status(),
+                    "a refusal marker on the second line must still reject the draft");
+            assertEquals("", draft.subject(), "a refusal must never persist a sendable subject");
+            assertEquals(aiResponse, draft.body(),
+                    "the full trimmed response, chatter prefix included, stays auditable in the body");
+            verify(emailDraftRepository).save(draft);
+        }
+
+        @Test
+        @DisplayName("generate should reject a no-fit job when the NO_APPLY marker sits on the third line")
+        void generate_whenNoApplyMarkerIsOnThirdLine_shouldReturnRejectedDraft() {
+            String aiResponse = """
+                Analisando a vaga:
+                
+
+                NO_APPLY: stack entirely outside candidate""";
+
+            EmailDraft draft = generateWithRefusalResponse(aiResponse, 72L);
+
+            assertEquals(EmailStatus.REJECTED, draft.status(),
+                    "the marker is scanned across the leading lines, not only at position 0");
+            assertEquals("", draft.subject());
+            assertEquals(aiResponse, draft.body());
+        }
+
+        @Test
+        @DisplayName("generate should keep PENDING when the NO_APPLY marker sits beyond the scanned lines (documents the remaining hole)")
+        void generate_whenNoApplyMarkerIsBeyondTheScannedLines_shouldRemainPending() {
+            String aiResponse = """
+                Claro, segue a minha analise:
+                
+
+                O cargo pede Salesforce.
+                Nao tenho experiencia com essa plataforma.
+                
+
+                NO_APPLY: salesforce-only role""";
+
+            EmailDraft draft = generateWithRefusalResponse(aiResponse, 73L);
+
+            assertEquals(EmailStatus.PENDING, draft.status(),
+                    "only the first " + 5 + " lines are scanned for the marker, so line 6 falls through");
+            assertEquals("Subject: Claro, segue a minha analise:", draft.subject(),
+                    "without a marker the first line still becomes the subject");
+            assertTrue(draft.body().contains("NO_APPLY: salesforce-only role"),
+                    "the unrecognised marker stays in the body, which is the documented remaining hole");
+        }
+
+        /** Drives the AI branch (score above the threshold) with {@code aiResponse} and returns the persisted draft. */
+        private EmailDraft generateWithRefusalResponse(String aiResponse, long jobId) {
+            when(aiPort.complete(any())).thenReturn(aiResponse);
+            when(emailDraftRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            UserProfile validProfile = new UserProfile(null, 1L,
+                "Experienced Java developer with Spring Boot expertise.",
+                List.of("Java", "Spring Boot", "PostgreSQL"),
+                CompanyTone.FORMAL,
+                List.of(), null, null, null, null, null, null);
+            when(userProfileRepository.findByUserId(any())).thenReturn(Optional.of(validProfile));
+
+            Job job = new Job(jobId, "Customer Service", "CompanyZ",
+                "https://example.com/job/" + jobId, "Description", LocalDate.now(), "test");
+            JobAnalysis analysis = new JobAnalysis(null, null, null, 75,
+                List.of(),
+                List.of("Java", "Spring Boot"),
+                CompanyTone.FORMAL,
+                "Customer service role, non-tech");
+            when(jobRepository.findById(jobId)).thenReturn(Optional.of(job));
+            when(jobAnalysisRepository.findByJobIdAndUserId(jobId, 1L)).thenReturn(Optional.of(analysis));
+
+            return emailGenerationService.generate(1L, jobId);
+        }
     }
 
     @Nested
@@ -810,6 +916,33 @@ class EmailGenerationServiceTest {
             Long jobId = 20L;
             Job job = new Job(jobId, "COBOL Dev", "CompanyM",
                     "https://example.com/job/20", "Description", LocalDate.now(), "test");
+            JobAnalysis analysis = new JobAnalysis(null, null, null, 65,
+                    List.of(), List.of("Java"),
+                    CompanyTone.FORMAL,
+                    "Mainframe role");
+
+            when(jobRepository.findById(jobId)).thenReturn(Optional.of(job));
+            when(jobAnalysisRepository.findByJobIdAndUserId(jobId, 1L)).thenReturn(Optional.of(analysis));
+
+            EmailDraft draft = emailGenerationService.generate(1L, jobId);
+
+            assertEquals(EmailStatus.REJECTED, draft.status());
+            verify(botMemorySyncService).writeMemoryEntry(1L, "stack entirely outside candidate");
+        }
+
+        @Test
+        @DisplayName("generate should write only the bare reason to bot memory when the refusal opens with chatter")
+        void generate_whenChatterPrefixedNoApplyRefusal_shouldWriteBareReasonToBotMemory() {
+            when(aiPort.complete(any())).thenReturn("Claro, segue:\nNO_APPLY: stack entirely outside candidate");
+            when(emailDraftRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            UserProfile profile = new UserProfile(null, 1L,
+                    "Experienced Java developer.", List.of("Java"), CompanyTone.FORMAL, List.of(),
+                    null, null, null, null, null, null);
+            when(userProfileRepository.findByUserId(any())).thenReturn(Optional.of(profile));
+
+            Long jobId = 22L;
+            Job job = new Job(jobId, "COBOL Dev", "CompanyM",
+                    "https://example.com/job/22", "Description", LocalDate.now(), "test");
             JobAnalysis analysis = new JobAnalysis(null, null, null, 65,
                     List.of(), List.of("Java"),
                     CompanyTone.FORMAL,
@@ -1148,6 +1281,246 @@ class EmailGenerationServiceTest {
             assertTrue(start >= 0, "prompt must contain the CANDIDATE FACTS block");
             assertTrue(end > start, "CANDIDATE FACTS block must end before MANDATORY RULES");
             return prompt.substring(start, end);
+        }
+    }
+
+    @Nested
+    @DisplayName("Subject line normalization: Portuguese \"Assunto:\" must never leak into the body")
+    class SubjectNormalizationTests {
+
+        private static final String PT_SUBJECT = "Candidatura — Desenvolvedor Java na Empresa X";
+
+        @Test
+        @DisplayName("generate should drop a duplicated Portuguese Assunto line from the body")
+        void generate_whenResponseHasSubjectAndAssuntoLines_shouldDropAssuntoFromBody() {
+            String aiResponse = """
+                Subject: Candidatura — Desenvolvedor Java na Empresa X
+
+                Assunto: Candidatura — Desenvolvedor Java na Empresa X
+
+                Olá. Tudo bem?
+
+                Gostaria de me candidatar à vaga de Desenvolvedor Java na Empresa X.
+
+                Atenciosamente,
+                Juan Peruzzo
+                """;
+
+            EmailDraft draft = generateWithAiResponse(aiResponse);
+
+            assertEquals("Subject: " + PT_SUBJECT, draft.subject());
+            assertFalse(draft.body().contains("Assunto:"),
+                    "the Portuguese subject line leaked into the sent body in production");
+            assertTrue(draft.body().startsWith("Olá. Tudo bem?"),
+                    "the body must start at the greeting, past every subject line: " + draft.body());
+            assertEquals(EmailStatus.PENDING, draft.status());
+        }
+
+        @Test
+        @DisplayName("generate should normalize a Portuguese Assunto subject line to the Subject prefix")
+        void generate_whenSubjectLineIsPortuguese_shouldNormalizeToSubjectPrefix() {
+            String aiResponse = """
+                Assunto: Candidatura — Desenvolvedor Java na Empresa X
+
+                Olá. Tudo bem?
+
+                Gostaria de me candidatar à vaga de Desenvolvedor Java na Empresa X.
+
+                Atenciosamente,
+                Juan Peruzzo
+                """;
+
+            EmailDraft draft = generateWithAiResponse(aiResponse);
+
+            assertEquals("Subject: " + PT_SUBJECT, draft.subject(),
+                    "a PT subject line must be stored as \"Subject: <text>\", never \"Subject: Assunto: <text>\"");
+            assertFalse(draft.body().contains("Assunto:"));
+            assertTrue(draft.body().startsWith("Olá. Tudo bem?"), draft.body());
+        }
+
+        @Test
+        @DisplayName("generate should leave a well-formed English Subject line and its body untouched")
+        void generate_whenResponseIsWellFormed_shouldKeepSubjectAndBodyUnchanged() {
+            String aiResponse = """
+                Subject: Application for Java Developer Position
+
+                Dear Hiring Manager,
+
+                I am writing to express my interest in the position.
+
+                Sincerely,
+                Juan Peruzzo
+                """;
+
+            EmailDraft draft = generateWithAiResponse(aiResponse);
+
+            assertEquals("Subject: Application for Java Developer Position", draft.subject());
+            assertTrue(draft.body().startsWith("Dear Hiring Manager,"), draft.body());
+            assertFalse(draft.body().contains("Subject:"), "the subject line must never stay in the body");
+        }
+
+        @Test
+        @DisplayName("generate should drop a label-only body even when it is the whole body")
+        void generate_whenWholeBodyIsALabelLine_shouldDropItAndKeepEmptyBody() {
+            String aiResponse = """
+                Subject: Vaga
+                Assunto: Vaga""";
+
+            EmailDraft draft = generateWithAiResponse(aiResponse);
+
+            assertEquals("Subject: Vaga", draft.subject());
+            assertEquals("", draft.body(),
+                    "a body that is only a repeated subject label must be dropped, not persisted");
+            assertEquals(EmailStatus.PENDING, draft.status(),
+                    "the draft stays PENDING with an empty body for the approve screen — no fallback content is invented");
+        }
+
+        @Test
+        @DisplayName("generate should keep a legitimate single-line body")
+        void generate_whenWholeBodyIsALegitimateLine_shouldKeepIt() {
+            String aiResponse = """
+                Subject: Vaga
+                Olá, tudo bem?""";
+
+            EmailDraft draft = generateWithAiResponse(aiResponse);
+
+            assertEquals("Subject: Vaga", draft.subject());
+            assertEquals("Olá, tudo bem?", draft.body(),
+                    "a single-line body that is not a label must survive untouched");
+        }
+
+        @Test
+        @DisplayName("generate should apply the same 5-line scan to the subject label and to the refusal marker")
+        void generate_whenLabelSitsOnTheLastScannedLine_shouldBeFoundByTheSharedScan() {
+            String aiResponse = """
+                Analisando os requisitos da vaga:
+
+                A stack pedida e Java com Spring Boot.
+                Nao encontrei e-mail de contato.
+                Subject: Candidatura — Desenvolvedor Java na Empresa X
+
+                Olá. Tudo bem?""";
+
+            EmailDraft draft = generateWithAiResponse(aiResponse);
+
+            assertEquals(EmailStatus.PENDING, draft.status(),
+                    "the same bounded scan must not read line 5 as a refusal marker");
+            assertEquals("Subject: Candidatura — Desenvolvedor Java na Empresa X", draft.subject(),
+                    "a label on the last scanned line must still be found by the subject scan");
+            assertTrue(draft.body().startsWith("Olá. Tudo bem?"), draft.body());
+        }
+
+        @Test
+        @DisplayName("generate should drop a lone subject label left at the end of the body")
+        void generate_whenBodyEndsWithLoneSubjectLabel_shouldDropIt() {
+            String aiResponse = """
+                Subject: Candidatura — Desenvolvedor Java na Empresa X
+
+                Olá. Tudo bem?
+
+                Atenciosamente,
+                Juan Peruzzo
+
+                Assunto:""";
+
+            EmailDraft draft = generateWithAiResponse(aiResponse);
+
+            assertFalse(draft.body().contains("Assunto:"), draft.body());
+            assertEquals("Olá. Tudo bem?\n\nAtenciosamente,\nJuan Peruzzo", draft.body(),
+                    "a trailing label-only line must never be persisted — and therefore sent");
+        }
+
+        @Test
+        @DisplayName("generate should drop every consecutive lone subject label at the end of the body")
+        void generate_whenBodyEndsWithConsecutiveLoneSubjectLabels_shouldDropThemAll() {
+            String aiResponse = """
+                Subject: Candidatura — Desenvolvedor Java na Empresa X
+
+                Olá. Tudo bem?
+
+                Assunto:
+
+                Subject:""";
+
+            EmailDraft draft = generateWithAiResponse(aiResponse);
+
+            assertEquals("Olá. Tudo bem?", draft.body(),
+                    "consecutive trailing label-only lines must all be dropped");
+        }
+
+        @Test
+        @DisplayName("generate should keep the last body line when it still carries subject text")
+        void generate_whenLastBodyLineCarriesSubjectText_shouldKeepIt() {
+            String aiResponse = """
+                Subject: Candidatura — Desenvolvedor Java na Empresa X
+
+                Olá. Tudo bem?
+
+                Atenciosamente,
+                Juan Peruzzo
+
+                Assunto: Candidatura — Desenvolvedor Java na Empresa X""";
+
+            EmailDraft draft = generateWithAiResponse(aiResponse);
+
+            assertTrue(draft.body().endsWith("Assunto: Candidatura — Desenvolvedor Java na Empresa X"),
+                    "only a label-only line is an artefact: a labelled line with text is legitimate: " + draft.body());
+        }
+
+        @Test
+        @DisplayName("generate should keep the NO_APPLY refusal REJECTED with an empty subject")
+        void generate_whenNoFit_shouldStillReturnRejectedDraftWithEmptySubject() {
+            String aiResponse = "NO_APPLY: non-tech role, customer service via WhatsApp";
+
+            EmailDraft draft = generateWithAiResponse(aiResponse);
+
+            assertEquals(EmailStatus.REJECTED, draft.status());
+            assertEquals("", draft.subject(), "the refusal path must keep an empty subject");
+            assertEquals(aiResponse, draft.body(), "the full refusal reason stays auditable in the body");
+        }
+
+    }
+
+    @Nested
+    @DisplayName("Reasoning models: chatter must not leak into the subject or body")
+    class ReasoningToleranceTests {
+
+        private static final String VALID_EMAIL = """
+            Subject: Candidatura — Desenvolvedor Java na Empresa X
+
+            Olá. Tudo bem?
+
+            Gostaria de me candidatar à vaga de Desenvolvedor Java na Empresa X.
+
+            Atenciosamente,
+            Juan Peruzzo
+            """;
+
+        @Test
+        @DisplayName("generate should find the subject line when the model answers with chatter first")
+        void generate_whenChatterPrecedesSubjectLine_shouldNotLeakItIntoSubject() {
+            String aiResponse = "<think>The role is junior Java, so a Portuguese email fits.</think>\n"
+                    + "Aqui está o e-mail que preparei:\n\n"
+                    + VALID_EMAIL;
+
+            EmailDraft draft = generateWithAiResponse(aiResponse);
+
+            assertEquals("Subject: Candidatura — Desenvolvedor Java na Empresa X", draft.subject(),
+                    "nothing before the subject line may reach the persisted subject");
+            assertFalse(draft.body().contains("<think>"), draft.body());
+            assertTrue(draft.body().startsWith("Olá. Tudo bem?"), draft.body());
+        }
+
+        @Test
+        @DisplayName("generate should ignore a leading think block when the subject line follows it")
+        void generate_whenResponseHasReasoningPrefix_shouldNotLeakItIntoSubjectOrBody() {
+            String aiResponse = "<think>The role is junior Java, so a Portuguese email fits.</think>\n\n" + VALID_EMAIL;
+
+            EmailDraft draft = generateWithAiResponse(aiResponse);
+
+            assertEquals("Subject: Candidatura — Desenvolvedor Java na Empresa X", draft.subject());
+            assertFalse(draft.body().contains("<think>"), draft.body());
+            assertTrue(draft.body().startsWith("Olá. Tudo bem?"), draft.body());
         }
     }
 }

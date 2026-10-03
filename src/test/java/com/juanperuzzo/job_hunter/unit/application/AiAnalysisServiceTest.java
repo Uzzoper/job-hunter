@@ -217,6 +217,70 @@ class AiAnalysisServiceTest {
     }
 
     @Nested
+    @DisplayName("Reasoning models: deliberation and prose around the payload must not break parsing")
+    class ReasoningToleranceTests {
+
+        private static final String VALID_JSON = """
+            {
+              "matchScore": 80,
+              "matchedSkills": ["Java", "Spring Boot"],
+              "missingSkills": ["Go"],
+              "companyTone": "formal",
+              "summary": "Developer position"
+            }
+            """;
+
+        @Test
+        @DisplayName("analyze should parse the real payload when the reasoning block carries its own JSON")
+        void analyze_whenReasoningContainsJsonBeforePayload_shouldParseRealPayload() {
+            var polluted = """
+                <think>The candidate matches on Java. I first considered {"matchScore": 10, "summary": "scratch"} but rejected it.</think>
+
+                """ + VALID_JSON;
+
+            when(userProfileRepository.findByUserId(any())).thenReturn(Optional.of(defaultProfile));
+            when(aiPort.complete(any())).thenReturn(polluted);
+            when(jobAnalysisRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            when(jobRepository.findById(1L)).thenReturn(Optional.of(
+                    new Job(1L, "Java Developer", "CompanyX",
+                            "https://example.com/job/1", "Description", LocalDate.now(), "test")));
+
+            JobAnalysis analysis = aiAnalysisService.analyze(1L, 1L);
+
+            assertEquals(80, analysis.matchScore(),
+                    "the JSON quoted inside the reasoning block must not be parsed as the payload");
+            assertEquals(List.of("Java", "Spring Boot"), analysis.matchedSkills());
+            assertEquals("Developer position", analysis.summary());
+        }
+
+        @Test
+        @DisplayName("analyze should parse the payload when prose surrounds it")
+        void analyze_whenProseSurroundsJson_shouldStillParseAllFields() {
+            var polluted = """
+                Sure! Here is the analysis you asked for:
+
+                """ + VALID_JSON + """
+
+                Let me know if you need anything else.
+                """;
+
+            when(userProfileRepository.findByUserId(any())).thenReturn(Optional.of(defaultProfile));
+            when(aiPort.complete(any())).thenReturn(polluted);
+            when(jobAnalysisRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            when(jobRepository.findById(1L)).thenReturn(Optional.of(
+                    new Job(1L, "Java Developer", "CompanyX",
+                            "https://example.com/job/1", "Description", LocalDate.now(), "test")));
+
+            JobAnalysis analysis = aiAnalysisService.analyze(1L, 1L);
+
+            assertEquals(80, analysis.matchScore());
+            assertEquals(CompanyTone.FORMAL, analysis.companyTone());
+            assertEquals(List.of("Go"), analysis.missingSkills());
+            assertEquals("Developer position", analysis.summary());
+        }
+    }
+
+    @Nested
     @DisplayName("Scenario 1: successful analysis")
     class SuccessfulAnalysisTests {
 

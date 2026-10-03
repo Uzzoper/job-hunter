@@ -47,6 +47,13 @@ public class EmailSendingService implements SendEmailUseCase {
             throw new RefusedDraftException("Draft " + draft.id() + " for job " + jobId + " was refused and cannot be sent");
         }
 
+        // Defense in depth at send time: a blank body is never deliverable, whatever produced it
+        // (parser leniency deliberately tolerates odd AI output, and the review gate is not the
+        // only entry point). Reuses the refusal exception; no fallback content is invented.
+        if (draft.body() == null || draft.body().isBlank()) {
+            throw new RefusedDraftException("Draft " + draft.id() + " for job " + jobId + " has a blank body and cannot be sent");
+        }
+
         var job = jobRepository.findById(jobId)
                 .orElseThrow(() -> new JobNotFoundException("Job not found: " + jobId));
 

@@ -37,6 +37,18 @@ public class ResumeUploadService {
      */
     private static final Pattern EMAIL_PATTERN = Pattern.compile("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$");
 
+    /**
+     * Fields Prompt 3 must return as JSON arrays; {@code contact} is requested too but stays
+     * optional (the prompt says "when present", {@code null} for anything not found).
+     */
+    private static final List<String> REQUIRED_FIELDS = List.of("skills", "projects");
+
+    /**
+     * Fields Prompt 3 requires on every extracted project ("Each project must have a name and
+     * description"). {@code techStack} is not listed: the prompt allows it empty when not mentioned.
+     */
+    private static final List<String> REQUIRED_PROJECT_FIELDS = List.of("name", "description");
+
     private final AiPort aiPort;
     private final UserProfileService userProfileService;
     private final UserProfileRepository userProfileRepository;
@@ -155,16 +167,41 @@ public class ResumeUploadService {
         }
 
         try {
-            String cleaned = response.strip();
-            cleaned = cleaned.replaceAll("```[a-zA-Z]*\\s*|```\\s*", "").strip();
-            int start = cleaned.indexOf('{');
-            int end = cleaned.lastIndexOf('}');
-            if (start == -1 || end == -1) {
+            // anchor on skills, the primary field of Prompt 3: reasoning blocks may quote
+            // JSON of their own before the payload (see AiJsonPayloads)
+            String json = AiJsonPayloads.lastObjectWithField(response, "skills");
+            if (json == null) {
                 throw new AiException("AI response contains no valid JSON");
             }
-            String json = cleaned.substring(start, end + 1);
             // Parse as JsonNode tree to handle duplicate fields (qwen2.5:3b merges adjacent objects)
             var root = objectMapper.readTree(json);
+
+            // Scenario 5 (resume-upload.md): a response lacking a mandatory field is an AI error
+            // (502). Validated after selection on purpose — if the object the model actually
+            // answered with lacks a field, that is the error case, and a scratch object quoted in a
+            // reasoning block is never persisted as a silent fallback.
+            var missing = missingRequiredFields(root);
+            if (!missing.isEmpty()) {
+                throw new AiException("AI response missing required fields: " + String.join(", ", missing));
+            }
+
+            // Scenario 5 again: a present mandatory field must have the contracted shape (an
+            // array). Coercing "skills": "Java" or "projects": {} to an empty list would silently
+            // overwrite whatever the profile already holds.
+            var malformed = malformedRequiredFields(root);
+            if (!malformed.isEmpty()) {
+                throw new AiException("AI response has malformed required fields (arrays expected): "
+                        + String.join(", ", malformed));
+            }
+
+            // One level deeper, same bug class: the items inside those arrays must respect Prompt 3
+            // too. Coercing them with asText() would persist invented or empty data (a skill year,
+            // a project with no description) over the real profile.
+            var badItems = malformedArrayItems(root);
+            if (!badItems.isEmpty()) {
+                throw new AiException("AI response has malformed required field items: "
+                        + String.join(", ", badItems));
+            }
 
             var skills = new ArrayList<String>();
             var skillsNode = root.get("skills");
@@ -202,6 +239,71 @@ public class ResumeUploadService {
             log.error("Failed to parse AI extraction response. Raw: {}", response, e);
             throw new AiException("Failed to parse AI extraction: " + e.getMessage(), e);
         }
+    }
+
+    /**
+     * Returns the mandatory extraction fields that are absent from (or null in) {@code root},
+     * in declaration order. Presence is what matters here: Prompt 3 allows an empty array when no
+     * skill or project was found. A present field of an unexpected type is no longer lenient — it is
+     * rejected one step later by {@link #malformedRequiredFields(JsonNode)}, and its items by
+     * {@link #malformedArrayItems(JsonNode)}.
+     */
+    private static List<String> missingRequiredFields(JsonNode root) {
+        return REQUIRED_FIELDS.stream()
+                .filter(field -> root.get(field) == null || root.get(field).isNull())
+                .toList();
+    }
+
+    /**
+     * Returns the mandatory extraction fields present in {@code root} whose JSON type is not the
+     * contracted array — {@code "skills": "Java"} or {@code "projects": {}}. Scenario 5 treats
+     * those as an AI error like a missing field: the alternative is coercing them to empty lists,
+     * which would silently overwrite real profile data.
+     */
+    private static List<String> malformedRequiredFields(JsonNode root) {
+        return REQUIRED_FIELDS.stream()
+                .filter(field -> root.get(field) != null && !root.get(field).isNull() && !root.get(field).isArray())
+                .toList();
+    }
+
+    /**
+     * Returns the offending item paths inside the mandatory arrays when they break Prompt 3's
+     * contract: a skill that is not a non-blank string ({@code "skills": ["Java", 2020]},
+     * {@code [""]} — an empty skill is the same junk as a project with no description) or a project
+     * without the {@code name}/{@code description} it must have. {@code techStack} is deliberately not
+     * checked — the prompt allows it empty when not mentioned, so it stays tolerant as before.
+     *
+     * <p>Reported as a path ({@code projects[0].description}) so the failing model output can be
+     * located without re-reading the response.
+     */
+    private static List<String> malformedArrayItems(JsonNode root) {
+        var malformed = new ArrayList<String>();
+        var skills = root.get("skills");
+        if (skills != null && skills.isArray()) {
+            for (int i = 0; i < skills.size(); i++) {
+                if (isBlankText(skills.get(i))) {
+                    malformed.add("skills[" + i + "]");
+                }
+            }
+        }
+        var projects = root.get("projects");
+        if (projects != null && projects.isArray()) {
+            for (int i = 0; i < projects.size(); i++) {
+                var project = projects.get(i);
+                var absent = REQUIRED_PROJECT_FIELDS.stream()
+                        .filter(field -> !project.isObject() || isBlankText(project.get(field)))
+                        .toList();
+                if (!absent.isEmpty()) {
+                    malformed.add("projects[" + i + "]." + String.join("+", absent));
+                }
+            }
+        }
+        return malformed;
+    }
+
+    /** True when {@code node} is textual and carries non-whitespace text. */
+    private static boolean isBlankText(JsonNode node) {
+        return node == null || !node.isTextual() || node.asText().isBlank();
     }
 
     /**

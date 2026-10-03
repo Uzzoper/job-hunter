@@ -207,14 +207,11 @@ Resume text:
 
     private TailoredResume parseTailoredResume(String response, String resumeText) {
         try {
-            String cleaned = response.strip();
-            cleaned = cleaned.replaceAll("```[a-zA-Z]*\\s*|```\\s*", "").strip();
-            int start = cleaned.indexOf('{');
-            int end = cleaned.lastIndexOf('}');
-            if (start == -1 || end == -1) {
+            // anchor on objective: reasoning blocks may quote JSON of their own before the payload
+            String json = AiJsonPayloads.lastObjectWithField(response, "objective");
+            if (json == null) {
                 throw new AiException("AI response contains no valid JSON");
             }
-            String json = cleaned.substring(start, end + 1);
             var root = objectMapper.readTree(json);
 
             // Spec Scenario 4: objective and skills are mandatory; all other sections stay lenient.

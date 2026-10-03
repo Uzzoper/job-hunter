@@ -151,11 +151,10 @@ in review as "declined by AI". That is the point: high-fit gets personalized
 treatment, and the refusal contract (`email-no-apply-refusal.md`) governs it
 exactly as it governs the low band today.
 
-(b) **`email-no-apply-refusal.md:60` must be reworded.** The sentence "the
-template branch (`matchScore >= minMatchScore`) always produces `PENDING`" is
-inverted: the template branch now serves the **low** band and still always
-produces `PENDING` when it runs (subject to the pre-existing guard that a
-template body never starts with `NO_APPLY:`).
+(b) **`email-no-apply-refusal.md` rewording done.** Template results carrying
+a `NO_APPLY:` marker persist `REJECTED` (see `generate-email.md` Scenario 2),
+and the AI path scans the first 5 lines for the marker — the old prefix-only
+framing is superseded by the marker-scan contract.
 
 (c) **Idempotency guards unchanged and still first.** The two `SENT`
 short-circuits (`EmailGenerationService.java:87-100`) run before branch selection

@@ -157,6 +157,181 @@ class ResumeUploadServiceTest {
     }
 
     @Test
+    @DisplayName("uploadResume should parse the real payload when the reasoning block carries its own JSON")
+    void uploadResume_whenReasoningContainsJsonBeforePayload_shouldParseRealPayload() throws Exception {
+        var file = validPdfMock("Experienced Java developer with Spring Boot");
+        var polluted = """
+                <think>I first listed {"skills": ["Go"], "projects": []} but rejected it.</think>
+
+                {"skills": ["Java", "Spring Boot"], "projects": [{"name": "ProjectX", "description": "A project", "techStack": ["Java", "Maven"]}]}
+                """;
+
+        when(aiPort.complete(anyString())).thenReturn(polluted);
+        when(userProfileRepository.findByUserId(1L)).thenReturn(Optional.empty());
+        when(userProfileService.saveProfile(eq(1L), any(UserProfile.class)))
+                .thenAnswer(inv -> inv.getArgument(1));
+
+        service.uploadResume(1L, file);
+
+        verify(userProfileService).saveProfile(eq(1L), profileCaptor.capture());
+        var savedProfile = profileCaptor.getValue();
+        assertEquals(List.of("Java", "Spring Boot"), savedProfile.skills(),
+                "the JSON quoted inside the reasoning block must not be parsed as the payload");
+        assertEquals(List.of(new Project("ProjectX", "A project", "Java, Maven")), savedProfile.projects());
+    }
+
+    @Test
+    @DisplayName("uploadResume should parse the payload when prose surrounds it")
+    void uploadResume_whenProseSurroundsJson_shouldStillParseIt() throws Exception {
+        var file = validPdfMock("Java developer");
+        var polluted = """
+            Sure! Here is the extraction:
+
+            {"skills": ["Java"], "projects": []}
+
+            Let me know if anything is missing.""";
+
+        when(aiPort.complete(anyString())).thenReturn(polluted);
+        when(userProfileRepository.findByUserId(1L)).thenReturn(Optional.empty());
+        when(userProfileService.saveProfile(eq(1L), any(UserProfile.class)))
+                .thenAnswer(inv -> inv.getArgument(1));
+
+        service.uploadResume(1L, file);
+
+        verify(userProfileService).saveProfile(eq(1L), profileCaptor.capture());
+        assertEquals(List.of("Java"), profileCaptor.getValue().skills());
+    }
+
+    @Test
+    @DisplayName("uploadResume should throw AiException instead of persisting the scratch object when the answer omits skills")
+    void uploadResume_whenAnswerOmitsSkillsAndReasoningQuotesThem_shouldNotPersistScratchObject() throws Exception {
+        var file = validPdfMock("Java developer");
+        // the reasoning block quotes an object carrying skills; the actual answer omits them
+        var polluted = """
+                <think>I first sketched {"skills": ["Go"]} but the resume shows Java.</think>
+
+                {"projects": []}
+                """;
+
+        when(aiPort.complete(anyString())).thenReturn(polluted);
+
+        var ex = assertThrows(AiException.class,
+                () -> service.uploadResume(1L, file));
+        assertTrue(ex.getMessage().contains("missing required fields"), ex.getMessage());
+        verify(userProfileService, never()).saveProfile(anyLong(), any(UserProfile.class));
+    }
+
+    @Test
+    @DisplayName("uploadResume should throw AiException when the response omits the mandatory projects field")
+    void uploadResume_whenResponseOmitsProjects_shouldThrowAiException() throws Exception {
+        var file = validPdfMock("Java developer");
+
+        when(aiPort.complete(anyString())).thenReturn("{\"skills\": [\"Java\"]}");
+
+        var ex = assertThrows(AiException.class,
+                () -> service.uploadResume(1L, file));
+        assertTrue(ex.getMessage().contains("projects"), ex.getMessage());
+        verify(userProfileService, never()).saveProfile(anyLong(), any(UserProfile.class));
+    }
+
+    @Test
+    @DisplayName("uploadResume should accept an empty skills array as a valid answer")
+    void uploadResume_whenSkillsArrayIsEmpty_shouldAcceptAndPersistEmptyList() throws Exception {
+        var file = validPdfMock("Java developer");
+
+        when(aiPort.complete(anyString())).thenReturn("{\"skills\": [], \"projects\": []}");
+        when(userProfileRepository.findByUserId(1L)).thenReturn(Optional.empty());
+        when(userProfileService.saveProfile(eq(1L), any(UserProfile.class)))
+                .thenAnswer(inv -> inv.getArgument(1));
+
+        service.uploadResume(1L, file);
+
+        verify(userProfileService).saveProfile(eq(1L), profileCaptor.capture());
+        assertEquals(List.of(), profileCaptor.getValue().skills(),
+                "Prompt 3 allows an empty skills array when no skill is found");
+    }
+
+    @Test
+    @DisplayName("uploadResume should throw AiException when skills is a string instead of an array")
+    void uploadResume_whenSkillsIsAString_shouldThrowAiException() throws Exception {
+        var file = validPdfMock("Java developer");
+
+        when(aiPort.complete(anyString())).thenReturn("{\"skills\": \"Java\", \"projects\": []}");
+
+        var ex = assertThrows(AiException.class,
+                () -> service.uploadResume(1L, file));
+        assertTrue(ex.getMessage().contains("skills"), ex.getMessage());
+        verify(userProfileService, never()).saveProfile(anyLong(), any(UserProfile.class));
+    }
+
+    @Test
+    @DisplayName("uploadResume should throw AiException when projects is an object instead of an array")
+    void uploadResume_whenProjectsIsAnObject_shouldThrowAiException() throws Exception {
+        var file = validPdfMock("Java developer");
+
+        when(aiPort.complete(anyString())).thenReturn("{\"skills\": [], \"projects\": {}}");
+
+        var ex = assertThrows(AiException.class,
+                () -> service.uploadResume(1L, file));
+        assertTrue(ex.getMessage().contains("projects"), ex.getMessage());
+        verify(userProfileService, never()).saveProfile(anyLong(), any(UserProfile.class));
+    }
+
+    @Test
+    @DisplayName("uploadResume should throw AiException when a skills item is not a string")
+    void uploadResume_whenSkillItemIsNotAString_shouldThrowAiException() throws Exception {
+        var file = validPdfMock("Java developer");
+
+        when(aiPort.complete(anyString())).thenReturn("{\"skills\": [\"Java\", 2020], \"projects\": []}");
+
+        var ex = assertThrows(AiException.class,
+                () -> service.uploadResume(1L, file));
+        assertTrue(ex.getMessage().contains("skills"), ex.getMessage());
+        verify(userProfileService, never()).saveProfile(anyLong(), any(UserProfile.class));
+    }
+
+    @Test
+    @DisplayName("uploadResume should throw AiException when a project is missing the required description")
+    void uploadResume_whenProjectMissingDescription_shouldThrowAiException() throws Exception {
+        var file = validPdfMock("Java developer");
+
+        when(aiPort.complete(anyString())).thenReturn(
+                "{\"skills\": [], \"projects\": [{\"name\": \"ProjectX\", \"techStack\": [\"Java\"]}]}");
+
+        var ex = assertThrows(AiException.class,
+                () -> service.uploadResume(1L, file));
+        assertTrue(ex.getMessage().contains("description"), ex.getMessage());
+        verify(userProfileService, never()).saveProfile(anyLong(), any(UserProfile.class));
+    }
+
+    @Test
+    @DisplayName("uploadResume should throw AiException when a project description is blank")
+    void uploadResume_whenProjectDescriptionIsBlank_shouldThrowAiException() throws Exception {
+        var file = validPdfMock("Java developer");
+
+        when(aiPort.complete(anyString())).thenReturn(
+                "{\"skills\": [], \"projects\": [{\"name\": \"ProjectX\", \"description\": \"   \"}]}");
+
+        var ex = assertThrows(AiException.class,
+                () -> service.uploadResume(1L, file));
+        assertTrue(ex.getMessage().contains("description"), ex.getMessage());
+        verify(userProfileService, never()).saveProfile(anyLong(), any(UserProfile.class));
+    }
+
+    @Test
+    @DisplayName("uploadResume should throw AiException when a skills item is a blank string")
+    void uploadResume_whenSkillItemIsBlank_shouldThrowAiException() throws Exception {
+        var file = validPdfMock("Java developer");
+
+        when(aiPort.complete(anyString())).thenReturn("{\"skills\": [\"Java\", \"   \"], \"projects\": []}");
+
+        var ex = assertThrows(AiException.class,
+                () -> service.uploadResume(1L, file));
+        assertTrue(ex.getMessage().contains("skills"), ex.getMessage());
+        verify(userProfileService, never()).saveProfile(anyLong(), any(UserProfile.class));
+    }
+
+    @Test
     @DisplayName("uploadResume should throw IllegalArgumentException when content type is not PDF")
     void uploadResume_whenNonPdfContentType_shouldThrowIllegalArgument() throws Exception {
         var file = mock(MultipartFile.class);

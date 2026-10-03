@@ -131,25 +131,11 @@ public class AiAnalysisService implements AnalyzeJobUseCase {
             if (json == null || json.isBlank()) {
                 throw new AiException("AI returned empty or null response");
             }
-            String cleaned = json.strip();
-            cleaned = cleaned.replaceAll("```[a-zA-Z]*\\s*|```\\s*", "").strip();
-
-            int jsonStart = cleaned.indexOf('{');
-            if (jsonStart == -1) {
+            // anchor on matchScore: reasoning blocks may quote JSON of their own before the payload
+            String potentialJson = AiJsonPayloads.lastObjectWithField(json, "matchScore");
+            if (potentialJson == null) {
                 throw new AiException("No JSON object found in AI response");
             }
-            String potentialJson = cleaned.substring(jsonStart).strip();
-
-            int jsonEnd = potentialJson.lastIndexOf('}');
-            if (jsonEnd == -1) {
-                if (potentialJson.length() > 10) {
-                    potentialJson = potentialJson + "}";
-                    jsonEnd = potentialJson.length() - 1;
-                } else {
-                    throw new AiException("No valid JSON object found in AI response");
-                }
-            }
-            potentialJson = potentialJson.substring(0, jsonEnd + 1);
 
             JsonNode node = objectMapper.readTree(potentialJson);
 

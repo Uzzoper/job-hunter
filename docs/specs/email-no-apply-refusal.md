@@ -26,20 +26,21 @@ the first line as subject without validation, eligibility only checks
 
 ### Scenario 1: AI refuses — no fit (AI path)
 - **GIVEN** a valid `Job`, `JobAnalysis`, and user profile (AI path, `matchScore >= minMatchScore`)
-- **WHEN** `generate(userId, jobId)` is called and `AiPort.complete()` returns text starting with `NO_APPLY:` (after trim)
+- **WHEN** `generate(userId, jobId)` is called and `AiPort.complete()` returns text whose **first 5 leading lines** contain a line starting with `NO_APPLY:` (after trim, indentation stripped, case-sensitive)
 - **THEN** no subject/body parsing happens
-- **AND** the persisted `EmailDraft` has `status = REJECTED`, `subject = ""` (or the one-line reason?), `body` = full AI response trimmed
+- **AND** the persisted `EmailDraft` has `status = REJECTED`, `subject = ""` (always empty — the reason never becomes a subject), `body` = full AI response trimmed
 - **AND** the draft is returned with `REJECTED` status
 
 > Decision: `subject` stores `""` and `body` stores the full `NO_APPLY: reason` text,
 > so the reason stays auditable and no fake "Subject: ..." is ever produced.
 > Alternative (reason → subject) rejected: it would look like a sendable subject.
 
-### Scenario 2: parser recognizes refusal prefix
+### Scenario 2: parser recognizes the refusal marker within the scanned lines
 - **GIVEN** any AI response string
 - **WHEN** `parseEmailDraft()` receives it after `trim()`
-- **THEN** if it starts with exactly `NO_APPLY:` (case-sensitive, uppercase) it produces a `REJECTED` draft per Scenario 1
+- **THEN** if any of the first 5 leading lines starts with exactly `NO_APPLY:` (case-sensitive, uppercase, indentation stripped) it produces a `REJECTED` draft per Scenario 1 — the scan exists because reasoning models answer with chatter first ("Claro, segue:\nNO_APPLY: …"), which under a prefix-only rule fell through and persisted a sendable `PENDING` draft
 - **AND** otherwise it follows the current `Subject: ` split logic and produces `PENDING` (unchanged)
+- **AND** a marker beyond line 5 stays unrecognised (documented gap, pinned by `generate_whenNoApplyMarkerIsBeyondTheScannedLines_shouldRemainPending`)
 
 ### Scenario 3: auto-send ignores REJECTED (both modes)
 - **GIVEN** drafts with `status == REJECTED` (with `contactEmail` non-null and any score)
@@ -65,7 +66,9 @@ the first line as subject without validation, eligibility only checks
 
 - Prompt gains a final mandatory rule (after rule 10, before tone guide):
   > `11. If the vacancy clearly has no fit with the candidate (non-tech role, stack entirely outside the candidate's, or level far below), DO NOT write an email. Respond with exactly one line: NO_APPLY: [one-line reason in English]. No subject, no body, no signature.`
-- Refusal detection is prefix-only: `response.trim().startsWith("NO_APPLY:")`, case-sensitive. No fuzzy matching in v1.
+- Refusal detection is bounded, not prefix-only: the parser scans the **first 5 leading lines** of `response.trim()` for a line whose indentation-stripped text starts with `NO_APPLY:`. Case-sensitive, exact caps — a lowercase or embedded `no_apply:` is not a marker, and no fuzzy matching is used. The scan exists because reasoning models prefix their answer with chatter (`"Claro, segue:\nNO_APPLY: …"`), which under a `startsWith`-only rule fell through to the subject/body split and persisted a **sendable `PENDING` draft for a no-fit job**
+- A refusal marker beyond line 5 stays unrecognised (documented gap, pinned by `generate_whenNoApplyMarkerIsBeyondTheScannedLines_shouldRemainPending`): such a response is treated as a normal email. The scan width is shared with the subject-label lookup via `LEADING_LINE_SCAN`
+- On detection the draft is persisted `REJECTED` with an empty `subject` and the **full trimmed response** as `body`, so the reason stays auditable even when the model prefixed it with chatter. The bot-memory write-back extracts the bare reason (everything after the `NO_APPLY:` prefix) using the same marker lookup
 - `EmailStatus` gains `REJECTED`: `PENDING, APPROVED, SENT, REJECTED`. Sits outside the sendable lifecycle: `PENDING → APPROVED → SENT` unchanged; `REJECTED` is terminal unless regenerated into `PENDING` (Scenario 5).
 - Eligibility uses inclusion lists (`PENDING` / `APPROVED`) so `REJECTED` is excluded implicitly; no `status != REJECTED` query needed. No change to `collectUserBuckets()` logic required beyond the enum gain — covered by regression test.
 - Persistence: `email_drafts.status` is `VARCHAR(20)` free-form (V1 baseline, no CHECK). Java maps via `EmailStatus.valueOf()`. A Flyway migration documents `REJECTED` as legal value (next free version — `V3` if still free at implementation time; `generate-email.md:58` already claims a `V3` for `(job_id, user_id)` uniqueness that does not exist in the repo, so the implementer must reconcile numbering and never edit applied V1/V2).

@@ -23,12 +23,34 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.time.LocalDateTime;
+import java.util.Arrays;
 import java.util.Objects;
+import java.util.function.Predicate;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 public class EmailGenerationService implements GenerateEmailUseCase, GetEmailDraftUseCase {
 
     private static final Logger log = LoggerFactory.getLogger(EmailGenerationService.class);
+
+    /**
+     * Leading subject label of a response line, in English ({@code Subject:}) or
+     * Brazilian Portuguese ({@code Assunto:}). Case-sensitive, whitespace optional
+     * after the colon — same strictness as the rest of the response parsing.
+     */
+    private static final Pattern SUBJECT_LABEL = Pattern.compile("^(Subject|Assunto)\\s*:");
+
+    /**
+     * Width of the leading-line scan shared by the subject-label and refusal-marker lookups:
+     * at most this many lines are inspected before falling back.
+     */
+    private static final int LEADING_LINE_SCAN = 5;
+
+    /**
+     * Refusal marker the model must emit verbatim to skip a job. Case-sensitive, exact caps —
+     * matching the historical {@code startsWith} check.
+     */
+    private static final String NO_APPLY_PREFIX = "NO_APPLY:";
 
     /**
      * Tokenized email shown to the model as a reference. Reuses the standard
@@ -137,12 +159,17 @@ public class EmailGenerationService implements GenerateEmailUseCase, GetEmailDra
         }
     }
 
-    /** Extracts the reason text after the {@code NO_APPLY:} prefix (falls back to the whole response). */
+    /**
+     * Extracts the reason text after the {@code NO_APPLY:} prefix (falls back to the whole
+     * response). Scans the leading lines with the same marker lookup as the refusal detection,
+     * so a chatter-prefixed refusal also yields the bare reason instead of the full response.
+     */
     private static String refusalReason(String aiResponse) {
         String response = aiResponse.trim();
-        String prefix = "NO_APPLY:";
-        if (response.startsWith(prefix)) {
-            String reason = response.substring(prefix.length()).trim();
+        int markerLineStart = indexOfNoApplyMarker(response);
+        if (markerLineStart >= 0) {
+            int markerStart = response.indexOf(NO_APPLY_PREFIX, markerLineStart);
+            String reason = response.substring(markerStart + NO_APPLY_PREFIX.length()).trim();
             return reason.isEmpty() ? response : reason;
         }
         return response;
@@ -251,38 +278,169 @@ public class EmailGenerationService implements GenerateEmailUseCase, GetEmailDra
         return prompt;
     }
 
-    /**
-     * Parses the raw AI response into an {@code EmailDraft}.
-     * <p>
-     * If the trimmed response starts with the refusal prefix {@code NO_APPLY:}
-     * (case-sensitive), no subject/body parsing happens: the draft is persisted as
-     * {@code REJECTED} with an empty subject and the full trimmed response as body,
-     * keeping the refusal reason auditable and never producing a fake sendable subject.
-     * Otherwise it follows the {@code Subject: } split logic and produces a {@code PENDING} draft.
-     */
+/**
+ * Parses the raw AI response into an {@code EmailDraft}.
+ * <p>
+ * If the refusal prefix {@code NO_APPLY:} (case-sensitive) opens any of the
+ * first 5 leading lines of the trimmed response — not only position 0, since
+ * reasoning models answer with chatter first ("Claro, segue:\nNO_APPLY: …") —
+ * no subject/body parsing happens: the draft is persisted as
+ * {@code REJECTED} with an empty subject and the full trimmed response as body,
+ * keeping the refusal reason auditable and never producing a fake sendable subject.
+ * Otherwise it follows the {@code Subject: } split logic and produces a {@code PENDING} draft.
+ * <p>
+ * Prompt 2 mandates an English {@code "Subject: "} prefix while the body must be
+ * Brazilian Portuguese, so the model sometimes emits {@code "Assunto: "} instead —
+ * observed live as an {@code "Assunto: Candidatura — …"} line opening the sent body.
+ * Both ends are normalized here: a leading {@code Subject:}/{@code Assunto:} prefix is
+ * stripped and re-applied as {@code "Subject: <text>"}, and any remaining
+ * {@code ^(Subject|Assunto)\s*:} line at the top of the body is dropped.
+ */
     private EmailDraft parseEmailDraft(Long id, Long jobId, Long userId, String aiResponse, String recipientEmail) {
         String response = aiResponse.trim();
 
-        if (response.startsWith("NO_APPLY:")) {
+        if (indexOfNoApplyMarker(response) >= 0) {
             return new EmailDraft(id, jobId, userId, "", response, EmailStatus.REJECTED, LocalDateTime.now(), null, recipientEmail);
         }
 
         String subject;
         String body;
 
-        int subjectEnd = response.indexOf('\n');
-        if (subjectEnd > 0) {
-            subject = response.substring(0, subjectEnd).trim();
-            body = response.substring(subjectEnd).trim();
+        int subjectStart = indexOfSubjectLine(response);
+        if (subjectStart < 0) {
+            subjectStart = 0;
+        }
+        int subjectEnd = response.indexOf('\n', subjectStart);
+        if (subjectEnd > subjectStart) {
+            subject = normalizeSubject(response.substring(subjectStart, subjectEnd).trim());
+            body = stripStraySubjectLabelLines(response.substring(subjectEnd).trim());
         } else {
-            subject = response.trim();
+            subject = normalizeSubject(response.substring(subjectStart).trim());
             body = "";
         }
 
-        if (!subject.startsWith("Subject: ")) {
-            subject = "Subject: " + subject;
-        }
-
         return new EmailDraft(id, jobId, userId, subject, body, EmailStatus.PENDING, LocalDateTime.now(), null, recipientEmail);
+    }
+
+    /**
+     * Locates the refusal marker among the leading lines so a refusal that opens with chatter
+     * ("Claro, segue:\nNO_APPLY: …") still rejects the draft instead of falling through to the
+     * subject/body split and persisting a sendable PENDING draft for a no-fit job.
+     *
+     * <p>Case-sensitive and exact-caps, same as the previous {@code startsWith} check: a lowercase
+     * or embedded {@code no_apply:} is not a marker. Shares the bounded scan with the subject-label
+     * lookup, so a marker beyond the scanned lines stays unrecognised.
+     */
+    private static int indexOfNoApplyMarker(String response) {
+        return indexOfLeadingLine(response, line -> line.startsWith(NO_APPLY_PREFIX));
+    }
+
+    /**
+     * Locates the subject line among the leading lines so chatter before it (models often answer
+     * "Aqui está o e-mail:" first) never lands in the persisted subject. Falls back to position
+     * zero when no labelled line appears, keeping the historical first-line-as-subject behaviour.
+     */
+    private static int indexOfSubjectLine(String response) {
+        return indexOfLeadingLine(response, line -> SUBJECT_LABEL.matcher(line).find());
+    }
+
+    /**
+     * Walks at most {@link #LEADING_LINE_SCAN} leading lines of {@code response} and returns the
+     * start offset of the first one accepted by {@code linePredicate}, or {@code -1} when none
+     * matches. Each line is matched after {@code stripLeading()}, so indentation before a label or
+     * the refusal marker is tolerated. Both the subject-label and refusal-marker lookups share this
+     * walk, so they cannot drift apart in width or trimming semantics.
+     */
+    private static int indexOfLeadingLine(String response, Predicate<String> linePredicate) {
+        int start = 0;
+        for (int line = 0; line < LEADING_LINE_SCAN; line++) {
+            int lineEnd = response.indexOf('\n', start);
+            String current = lineEnd < 0 ? response.substring(start) : response.substring(start, lineEnd);
+            if (linePredicate.test(current.stripLeading())) {
+                return start;
+            }
+            if (lineEnd < 0) {
+                break;
+            }
+            start = lineEnd + 1;
+        }
+        return -1;
+    }
+
+/**
+     * Stores the subject in the normalized {@code "Subject: <text>"} form, accepting a
+     * leading {@code "Subject:"} or {@code "Assunto:"} label (with optional whitespace
+     * after the colon) and stripping it — so a Portuguese subject line is never persisted
+     * as {@code "Subject: Assunto: Candidatura — …"} nor as a bare, unprefixed line.
+     */
+    private static String normalizeSubject(String subject) {
+        var matcher = SUBJECT_LABEL.matcher(subject);
+        var text = matcher.find() ? subject.substring(matcher.end()).trim() : subject;
+        return "Subject: " + text;
+    }
+
+    /**
+     * Drops stray subject-label lines from the body so no {@code "Assunto: …"} or
+     * {@code "Subject: …"} artefact survives in the persisted — and therefore sent — body:
+     * every leading label line (the model sometimes repeats the subject below the first line) and
+     * every trailing label-only line, such as a dangling {@code "Assunto:"} left at the end.
+     *
+     * <p>A trailing line that still carries text is legitimate content and is kept. A body that
+     * <em>is</em> a single label line (leading or trailing) is dropped whole, leaving an empty
+     * body: no fallback content is invented and the draft stays {@code PENDING}.
+     */
+    private static String stripStraySubjectLabelLines(String body) {
+        return stripTrailingLabelOnlyLines(stripLeadingSubjectLines(body));
+    }
+
+    /**
+     * Drops every leading subject-label line from the body (the model sometimes repeats
+     * the subject below the first line), so no {@code "Assunto: …"} or {@code "Subject: …"}
+     * prefix survives as the first line of the persisted — and therefore sent — body.
+     *
+     * <p>A body that <em>is</em> a single label line is dropped whole, leaving an empty body:
+     * no fallback content is invented, the draft stays {@code PENDING} for the approve screen and
+     * the review gate remains the backstop.
+     */
+    private static String stripLeadingSubjectLines(String body) {
+        String remaining = body;
+        boolean dropped;
+        do {
+            dropped = false;
+            var lines = remaining.split("\n", 2);
+            if (SUBJECT_LABEL.matcher(lines[0].trim()).find()) {
+                remaining = lines.length == 2 ? lines[1].trim() : "";
+                dropped = true;
+            }
+        } while (dropped);
+        return remaining;
+    }
+
+    /**
+     * Drops the trailing lines while they are blank or a subject label carrying no text, so a
+     * body ending on {@code "Assunto:"} (or on several of them) loses the artefact instead of
+     * sending it to the recruiter. Requires at least one remaining line, hence the length guard.
+     */
+    private static String stripTrailingLabelOnlyLines(String body) {
+        String remaining = body.strip();
+        boolean dropped;
+        do {
+            dropped = false;
+            String[] lines = remaining.split("\n", -1);
+            if (lines.length > 1) {
+                String last = lines[lines.length - 1].strip();
+                if (last.isEmpty() || isLabelOnly(last)) {
+                    remaining = String.join("\n", Arrays.copyOfRange(lines, 0, lines.length - 1)).strip();
+                    dropped = true;
+                }
+            }
+        } while (dropped);
+        return remaining;
+    }
+
+    /** True when {@code line} is a subject label with nothing after it (e.g. a dangling {@code "Assunto:"}). */
+    private static boolean isLabelOnly(String line) {
+        var matcher = SUBJECT_LABEL.matcher(line);
+        return matcher.find() && line.substring(matcher.end()).isBlank();
     }
 }
