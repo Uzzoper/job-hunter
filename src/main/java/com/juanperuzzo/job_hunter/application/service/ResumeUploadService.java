@@ -268,9 +268,10 @@ public class ResumeUploadService {
 
     /**
      * Returns the offending item paths inside the mandatory arrays when they break Prompt 3's
-     * contract: a non-string skill ({@code "skills": ["Java", 2020]}) or a project without the
-     * {@code name}/{@code description} it must have. {@code techStack} is deliberately not checked
-     * — the prompt allows it empty when not mentioned, so it stays tolerant as before.
+     * contract: a skill that is not a non-blank string ({@code "skills": ["Java", 2020]},
+     * {@code [""]} — an empty skill is the same junk as a project with no description) or a project
+     * without the {@code name}/{@code description} it must have. {@code techStack} is deliberately not
+     * checked — the prompt allows it empty when not mentioned, so it stays tolerant as before.
      *
      * <p>Reported as a path ({@code projects[0].description}) so the failing model output can be
      * located without re-reading the response.
@@ -280,7 +281,7 @@ public class ResumeUploadService {
         var skills = root.get("skills");
         if (skills != null && skills.isArray()) {
             for (int i = 0; i < skills.size(); i++) {
-                if (!skills.get(i).isTextual()) {
+                if (isBlankText(skills.get(i))) {
                     malformed.add("skills[" + i + "]");
                 }
             }
