@@ -155,14 +155,12 @@ public class ResumeUploadService {
         }
 
         try {
-            String cleaned = response.strip();
-            cleaned = cleaned.replaceAll("```[a-zA-Z]*\\s*|```\\s*", "").strip();
-            int start = cleaned.indexOf('{');
-            int end = cleaned.lastIndexOf('}');
-            if (start == -1 || end == -1) {
+            // anchor on skills, the primary field of Prompt 3: reasoning blocks may quote
+            // JSON of their own before the payload (see AiJsonPayloads)
+            String json = AiJsonPayloads.lastObjectWithField(response, "skills");
+            if (json == null) {
                 throw new AiException("AI response contains no valid JSON");
             }
-            String json = cleaned.substring(start, end + 1);
             // Parse as JsonNode tree to handle duplicate fields (qwen2.5:3b merges adjacent objects)
             var root = objectMapper.readTree(json);
 
