@@ -43,6 +43,12 @@ public class ResumeUploadService {
      */
     private static final List<String> REQUIRED_FIELDS = List.of("skills", "projects");
 
+    /**
+     * Fields Prompt 3 requires on every extracted project ("Each project must have a name and
+     * description"). {@code techStack} is not listed: the prompt allows it empty when not mentioned.
+     */
+    private static final List<String> REQUIRED_PROJECT_FIELDS = List.of("name", "description");
+
     private final AiPort aiPort;
     private final UserProfileService userProfileService;
     private final UserProfileRepository userProfileRepository;
@@ -188,6 +194,15 @@ public class ResumeUploadService {
                         + String.join(", ", malformed));
             }
 
+            // One level deeper, same bug class: the items inside those arrays must respect Prompt 3
+            // too. Coercing them with asText() would persist invented or empty data (a skill year,
+            // a project with no description) over the real profile.
+            var badItems = malformedArrayItems(root);
+            if (!badItems.isEmpty()) {
+                throw new AiException("AI response has malformed required field items: "
+                        + String.join(", ", badItems));
+            }
+
             var skills = new ArrayList<String>();
             var skillsNode = root.get("skills");
             if (skillsNode != null && skillsNode.isArray()) {
@@ -228,9 +243,10 @@ public class ResumeUploadService {
 
     /**
      * Returns the mandatory extraction fields that are absent from (or null in) {@code root},
-     * in declaration order. Presence is what matters: Prompt 3 allows an empty array when no skill
-     * or project was found, and a present field of an unexpected type keeps the lenient behaviour
-     * it had before (an empty list downstream) rather than failing.
+     * in declaration order. Presence is what matters here: Prompt 3 allows an empty array when no
+     * skill or project was found. A present field of an unexpected type is no longer lenient — it is
+     * rejected one step later by {@link #malformedRequiredFields(JsonNode)}, and its items by
+     * {@link #malformedArrayItems(JsonNode)}.
      */
     private static List<String> missingRequiredFields(JsonNode root) {
         return REQUIRED_FIELDS.stream()
@@ -248,6 +264,45 @@ public class ResumeUploadService {
         return REQUIRED_FIELDS.stream()
                 .filter(field -> root.get(field) != null && !root.get(field).isNull() && !root.get(field).isArray())
                 .toList();
+    }
+
+    /**
+     * Returns the offending item paths inside the mandatory arrays when they break Prompt 3's
+     * contract: a non-string skill ({@code "skills": ["Java", 2020]}) or a project without the
+     * {@code name}/{@code description} it must have. {@code techStack} is deliberately not checked
+     * — the prompt allows it empty when not mentioned, so it stays tolerant as before.
+     *
+     * <p>Reported as a path ({@code projects[0].description}) so the failing model output can be
+     * located without re-reading the response.
+     */
+    private static List<String> malformedArrayItems(JsonNode root) {
+        var malformed = new ArrayList<String>();
+        var skills = root.get("skills");
+        if (skills != null && skills.isArray()) {
+            for (int i = 0; i < skills.size(); i++) {
+                if (!skills.get(i).isTextual()) {
+                    malformed.add("skills[" + i + "]");
+                }
+            }
+        }
+        var projects = root.get("projects");
+        if (projects != null && projects.isArray()) {
+            for (int i = 0; i < projects.size(); i++) {
+                var project = projects.get(i);
+                var absent = REQUIRED_PROJECT_FIELDS.stream()
+                        .filter(field -> !project.isObject() || isBlankText(project.get(field)))
+                        .toList();
+                if (!absent.isEmpty()) {
+                    malformed.add("projects[" + i + "]." + String.join("+", absent));
+                }
+            }
+        }
+        return malformed;
+    }
+
+    /** True when {@code node} is textual and carries non-whitespace text. */
+    private static boolean isBlankText(JsonNode node) {
+        return node == null || !node.isTextual() || node.asText().isBlank();
     }
 
     /**
