@@ -394,6 +394,10 @@ public class EmailGenerationService implements GenerateEmailUseCase, GetEmailDra
      * Drops every leading subject-label line from the body (the model sometimes repeats
      * the subject below the first line), so no {@code "Assunto: …"} or {@code "Subject: …"}
      * prefix survives as the first line of the persisted — and therefore sent — body.
+     *
+     * <p>A body that <em>is</em> a single label line is dropped whole, leaving an empty body:
+     * no fallback content is invented, the draft stays {@code PENDING} for the approve screen and
+     * the review gate remains the backstop.
      */
     private static String stripLeadingSubjectLines(String body) {
         String remaining = body;
@@ -401,8 +405,8 @@ public class EmailGenerationService implements GenerateEmailUseCase, GetEmailDra
         do {
             dropped = false;
             var lines = remaining.split("\n", 2);
-            if (lines.length == 2 && SUBJECT_LABEL.matcher(lines[0].trim()).find()) {
-                remaining = lines[1].trim();
+            if (SUBJECT_LABEL.matcher(lines[0].trim()).find()) {
+                remaining = lines.length == 2 ? lines[1].trim() : "";
                 dropped = true;
             }
         } while (dropped);
