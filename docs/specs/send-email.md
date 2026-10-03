@@ -98,6 +98,7 @@ public record EmailDraft(
 |---|---|---|
 | No draft exists for `(jobId, userId)` | `JobNotFoundException` | fails immediately (reuses existing exception, consistent with `GetEmailDraftUseCase`) |
 | Draft status == `SENT` | `EmailAlreadySentException` (new) | fails, no send attempted |
+| Draft body is `null`/blank | `RefusedDraftException` | fails before touching the sender port (defense in depth — parse leniency is deliberate, so an undeliverable body is refused here instead of mailed) |
 | `Job.contactEmail` is null | `MissingRecipientException` (new) | fails, message points to `Job.url` |
 | `EmailSenderPort.send` throws | `EmailDeliveryException` (new) | propagates, draft stays `PENDING` |
 
