@@ -203,6 +203,55 @@ class ResumeUploadServiceTest {
     }
 
     @Test
+    @DisplayName("uploadResume should throw AiException instead of persisting the scratch object when the answer omits skills")
+    void uploadResume_whenAnswerOmitsSkillsAndReasoningQuotesThem_shouldNotPersistScratchObject() throws Exception {
+        var file = validPdfMock("Java developer");
+        // the reasoning block quotes an object carrying skills; the actual answer omits them
+        var polluted = """
+                <think>I first sketched {"skills": ["Go"]} but the resume shows Java.</think>
+
+                {"projects": []}
+                """;
+
+        when(aiPort.complete(anyString())).thenReturn(polluted);
+
+        var ex = assertThrows(AiException.class,
+                () -> service.uploadResume(1L, file));
+        assertTrue(ex.getMessage().contains("missing required fields"), ex.getMessage());
+        verify(userProfileService, never()).saveProfile(anyLong(), any(UserProfile.class));
+    }
+
+    @Test
+    @DisplayName("uploadResume should throw AiException when the response omits the mandatory projects field")
+    void uploadResume_whenResponseOmitsProjects_shouldThrowAiException() throws Exception {
+        var file = validPdfMock("Java developer");
+
+        when(aiPort.complete(anyString())).thenReturn("{\"skills\": [\"Java\"]}");
+
+        var ex = assertThrows(AiException.class,
+                () -> service.uploadResume(1L, file));
+        assertTrue(ex.getMessage().contains("projects"), ex.getMessage());
+        verify(userProfileService, never()).saveProfile(anyLong(), any(UserProfile.class));
+    }
+
+    @Test
+    @DisplayName("uploadResume should accept an empty skills array as a valid answer")
+    void uploadResume_whenSkillsArrayIsEmpty_shouldAcceptAndPersistEmptyList() throws Exception {
+        var file = validPdfMock("Java developer");
+
+        when(aiPort.complete(anyString())).thenReturn("{\"skills\": [], \"projects\": []}");
+        when(userProfileRepository.findByUserId(1L)).thenReturn(Optional.empty());
+        when(userProfileService.saveProfile(eq(1L), any(UserProfile.class)))
+                .thenAnswer(inv -> inv.getArgument(1));
+
+        service.uploadResume(1L, file);
+
+        verify(userProfileService).saveProfile(eq(1L), profileCaptor.capture());
+        assertEquals(List.of(), profileCaptor.getValue().skills(),
+                "Prompt 3 allows an empty skills array when no skill is found");
+    }
+
+    @Test
     @DisplayName("uploadResume should throw IllegalArgumentException when content type is not PDF")
     void uploadResume_whenNonPdfContentType_shouldThrowIllegalArgument() throws Exception {
         var file = mock(MultipartFile.class);
