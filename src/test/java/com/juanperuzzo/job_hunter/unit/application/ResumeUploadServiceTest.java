@@ -278,6 +278,47 @@ class ResumeUploadServiceTest {
     }
 
     @Test
+    @DisplayName("uploadResume should throw AiException when a skills item is not a string")
+    void uploadResume_whenSkillItemIsNotAString_shouldThrowAiException() throws Exception {
+        var file = validPdfMock("Java developer");
+
+        when(aiPort.complete(anyString())).thenReturn("{\"skills\": [\"Java\", 2020], \"projects\": []}");
+
+        var ex = assertThrows(AiException.class,
+                () -> service.uploadResume(1L, file));
+        assertTrue(ex.getMessage().contains("skills"), ex.getMessage());
+        verify(userProfileService, never()).saveProfile(anyLong(), any(UserProfile.class));
+    }
+
+    @Test
+    @DisplayName("uploadResume should throw AiException when a project is missing the required description")
+    void uploadResume_whenProjectMissingDescription_shouldThrowAiException() throws Exception {
+        var file = validPdfMock("Java developer");
+
+        when(aiPort.complete(anyString())).thenReturn(
+                "{\"skills\": [], \"projects\": [{\"name\": \"ProjectX\", \"techStack\": [\"Java\"]}]}");
+
+        var ex = assertThrows(AiException.class,
+                () -> service.uploadResume(1L, file));
+        assertTrue(ex.getMessage().contains("description"), ex.getMessage());
+        verify(userProfileService, never()).saveProfile(anyLong(), any(UserProfile.class));
+    }
+
+    @Test
+    @DisplayName("uploadResume should throw AiException when a project description is blank")
+    void uploadResume_whenProjectDescriptionIsBlank_shouldThrowAiException() throws Exception {
+        var file = validPdfMock("Java developer");
+
+        when(aiPort.complete(anyString())).thenReturn(
+                "{\"skills\": [], \"projects\": [{\"name\": \"ProjectX\", \"description\": \"   \"}]}");
+
+        var ex = assertThrows(AiException.class,
+                () -> service.uploadResume(1L, file));
+        assertTrue(ex.getMessage().contains("description"), ex.getMessage());
+        verify(userProfileService, never()).saveProfile(anyLong(), any(UserProfile.class));
+    }
+
+    @Test
     @DisplayName("uploadResume should throw IllegalArgumentException when content type is not PDF")
     void uploadResume_whenNonPdfContentType_shouldThrowIllegalArgument() throws Exception {
         var file = mock(MultipartFile.class);
