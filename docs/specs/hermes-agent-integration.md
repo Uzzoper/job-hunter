@@ -55,7 +55,7 @@ Key property: **this repo contains no email-delivery logic**. The Java side hand
 #### Scenario 4: successful completion
 - **GIVEN** a reachable gateway
 - **WHEN** `complete(prompt)` is called
-- **THEN** returns `choices[0].message.content` from the response
+- **THEN** returns `choices[0].message.content` from the response, with model deliberation filtered out: `<think>`/`<thinking>`/`<thought>`/`<reasoning>`/`<reflection>`/`<scratchpad>` blocks (and a leading markdown-quote block) are stripped before the content reaches consumers, while a `finish_reason = "error"` choice still throws `AiException` with the raw upstream message (checked before any stripping). Rationale and per-tag behaviour: `AiJsonPayloads` consumers plus the reasoning fixtures in `HermesAgentClientTest`.
 
 #### Scenario 5: gateway returns HTTP 4xx/5xx
 - **WHEN** the completion call fails at HTTP level
