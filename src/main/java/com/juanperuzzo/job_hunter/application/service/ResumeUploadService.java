@@ -38,8 +38,8 @@ public class ResumeUploadService {
     private static final Pattern EMAIL_PATTERN = Pattern.compile("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$");
 
     /**
-     * Fields Prompt 3 must return; {@code contact} is not among them (the prompt never asks for
-     * it) and stays optional.
+     * Fields Prompt 3 must return as JSON arrays; {@code contact} is requested too but stays
+     * optional (the prompt says "when present", {@code null} for anything not found).
      */
     private static final List<String> REQUIRED_FIELDS = List.of("skills", "projects");
 
@@ -179,6 +179,15 @@ public class ResumeUploadService {
                 throw new AiException("AI response missing required fields: " + String.join(", ", missing));
             }
 
+            // Scenario 5 again: a present mandatory field must have the contracted shape (an
+            // array). Coercing "skills": "Java" or "projects": {} to an empty list would silently
+            // overwrite whatever the profile already holds.
+            var malformed = malformedRequiredFields(root);
+            if (!malformed.isEmpty()) {
+                throw new AiException("AI response has malformed required fields (arrays expected): "
+                        + String.join(", ", malformed));
+            }
+
             var skills = new ArrayList<String>();
             var skillsNode = root.get("skills");
             if (skillsNode != null && skillsNode.isArray()) {
@@ -226,6 +235,18 @@ public class ResumeUploadService {
     private static List<String> missingRequiredFields(JsonNode root) {
         return REQUIRED_FIELDS.stream()
                 .filter(field -> root.get(field) == null || root.get(field).isNull())
+                .toList();
+    }
+
+    /**
+     * Returns the mandatory extraction fields present in {@code root} whose JSON type is not the
+     * contracted array — {@code "skills": "Java"} or {@code "projects": {}}. Scenario 5 treats
+     * those as an AI error like a missing field: the alternative is coercing them to empty lists,
+     * which would silently overwrite real profile data.
+     */
+    private static List<String> malformedRequiredFields(JsonNode root) {
+        return REQUIRED_FIELDS.stream()
+                .filter(field -> root.get(field) != null && !root.get(field).isNull() && !root.get(field).isArray())
                 .toList();
     }
 
