@@ -162,7 +162,7 @@ public class HermesAgentClient implements AiPort {
     }
 
     private int indexOfIgnoreCase(String text, String needle) {
-        return text.toLowerCase(Locale.ROOT).indexOf(needle);
+        return indexOfIgnoreCase(text, needle, 0);
     }
 
     private int indexOfIgnoreCase(String text, String needle, int fromIndex) {
