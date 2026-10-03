@@ -37,6 +37,12 @@ public class ResumeUploadService {
      */
     private static final Pattern EMAIL_PATTERN = Pattern.compile("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$");
 
+    /**
+     * Fields Prompt 3 must return; {@code contact} is not among them (the prompt never asks for
+     * it) and stays optional.
+     */
+    private static final List<String> REQUIRED_FIELDS = List.of("skills", "projects");
+
     private final AiPort aiPort;
     private final UserProfileService userProfileService;
     private final UserProfileRepository userProfileRepository;
@@ -164,6 +170,15 @@ public class ResumeUploadService {
             // Parse as JsonNode tree to handle duplicate fields (qwen2.5:3b merges adjacent objects)
             var root = objectMapper.readTree(json);
 
+            // Scenario 5 (resume-upload.md): a response lacking a mandatory field is an AI error
+            // (502). Validated after selection on purpose — if the object the model actually
+            // answered with lacks a field, that is the error case, and a scratch object quoted in a
+            // reasoning block is never persisted as a silent fallback.
+            var missing = missingRequiredFields(root);
+            if (!missing.isEmpty()) {
+                throw new AiException("AI response missing required fields: " + String.join(", ", missing));
+            }
+
             var skills = new ArrayList<String>();
             var skillsNode = root.get("skills");
             if (skillsNode != null && skillsNode.isArray()) {
@@ -200,6 +215,18 @@ public class ResumeUploadService {
             log.error("Failed to parse AI extraction response. Raw: {}", response, e);
             throw new AiException("Failed to parse AI extraction: " + e.getMessage(), e);
         }
+    }
+
+    /**
+     * Returns the mandatory extraction fields that are absent from (or null in) {@code root},
+     * in declaration order. Presence is what matters: Prompt 3 allows an empty array when no skill
+     * or project was found, and a present field of an unexpected type keeps the lenient behaviour
+     * it had before (an empty list downstream) rather than failing.
+     */
+    private static List<String> missingRequiredFields(JsonNode root) {
+        return REQUIRED_FIELDS.stream()
+                .filter(field -> root.get(field) == null || root.get(field).isNull())
+                .toList();
     }
 
     /**
