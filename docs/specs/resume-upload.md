@@ -35,9 +35,9 @@
 - **WHEN** they upload a PDF from which PDFBox extracts no text
 - **THEN** returns `400 Bad Request` with a descriptive message
 
-### Scenario 5: AI extraction returns malformed JSON
+### Scenario 5: AI extraction returns malformed JSON or wrong-shaped fields
 - **GIVEN** an authenticated user uploading a valid PDF
-- **WHEN** the Hermes gateway response is not valid JSON or lacks required fields
+- **WHEN** the Hermes gateway response is not valid JSON, lacks required fields, or carries them in a non-array shape (`"skills": "Java"`, `"projects": {}`)
 - **THEN** returns `502 Bad Gateway` (AI service error)
 
 ---
@@ -48,7 +48,7 @@
 - **File size:** Maximum 2MB (enforced by Spring `spring.servlet.multipart.max-file-size`).
 - **`resumeText`:** The raw text extracted by PDFBox becomes the new `resumeText` (AI does not rewrite it).
 - **AI prompt truncation:** Resumes longer than `ai.resume-extraction.max-chars` (default 8000) are truncated before being sent to the AI. A warning is logged. The full text is still stored as `resumeText` in the profile.
-- **`skills` + `projects`:** Extracted by AI from the raw PDF text. The AI prompt must ask for these two fields only, and both are **mandatory in the response** (empty array allowed, absent/`null` → `AiException`/`502` per Scenario 5). Prompt 3 also asks for `contact` as an **optional** block ("extract the candidate's contact details when present", `null` for anything not found, never invent values), so it is parsed tolerantly when present and never mandatory.
+- **`skills` + `projects`:** Extracted by AI from the raw PDF text. The AI prompt must ask for these two fields as mandatory, plus `contact` as an **optional** block ("extract the candidate's contact details when present", `null` for anything not found, never invent values). Both mandatory fields accept an empty array, while absent/`null`/wrong-shaped values fail with `AiException`/`502` per Scenario 5. `contact` is parsed tolerantly when present and never mandatory.
 - **`tone`:** Never extracted from the resume. Keeps the user's current `tone`, defaults to `FORMAL` if no profile exists yet.
 - **PDF storage:** Saved to `${app.upload-dir}/{userId}/resume.pdf`. Overwrites any previous file for that user.
 - **Profile replacement:** A successful upload completely replaces `resumeText`, `skills`, and `projects`. It is equivalent to calling `PUT /api/profile` with the extracted values.
