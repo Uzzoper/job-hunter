@@ -252,6 +252,32 @@ class ResumeUploadServiceTest {
     }
 
     @Test
+    @DisplayName("uploadResume should throw AiException when skills is a string instead of an array")
+    void uploadResume_whenSkillsIsAString_shouldThrowAiException() throws Exception {
+        var file = validPdfMock("Java developer");
+
+        when(aiPort.complete(anyString())).thenReturn("{\"skills\": \"Java\", \"projects\": []}");
+
+        var ex = assertThrows(AiException.class,
+                () -> service.uploadResume(1L, file));
+        assertTrue(ex.getMessage().contains("skills"), ex.getMessage());
+        verify(userProfileService, never()).saveProfile(anyLong(), any(UserProfile.class));
+    }
+
+    @Test
+    @DisplayName("uploadResume should throw AiException when projects is an object instead of an array")
+    void uploadResume_whenProjectsIsAnObject_shouldThrowAiException() throws Exception {
+        var file = validPdfMock("Java developer");
+
+        when(aiPort.complete(anyString())).thenReturn("{\"skills\": [], \"projects\": {}}");
+
+        var ex = assertThrows(AiException.class,
+                () -> service.uploadResume(1L, file));
+        assertTrue(ex.getMessage().contains("projects"), ex.getMessage());
+        verify(userProfileService, never()).saveProfile(anyLong(), any(UserProfile.class));
+    }
+
+    @Test
     @DisplayName("uploadResume should throw IllegalArgumentException when content type is not PDF")
     void uploadResume_whenNonPdfContentType_shouldThrowIllegalArgument() throws Exception {
         var file = mock(MultipartFile.class);
