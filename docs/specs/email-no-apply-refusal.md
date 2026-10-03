@@ -28,7 +28,7 @@ the first line as subject without validation, eligibility only checks
 - **GIVEN** a valid `Job`, `JobAnalysis`, and user profile (AI path, `matchScore >= minMatchScore`)
 - **WHEN** `generate(userId, jobId)` is called and `AiPort.complete()` returns text whose **first 5 leading lines** contain a line starting with `NO_APPLY:` (after trim, indentation stripped, case-sensitive)
 - **THEN** no subject/body parsing happens
-- **AND** the persisted `EmailDraft` has `status = REJECTED`, `subject = ""` (or the one-line reason?), `body` = full AI response trimmed
+- **AND** the persisted `EmailDraft` has `status = REJECTED`, `subject = ""` (always empty — the reason never becomes a subject), `body` = full AI response trimmed
 - **AND** the draft is returned with `REJECTED` status
 
 > Decision: `subject` stores `""` and `body` stores the full `NO_APPLY: reason` text,
