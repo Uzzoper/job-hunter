@@ -26,7 +26,7 @@ the first line as subject without validation, eligibility only checks
 
 ### Scenario 1: AI refuses — no fit (AI path)
 - **GIVEN** a valid `Job`, `JobAnalysis`, and user profile (AI path, `matchScore >= minMatchScore`)
-- **WHEN** `generate(userId, jobId)` is called and `AiPort.complete()` returns text starting with `NO_APPLY:` (after trim)
+- **WHEN** `generate(userId, jobId)` is called and `AiPort.complete()` returns text whose **first 5 leading lines** contain a line starting with `NO_APPLY:` (after trim, indentation stripped, case-sensitive)
 - **THEN** no subject/body parsing happens
 - **AND** the persisted `EmailDraft` has `status = REJECTED`, `subject = ""` (or the one-line reason?), `body` = full AI response trimmed
 - **AND** the draft is returned with `REJECTED` status
@@ -35,11 +35,12 @@ the first line as subject without validation, eligibility only checks
 > so the reason stays auditable and no fake "Subject: ..." is ever produced.
 > Alternative (reason → subject) rejected: it would look like a sendable subject.
 
-### Scenario 2: parser recognizes refusal prefix
+### Scenario 2: parser recognizes the refusal marker within the scanned lines
 - **GIVEN** any AI response string
 - **WHEN** `parseEmailDraft()` receives it after `trim()`
-- **THEN** if it starts with exactly `NO_APPLY:` (case-sensitive, uppercase) it produces a `REJECTED` draft per Scenario 1
+- **THEN** if any of the first 5 leading lines starts with exactly `NO_APPLY:` (case-sensitive, uppercase, indentation stripped) it produces a `REJECTED` draft per Scenario 1 — the scan exists because reasoning models answer with chatter first ("Claro, segue:\nNO_APPLY: …"), which under a prefix-only rule fell through and persisted a sendable `PENDING` draft
 - **AND** otherwise it follows the current `Subject: ` split logic and produces `PENDING` (unchanged)
+- **AND** a marker beyond line 5 stays unrecognised (documented gap, pinned by `generate_whenNoApplyMarkerIsBeyondTheScannedLines_shouldRemainPending`)
 
 ### Scenario 3: auto-send ignores REJECTED (both modes)
 - **GIVEN** drafts with `status == REJECTED` (with `contactEmail` non-null and any score)
