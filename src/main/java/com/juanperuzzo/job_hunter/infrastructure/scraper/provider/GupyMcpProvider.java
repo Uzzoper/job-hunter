@@ -12,6 +12,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
 
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -165,7 +166,8 @@ public class GupyMcpProvider implements ExtractionStrategy {
     private void collectQuery(String keyword, Map<String, RawJob> sink) {
         int offset = 0;
         while (sink.size() < maxJobs) {
-            var page = fetchPage(keyword, offset);
+            var pageOffset = offset;
+            var page = retry.execute(() -> fetchPage(keyword, pageOffset));
             if (page.isEmpty()) {
                 log.debug("{}: empty page for keyword '{}' at offset {} — done", PROVIDER_ID, keyword, offset);
                 return;
@@ -289,13 +291,17 @@ public class GupyMcpProvider implements ExtractionStrategy {
 
         String body;
         try {
-            body = restClient.post()
+            // Read bytes, not String: an SSE response carries no charset in its
+            // Content-Type, so the String converter would fall back to ISO-8859-1 and
+            // mangle every accented field ("ISA SAÚDE" → "ISA SAÃšDE").
+            var payload = restClient.post()
                     .uri(mcpUrl)
                     .contentType(MediaType.APPLICATION_JSON)
                     .header("Accept", ACCEPT)
                     .body(request.toString())
                     .retrieve()
-                    .body(String.class);
+                    .body(byte[].class);
+            body = payload != null ? new String(payload, StandardCharsets.UTF_8) : null;
         } catch (Exception e) {
             throw new ScraperException(PROVIDER_ID + " MCP " + method + " call failed: " + e.getMessage(), e);
         }
