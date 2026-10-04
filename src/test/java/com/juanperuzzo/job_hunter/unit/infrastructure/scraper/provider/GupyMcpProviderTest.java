@@ -1,6 +1,7 @@
 package com.juanperuzzo.job_hunter.unit.infrastructure.scraper.provider;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.github.tomakehurst.wiremock.client.ResponseDefinitionBuilder;
 import com.github.tomakehurst.wiremock.junit5.WireMockExtension;
 import com.github.tomakehurst.wiremock.junit5.WireMockRuntimeInfo;
 import com.juanperuzzo.job_hunter.application.port.out.RawJob;
@@ -349,16 +350,16 @@ class GupyMcpProviderTest {
             // replays page 1. The loop must stop instead of spinning forever.
             var replay = "[" + JOB_ISA + "," + JOB_REMOTE + "]";
             stubInitialize();
-            stubSearch("desenvolvedor junior", 0, replay, 100, 100);
-            stubSearch("desenvolvedor junior", 100, replay, 100, 100);
+            stubSearch("desenvolvedor junior", 0, replay, 2, 2);
+            stubSearch("desenvolvedor junior", 2, replay, 2, 2);
 
-            var jobs = provider(100).extract();
+            var jobs = provider(2).extract();
 
             assertEquals(2, jobs.size());
             verify(1, postRequestedFor(urlPathEqualTo(MCP_PATH))
-                    .withRequestBody(matchingJsonPath("$.params.arguments.offset", equalTo("100"))));
+                    .withRequestBody(matchingJsonPath("$.params.arguments.offset", equalTo("2"))));
             verify(0, postRequestedFor(urlPathEqualTo(MCP_PATH))
-                    .withRequestBody(matchingJsonPath("$.params.arguments.offset", equalTo("200"))));
+                    .withRequestBody(matchingJsonPath("$.params.arguments.offset", equalTo("4"))));
         }
 
         @Test
@@ -390,6 +391,7 @@ class GupyMcpProviderTest {
             stubInitialize();
             stubSearch("desenvolvedor junior", 0,
                     "[" + JOB_REMOTE + "," + JOB_ISA + "," + onSite + "," + absent + "]", 509, 4);
+            stubSearch("desenvolvedor junior", 4, "[]", 509, 4);
 
             var jobs = provider(4).extract();
 
@@ -513,9 +515,9 @@ class GupyMcpProviderTest {
             var jobs = provider(List.of("limitado", "desenvolvedor junior"), 100, 200).extract();
 
             assertEquals(1, jobs.size());
+            // 429 must be retried once (maxAttempts=2) before the query is skipped.
             verify(2, postRequestedFor(urlPathEqualTo(MCP_PATH))
-                    .withRequestBody(matchingJsonPath("$.params.arguments.term", equalTo("limitado"))),
-                    "429 must be retried once before the query is skipped");
+                    .withRequestBody(matchingJsonPath("$.params.arguments.term", equalTo("limitado"))));
         }
 
         @Test
