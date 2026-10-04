@@ -1,6 +1,7 @@
 package com.juanperuzzo.job_hunter.unit.infrastructure.scraper.provider;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.github.tomakehurst.wiremock.client.ResponseDefinitionBuilder;
 import com.github.tomakehurst.wiremock.junit5.WireMockExtension;
 import com.github.tomakehurst.wiremock.junit5.WireMockRuntimeInfo;
@@ -113,9 +114,18 @@ class GupyMcpProviderTest {
         return node.toString();
     }
 
+    /** Unchecked {@code readTree} for fixture tweaks. */
+    private static ObjectNode object(String json) {
+        try {
+            return (ObjectNode) MAPPER.readTree(json);
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
     /** Same shape with an explicit id, url and workplaceType — for matrix/edge fixtures. */
     private static String variant(String base, long id, String jobUrl, String workplaceType, String name) {
-        var node = (com.fasterxml.jackson.databind.node.ObjectNode) MAPPER.readTree(base);
+        var node = object(base);
         node.put("id", id);
         node.put("jobUrl", jobUrl);
         if (workplaceType == null) {
@@ -272,7 +282,7 @@ class GupyMcpProviderTest {
             var withoutDescription = variant(JOB_ISA, 12436826,
                     "https://vagisisasaude.gupy.io/job/eyJqb2JJZCI6MTI0MzY4MjY=?jobBoardSource=mcp_candidate",
                     "hybrid", "Desenvolvedor Junior");
-            var node = (com.fasterxml.jackson.databind.node.ObjectNode) MAPPER.readTree(withoutDescription);
+            var node = object(withoutDescription);
             node.put("description", "");
             withoutDescription = node.toString();
 
@@ -302,7 +312,7 @@ class GupyMcpProviderTest {
         @Test
         @DisplayName("extract should keep the search item when the get_job_by_id fallback fails")
         void extract_whenFallbackFails_shouldKeepSearchItem() {
-            var node = (com.fasterxml.jackson.databind.node.ObjectNode) MAPPER.readTree(JOB_ISA);
+            var node = object(JOB_ISA);
             node.put("description", "");
             stubInitialize();
             stubSearch("desenvolvedor junior", 0, "[" + node + "]", 509, 100);
@@ -369,7 +379,7 @@ class GupyMcpProviderTest {
             stubSearch("desenvolvedor junior", 0, "[" + JOB_ISA + "," + JOB_REMOTE + "]", 509, 2);
             stubSearch("desenvolvedor junior", 2, "[" + PAGE_3 + "]", 509, 2);
 
-            var jobs = provider(2).extract();
+            var jobs = provider(List.of("desenvolvedor junior"), 2, 2).extract();
 
             assertEquals(2, jobs.size(), "max-jobs caps the merged result");
         }
@@ -412,7 +422,7 @@ class GupyMcpProviderTest {
         @Test
         @DisplayName("extract should strip an aggregator suffix such as \" - Linkedin\"")
         void extract_whenCareerPageNameHasLinkedinSuffix_shouldStripIt() {
-            var suffixed = (com.fasterxml.jackson.databind.node.ObjectNode) MAPPER.readTree(JOB_ISA);
+            var suffixed = object(JOB_ISA);
             suffixed.put("careerPageName", "TechCo - Linkedin");
             stubInitialize();
             stubSearch("desenvolvedor junior", 0, "[" + suffixed + "]", 509, 100);
@@ -427,7 +437,7 @@ class GupyMcpProviderTest {
         @DisplayName("extract should keep a legitimate dash company name intact")
         void extract_whenCareerPageNameIsLegitDashName_shouldKeepIt() {
             // Live: "TMSA - TECNOLOGIA EM MOVIMENTAÇÃO S/A" is the company's real name.
-            var real = (com.fasterxml.jackson.databind.node.ObjectNode) MAPPER.readTree(JOB_ISA);
+            var real = object(JOB_ISA);
             real.put("careerPageName", "TMSA - TECNOLOGIA EM MOVIMENTAÇÃO S/A");
             stubInitialize();
             stubSearch("desenvolvedor junior", 0, "[" + real + "]", 509, 100);
@@ -447,7 +457,7 @@ class GupyMcpProviderTest {
         @Test
         @DisplayName("extract should append a non-BR country to the location")
         void extract_whenCountryIsNotBrazil_shouldAppendCountry() {
-            var abroad = (com.fasterxml.jackson.databind.node.ObjectNode) MAPPER.readTree(JOB_ISA);
+            var abroad = object(JOB_ISA);
             abroad.put("country", "Portugal");
             stubInitialize();
             stubSearch("desenvolvedor junior", 0, "[" + abroad + "]", 509, 100);
@@ -471,7 +481,7 @@ class GupyMcpProviderTest {
         @Test
         @DisplayName("extract should keep a published date that is already day-precision")
         void extract_whenPublishedDateHasNoTime_shouldKeepItAsIs() {
-            var dated = (com.fasterxml.jackson.databind.node.ObjectNode) MAPPER.readTree(JOB_ISA);
+            var dated = object(JOB_ISA);
             dated.put("publishedDate", "2026-09-08");
             stubInitialize();
             stubSearch("desenvolvedor junior", 0, "[" + dated + "]", 509, 100);
@@ -555,7 +565,7 @@ class GupyMcpProviderTest {
         @Test
         @DisplayName("extract should skip an entry with a blank title")
         void extract_whenTitleBlank_shouldSkipEntry() {
-            var untitled = (com.fasterxml.jackson.databind.node.ObjectNode) MAPPER.readTree(JOB_ISA);
+            var untitled = object(JOB_ISA);
             untitled.put("name", "   ");
             stubInitialize();
             stubSearch("desenvolvedor junior", 0, "[" + untitled + "," + JOB_REMOTE + "]", 509, 100);
@@ -569,7 +579,7 @@ class GupyMcpProviderTest {
         @Test
         @DisplayName("extract should skip an entry with a blank jobUrl")
         void extract_whenJobUrlBlank_shouldSkipEntry() {
-            var noUrl = (com.fasterxml.jackson.databind.node.ObjectNode) MAPPER.readTree(JOB_ISA);
+            var noUrl = object(JOB_ISA);
             noUrl.put("jobUrl", "");
             stubInitialize();
             stubSearch("desenvolvedor junior", 0, "[" + noUrl + "]", 509, 100);
