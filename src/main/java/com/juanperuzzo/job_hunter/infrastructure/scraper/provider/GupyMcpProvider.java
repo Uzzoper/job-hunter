@@ -125,6 +125,10 @@ public class GupyMcpProvider implements ExtractionStrategy {
         }
 
         for (var keyword : keywords) {
+            if (keyword == null || keyword.isBlank()) {
+                log.debug("{}: skipping blank keyword (null or whitespace)", PROVIDER_ID);
+                continue;
+            }
             if (uniqueJobs.size() >= maxJobs) {
                 log.debug("{}: max-jobs ({}) reached, skipping remaining keywords", PROVIDER_ID, maxJobs);
                 break;
