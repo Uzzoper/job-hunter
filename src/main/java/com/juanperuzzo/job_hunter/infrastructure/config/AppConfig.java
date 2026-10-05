@@ -360,7 +360,7 @@ public class AppConfig {
     @Bean
     public ProviderRegistry providerRegistry(
             @Qualifier("gupyProvider") ExtractionStrategy gupyProvider,
-            Optional<ExtractionStrategy> gupyMcpProvider,
+            @Qualifier("gupyMcpProvider") Optional<ExtractionStrategy> gupyMcpProvider,
             @Qualifier("infojobsProvider") ExtractionStrategy infojobsProvider,
             @Qualifier("linkedinProvider") Optional<ExtractionStrategy> linkedinProvider,
             @Qualifier("linkedinScraperClient") Optional<ExtractionStrategy> linkedinScraperClient,
