@@ -1,6 +1,6 @@
 # Gupy MCP Provider (replaces dead JSON search API) — Spec
 
-Issue: TBD (Gupy aggregator revival, after #74) · Status: proposed (awaiting approval — no code without it)
+Issue: TBD (Gupy aggregator revival, after #74) · Status: approved (implementing)
 
 ## 1. Context
 
@@ -83,6 +83,21 @@ company suffix strip. Naming `methodName_scenario_expectedResult` +
       sample sign-off, then `true`).
 - [ ] `AppConfig` is the only `@Value` layer; records, no Lombok,
       conventional commits, SDD+TDD pair commits.
+
+## 9. Wiring & rollout
+
+- `gupy.enabled` (default `false`): when `true`, `AppConfig` registers
+  `GupyMcpProvider` under providerId `"gupy-mcp"` via `@ConditionalOnProperty`;
+  the existing `GupyProvider` (REST) remains registered under `"gupy"` when
+  wired, so both may coexist during parity. Do **not** register both for the
+  same providerId — fetch-all must not duplicate sources.
+- Config keys: `gupy.mcp-url`, `gupy.timeout-seconds`, `gupy.keywords`,
+  `gupy.limit`, `gupy.max-jobs`, `gupy.enabled` (all `@Value` only in AppConfig).
+- Precondition for flipping `gupy.enabled=true` (default `false`): run a
+  parity sample (keyword set via MCP vs 100 stored pre-death Gupy rows) and
+  sign off on field presence/date/description/workModel (Acceptance §7). Keep
+  the REST provider the default until sample passes.
+
 
 ## 8. Out of scope
 
