@@ -88,6 +88,11 @@ public class GupyProvider implements ExtractionStrategy {
         return providerId;
     }
 
+    /**
+     * Runs one REST search per configured keyword with paged fetching, merges by
+     * unique URL, stops all keywords on auth failure, and resolves company domains
+     * per career-page host for the fetched batch.
+     */
     @Override
     public List<RawJob> extract() {
         var uniqueJobs = new HashMap<String, RawJob>();
