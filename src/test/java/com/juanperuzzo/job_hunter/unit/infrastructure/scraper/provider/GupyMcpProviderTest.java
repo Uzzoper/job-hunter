@@ -354,10 +354,34 @@ class GupyMcpProviderTest {
         }
 
         @Test
-        @DisplayName("extract should stop paginating when the next page repeats the same URLs")
-        void extract_whenNextPageRepeatsSameUrls_shouldStopPaginating() {
-            // Live behaviour with limit=100: the server caps total at 100, so offset>0
-            // replays page 1. The loop must stop instead of spinning forever.
+        @DisplayName("extract should NOT break early when the first page of a subsequent keyword is all duplicates of earlier results")
+        void extract_whenFirstPageOfKeywordFullyOverlaps_shouldNotBreakEarly() {
+            stubInitialize();
+            // First keyword gives job A.
+            stubSearch("desenvolvedor junior", 0, "[" + JOB_ISA + "]", 509, 1);
+            // Second keyword's first page is a full replay of job A; the tail (job B) must still be fetched.
+            stubSearch("dev junior", 0, "[" + JOB_ISA + "]", 509, 1);
+            var jobB = variant(JOB_REMOTE, 2222,
+                    "https://neohype.gupy.io/job/eyJqb2JJZCI6MjIyMjI=?jobBoardSource=mcp_candidate",
+                    "remote", "Dev Back-end Remoto");
+            stubSearch("dev junior", 1, "[" + jobB + "]", 509, 1);
+
+            var jobs = provider(List.of("desenvolvedor junior", "dev junior"), 1, 200).extract();
+
+            assertEquals(2, jobs.size(), "the tail page must be fetched despite the overlapping head");
+            verify(1, postRequestedFor(urlPathEqualTo(MCP_PATH))
+                    .withRequestBody(matchingJsonPath("$.params.arguments.term", equalTo("dev junior")))
+                    .withRequestBody(matchingJsonPath("$.params.arguments.offset", equalTo("0"))));
+            verify(1, postRequestedFor(urlPathEqualTo(MCP_PATH))
+                    .withRequestBody(matchingJsonPath("$.params.arguments.term", equalTo("dev junior")))
+                    .withRequestBody(matchingJsonPath("$.params.arguments.offset", equalTo("1"))));
+        }
+
+
+        @Test
+        @DisplayName("extract should stop paginating when the next page repeats the same URLs after offset > 0")
+        void extract_whenNextPageAtOffsetGreaterThanZeroRepeatsSameUrls_shouldStopPaginating() {
+            // Live behaviour with limit=100: offset>0 replays page 1; stop on no progress.
             var replay = "[" + JOB_ISA + "," + JOB_REMOTE + "]";
             stubInitialize();
             stubSearch("desenvolvedor junior", 0, replay, 2, 2);
@@ -371,7 +395,6 @@ class GupyMcpProviderTest {
             verify(0, postRequestedFor(urlPathEqualTo(MCP_PATH))
                     .withRequestBody(matchingJsonPath("$.params.arguments.offset", equalTo("4"))));
         }
-
         @Test
         @DisplayName("extract should cap merged jobs at max-jobs")
         void extract_whenMergedJobsExceedMaxJobs_shouldCapAtMaxJobs() {
