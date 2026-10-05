@@ -212,7 +212,7 @@ class GupyMcpProviderTest {
             assertEquals("2026-09-08", job.rawDate(), "publishedDate ISO → yyyy-MM-dd");
             assertEquals("São Paulo, São Paulo", job.location(), "city + state, no BR country");
             assertEquals("Híbrido", job.workModel());
-            assertEquals("gupy", job.source());
+            assertEquals("gupy-mcp", job.source());
             assertEquals("92107", job.metadata().get("companyId"));
             assertEquals("false", job.metadata().get("disabilities"));
             assertEquals("Esta vaga não possui faixa salarial informada.", job.metadata().get("salary"));
@@ -418,6 +418,26 @@ class GupyMcpProviderTest {
             var jobs = provider(List.of("desenvolvedor junior"), 2, 2).extract();
 
             assertEquals(2, jobs.size(), "max-jobs caps the merged result");
+        }
+        @Test
+        @DisplayName("extract should cap the total at max-jobs even when merged pages exceed it")
+        void extract_whenMergedExceedsMaxJobs_shouldCapAtMaxJobs() {
+            var jobA = variant(JOB_ISA, 10,
+                    "https://vagisisasaude.gupy.io/job/eyJqb2JJZCI6MTB9?jobBoardSource=mcp_candidate",
+                    "hybrid", "Dev A");
+            var jobB = variant(JOB_ISA, 11,
+                    "https://vagisisasaude.gupy.io/job/eyJqb2JJZCI6MTF9?jobBoardSource=mcp_candidate",
+                    "hybrid", "Dev B");
+            var jobC = variant(JOB_ISA, 12,
+                    "https://vagisisasaude.gupy.io/job/eyJqb2JJZCI6MTJ9?jobBoardSource=mcp_candidate",
+                    "hybrid", "Dev C");
+            stubInitialize();
+            stubSearch("desenvolvedor junior", 0, "[" + jobA + "," + jobB + "]", 509, 2);
+            stubSearch("desenvolvedor junior", 2, "[" + jobC + "]", 509, 2);
+
+            var jobs = provider(List.of("desenvolvedor junior"), 2, 2).extract();
+
+            assertEquals(2, jobs.size(), "total must never exceed max-jobs");
         }
     }
 

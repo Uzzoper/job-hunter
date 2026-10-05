@@ -26,7 +26,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * (spec: {@code docs/specs/gupy-mcp-provider.md}).
  *
  * <p>The public Gupy search JSON API is dead on every probed host, so this provider
- * replaces {@link GupyProvider}'s REST wiring while keeping the same {@code "gupy"}
+ * replaces {@link GupyProvider}'s REST wiring; uses a distinct providerId ("gupy-mcp") so both may coexist during parity.
  * provider id — downstream normalisation, dedupe and the #74 company-domain
  * machinery are untouched.
  *
@@ -45,7 +45,7 @@ public class GupyMcpProvider implements ExtractionStrategy {
 
     private static final Logger log = LoggerFactory.getLogger(GupyMcpProvider.class);
 
-    private static final String PROVIDER_ID = "gupy";
+    private static final String PROVIDER_ID = "gupy-mcp";
     private static final String PROTOCOL_VERSION = "2025-06-18";
     private static final String ACCEPT = "application/json, text/event-stream";
     private static final String TOOL_SEARCH = "search_jobs";
@@ -66,7 +66,7 @@ public class GupyMcpProvider implements ExtractionStrategy {
      * the first {@code " - "} would truncate real companies.
      */
     private static final Set<String> PORTAL_SUFFIXES = Set.of(
-            "linkedin", "gupy", "glassdoor", "indeed", "infojobs", "vagas.com", "vaga-ja.com");
+            "linkedin", "gupy-mcp", "glassdoor", "indeed", "infojobs", "vagas.com", "vaga-ja.com");
 
     /** Countries treated as Brazil — their name is never appended to the location. */
     private static final Set<String> BRAZIL = Set.of("brasil", "brazil", "br");

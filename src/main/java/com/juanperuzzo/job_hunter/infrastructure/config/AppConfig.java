@@ -75,6 +75,7 @@ import com.juanperuzzo.job_hunter.infrastructure.scraper.normalizer.JobNormalize
 import com.juanperuzzo.job_hunter.infrastructure.scraper.normalizer.OwnerEmailGuard;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.client.LinkedInScraperClient;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.provider.GupyProvider;
+import com.juanperuzzo.job_hunter.infrastructure.scraper.provider.GupyMcpProvider;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.provider.InfoJobsProvider;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.provider.LinkedInProvider;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.provider.ProviderRegistry;
@@ -253,6 +254,20 @@ public class AppConfig {
     }
 
     @Bean
+    @ConditionalOnProperty(name = "gupy.enabled", havingValue = "true")
+    public ExtractionStrategy gupyMcpProvider(
+            @Value("${gupy.mcp-url:https://candidates.mcp.api.gupy.io/mcp}") String mcpUrl,
+            @Value("${gupy.timeout-seconds:30}") int timeoutSeconds,
+            @Value("#{T(org.springframework.util.StringUtils).commaDelimitedListToStringArray('${gupy.keywords:desenvolvedor junior}')}") List<String> keywords,
+            @Value("${gupy.limit:100}") int limit,
+            @Value("${gupy.max-jobs:200}") int maxJobs,
+            ExponentialBackoffRetry exponentialBackoffRetry,
+            CompanyDomainResolverPort companyDomainResolverPort) {
+        return new GupyMcpProvider(mcpUrl, timeoutSeconds, keywords, limit, maxJobs,
+                exponentialBackoffRetry, companyDomainResolverPort, 0);
+    }
+
+    @Bean
     public ExtractionStrategy gupyProvider(
             @Value("${scraper.gupy.base-url}") String baseUrl,
             @Value("${scraper.gupy.timeout-seconds}") int timeoutSeconds,
@@ -345,6 +360,7 @@ public class AppConfig {
     @Bean
     public ProviderRegistry providerRegistry(
             ExtractionStrategy gupyProvider,
+            Optional<ExtractionStrategy> gupyMcpProvider,
             ExtractionStrategy infojobsProvider,
             @Qualifier("linkedinProvider") Optional<ExtractionStrategy> linkedinProvider,
             @Qualifier("linkedinScraperClient") Optional<ExtractionStrategy> linkedinScraperClient,
@@ -358,6 +374,8 @@ public class AppConfig {
             JobNormalizer linkedinJobNormalizer) {
         var registry = new ProviderRegistry();
         registry.register(gupyProvider, exponentialBackoffRetry, rateLimiter, jobNormalizer);
+        gupyMcpProvider.ifPresent(provider ->
+                registry.register(provider, exponentialBackoffRetry, rateLimiter, jobNormalizer));
         registry.register(infojobsProvider, exponentialBackoffRetry, rateLimiter, jobNormalizer);
         linkedinProvider.ifPresent(provider ->
                 registry.register(provider, exponentialBackoffRetry, rateLimiter, linkedinJobNormalizer));
