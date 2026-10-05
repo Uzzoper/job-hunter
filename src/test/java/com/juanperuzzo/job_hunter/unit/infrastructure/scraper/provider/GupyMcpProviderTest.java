@@ -268,6 +268,19 @@ class GupyMcpProviderTest {
             assertEquals(1, jobs.size());
             assertEquals("Desenvolvedor Junior", jobs.get(0).title());
         }
+
+        @Test
+        @DisplayName("extract should skip blank keywords without calling search_jobs")
+        void extract_whenKeywordIsBlank_shouldSkipBlankKeywords() {
+            stubInitialize();
+            // Blank keyword: no search_jobs call; a real keyword never called here.
+            var jobs = provider(List.of("   ", "", "	"), 100, 200).extract();
+
+            verify(0, postRequestedFor(urlPathEqualTo(MCP_PATH))
+                    .withRequestBody(matchingJsonPath("$.method", equalTo("tools/call")))
+                    .withRequestBody(matchingJsonPath("$.params.name", equalTo("search_jobs"))));
+            assertTrue(jobs.isEmpty(), "a blank keyword should be skipped, never searched");
+        }
     }
 
     // ------------------------------------------------------- description fallback
