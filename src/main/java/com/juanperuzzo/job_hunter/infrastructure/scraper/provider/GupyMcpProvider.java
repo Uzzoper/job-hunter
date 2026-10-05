@@ -189,7 +189,7 @@ public class GupyMcpProvider implements ExtractionStrategy {
             if (page.size() < limit) {
                 return;
             }
-            if (added == 0) {
+            if (added == 0 && offset > 0) {
                 log.debug("{}: offset {} replayed already-seen URLs for keyword '{}', stopping pagination",
                         PROVIDER_ID, offset, keyword);
                 return;
