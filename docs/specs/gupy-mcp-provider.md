@@ -26,7 +26,7 @@ gupy:
   timeout-seconds: 30
   keywords: [desenvolvedor junior, dev junior, programador junior, ...]  # CSV, junior-first compounds (LinkedIn lesson)
   limit: 100        # per-query limit param
-  max-jobs: 200     # merged cap across queries (per-keyword quota like LinkedIn)
+  max-jobs: 200     # merged cap across queries (junior-first ordering mitigates head-overlap)
 ```
 
 ## 3. Requests (MCP Streamable HTTP)
