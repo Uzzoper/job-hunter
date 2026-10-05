@@ -352,7 +352,7 @@ class JobNormalizerTest {
 
         @Test
         @DisplayName("should prefer the hiring local-part address when the description has multiple")
-        void shouldPreferHiringEmailWhenMultiple() {
+        void normalize_whenMultipleEmails_shouldPreferHiringEmail() {
             var job = normalizer.normalize(new RawJob(
                     "Desenvolvedor Java", "Company", "https://example.com/job",
                     "Contact joao@empresa.com or rh@empresa.com",

@@ -87,7 +87,7 @@ company suffix strip. Naming `methodName_scenario_expectedResult` +
 ## 9. Wiring & rollout
 
 - `gupy.enabled` (default `false`): when `true`, `AppConfig` registers
-  `GupyMcpProvider` under providerId `"gupy-mcp"` via `@ConditionalOnProperty`;
+  `GupyMcpProvider` under providerId `"gupy"` via `@ConditionalOnProperty`;
   the existing `GupyProvider` (REST) remains registered under `"gupy"` when
   wired, so both may coexist during parity. Do **not** register both for the
   same providerId — fetch-all must not duplicate sources.

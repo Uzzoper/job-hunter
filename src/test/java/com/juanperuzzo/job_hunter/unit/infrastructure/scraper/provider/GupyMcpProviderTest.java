@@ -212,7 +212,7 @@ class GupyMcpProviderTest {
             assertEquals("2026-09-08", job.rawDate(), "publishedDate ISO → yyyy-MM-dd");
             assertEquals("São Paulo, São Paulo", job.location(), "city + state, no BR country");
             assertEquals("Híbrido", job.workModel());
-            assertEquals("gupy-mcp", job.source());
+            assertEquals("gupy", job.source());
             assertEquals("92107", job.metadata().get("companyId"));
             assertEquals("false", job.metadata().get("disabilities"));
             assertEquals("Esta vaga não possui faixa salarial informada.", job.metadata().get("salary"));
@@ -441,7 +441,6 @@ class GupyMcpProviderTest {
         }
     }
 
-    // ---------------------------------------------------------- workModel matrix
 
     @Nested
     @DisplayName("workplaceType matrix")
@@ -677,4 +676,16 @@ class GupyMcpProviderTest {
             verify(1, getRequestedFor(urlPathEqualTo("/gupy/techco/job/1")));
         }
     }
+
+        @Test
+        @DisplayName("extract should dedupe the same URL when encountered across different keyword results (continuity with existing gupy catalog)")
+        void extract_whenSameUrlAppearsAcrossResults_shouldDeduplicateToOne() {
+            stubInitialize();
+            stubSearch("desenvolvedor junior", 0, "[" + JOB_ISA + "]", 509, 100);
+            stubSearch("dev junior", 0, "[" + JOB_ISA + "]", 509, 100);
+            var jobs = provider(List.of("desenvolvedor junior", "dev junior"), 100, 200).extract();
+            assertEquals(1, jobs.size());
+            assertEquals("gupy", jobs.get(0).source());
+        }
+
 }
