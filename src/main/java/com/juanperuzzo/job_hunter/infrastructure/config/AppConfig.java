@@ -267,7 +267,7 @@ public class AppConfig {
                 exponentialBackoffRetry, companyDomainResolverPort, 0);
     }
 
-    @Bean
+    @Bean(name = "gupyProvider")
     public ExtractionStrategy gupyProvider(
             @Value("${scraper.gupy.base-url}") String baseUrl,
             @Value("${scraper.gupy.timeout-seconds}") int timeoutSeconds,
@@ -294,7 +294,7 @@ public class AppConfig {
         return new HttpCompanyDomainResolver(scraperRestClient, exponentialBackoffRetry, rateLimiter);
     }
 
-    @Bean
+    @Bean(name = "infojobsProvider")
     public ExtractionStrategy infojobsProvider(
             @Value("${scraper.infojobs.base-url}") String baseUrl,
             @Value("${scraper.infojobs.timeout-seconds}") int timeoutSeconds,
@@ -359,9 +359,9 @@ public class AppConfig {
 
     @Bean
     public ProviderRegistry providerRegistry(
-            ExtractionStrategy gupyProvider,
+            @Qualifier("gupyProvider") ExtractionStrategy gupyProvider,
             Optional<ExtractionStrategy> gupyMcpProvider,
-            ExtractionStrategy infojobsProvider,
+            @Qualifier("infojobsProvider") ExtractionStrategy infojobsProvider,
             @Qualifier("linkedinProvider") Optional<ExtractionStrategy> linkedinProvider,
             @Qualifier("linkedinScraperClient") Optional<ExtractionStrategy> linkedinScraperClient,
             @Qualifier("greenhouseProvider") Optional<ExtractionStrategy> greenhouseProvider,

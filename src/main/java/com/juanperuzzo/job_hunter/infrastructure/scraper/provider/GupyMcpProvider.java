@@ -112,6 +112,11 @@ public class GupyMcpProvider implements ExtractionStrategy {
         return PROVIDER_ID;
     }
 
+    /**
+     * Runs the keyword loop against the MCP server, with offset pagination,
+     * deduplication by URL, optional description fallback via {@code get_job_by_id}
+     * and optional company-domain resolution (#74).
+     */
     @Override
     public List<RawJob> extract() {
         var uniqueJobs = new LinkedHashMap<String, RawJob>();
