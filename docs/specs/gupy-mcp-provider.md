@@ -37,7 +37,8 @@ gupy:
 - `initialize` handshake once per fetch (protocolVersion negotiate; no auth).
 - Pagination via `offset` while full pages; per-query loop like the ATS
   multi-board pattern; URL-keyed dedupe across queries; per-query try/catch
-  (dead query skipped, never fails the fetch); honor 429/`Retry-After`.
+  (dead query skipped, never fails the fetch); 429 is retried-then-skipped
+  with exponential backoff + jitter (`Retry-After` header is not read).
 - `get_job_by_id` only as fallback when a search item lacks description
   (search already inlines it — verified).
 
@@ -87,10 +88,9 @@ company suffix strip. Naming `methodName_scenario_expectedResult` +
 ## 9. Wiring & rollout
 
 - `gupy.enabled` (default `false`): when `true`, `AppConfig` registers
-  `GupyMcpProvider` under providerId `"gupy"` via `@ConditionalOnProperty`;
-  the existing `GupyProvider` (REST) remains registered under `"gupy"` when
-  wired, so both may coexist during parity. Do **not** register both for the
-  same providerId — fetch-all must not duplicate sources.
+  `GupyMcpProvider` under providerId `"gupy"` via `@ConditionalOnProperty`
+  and replaces the legacy REST `GupyProvider` for that id (never both).
+  When `false`, the REST `GupyProvider` is registered under `"gupy"`.
 - Config keys: `gupy.mcp-url`, `gupy.timeout-seconds`, `gupy.keywords`,
   `gupy.limit`, `gupy.max-jobs`, `gupy.enabled` (all `@Value` only in AppConfig).
 - Precondition for flipping `gupy.enabled=true` (default `false`): run a

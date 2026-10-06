@@ -373,9 +373,12 @@ public class AppConfig {
             JobNormalizer jobNormalizer,
             JobNormalizer linkedinJobNormalizer) {
         var registry = new ProviderRegistry();
-        registry.register(gupyProvider, exponentialBackoffRetry, rateLimiter, jobNormalizer);
-        gupyMcpProvider.ifPresent(provider ->
-                registry.register(provider, exponentialBackoffRetry, rateLimiter, jobNormalizer));
+        if (gupyMcpProvider.isPresent()) {
+            gupyMcpProvider.ifPresent(provider ->
+                    registry.register(provider, exponentialBackoffRetry, rateLimiter, jobNormalizer));
+        } else {
+            registry.register(gupyProvider, exponentialBackoffRetry, rateLimiter, jobNormalizer);
+        }
         registry.register(infojobsProvider, exponentialBackoffRetry, rateLimiter, jobNormalizer);
         linkedinProvider.ifPresent(provider ->
                 registry.register(provider, exponentialBackoffRetry, rateLimiter, linkedinJobNormalizer));

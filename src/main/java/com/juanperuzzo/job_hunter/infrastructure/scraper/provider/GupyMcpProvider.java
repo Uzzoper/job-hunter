@@ -187,6 +187,9 @@ public class GupyMcpProvider implements ExtractionStrategy {
 
             int added = 0;
             for (var item : page) {
+                if (sink.size() >= maxJobs) {
+                    break;
+                }
                 var job = mapNode(withFallbackDescription(item));
                 if (job == null) {
                     continue;
