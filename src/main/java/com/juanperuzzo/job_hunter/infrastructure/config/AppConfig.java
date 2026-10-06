@@ -261,10 +261,11 @@ public class AppConfig {
             @Value("#{T(org.springframework.util.StringUtils).commaDelimitedListToStringArray('${gupy.keywords:desenvolvedor junior}')}") List<String> keywords,
             @Value("${gupy.limit:100}") int limit,
             @Value("${gupy.max-jobs:200}") int maxJobs,
+            @Value("${scraper.gupy.max-detail-domains:100}") int maxDetailDomains,
             ExponentialBackoffRetry exponentialBackoffRetry,
             CompanyDomainResolverPort companyDomainResolverPort) {
         return new GupyMcpProvider(mcpUrl, timeoutSeconds, keywords, limit, maxJobs,
-                exponentialBackoffRetry, companyDomainResolverPort, 0);
+                exponentialBackoffRetry, companyDomainResolverPort, maxDetailDomains);
     }
 
     @Bean(name = "gupyProvider")
