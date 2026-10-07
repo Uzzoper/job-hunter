@@ -438,8 +438,7 @@ class GupyMcpProviderTest {
             var jobs = provider(List.of("desenvolvedor junior"), 2, 2).extract();
 
             assertEquals(2, jobs.size(), "total must never exceed max-jobs");
-        }
-    }        @Test
+        }        @Test
         @DisplayName("extract should not call get_job_by_id for items beyond the capped limit")
         void extract_whenItemsBeyondCap_shouldNotFallbackForThem() {
             stubInitialize();
@@ -448,16 +447,15 @@ class GupyMcpProviderTest {
             var nodeB = object(variant(JOB_ISA, 2,
                     "https://test.gupy.io/job/2", "hybrid", "B"));
             nodeB.put("description", "");
-            stubSearch("desenvolvedor junior", 0, "[" + jobA + "]", 10, 1);
-            stubSearch("desenvolvedor junior", 1, "[" + nodeB.toString() + "]", 10, 1);
+            stubSearch("desenvolvedor junior", 0, "[" + jobA + "," + nodeB.toString() + "]", 10, 2);
 
-            var jobs = provider(List.of("desenvolvedor junior"), 1, 1).extract();
+            var jobs = provider(List.of("desenvolvedor junior"), 5, 1).extract();
 
             assertEquals(1, jobs.size());
             verify(0, postRequestedFor(urlPathEqualTo(MCP_PATH))
                     .withRequestBody(matchingJsonPath("$.params.name", equalTo("get_job_by_id"))));
         }
-
+    }
 
 
     @Nested
