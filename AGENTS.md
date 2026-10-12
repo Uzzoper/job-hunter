@@ -149,7 +149,7 @@ fallback).
 
 ```yaml
 hermes:                                # shared block — also used by the email-sending bot
-  base-url: http://localhost:9119/v1   # clients append /chat/completions — the /v1 suffix is mandatory (404 without it)
+  base-url: http://127.0.0.1:8642/p/jobhunter-bot/v1   # clients append /chat/completions — the /v1 suffix is mandatory (404 without it)
   api-key: ${HERMES_API_KEY}           # required; startup fails fast without it
   model: ${HERMES_MODEL:default}       # model pinned on the Bot profile
   timeout-seconds: 120

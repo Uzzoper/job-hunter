@@ -119,7 +119,7 @@ ai:
 # Hermes Agent gateway ("hermes gateway run") — the single AI backend for
 # analysis and email generation, and the email-sending bot transport.
 hermes:
-  base-url: http://localhost:9119/v1   # clients append /chat/completions — the /v1 suffix is mandatory (404 without it)
+  base-url: http://127.0.0.1:8642/p/jobhunter-bot/v1   # clients append /chat/completions — the /v1 suffix is mandatory (404 without it)
   api-key: ${HERMES_API_KEY}           # equals the profile's API_SERVER_KEY — required, context fails fast without it
   model: ${HERMES_MODEL:default}       # model pinned on the Bot profile
   timeout-seconds: 120

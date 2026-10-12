@@ -287,7 +287,7 @@ spring:
     enabled: true
 
 hermes:
-  base-url: http://localhost:9119/v1   # clients append /chat/completions — the /v1 suffix is mandatory
+  base-url: http://127.0.0.1:8642/p/jobhunter-bot/v1   # clients append /chat/completions — the /v1 suffix is mandatory
   api-key: ${HERMES_API_KEY}           # required; the context fails fast without it
   model: ${HERMES_MODEL:default}
   timeout-seconds: 120
