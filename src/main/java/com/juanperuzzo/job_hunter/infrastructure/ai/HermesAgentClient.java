@@ -20,7 +20,8 @@ import java.util.regex.Pattern;
 
 /**
  * AI client backed by the Hermes Agent gateway ("hermes gateway"), which exposes an
- * OpenAI-compatible chat completions endpoint on localhost:9119 by default.
+ * OpenAI-compatible chat completions endpoint on the profile-routed gateway
+ * (http://127.0.0.1:8642/p/jobhunter-bot/v1) by default.
  */
 public class HermesAgentClient implements AiPort {
 

@@ -103,7 +103,7 @@ jwt:
   secret: a-key-with-at-least-32-characters-for-hmac
 
 hermes:
-  base-url: http://localhost:9119/v1   # OpenAI-compatible API root; clients append /chat/completions
+  base-url: http://127.0.0.1:8642/p/jobhunter-bot/v1   # OpenAI-compatible API root; clients append /chat/completions
   api-key: YOUR_HERMES_API_KEY   # equals the gateway API_SERVER_KEY — required
   model: default                 # HERMES_MODEL: model pinned on the Bot profile
   timeout-seconds: 120
