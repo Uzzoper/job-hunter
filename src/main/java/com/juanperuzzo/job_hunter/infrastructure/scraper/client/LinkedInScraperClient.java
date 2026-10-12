@@ -72,6 +72,11 @@ public class LinkedInScraperClient implements ExtractionStrategy {
         return PROVIDER_ID;
     }
 
+    /**
+     * Runs one microservice search per configured keyword (junior compounds counter
+     * LinkedIn's senior-biased relevance ranking), merges results by unique URL up to
+     * {@code maxJobs}, and skips failed keywords without losing the rest.
+     */
     @Override
     public List<RawJob> extract() {
         var keywords = properties.keywords().isEmpty() ? List.of("desenvolvedor") : properties.keywords();
