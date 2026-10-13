@@ -105,10 +105,16 @@ public class LinkedInProvider implements com.juanperuzzo.job_hunter.infrastructu
 
     @Override
     public List<RawJob> extract() {
+        return extract(List.of());
+    }
+
+    @Override
+    public List<RawJob> extract(List<String> keywordOverride) {
         var uniqueJobs = new HashMap<String, RawJob>();
+        var effective = (keywordOverride == null || keywordOverride.isEmpty()) ? keywords : keywordOverride;
         int totalFetched = 0;
 
-        for (var keyword : keywords) {
+        for (var keyword : effective) {
             for (var page = 0; page < maxPages && totalFetched < maxJobs; page++) {
                 var start = page * 25;
                 var uri = buildSearchUri(keyword, start);

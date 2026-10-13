@@ -1,6 +1,7 @@
 package com.juanperuzzo.job_hunter.unit.application.service;
 
 import com.juanperuzzo.job_hunter.application.port.out.JobRepository;
+import com.juanperuzzo.job_hunter.application.port.out.KeywordResolver;
 import com.juanperuzzo.job_hunter.application.port.out.RawJob;
 import com.juanperuzzo.job_hunter.application.port.out.SourceFetchPort;
 import com.juanperuzzo.job_hunter.application.service.FetchSourceJobsService;
@@ -21,11 +22,14 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 @DisplayName("FetchSourceJobsService tests")
 class FetchSourceJobsServiceTest {
+
+    private static final long USER_ID = 7L;
 
     @Mock
     private SourceFetchPort sourceFetchPort;
@@ -36,11 +40,15 @@ class FetchSourceJobsServiceTest {
     @Mock
     private NormalizerPort normalizer;
 
+    @Mock
+    private KeywordResolver keywordResolver;
+
     private FetchSourceJobsService service;
 
     @BeforeEach
     void setUp() {
-        service = new FetchSourceJobsService(sourceFetchPort, jobRepository, normalizer);
+        service = new FetchSourceJobsService(sourceFetchPort, jobRepository, normalizer, keywordResolver);
+        lenient().when(keywordResolver.resolve(any())).thenReturn(List.of());
     }
 
     @Nested
@@ -59,11 +67,11 @@ class FetchSourceJobsServiceTest {
                     "https://example.com/job/1", "Description",
                     LocalDate.now(), "gupy");
 
-            when(sourceFetchPort.fetch("gupy")).thenReturn(List.of(rawJob));
-            when(normalizer.normalize(rawJob)).thenReturn(job);
+            when(sourceFetchPort.fetch(eq("gupy"), anyList())).thenReturn(List.of(rawJob));
+            when(normalizer.normalize(eq(rawJob), anyList())).thenReturn(job);
             when(jobRepository.existsByUrl("https://example.com/job/1")).thenReturn(false);
 
-            var result = service.fetchAndSave("gupy");
+            var result = service.fetchAndSave(USER_ID, "gupy");
 
             verify(jobRepository, times(1)).save(job);
             assertEquals(1, result.totalFetched());
@@ -81,9 +89,9 @@ class FetchSourceJobsServiceTest {
         @Test
         @DisplayName("fetchAndSave should capture the error in FetchResult instead of failing the request")
         void fetchAndSave_whenProviderFails_shouldReportError() {
-            when(sourceFetchPort.fetch("gupy")).thenThrow(new ScraperException("Failed to fetch from gupy"));
+            when(sourceFetchPort.fetch(eq("gupy"), anyList())).thenThrow(new ScraperException("Failed to fetch from gupy"));
 
-            var result = service.fetchAndSave("gupy");
+            var result = service.fetchAndSave(USER_ID, "gupy");
 
             verify(jobRepository, never()).save(any());
             assertEquals(0, result.totalSaved());
@@ -100,9 +108,9 @@ class FetchSourceJobsServiceTest {
         @Test
         @DisplayName("fetchAndSave should not save any job when source returns empty list")
         void fetchAndSave_whenEmpty_shouldReturnEmptyList() {
-            when(sourceFetchPort.fetch("gupy")).thenReturn(List.of());
+            when(sourceFetchPort.fetch(eq("gupy"), anyList())).thenReturn(List.of());
 
-            var result = service.fetchAndSave("gupy");
+            var result = service.fetchAndSave(USER_ID, "gupy");
 
             verify(jobRepository, never()).save(any());
             assertEquals(0, result.totalFetched());
@@ -125,14 +133,40 @@ class FetchSourceJobsServiceTest {
                     "https://example.com/job/1", "Description",
                     LocalDate.now(), "gupy", "rh@acme.com", null);
 
-            when(sourceFetchPort.fetch("gupy")).thenReturn(List.of(rawWithoutEmail));
-            when(normalizer.normalize(rawWithoutEmail)).thenReturn(jobWithEmail);
+            when(sourceFetchPort.fetch(eq("gupy"), anyList())).thenReturn(List.of(rawWithoutEmail));
+            when(normalizer.normalize(eq(rawWithoutEmail), anyList())).thenReturn(jobWithEmail);
             when(jobRepository.existsByUrl("https://example.com/job/1")).thenReturn(false);
 
-            var result = service.fetchAndSave("gupy");
+            var result = service.fetchAndSave(USER_ID, "gupy");
 
             assertEquals(1, result.totalWithEmail());
             assertEquals(1, result.perProvider().get(0).withEmail());
+        }
+    }
+
+    @Nested
+    @DisplayName("Scenario: runtime keyword resolution")
+    class KeywordResolutionTests {
+
+        @Test
+        @DisplayName("fetchAndSave should resolve the user's keywords and pass them to source and normalizer")
+        void fetchAndSave_whenKeywordsStored_shouldPassResolvedKeywordsDownstream() {
+            var rawJob = new RawJob(
+                    "Rust Developer", "Company A", "https://example.com/job/1",
+                    "Description", "2025-01-01", null, null, "gupy", null);
+            var job = new Job(null, "Rust Developer", "Company A",
+                    "https://example.com/job/1", "Description",
+                    LocalDate.now(), "gupy");
+
+            when(keywordResolver.resolve(USER_ID)).thenReturn(List.of("rust", "kotlin"));
+            when(sourceFetchPort.fetch("gupy", List.of("rust", "kotlin"))).thenReturn(List.of(rawJob));
+            when(normalizer.normalize(rawJob, List.of("rust", "kotlin"))).thenReturn(job);
+            when(jobRepository.existsByUrl("https://example.com/job/1")).thenReturn(false);
+
+            service.fetchAndSave(USER_ID, "gupy");
+
+            verify(sourceFetchPort).fetch("gupy", List.of("rust", "kotlin"));
+            verify(normalizer).normalize(rawJob, List.of("rust", "kotlin"));
         }
     }
 }

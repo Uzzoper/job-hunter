@@ -5,6 +5,7 @@ import com.juanperuzzo.job_hunter.application.port.in.ProviderFetchStats;
 import com.juanperuzzo.job_hunter.application.port.out.EmailDraftRepository;
 import com.juanperuzzo.job_hunter.application.port.out.JobAnalysisRepository;
 import com.juanperuzzo.job_hunter.application.port.out.JobRepository;
+import com.juanperuzzo.job_hunter.application.port.out.KeywordResolver;
 import com.juanperuzzo.job_hunter.application.port.out.ScraperPort;
 import com.juanperuzzo.job_hunter.application.port.out.ScraperResult;
 import com.juanperuzzo.job_hunter.application.service.FetchJobsService;
@@ -34,6 +35,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.*;
 
@@ -53,11 +55,15 @@ class FetchJobsServiceTest {
     @Mock
     private JobAnalysisRepository jobAnalysisRepository;
 
+    @Mock
+    private KeywordResolver keywordResolver;
+
     private FetchJobsService fetchJobsService;
 
     @BeforeEach
     void setUp() {
-        fetchJobsService = new FetchJobsService(scraperPort, jobRepository, emailDraftRepository, jobAnalysisRepository);
+        fetchJobsService = new FetchJobsService(scraperPort, jobRepository, emailDraftRepository, jobAnalysisRepository, keywordResolver);
+        lenient().when(keywordResolver.resolve(any())).thenReturn(List.of());
     }
 
     @Nested
@@ -70,13 +76,13 @@ class FetchJobsServiceTest {
             var newJob = new Job(null, "Java Developer", "Company A", "https://example.com/job/1", "Description", LocalDate.now(), "gupy");
             var existingJob = new Job(null, "Java Developer", "Company B", "https://example.com/job/2", "Description", LocalDate.now(), "gupy");
 
-            when(scraperPort.fetch()).thenReturn(new ScraperResult(
+            when(scraperPort.fetch(anyList())).thenReturn(new ScraperResult(
                     List.of(newJob, existingJob),
                     List.of(new ProviderFetchStats("gupy", 2, 0, 0, 0, 0, null))));
             when(jobRepository.existsByUrl("https://example.com/job/1")).thenReturn(false);
             when(jobRepository.existsByUrl("https://example.com/job/2")).thenReturn(true);
 
-            var result = fetchJobsService.fetchAndSave();
+            var result = fetchJobsService.fetchAndSave(7L);
 
             verify(jobRepository, times(1)).save(newJob);
             verify(jobRepository, never()).save(existingJob);
@@ -95,12 +101,12 @@ class FetchJobsServiceTest {
         void fetchAndSave_whenNoNewJobs_shouldNotSaveAnyJob() {
             var existingJob = new Job(null, "Java Developer", "Company A", "https://example.com/job/1", "Description", LocalDate.now(), "gupy");
 
-            when(scraperPort.fetch()).thenReturn(new ScraperResult(
+            when(scraperPort.fetch(anyList())).thenReturn(new ScraperResult(
                     List.of(existingJob),
                     List.of(new ProviderFetchStats("gupy", 1, 0, 0, 0, 0, null))));
             when(jobRepository.existsByUrl("https://example.com/job/1")).thenReturn(true);
 
-            var result = fetchJobsService.fetchAndSave();
+            var result = fetchJobsService.fetchAndSave(7L);
 
             verify(jobRepository, never()).save(any());
             assertEquals(0, result.totalSaved());
@@ -115,10 +121,10 @@ class FetchJobsServiceTest {
         @Test
         @DisplayName("fetchAndSave should propagate ScraperException when scraper fails")
         void fetchAndSave_whenScraperFails_shouldPropagateException() {
-            when(scraperPort.fetch()).thenThrow(new ScraperException("Scraping failed"));
+            when(scraperPort.fetch(anyList())).thenThrow(new ScraperException("Scraping failed"));
 
             try {
-                fetchJobsService.fetchAndSave();
+                fetchJobsService.fetchAndSave(7L);
             } catch (ScraperException e) {
                 // expected
             }
@@ -134,9 +140,9 @@ class FetchJobsServiceTest {
         @Test
         @DisplayName("fetchAndSave should not save any job when scraper returns empty list")
         void fetchAndSave_whenEmptyListReturned_shouldNotSaveAnyJob() {
-            when(scraperPort.fetch()).thenReturn(new ScraperResult(List.of(), List.of()));
+            when(scraperPort.fetch(anyList())).thenReturn(new ScraperResult(List.of(), List.of()));
 
-            var result = fetchJobsService.fetchAndSave();
+            var result = fetchJobsService.fetchAndSave(7L);
 
             verify(jobRepository, never()).save(any());
             assertEquals(0, result.totalFetched());
@@ -154,12 +160,12 @@ class FetchJobsServiceTest {
             var jobWithWebsite = new Job(null, "Java Dev", "Acme", "https://example.com/job/1",
                     "Description", LocalDate.now(), "gupy", null, "https://acme.com");
 
-            when(scraperPort.fetch()).thenReturn(new ScraperResult(
+            when(scraperPort.fetch(anyList())).thenReturn(new ScraperResult(
                     List.of(jobWithWebsite),
                     List.of(new ProviderFetchStats("gupy", 1, 1, 0, 0, 0, null))));
             when(jobRepository.existsByUrl(any())).thenReturn(false);
 
-            var result = fetchJobsService.fetchAndSave();
+            var result = fetchJobsService.fetchAndSave(7L);
 
             // FetchResult shape unchanged: totalFetched/totalSaved/totalWithEmail/perProvider.
             assertEquals(1, result.totalFetched());
@@ -184,12 +190,12 @@ class FetchJobsServiceTest {
             var jobWithoutEmail = new Job(null, "React Dev", "Beta", "https://example.com/job/2",
                     "Description", LocalDate.now(), "gupy");
 
-            when(scraperPort.fetch()).thenReturn(new ScraperResult(
+            when(scraperPort.fetch(anyList())).thenReturn(new ScraperResult(
                     List.of(jobWithEmail, jobWithoutEmail),
                     List.of(new ProviderFetchStats("gupy", 2, 0, 0, 0, 0, null))));
             when(jobRepository.existsByUrl(any())).thenReturn(false);
 
-            var result = fetchJobsService.fetchAndSave();
+            var result = fetchJobsService.fetchAndSave(7L);
 
             assertEquals(2, result.totalSaved());
             assertEquals(1, result.totalWithEmail());
@@ -577,6 +583,37 @@ class FetchJobsServiceTest {
 
             assertThrows(JobNotFoundException.class,
                     () -> fetchJobsService.getByIdWithDraftStatus(USER_ID, 99L));
+        }
+    }
+
+    @Nested
+    @DisplayName("Scenario: runtime keyword resolution")
+    class KeywordResolutionTests {
+
+        private static final long USER_ID = 7L;
+
+        @Test
+        @DisplayName("fetchAndSave should resolve the user's keywords and pass them to the scraper")
+        void fetchAndSave_whenKeywordsStored_shouldPassResolvedKeywordsToScraper() {
+            when(keywordResolver.resolve(USER_ID)).thenReturn(List.of("rust", "kotlin"));
+            when(scraperPort.fetch(List.of("rust", "kotlin")))
+                    .thenReturn(new ScraperResult(List.of(), List.of()));
+
+            fetchJobsService.fetchAndSave(USER_ID);
+
+            verify(keywordResolver).resolve(USER_ID);
+            verify(scraperPort).fetch(List.of("rust", "kotlin"));
+        }
+
+        @Test
+        @DisplayName("fetchAndSave should pass an empty keyword list when the user has none stored")
+        void fetchAndSave_whenNoKeywordsStored_shouldPassEmptyListToScraper() {
+            when(keywordResolver.resolve(USER_ID)).thenReturn(List.of());
+            when(scraperPort.fetch(List.of())).thenReturn(new ScraperResult(List.of(), List.of()));
+
+            fetchJobsService.fetchAndSave(USER_ID);
+
+            verify(scraperPort).fetch(List.of());
         }
     }
 }

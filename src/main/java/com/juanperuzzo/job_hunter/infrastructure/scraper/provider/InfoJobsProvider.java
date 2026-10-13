@@ -123,9 +123,15 @@ public class InfoJobsProvider implements ExtractionStrategy {
 
     @Override
     public List<RawJob> extract() {
-        var uniqueJobs = new HashMap<String, RawJob>();
+        return extract(List.of());
+    }
 
-        for (var keyword : keywords) {
+    @Override
+    public List<RawJob> extract(List<String> keywordOverride) {
+        var uniqueJobs = new HashMap<String, RawJob>();
+        var effective = (keywordOverride == null || keywordOverride.isEmpty()) ? keywords : keywordOverride;
+
+        for (var keyword : effective) {
             for (var page = 1; page <= maxPages; page++) {
                 var uri = buildSearchUri(keyword, page);
                 try {

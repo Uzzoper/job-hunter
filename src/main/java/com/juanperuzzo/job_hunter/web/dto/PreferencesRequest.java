@@ -25,5 +25,8 @@ public record PreferencesRequest(
         Integer salaryFloor,
 
         @Size(max = 50, message = "excludedCompanies must contain at most 50 items")
-        List<@Size(max = 200, message = "each company name must be at most 200 characters") String> excludedCompanies
+        List<@Size(max = 200, message = "each company name must be at most 200 characters") String> excludedCompanies,
+
+        @Size(max = 30, message = "keywords must contain at most 30 items")
+        List<@Size(max = 100, message = "each keyword must be at most 100 characters") String> keywords
 ) {}

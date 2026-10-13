@@ -821,4 +821,52 @@ class JobNormalizerTest {
             assertTrue(normalizer.normalizeAll(List.of()).isEmpty());
         }
     }
+
+    @Nested
+    @DisplayName("normalize - runtime keyword override")
+    class KeywordOverride {
+
+        @Test
+        @DisplayName("should match against the override keywords instead of the constructor defaults")
+        void normalize_whenOverrideMatches_shouldAcceptEvenIfDefaultWouldNot() {
+            normalizer = new JobNormalizer(dateParser, List.of("java"),
+                    List.of(), List.of(), 90, FIXED_CLOCK, userRepository);
+            var raw = new RawJob(
+                    "Rust Developer", "Company", "https://example.com/override1",
+                    "Systems role", "2026-07-01", null, null, "test", null);
+
+            var job = normalizer.normalize(raw, List.of("rust"));
+
+            assertNotNull(job);
+            assertEquals("Rust Developer", job.title());
+        }
+
+        @Test
+        @DisplayName("should reject when the override does not match even if the default would")
+        void normalize_whenOverrideDoesNotMatch_shouldRejectEvenIfDefaultWould() {
+            normalizer = new JobNormalizer(dateParser, List.of("java"),
+                    List.of(), List.of(), 90, FIXED_CLOCK, userRepository);
+            var raw = new RawJob(
+                    "Java Developer", "Company", "https://example.com/override2",
+                    "Backend role", "2026-07-01", null, null, "test", null);
+
+            var job = normalizer.normalize(raw, List.of("rust"));
+
+            assertNull(job);
+        }
+
+        @Test
+        @DisplayName("should fall back to the constructor keywords when the override is empty")
+        void normalize_whenOverrideEmpty_shouldFallBackToDefaultKeywords() {
+            normalizer = new JobNormalizer(dateParser, List.of("java"),
+                    List.of(), List.of(), 90, FIXED_CLOCK, userRepository);
+            var raw = new RawJob(
+                    "Java Developer", "Company", "https://example.com/override3",
+                    "Backend role", "2026-07-01", null, null, "test", null);
+
+            var job = normalizer.normalize(raw, List.of());
+
+            assertNotNull(job);
+        }
+    }
 }

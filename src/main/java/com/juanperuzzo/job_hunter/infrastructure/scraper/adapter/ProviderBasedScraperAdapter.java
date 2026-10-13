@@ -67,7 +67,8 @@ public class ProviderBasedScraperAdapter implements ScraperPort {
     }
 
     @Override
-    public ScraperResult fetch() {
+    public ScraperResult fetch(java.util.List<String> keywordOverride) {
+        java.util.List<String> override = keywordOverride == null ? java.util.List.of() : keywordOverride;
         if (registry.isEmpty()) {
             log.warn("No providers registered, returning empty result");
             return new ScraperResult(List.of(), List.of());
@@ -82,7 +83,7 @@ public class ProviderBasedScraperAdapter implements ScraperPort {
                     .map(entry -> {
                         var providerId = entry.strategy().providerId();
                         var timeout = timeoutFor(providerId);
-                        return CompletableFuture.supplyAsync(() -> fetchProvider(entry), executor)
+                        return CompletableFuture.supplyAsync(() -> fetchProvider(entry, override), executor)
                                 .orTimeout(timeout.toSeconds(), TimeUnit.SECONDS)
                                 .exceptionally(ex -> {
                                     var cause = ex.getCause() != null ? ex.getCause() : ex;
@@ -108,11 +109,12 @@ public class ProviderBasedScraperAdapter implements ScraperPort {
         return new ScraperResult(List.copyOf(allJobs.values()), perProvider);
     }
 
-    private ProviderResult fetchProvider(ProviderRegistry.ProviderEntry entry) {
+    private ProviderResult fetchProvider(ProviderRegistry.ProviderEntry entry, java.util.List<String> keywordOverride) {
+        java.util.List<String> override = keywordOverride == null ? java.util.List.of() : keywordOverride;
         var providerId = entry.strategy().providerId();
         log.debug("Fetching from provider: {}", providerId);
 
-        var rawJobs = entry.strategy().extract();
+        var rawJobs = entry.strategy().extract(override);
         var detailFailedCount = (int) rawJobs.stream()
                 .filter(raw -> "true".equals(raw.metadata().get("detailFailed")))
                 .count();
@@ -125,7 +127,7 @@ public class ProviderBasedScraperAdapter implements ScraperPort {
             var normalizer = entry.normalizer();
             for (var raw : rawJobs) {
                 try {
-                    var job = normalizer.normalize(raw);
+                    var job = normalizer.normalize(raw, override);
                     if (job != null) {
                         providerJobs.add(job);
                     }

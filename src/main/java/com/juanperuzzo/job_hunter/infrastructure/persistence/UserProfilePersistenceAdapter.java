@@ -58,6 +58,10 @@ public class UserProfilePersistenceAdapter implements UserProfileRepository {
 
     private UserProfileEntity toEntity(UserProfile profile) {
         var prefs = profile.preferences();
+        String[] keywordsArr = null;
+        if (prefs != null && prefs.keywords() != null && !prefs.keywords().isEmpty()) {
+            keywordsArr = prefs.keywords().toArray(new String[0]);
+        }
         return new UserProfileEntity(
                 profile.id(),
                 profile.userId(),
@@ -71,8 +75,9 @@ public class UserProfilePersistenceAdapter implements UserProfileRepository {
                 profile.linkedinUrl(),
                 prefs != null ? prefs.workPreference() : null,
                 prefs != null ? prefs.salaryFloor() : null,
-                prefs != null && !prefs.excludedCompanies().isEmpty()
-                        ? prefs.excludedCompanies().toArray(new String[0]) : null
+                prefs != null && prefs.excludedCompanies() != null && !prefs.excludedCompanies().isEmpty()
+                        ? prefs.excludedCompanies().toArray(new String[0]) : null,
+                keywordsArr
         );
     }
 
@@ -83,7 +88,6 @@ public class UserProfilePersistenceAdapter implements UserProfileRepository {
         CompanyTone tone = CompanyTone.valueOf(entity.getTone());
 
         UserPreferences preferences = buildPreferences(entity);
-
         return new UserProfile(
                 entity.getId(),
                 entity.getUserId(),
@@ -108,12 +112,15 @@ public class UserProfilePersistenceAdapter implements UserProfileRepository {
         Integer salaryFloor = entity.getSalaryFloor();
         List<String> excludedCompanies = entity.getExcludedCompanies() != null
                 ? Arrays.asList(entity.getExcludedCompanies()) : null;
+        List<String> keywords = entity.getKeywords() != null
+                ? Arrays.asList(entity.getKeywords()) : null;
 
         // Only build if at least one field is set
         if (workPreference == null && salaryFloor == null
-                && (excludedCompanies == null || excludedCompanies.isEmpty())) {
+                && (excludedCompanies == null || excludedCompanies.isEmpty())
+                && (keywords == null || keywords.isEmpty())) {
             return null;
         }
-        return new UserPreferences(workPreference, salaryFloor, excludedCompanies);
+        return new UserPreferences(workPreference, salaryFloor, excludedCompanies, keywords);
     }
 }

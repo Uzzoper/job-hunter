@@ -1,5 +1,7 @@
 package com.juanperuzzo.job_hunter.application.port.out;
 
+import java.util.List;
+
 public interface ScraperPort {
 
     /**
@@ -7,5 +9,9 @@ public interface ScraperPort {
      *
      * @return the normalized jobs plus raw per-provider fetch statistics
      */
-    ScraperResult fetch();
+    ScraperResult fetch(List<String> keywordOverride);
+
+    default ScraperResult fetch() {
+        return fetch(List.of());
+    }
 }

@@ -79,7 +79,15 @@ public class LinkedInScraperClient implements ExtractionStrategy {
      */
     @Override
     public List<RawJob> extract() {
-        var keywords = properties.keywords().isEmpty() ? List.of("desenvolvedor") : properties.keywords();
+        return extract(List.of());
+    }
+
+    @Override
+    public List<RawJob> extract(List<String> keywordOverride) {
+        var configuredKeywords = (keywordOverride == null || keywordOverride.isEmpty())
+                ? properties.keywords()
+                : keywordOverride;
+        var keywords = configuredKeywords.isEmpty() ? List.of("desenvolvedor") : configuredKeywords;
         var location = properties.locations().isBlank() ? "Brazil" : properties.locations().split(",")[0].trim();
 
         // Per-keyword query loop (production defects fixed): bare senior-heavy

@@ -119,7 +119,13 @@ public class GupyMcpProvider implements ExtractionStrategy {
      */
     @Override
     public List<RawJob> extract() {
+        return extract(List.of());
+    }
+
+    @Override
+    public List<RawJob> extract(List<String> keywordOverride) {
         var uniqueJobs = new LinkedHashMap<String, RawJob>();
+        var effective = (keywordOverride == null || keywordOverride.isEmpty()) ? keywords : keywordOverride;
 
         try {
             initialize();
@@ -129,7 +135,7 @@ public class GupyMcpProvider implements ExtractionStrategy {
             log.warn("{}: MCP initialize failed ({}), continuing with tools/call", PROVIDER_ID, e.getMessage());
         }
 
-        for (var keyword : keywords) {
+        for (var keyword : effective) {
             if (keyword == null || keyword.isBlank()) {
                 log.debug("{}: skipping blank keyword (null or whitespace)", PROVIDER_ID);
                 continue;

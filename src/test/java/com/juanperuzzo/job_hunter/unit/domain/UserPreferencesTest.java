@@ -234,6 +234,97 @@ class UserPreferencesTest {
         }
     }
 
+    // ── keywords normalization (issue #79 phase 1) ───────────────────
+
+    @Nested
+    @DisplayName("keywords normalization")
+    class KeywordsTests {
+
+        @Test
+        @DisplayName("keywords when null should normalize to empty list")
+        void keywords_whenNull_shouldNormalizeToEmpty() {
+            var prefs = new UserPreferences(null, null, null, null);
+            assertEquals(List.of(), prefs.keywords());
+        }
+
+        @Test
+        @DisplayName("keywords when empty should stay empty")
+        void keywords_whenEmpty_shouldStayEmpty() {
+            var prefs = new UserPreferences(null, null, null, List.of());
+            assertEquals(List.of(), prefs.keywords());
+        }
+
+        @Test
+        @DisplayName("keywords should trim items and drop blanks")
+        void keywords_shouldTrimAndDropBlanks() {
+            var prefs = new UserPreferences(null, null, null, List.of("  java  ", "", "spring", "   "));
+            assertEquals(List.of("java", "spring"), prefs.keywords());
+        }
+
+        @Test
+        @DisplayName("keywords should accept null items within the list")
+        void keywords_shouldAcceptNullItems() {
+            var prefs = new UserPreferences(null, null, null, Arrays.asList("java", null, "spring"));
+            assertEquals(List.of("java", "spring"), prefs.keywords());
+        }
+
+        @Test
+        @DisplayName("keywords when exceeding 30 items should trim to 30")
+        void keywords_whenExceeding30_shouldTrim() {
+            var many = new java.util.ArrayList<String>();
+            for (int i = 0; i < 40; i++) many.add("keyword" + i);
+            var prefs = new UserPreferences(null, null, null, many);
+            assertEquals(30, prefs.keywords().size());
+        }
+
+        @Test
+        @DisplayName("keyword item exceeding 100 chars should throw IllegalArgumentException")
+        void keyword_whenExceeding100Chars_shouldThrow() {
+            String longKeyword = "A".repeat(101);
+            assertThrows(IllegalArgumentException.class,
+                    () -> new UserPreferences(null, null, null, List.of(longKeyword)));
+        }
+
+        @Test
+        @DisplayName("keyword item at exactly 100 chars should be accepted")
+        void keyword_atExactly100Chars_shouldAccept() {
+            String exactKeyword = "A".repeat(100);
+            var prefs = new UserPreferences(null, null, null, List.of(exactKeyword));
+            assertEquals(1, prefs.keywords().size());
+        }
+
+        @Test
+        @DisplayName("keyword beyond the 30-item cap that exceeds 100 chars should still throw (deterministic validation-before-limit)")
+        void keyword_whenBeyondCapExceedsLength_shouldStillThrow() {
+            var many = new java.util.ArrayList<String>();
+            for (int i = 0; i < 30; i++) many.add("keyword" + i);
+            many.add("A".repeat(101)); // 31st item exceeds 100 chars
+            assertThrows(IllegalArgumentException.class,
+                    () -> new UserPreferences(null, null, null, many));
+        }
+    }
+
+    // ── hasContent with keywords (issue #79 phase 1) ─────────────────
+
+    @Nested
+    @DisplayName("hasContent with keywords")
+    class HasContentTests {
+
+        @Test
+        @DisplayName("hasContent should be true when only keywords are set")
+        void hasContent_whenOnlyKeywordsSet_shouldBeTrue() {
+            var prefs = new UserPreferences(null, null, null, List.of("java"));
+            assertTrue(prefs.hasContent());
+        }
+
+        @Test
+        @DisplayName("hasContent should be false when keywords are empty and nothing else is set")
+        void hasContent_whenKeywordsEmptyAndNothingElse_shouldBeFalse() {
+            var prefs = new UserPreferences(null, null, null, List.of());
+            assertFalse(prefs.hasContent());
+        }
+    }
+
     @Nested
     @DisplayName("empty() factory")
     class EmptyTests {
@@ -245,6 +336,7 @@ class UserPreferencesTest {
             assertNull(prefs.workPreference());
             assertNull(prefs.salaryFloor());
             assertEquals(List.of(), prefs.excludedCompanies());
+            assertEquals(List.of(), prefs.keywords());
         }
     }
 

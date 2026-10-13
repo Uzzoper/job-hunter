@@ -5,7 +5,8 @@ public interface FetchJobsUseCase {
     /**
      * Fetch, enrich, deduplicate and persist jobs from all providers.
      *
+     * @param userId the authenticated user whose stored keywords scope the fetch
      * @return aggregate fetch statistics
      */
-    FetchResult fetchAndSave();
+    FetchResult fetchAndSave(Long userId);
 }

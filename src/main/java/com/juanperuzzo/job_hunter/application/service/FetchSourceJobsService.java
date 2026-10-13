@@ -4,6 +4,7 @@ import com.juanperuzzo.job_hunter.application.port.in.FetchResult;
 import com.juanperuzzo.job_hunter.application.port.in.FetchSourceJobsUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.ProviderFetchStats;
 import com.juanperuzzo.job_hunter.application.port.out.JobRepository;
+import com.juanperuzzo.job_hunter.application.port.out.KeywordResolver;
 import com.juanperuzzo.job_hunter.application.port.out.NormalizerPort;
 import com.juanperuzzo.job_hunter.application.port.out.SourceFetchPort;
 import com.juanperuzzo.job_hunter.domain.model.Job;
@@ -20,19 +21,23 @@ public class FetchSourceJobsService implements FetchSourceJobsUseCase {
     private final SourceFetchPort sourceFetchPort;
     private final JobRepository jobRepository;
     private final NormalizerPort normalizer;
+    private final KeywordResolver keywordResolver;
 
     public FetchSourceJobsService(
             SourceFetchPort sourceFetchPort,
             JobRepository jobRepository,
-            NormalizerPort normalizer) {
+            NormalizerPort normalizer,
+            KeywordResolver keywordResolver) {
         this.sourceFetchPort = sourceFetchPort;
         this.jobRepository = jobRepository;
         this.normalizer = normalizer;
+        this.keywordResolver = keywordResolver;
     }
 
     @Override
-    public FetchResult fetchAndSave(String sourceId) {
+    public FetchResult fetchAndSave(Long userId, String sourceId) {
         log.info("Fetching jobs from source: {}", sourceId);
+        var keywords = List.copyOf(keywordResolver.resolve(userId));
 
         int fetched = 0;
         int saved = 0;
@@ -42,7 +47,7 @@ public class FetchSourceJobsService implements FetchSourceJobsUseCase {
         String error = null;
 
         try {
-            var rawJobs = sourceFetchPort.fetch(sourceId);
+            var rawJobs = sourceFetchPort.fetch(sourceId, keywords);
             fetched = rawJobs.size();
 
             for (var raw : rawJobs) {
@@ -53,7 +58,7 @@ public class FetchSourceJobsService implements FetchSourceJobsUseCase {
                     detailSkippedCount++;
                 }
                 try {
-                    var job = normalizer.normalize(raw);
+                    var job = normalizer.normalize(raw, keywords);
                     if (job != null) {
                         // NOTE (async-company-enrichment): enrichment is intentionally removed
                         // from this hot path; it runs out-of-band via CompanyEnrichmentService.

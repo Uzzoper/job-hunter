@@ -12,6 +12,7 @@ import com.juanperuzzo.job_hunter.application.port.out.NormalizerPort;
 import com.juanperuzzo.job_hunter.application.port.out.PdfRendererPort;
 import com.juanperuzzo.job_hunter.application.port.out.ScraperPort;
 import com.juanperuzzo.job_hunter.application.port.out.SourceFetchPort;
+import com.juanperuzzo.job_hunter.application.port.out.KeywordResolver;
 import com.juanperuzzo.job_hunter.application.port.out.UserRepository;
 import com.juanperuzzo.job_hunter.application.service.AiAnalysisService;
 import com.juanperuzzo.job_hunter.application.service.CompanyEnrichmentService;
@@ -426,13 +427,13 @@ public class AppConfig {
 
     @Bean
     public FetchJobsService fetchJobsService(ScraperPort scraperPort, JobRepository jobRepository, EmailDraftRepository emailDraftRepository,
-                                             JobAnalysisRepository jobAnalysisRepository) {
-        return new FetchJobsService(scraperPort, jobRepository, emailDraftRepository, jobAnalysisRepository);
+                                             JobAnalysisRepository jobAnalysisRepository, KeywordResolver keywordResolver) {
+        return new FetchJobsService(scraperPort, jobRepository, emailDraftRepository, jobAnalysisRepository, keywordResolver);
     }
 
     @Bean
-    public FetchSourceJobsService fetchSourceJobsService(SourceFetchPort sourceFetchPort, JobRepository jobRepository, @Qualifier("linkedinNormalizerPort") NormalizerPort normalizerPort) {
-        return new FetchSourceJobsService(sourceFetchPort, jobRepository, normalizerPort);
+    public FetchSourceJobsService fetchSourceJobsService(SourceFetchPort sourceFetchPort, JobRepository jobRepository, @Qualifier("linkedinNormalizerPort") NormalizerPort normalizerPort, KeywordResolver keywordResolver) {
+        return new FetchSourceJobsService(sourceFetchPort, jobRepository, normalizerPort, keywordResolver);
     }
 
     @Bean

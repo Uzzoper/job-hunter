@@ -248,6 +248,7 @@ public class BotMemorySyncService {
         Integer salaryFloor = existingPrefs != null ? existingPrefs.salaryFloor() : null;
         List<String> excludedCompanies = existingPrefs != null && !existingPrefs.excludedCompanies().isEmpty()
                 ? existingPrefs.excludedCompanies() : null;
+        List<String> keywords = existingPrefs != null ? existingPrefs.keywords() : null;
 
         String rawWorkModel = findKeyValueIgnoreCase(prefs, "workmodel");
         String rawSalary = findKeyValueIgnoreCase(prefs, "salary");
@@ -310,7 +311,7 @@ public class BotMemorySyncService {
                 profile.phone(), profile.contactEmail(),
                 profile.portfolioUrl(), profile.githubUrl(), profile.linkedinUrl(),
                 new UserPreferences(workPreference, salaryFloor,
-                        excludedCompanies != null ? excludedCompanies : List.of()));
+                        excludedCompanies != null ? excludedCompanies : List.of(), keywords));
     }
 
     // ── Parse-lenient / validate-strict firewall ────────────────────

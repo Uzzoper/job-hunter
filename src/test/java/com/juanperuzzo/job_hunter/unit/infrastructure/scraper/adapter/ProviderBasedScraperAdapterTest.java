@@ -2,6 +2,7 @@ package com.juanperuzzo.job_hunter.unit.infrastructure.scraper.adapter;
 
 import com.juanperuzzo.job_hunter.application.port.out.RawJob;
 import com.juanperuzzo.job_hunter.application.port.out.UserRepository;
+import com.juanperuzzo.job_hunter.domain.model.Job;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.adapter.ProviderBasedScraperAdapter;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.normalizer.DateParser;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.normalizer.JobNormalizer;
@@ -16,11 +17,14 @@ import org.junit.jupiter.api.Test;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 @DisplayName("ProviderBasedScraperAdapter tests")
 class ProviderBasedScraperAdapterTest {
@@ -273,6 +277,79 @@ class ProviderBasedScraperAdapterTest {
         }
     }
 
+    @Nested
+    @DisplayName("Scenario: keyword override fan-out")
+    class KeywordOverrideFanOut {
+
+        @Test
+        @DisplayName("fetch should forward the resolved keyword list to every strategy extract and normalizer normalize")
+        void fetch_whenKeywordOverrideProvided_shouldForwardToAllStrategiesAndNormalizers() {
+            var strategy1 = mock(ExtractionStrategy.class);
+            var strategy2 = mock(ExtractionStrategy.class);
+            var normalizer1 = mock(JobNormalizer.class);
+            var normalizer2 = mock(JobNormalizer.class);
+            var override = List.of("rust", "kotlin");
+
+            var raw1 = raw("Dev1", "https://a.com/1");
+            var raw2 = raw("Dev2", "https://a.com/2");
+            var job1 = job("Dev1", "https://a.com/1");
+            var job2 = job("Dev2", "https://a.com/2");
+
+            when(strategy1.providerId()).thenReturn("p1");
+            when(strategy2.providerId()).thenReturn("p2");
+            when(strategy1.extract(override)).thenReturn(List.of(raw1));
+            when(strategy2.extract(override)).thenReturn(List.of(raw2));
+            when(normalizer1.normalize(raw1, override)).thenReturn(job1);
+            when(normalizer2.normalize(raw2, override)).thenReturn(job2);
+
+            registry.register(strategy1, null, noopRateLimiter, normalizer1);
+            registry.register(strategy2, null, noopRateLimiter, normalizer2);
+
+            adapter = new ProviderBasedScraperAdapter(registry);
+            var result = adapter.fetch(override);
+
+            assertEquals(2, result.jobs().size());
+            verify(strategy1).extract(override);
+            verify(strategy2).extract(override);
+            verify(normalizer1).normalize(raw1, override);
+            verify(normalizer2).normalize(raw2, override);
+        }
+
+        @Test
+        @DisplayName("fetch should forward an empty list to every strategy extract and normalizer normalize when no override is resolved")
+        void fetch_whenKeywordOverrideEmpty_shouldForwardEmptyList() {
+            var strategy1 = mock(ExtractionStrategy.class);
+            var strategy2 = mock(ExtractionStrategy.class);
+            var normalizer1 = mock(JobNormalizer.class);
+            var normalizer2 = mock(JobNormalizer.class);
+            List<String> emptyOverride = List.of();
+
+            var raw1 = raw("Dev1", "https://a.com/1");
+            var raw2 = raw("Dev2", "https://a.com/2");
+            var job1 = job("Dev1", "https://a.com/1");
+            var job2 = job("Dev2", "https://a.com/2");
+
+            when(strategy1.providerId()).thenReturn("p1");
+            when(strategy2.providerId()).thenReturn("p2");
+            when(strategy1.extract(emptyOverride)).thenReturn(List.of(raw1));
+            when(strategy2.extract(emptyOverride)).thenReturn(List.of(raw2));
+            when(normalizer1.normalize(raw1, emptyOverride)).thenReturn(job1);
+            when(normalizer2.normalize(raw2, emptyOverride)).thenReturn(job2);
+
+            registry.register(strategy1, null, noopRateLimiter, normalizer1);
+            registry.register(strategy2, null, noopRateLimiter, normalizer2);
+
+            adapter = new ProviderBasedScraperAdapter(registry);
+            var result = adapter.fetch(List.of());
+
+            assertEquals(2, result.jobs().size());
+            verify(strategy1).extract(List.of());
+            verify(strategy2).extract(List.of());
+            verify(normalizer1).normalize(raw1, List.of());
+            verify(normalizer2).normalize(raw2, List.of());
+        }
+    }
+
     private static RawJob raw(String title, String url) {
         return rawWithMetadata(title, url, "detailFailed", null);
     }
@@ -283,6 +360,10 @@ class ProviderBasedScraperAdapterTest {
             metadata.put(key, value);
         }
         return new RawJob(title, "Co", url, "desc", "2026-07-01", null, null, "test", metadata);
+    }
+
+    private static Job job(String title, String url) {
+        return new Job(null, title, "Co", url, "desc", LocalDate.now(), "test");
     }
 
     private static ExtractionStrategy createStub(String id, RawJob... jobs) {

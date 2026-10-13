@@ -57,6 +57,10 @@ public class UserProfileEntity {
     @Convert(converter = StringListConverter.class)
     private String[] excludedCompanies;
 
+    @Column(name = "keywords")
+    @Convert(converter = StringListConverter.class)
+    private String[] keywords;
+
     @Column(name = "updated_at", insertable = false, columnDefinition = "TIMESTAMP DEFAULT NOW()")
     private LocalDateTime updatedAt;
 
@@ -67,7 +71,7 @@ public class UserProfileEntity {
                              String phone, String contactEmail, String portfolioUrl,
                              String githubUrl, String linkedinUrl,
                              WorkPreference workPreference, Integer salaryFloor,
-                             String[] excludedCompanies) {
+                             String[] excludedCompanies, String[] keywords) {
         this.id = id;
         this.userId = userId;
         this.resumeText = resumeText;
@@ -81,6 +85,16 @@ public class UserProfileEntity {
         this.workPreference = workPreference;
         this.salaryFloor = salaryFloor;
         this.excludedCompanies = excludedCompanies;
+        this.keywords = keywords;
+    }
+
+    public UserProfileEntity(Long id, Long userId, String resumeText, String[] skills, String tone,
+                             String phone, String contactEmail, String portfolioUrl,
+                             String githubUrl, String linkedinUrl,
+                             WorkPreference workPreference, Integer salaryFloor,
+                             String[] excludedCompanies) {
+        this(id, userId, resumeText, skills, tone, phone, contactEmail, portfolioUrl,
+                githubUrl, linkedinUrl, workPreference, salaryFloor, excludedCompanies, null);
     }
 
     public Long getId() { return id; }
@@ -121,6 +135,9 @@ public class UserProfileEntity {
 
     public String[] getExcludedCompanies() { return excludedCompanies; }
     public void setExcludedCompanies(String[] excludedCompanies) { this.excludedCompanies = excludedCompanies; }
+
+    public String[] getKeywords() { return keywords; }
+    public void setKeywords(String[] keywords) { this.keywords = keywords; }
 
     public LocalDateTime getUpdatedAt() { return updatedAt; }
     public void setUpdatedAt(LocalDateTime updatedAt) { this.updatedAt = updatedAt; }

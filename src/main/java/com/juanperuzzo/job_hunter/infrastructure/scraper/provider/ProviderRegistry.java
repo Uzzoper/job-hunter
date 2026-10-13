@@ -44,9 +44,9 @@ public class ProviderRegistry implements SourceFetchPort {
     }
 
     @Override
-    public List<RawJob> fetch(String sourceId) {
+    public List<RawJob> fetch(String sourceId, List<String> keywordOverride) {
         var entry = getProvider(sourceId)
                 .orElseThrow(() -> new IllegalArgumentException("Unknown source: " + sourceId));
-        return entry.strategy().extract();
+        return entry.strategy().extract(keywordOverride);
     }
 }

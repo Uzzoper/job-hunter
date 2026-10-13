@@ -504,4 +504,60 @@ class GupyProviderTest {
             verify(1, getRequestedFor(urlMatching("/gupy/(techco|dotnet)/jobs/[12]")));
         }
     }
+
+    @Nested
+    @DisplayName("Scenario: runtime keyword override")
+    class KeywordOverride {
+
+        @Test
+        @DisplayName("extract should query the override keywords and ignore the constructor defaults")
+        void extract_whenOverrideProvided_shouldQueryOverrideKeyword() {
+            stubFor(get(urlPathEqualTo("/api/v1/jobs"))
+                    .withQueryParam("jobName", equalTo("rust"))
+                    .willReturn(okJson("""
+                        {"data": [{
+                          "id": 99001,
+                          "name": "Rust Developer",
+                          "careerPageName": "TechCo",
+                          "jobUrl": "https://company.gupy.io/jobs/99001",
+                          "publishedDate": "2026-07-01T14:00:00.000Z",
+                          "description": "Rust role",
+                          "isRemoteWork": false
+                        }]}
+                        """)));
+
+            var jobs = provider.extract(List.of("rust"));
+
+            assertEquals(1, jobs.size());
+            assertEquals("Rust Developer", jobs.get(0).title());
+            verify(1, getRequestedFor(urlPathEqualTo("/api/v1/jobs"))
+                    .withQueryParam("jobName", equalTo("rust")));
+            verify(0, getRequestedFor(urlPathEqualTo("/api/v1/jobs"))
+                    .withQueryParam("jobName", equalTo("desenvolvedor")));
+        }
+
+        @Test
+        @DisplayName("extract should fall back to the constructor keywords when the override is empty")
+        void extract_whenOverrideEmpty_shouldFallBackToDefaultKeywords() {
+            stubFor(get(urlPathEqualTo("/api/v1/jobs"))
+                    .withQueryParam("jobName", equalTo("desenvolvedor"))
+                    .willReturn(okJson("""
+                        {"data": [{
+                          "id": 99002,
+                          "name": "Desenvolvedor Java",
+                          "careerPageName": "TechCo",
+                          "jobUrl": "https://company.gupy.io/jobs/99002",
+                          "publishedDate": "2026-07-01T14:00:00.000Z",
+                          "description": "Java role",
+                          "isRemoteWork": false
+                        }]}
+                        """)));
+
+            var jobs = provider.extract(List.of());
+
+            assertEquals(1, jobs.size());
+            verify(1, getRequestedFor(urlPathEqualTo("/api/v1/jobs"))
+                    .withQueryParam("jobName", equalTo("desenvolvedor")));
+        }
+    }
 }

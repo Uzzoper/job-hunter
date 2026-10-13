@@ -158,25 +158,29 @@ public class JobController {
 
     @PostMapping("/fetch")
     public ResponseEntity<FetchResultResponse> fetchJobs() {
-        var result = fetchJobsUseCase.fetchAndSave();
+        Long userId = currentUserService.getCurrentUserId();
+        var result = fetchJobsUseCase.fetchAndSave(userId);
         return ResponseEntity.ok(FetchResultResponse.from(result));
     }
 
     @PostMapping("/fetch/linkedin")
     public ResponseEntity<FetchResultResponse> fetchLinkedInJobs() {
-        var result = fetchSourceJobsUseCase.fetchAndSave("linkedin");
+        Long userId = currentUserService.getCurrentUserId();
+        var result = fetchSourceJobsUseCase.fetchAndSave(userId, "linkedin");
         return ResponseEntity.ok(FetchResultResponse.from(result));
     }
 
     @PostMapping("/fetch/gupy")
     public ResponseEntity<FetchResultResponse> fetchGupyJobs() {
-        var result = fetchSourceJobsUseCase.fetchAndSave("gupy");
+        Long userId = currentUserService.getCurrentUserId();
+        var result = fetchSourceJobsUseCase.fetchAndSave(userId, "gupy");
         return ResponseEntity.ok(FetchResultResponse.from(result));
     }
 
     @PostMapping("/fetch/infojobs")
     public ResponseEntity<FetchResultResponse> fetchInfoJobs() {
-        var result = fetchSourceJobsUseCase.fetchAndSave("infojobs");
+        Long userId = currentUserService.getCurrentUserId();
+        var result = fetchSourceJobsUseCase.fetchAndSave(userId, "infojobs");
         return ResponseEntity.ok(FetchResultResponse.from(result));
     }
 

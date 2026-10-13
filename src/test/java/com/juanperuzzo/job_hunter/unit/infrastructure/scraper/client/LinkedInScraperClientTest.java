@@ -1068,4 +1068,37 @@ List<RawJob> jobs = client.extract();
             return fieldRef.getInt(factory);
         }
     }
+
+    @Nested
+    @DisplayName("Scenario: runtime keyword override")
+    class KeywordOverride {
+
+        @Test
+        @DisplayName("extract should search the override keywords and ignore the configured defaults")
+        void extract_whenOverrideProvided_shouldSearchOverrideKeyword() {
+            stubFor(get(urlPathEqualTo("/api/jobs"))
+                    .withQueryParam("keywords", equalTo("rust"))
+                    .willReturn(okJson("{\"success\": true, \"data\": []}")));
+
+            client.extract(List.of("rust"));
+
+            verify(getRequestedFor(urlPathEqualTo("/api/jobs"))
+                    .withQueryParam("keywords", equalTo("rust")));
+            verify(0, getRequestedFor(urlPathEqualTo("/api/jobs"))
+                    .withQueryParam("keywords", equalTo("desenvolvedor")));
+        }
+
+        @Test
+        @DisplayName("extract should fall back to the configured keywords when the override is empty")
+        void extract_whenOverrideEmpty_shouldFallBackToConfiguredKeywords() {
+            stubFor(get(urlPathEqualTo("/api/jobs"))
+                    .withQueryParam("keywords", equalTo("desenvolvedor"))
+                    .willReturn(okJson("{\"success\": true, \"data\": []}")));
+
+            client.extract(List.of());
+
+            verify(getRequestedFor(urlPathEqualTo("/api/jobs"))
+                    .withQueryParam("keywords", equalTo("desenvolvedor")));
+        }
+    }
 }

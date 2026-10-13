@@ -89,7 +89,7 @@ class SqliteBaselineIntegrationTest {
                 new String[]{"Java", "Spring"},
                 "FORMAL",
                 null, null, null, null, null,
-                null, null, null);
+                null, null, null, null);
         var saved = userProfileJpaRepository.save(profile);
 
         var reloaded = userProfileJpaRepository.findByUserId(user.getId()).orElseThrow();
@@ -112,7 +112,7 @@ class SqliteBaselineIntegrationTest {
                 "FORMAL",
                 null, null, null, null, null,
                 new WorkPreference.Hybrid(List.of("Curitiba", "São Paulo")), 5000,
-                new String[]{"Acme Corp", "Evil Inc"});
+                new String[]{"Acme Corp", "Evil Inc"}, null);
         var saved = userProfileJpaRepository.save(entity);
 
         var reloaded = userProfileJpaRepository.findByUserId(user.getId()).orElseThrow();
@@ -134,7 +134,7 @@ class SqliteBaselineIntegrationTest {
                 new String[]{"Java"},
                 "STARTUP",
                 null, null, null, null, null,
-                new WorkPreference.Remote(), 8000, null);
+                new WorkPreference.Remote(), 8000, null, null);
         userProfileJpaRepository.save(entity);
 
         var profile = userProfilePersistenceAdapter.findByUserId(user.getId()).orElseThrow();
@@ -156,7 +156,7 @@ class SqliteBaselineIntegrationTest {
                 new String[]{"Java"},
                 "STARTUP",
                 null, null, null, null, null,
-                null, null, null);
+                null, null, null, null);
         userProfileJpaRepository.save(entity);
 
         var reloaded = userProfileJpaRepository.findByUserId(user.getId()).orElseThrow();
@@ -164,6 +164,7 @@ class SqliteBaselineIntegrationTest {
         assertThat(reloaded.getWorkPreference()).isNull();
         assertThat(reloaded.getSalaryFloor()).isNull();
         assertThat(reloaded.getExcludedCompanies()).isNull();
+        assertThat(reloaded.getKeywords()).isNull();
     }
 
     @Test
@@ -188,5 +189,48 @@ class SqliteBaselineIntegrationTest {
         assertThat(profile.preferences()).isNotNull();
         assertThat(profile.preferences().workPreference()).isNull();
         assertThat(profile.preferences().salaryFloor()).isEqualTo(5000);
+    }
+
+    @Test
+    @DisplayName("should round-trip V11 keywords column (set → save → reload → equal)")
+    void saveAndReload_withKeywords_shouldRoundTrip() {
+        var user = userJpaRepository.save(
+                new UserEntity(null, "keywords-roundtrip@example.com", "KeywordsTester", "$2a$hash"));
+
+        var entity = new UserProfileEntity(
+                null, user.getId(),
+                "Java developer with Spring Boot experience building REST APIs.",
+                new String[]{"Java"},
+                "FORMAL",
+                null, null, null, null, null,
+                null, null, null,
+                new String[]{"java", "spring boot"});
+        userProfileJpaRepository.save(entity);
+
+        var reloaded = userProfileJpaRepository.findByUserId(user.getId()).orElseThrow();
+
+        assertThat(reloaded.getKeywords()).containsExactly("java", "spring boot");
+    }
+
+    @Test
+    @DisplayName("should map V11 keywords back into domain preferences through the adapter")
+    void findByUserId_withKeywords_shouldExposeThemInPreferences() {
+        var user = userJpaRepository.save(
+                new UserEntity(null, "keywords-adapter@example.com", "KeywordsAdapterTester", "$2a$hash"));
+
+        var entity = new UserProfileEntity(
+                null, user.getId(),
+                "Java developer with Spring Boot experience building REST APIs.",
+                new String[]{"Java"},
+                "FORMAL",
+                null, null, null, null, null,
+                null, null, null,
+                new String[]{"java", "backend"});
+        userProfileJpaRepository.save(entity);
+
+        var profile = userProfilePersistenceAdapter.findByUserId(user.getId()).orElseThrow();
+
+        assertThat(profile.preferences()).isNotNull();
+        assertThat(profile.preferences().keywords()).containsExactly("java", "backend");
     }
 }

@@ -508,6 +508,30 @@ class BotMemorySyncPreferencesTest {
         }
 
         @Test
+        @DisplayName("syncFromBotMemory should preserve stored keywords when the bot fills another field")
+        void mergeIntoProfile_whenExistingKeywordsAndBotFillsOtherField_shouldPreserveKeywords() {
+            Path memoryFile = tempDir.resolve("memories/MEMORY.md");
+            when(botMemoryPort.readFile(memoryFile)).thenReturn(Optional.of("""
+                    §
+                    workModel: remote
+                    """));
+
+            var existingPrefs = new UserPreferences(null, null, List.of(), List.of("rust", "kotlin"));
+            var existingProfile = existingProfile(existingPrefs);
+            when(userProfileRepository.findByUserId(1L)).thenReturn(Optional.of(existingProfile));
+            when(userProfileRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+            service.syncFromBotMemory(1L);
+
+            verify(userProfileRepository).save(argThat(profile -> {
+                var prefs = profile.preferences();
+                return prefs != null
+                        && prefs.workPreference() instanceof WorkPreference.Remote // bot fills empty field
+                        && prefs.keywords().equals(List.of("rust", "kotlin"));    // stored keywords survive
+            }));
+        }
+
+        @Test
         @DisplayName("syncFromBotMemory should emit INFO audit lines for each merged preference field (real log capture)")
         void mergeIntoProfile_shouldLogAuditLines() {
             Path memoryFile = tempDir.resolve("memories/MEMORY.md");
