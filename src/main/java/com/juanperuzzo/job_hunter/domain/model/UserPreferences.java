@@ -19,15 +19,27 @@ import java.util.List;
  * @param workPreference     preferred work location model (nullable)
  * @param salaryFloor        desired minimum salary in BRL (nullable; must be 1–500,000)
  * @param excludedCompanies  companies to skip (null → empty; max 50 items ≤ 200 chars each)
+ * @param keywords           search keywords edited at runtime (null → empty; max 30 items ≤ 100 chars each)
  */
 public record UserPreferences(
         WorkPreference workPreference,
         Integer salaryFloor,
-        List<String> excludedCompanies
+        List<String> excludedCompanies,
+        List<String> keywords
 ) {
     public static final int MAX_EXCLUDED_COMPANIES = 50;
     public static final int MAX_COMPANY_NAME_LENGTH = 200;
+    public static final int MAX_KEYWORDS = 30;
+    public static final int MAX_KEYWORD_LENGTH = 100;
     public static final int MAX_SALARY_FLOOR = 500_000;
+
+    /**
+     * Convenience constructor for call sites that predate {@code keywords}.
+     * Delegates with an unset keyword list (null → normalized to empty).
+     */
+    public UserPreferences(WorkPreference workPreference, Integer salaryFloor, List<String> excludedCompanies) {
+        this(workPreference, salaryFloor, excludedCompanies, null);
+    }
 
     public UserPreferences {
         if (salaryFloor != null && salaryFloor <= 0) {
@@ -37,13 +49,14 @@ public record UserPreferences(
             throw new IllegalArgumentException("salaryFloor exceeds sanity cap of " + MAX_SALARY_FLOOR + ", got: " + salaryFloor);
         }
         excludedCompanies = normalizeList(excludedCompanies, MAX_EXCLUDED_COMPANIES, MAX_COMPANY_NAME_LENGTH, "company name");
+        keywords = normalizeList(keywords, MAX_KEYWORDS, MAX_KEYWORD_LENGTH, "keyword");
     }
 
     /**
      * Returns an empty {@code UserPreferences} (all fields null/empty).
      */
     public static UserPreferences empty() {
-        return new UserPreferences(null, null, List.of());
+        return new UserPreferences(null, null, List.of(), List.of());
     }
 
     /**
@@ -55,7 +68,9 @@ public record UserPreferences(
      * identity guarantee).
      */
     public boolean hasContent() {
-        return workPreference != null || salaryFloor != null || !excludedCompanies.isEmpty();
+        return workPreference != null || salaryFloor != null
+                || (excludedCompanies != null && !excludedCompanies.isEmpty())
+                || (keywords != null && !keywords.isEmpty());
     }
 
     /**

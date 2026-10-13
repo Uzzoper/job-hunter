@@ -98,7 +98,8 @@ public class ProfileController {
         return new UserPreferences(
                 req.workPreference() != null ? req.workPreference().toDomain() : null,
                 req.salaryFloor(),
-                req.excludedCompanies() != null ? List.copyOf(req.excludedCompanies()) : List.of());
+                req.excludedCompanies() != null ? List.copyOf(req.excludedCompanies()) : List.of(),
+                req.keywords() != null ? List.copyOf(req.keywords()) : List.of());
     }
 
     /**
@@ -112,7 +113,8 @@ public class ProfileController {
         return new PreferencesResponse(
                 toWorkPreferenceDto(prefs.workPreference()),
                 prefs.salaryFloor(),
-                prefs.excludedCompanies());
+                prefs.excludedCompanies(),
+                prefs.keywords());
     }
 
     /**

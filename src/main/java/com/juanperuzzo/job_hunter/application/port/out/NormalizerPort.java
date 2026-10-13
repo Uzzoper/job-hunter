@@ -20,6 +20,10 @@ public interface NormalizerPort {
      */
     Job normalize(RawJob raw);
 
+    default Job normalize(RawJob raw, List<String> keywordOverride) {
+        return normalize(raw);
+    }
+
     /**
      * Normalize a list of raw jobs, filtering out nulls.
      *

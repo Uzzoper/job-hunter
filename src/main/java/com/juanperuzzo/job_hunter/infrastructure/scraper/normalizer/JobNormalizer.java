@@ -70,6 +70,17 @@ public class JobNormalizer implements NormalizerPort {
      * Normalize a single RawJob into a Job. Returns null if the job should be skipped.
      */
     public Job normalize(RawJob raw) {
+        return normalize(raw, List.of());
+    }
+
+    /**
+     * Normalize a single RawJob, matching against an explicit keyword list when one is
+     * supplied (runtime resolver override); otherwise falls back to the constructor
+     * default. Returns null if the job should be skipped.
+     */
+    @Override
+    public Job normalize(RawJob raw, List<String> keywordOverride) {
+        var effective = (keywordOverride == null || keywordOverride.isEmpty()) ? this.keywords : keywordOverride;
         if (raw.title() == null || raw.title().isBlank()) {
             log.debug("Skipping raw job {}: blank title", raw.url());
             return null;
@@ -78,7 +89,7 @@ public class JobNormalizer implements NormalizerPort {
         var normalizedTitle = normalizeText(raw.title());
         var normalizedDescription = raw.description() != null ? normalizeText(raw.description()) : "";
 
-        if (!matchesKeywords(normalizedTitle, normalizedDescription)) {
+        if (!matchesKeywords(normalizedTitle, normalizedDescription, effective)) {
             log.debug("Skipping {}: no keywords match in title/description", raw.url());
             return null;
         }
@@ -188,10 +199,10 @@ public class JobNormalizer implements NormalizerPort {
         return UrlNormalizer.noTrailingSlash(website);
     }
 
-    private boolean matchesKeywords(String normalizedTitle, String normalizedDescription) {
-        if (keywords.isEmpty()) return true;
+    private boolean matchesKeywords(String normalizedTitle, String normalizedDescription, List<String> effectiveKeywords) {
+        if (effectiveKeywords.isEmpty()) return true;
 
-        return keywords.stream().anyMatch(keyword -> {
+        return effectiveKeywords.stream().anyMatch(keyword -> {
             var normalizedKeyword = normalizeText(keyword);
             var tokens = normalizedKeyword.split("[^a-z0-9]+");
             var allTokensMatch = Arrays.stream(tokens)

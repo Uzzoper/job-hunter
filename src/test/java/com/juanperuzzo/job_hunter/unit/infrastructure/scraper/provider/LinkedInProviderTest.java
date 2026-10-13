@@ -404,4 +404,37 @@ class LinkedInProviderTest {
             }
         }
     }
+
+    @Nested
+    @DisplayName("Scenario: runtime keyword override")
+    class KeywordOverride {
+
+        @Test
+        @DisplayName("extract should search the override keywords and ignore the constructor default")
+        void extract_whenOverrideProvided_shouldSearchOverrideKeyword() {
+            stubFor(get(urlPathEqualTo("/jobs/search"))
+                    .withQueryParam("keywords", equalTo("rust"))
+                    .willReturn(ok("<html><body></body></html>")));
+
+            provider.extract(List.of("rust"));
+
+            verify(getRequestedFor(urlPathEqualTo("/jobs/search"))
+                    .withQueryParam("keywords", equalTo("rust")));
+            verify(0, getRequestedFor(urlPathEqualTo("/jobs/search"))
+                    .withQueryParam("keywords", equalTo("desenvolvedor")));
+        }
+
+        @Test
+        @DisplayName("extract should fall back to the constructor keywords when the override is empty")
+        void extract_whenOverrideEmpty_shouldFallBackToDefaultKeywords() {
+            stubFor(get(urlPathEqualTo("/jobs/search"))
+                    .withQueryParam("keywords", equalTo("desenvolvedor"))
+                    .willReturn(ok("<html><body></body></html>")));
+
+            provider.extract(List.of());
+
+            verify(getRequestedFor(urlPathEqualTo("/jobs/search"))
+                    .withQueryParam("keywords", equalTo("desenvolvedor")));
+        }
+    }
 }

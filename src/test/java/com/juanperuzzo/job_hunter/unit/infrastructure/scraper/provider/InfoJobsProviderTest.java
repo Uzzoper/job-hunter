@@ -451,4 +451,32 @@ class InfoJobsProviderTest {
                 baseUrl, 5, List.of("desenvolvedor"), 1, retry,
                 2, 5, sharedRestClient, permissiveRateLimiter);
     }
+
+    @Nested
+    @DisplayName("Scenario: runtime keyword override")
+    class KeywordOverride {
+
+        @Test
+        @DisplayName("extract should query the override keyword URL and ignore the constructor default")
+        void extract_whenOverrideProvided_shouldQueryOverrideKeyword() {
+            stubFor(get(urlPathEqualTo("/vagas-de-emprego-rust.aspx"))
+                    .willReturn(ok("<html><body></body></html>")));
+
+            provider.extract(List.of("rust"));
+
+            verify(getRequestedFor(urlPathEqualTo("/vagas-de-emprego-rust.aspx")));
+            verify(0, getRequestedFor(urlPathEqualTo("/vagas-de-emprego-desenvolvedor.aspx")));
+        }
+
+        @Test
+        @DisplayName("extract should fall back to the constructor keywords when the override is empty")
+        void extract_whenOverrideEmpty_shouldFallBackToDefaultKeywords() {
+            stubFor(get(urlPathEqualTo("/vagas-de-emprego-desenvolvedor.aspx"))
+                    .willReturn(ok("<html><body></body></html>")));
+
+            provider.extract(List.of());
+
+            verify(getRequestedFor(urlPathEqualTo("/vagas-de-emprego-desenvolvedor.aspx")));
+        }
+    }
 }

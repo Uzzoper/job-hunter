@@ -704,4 +704,36 @@ class GupyMcpProviderTest {
             assertEquals("gupy", jobs.get(0).source());
         }
 
+    @Nested
+    @DisplayName("Scenario: runtime keyword override")
+    class KeywordOverride {
+
+        @Test
+        @DisplayName("extract should search the override terms and ignore the constructor defaults")
+        void extract_whenOverrideProvided_shouldSearchOverrideTerm() {
+            stubInitialize();
+            stubSearch("rust", 0, "[" + JOB_ISA + "]", 1, 100);
+
+            var jobs = provider(List.of("desenvolvedor junior"), 100, 200).extract(List.of("rust"));
+
+            assertEquals(1, jobs.size());
+            verify(1, postRequestedFor(urlPathEqualTo(MCP_PATH))
+                    .withRequestBody(matchingJsonPath("$.params.arguments.term", equalTo("rust"))));
+            verify(0, postRequestedFor(urlPathEqualTo(MCP_PATH))
+                    .withRequestBody(matchingJsonPath("$.params.arguments.term", equalTo("desenvolvedor junior"))));
+        }
+
+        @Test
+        @DisplayName("extract should fall back to the constructor keywords when the override is empty")
+        void extract_whenOverrideEmpty_shouldFallBackToDefaultKeywords() {
+            stubInitialize();
+            stubSearch("desenvolvedor junior", 0, "[" + JOB_ISA + "]", 1, 100);
+
+            var jobs = provider(List.of("desenvolvedor junior"), 100, 200).extract(List.of());
+
+            assertEquals(1, jobs.size());
+            verify(1, postRequestedFor(urlPathEqualTo(MCP_PATH))
+                    .withRequestBody(matchingJsonPath("$.params.arguments.term", equalTo("desenvolvedor junior"))));
+        }
+    }
 }

@@ -204,6 +204,45 @@ class UserProfileServiceTest {
     }
 
     @Test
+    @DisplayName("saveProfile when incoming preferences is null should preserve existing keywords")
+    void saveProfile_whenPreferencesNull_shouldPreserveKeywords() {
+        var resume = validResume();
+        var existingPrefs = new UserPreferences(null, null, List.of(), List.of("java", "spring"));
+        var existing = new UserProfile(10L, 1L, "Old resume with enough content to be valid for this test.",
+                List.of("Java"), CompanyTone.CASUAL, List.of(), null, null, null, null, null, existingPrefs);
+        var input = new UserProfile(null, 1L, resume, List.of("Java"), CompanyTone.FORMAL, List.of(),
+                null, null, null, null, null, null);
+
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user()));
+        when(userProfileRepository.findByUserId(1L)).thenReturn(Optional.of(existing));
+        when(userProfileRepository.save(any(UserProfile.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        var profile = userProfileService.saveProfile(1L, input);
+
+        assertEquals(List.of("java", "spring"), profile.preferences().keywords());
+    }
+
+    @Test
+    @DisplayName("saveProfile when incoming preferences is present should override keywords")
+    void saveProfile_whenPreferencesPresent_shouldOverrideKeywords() {
+        var resume = validResume();
+        var existingPrefs = new UserPreferences(null, null, List.of(), List.of("java"));
+        var existing = new UserProfile(10L, 1L, "Old resume with enough content to be valid for this test.",
+                List.of("Java"), CompanyTone.CASUAL, List.of(), null, null, null, null, null, existingPrefs);
+        var newPrefs = new UserPreferences(null, null, List.of(), List.of("rust", "kotlin"));
+        var input = new UserProfile(null, 1L, resume, List.of("Java"), CompanyTone.FORMAL, List.of(),
+                null, null, null, null, null, newPrefs);
+
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user()));
+        when(userProfileRepository.findByUserId(1L)).thenReturn(Optional.of(existing));
+        when(userProfileRepository.save(any(UserProfile.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        var profile = userProfileService.saveProfile(1L, input);
+
+        assertEquals(List.of("rust", "kotlin"), profile.preferences().keywords());
+    }
+
+    @Test
     @DisplayName("saveProfile when no existing profile and null preferences should keep preferences null")
     void saveProfile_whenNoExistingProfileAndNullPrefs_shouldKeepNull() {
         var resume = validResume();

@@ -407,7 +407,7 @@ class ProfileControllerTest {
         SecurityContextHolder.getContext().setAuthentication(authentication);
 
         var resume = "New resume text that is certainly long enough to pass the minimum length constraint of fifty characters for test";
-        var requestPrefs = new PreferencesRequest(new WorkPreferenceDto.Hybrid(List.of("São Paulo")), 6000, List.of());
+        var requestPrefs = new PreferencesRequest(new WorkPreferenceDto.Hybrid(List.of("São Paulo")), 6000, List.of(), List.of());
         var request = new ProfileRequest(resume, List.of("Java"), CompanyTone.STARTUP, List.of(),
                 null, null, null, null, null, requestPrefs);
         var prefs = new UserPreferences(new WorkPreference.Hybrid(List.of("São Paulo")), 6000, List.of());
@@ -535,6 +535,89 @@ class ProfileControllerTest {
         mockMvc.perform(put("/api/profile")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(payload))
+                .andExpect(status().isBadRequest());
+
+        verify(userProfileService, never()).saveProfile(any(), any());
+    }
+
+    @Test
+    @DisplayName("saveProfile with keywords should return 200 and echo them back")
+    void saveProfile_withKeywords_shouldReturn200AndEchoThem() throws Exception {
+        var authentication = new UsernamePasswordAuthenticationToken(new User(1L, "test@test.com", "Test", "hash"), null, List.of());
+        SecurityContextHolder.getContext().setAuthentication(authentication);
+
+        var resume = "New resume text that is certainly long enough to pass the minimum length constraint of fifty characters for test";
+        var requestPrefs = new PreferencesRequest(new WorkPreferenceDto.Remote(), 5000, List.of(), List.of("java", "backend"));
+        var request = new ProfileRequest(resume, List.of("Java"), CompanyTone.STARTUP, List.of(),
+                null, null, null, null, null, requestPrefs);
+        var prefs = new UserPreferences(new WorkPreference.Remote(), 5000, List.of(), List.of("java", "backend"));
+        var profile = new UserProfile(1L, 1L, resume, List.of("Java"), CompanyTone.STARTUP, List.of(),
+                null, null, null, null, null, prefs);
+
+        when(userProfileService.saveProfile(eq(1L), any(UserProfile.class))).thenReturn(profile);
+
+        mockMvc.perform(put("/api/profile")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.preferences.keywords[0]").value("java"))
+                .andExpect(jsonPath("$.preferences.keywords[1]").value("backend"));
+    }
+
+    @Test
+    @DisplayName("getProfile should expose keywords when set on preferences")
+    void getProfile_withKeywords_shouldExposeThem() throws Exception {
+        var authentication = new UsernamePasswordAuthenticationToken(new User(1L, "test@test.com", "Test", "hash"), null, List.of());
+        SecurityContextHolder.getContext().setAuthentication(authentication);
+
+        var prefs = new UserPreferences(new WorkPreference.Remote(), null, List.of(), List.of("java", "backend"));
+        var profile = new UserProfile(1L, 1L, "Experienced dev...", List.of("Java"), CompanyTone.FORMAL, List.of(),
+                null, null, null, null, null, prefs);
+        when(userProfileService.getProfile(1L)).thenReturn(profile);
+
+        mockMvc.perform(get("/api/profile"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.preferences.keywords[0]").value("java"))
+                .andExpect(jsonPath("$.preferences.keywords[1]").value("backend"));
+    }
+
+    @Test
+    @DisplayName("saveProfile when keywords list exceeds 30 items should return 400")
+    void saveProfile_whenKeywordsExceed30_shouldReturn400() throws Exception {
+        var authentication = new UsernamePasswordAuthenticationToken(new User(1L, "test@test.com", "Test", "hash"), null, List.of());
+        SecurityContextHolder.getContext().setAuthentication(authentication);
+
+        var manyKeywords = new java.util.ArrayList<String>();
+        for (int i = 0; i < 31; i++) manyKeywords.add("keyword" + i);
+        var requestPrefs = new PreferencesRequest(null, null, List.of(), manyKeywords);
+        var request = new ProfileRequest(
+                "New resume text that is certainly long enough to pass the minimum length constraint of fifty characters for test",
+                List.of("Java"), CompanyTone.STARTUP, List.of(),
+                null, null, null, null, null, requestPrefs);
+
+        mockMvc.perform(put("/api/profile")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest());
+
+        verify(userProfileService, never()).saveProfile(any(), any());
+    }
+
+    @Test
+    @DisplayName("saveProfile when a keyword item exceeds 100 chars should return 400")
+    void saveProfile_whenKeywordItemTooLong_shouldReturn400() throws Exception {
+        var authentication = new UsernamePasswordAuthenticationToken(new User(1L, "test@test.com", "Test", "hash"), null, List.of());
+        SecurityContextHolder.getContext().setAuthentication(authentication);
+
+        var requestPrefs = new PreferencesRequest(null, null, List.of(), List.of("A".repeat(101)));
+        var request = new ProfileRequest(
+                "New resume text that is certainly long enough to pass the minimum length constraint of fifty characters for test",
+                List.of("Java"), CompanyTone.STARTUP, List.of(),
+                null, null, null, null, null, requestPrefs);
+
+        mockMvc.perform(put("/api/profile")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest());
 
         verify(userProfileService, never()).saveProfile(any(), any());

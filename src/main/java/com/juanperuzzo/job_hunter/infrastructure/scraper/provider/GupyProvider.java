@@ -95,10 +95,16 @@ public class GupyProvider implements ExtractionStrategy {
      */
     @Override
     public List<RawJob> extract() {
+        return extract(List.of());
+    }
+
+    @Override
+    public List<RawJob> extract(List<String> keywordOverride) {
         var uniqueJobs = new HashMap<String, RawJob>();
         var authFailed = false;
+        var effective = (keywordOverride == null || keywordOverride.isEmpty()) ? keywords : keywordOverride;
 
-        for (var keyword : keywords) {
+        for (var keyword : effective) {
             if (authFailed) {
                 break;
             }

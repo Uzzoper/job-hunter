@@ -9,6 +9,7 @@ import com.juanperuzzo.job_hunter.application.port.in.ProviderFetchStats;
 import com.juanperuzzo.job_hunter.application.port.out.EmailDraftRepository;
 import com.juanperuzzo.job_hunter.application.port.out.JobAnalysisRepository;
 import com.juanperuzzo.job_hunter.application.port.out.JobRepository;
+import com.juanperuzzo.job_hunter.application.port.out.KeywordResolver;
 import com.juanperuzzo.job_hunter.application.port.out.ScraperPort;
 import com.juanperuzzo.job_hunter.domain.exception.JobNotFoundException;
 import com.juanperuzzo.job_hunter.domain.model.ApplicationLifecycle;
@@ -27,18 +28,21 @@ public class FetchJobsService implements FetchJobsUseCase, ListJobsUseCase, GetJ
     private final JobRepository jobRepository;
     private final EmailDraftRepository emailDraftRepository;
     private final JobAnalysisRepository jobAnalysisRepository;
+    private final KeywordResolver keywordResolver;
 
     public FetchJobsService(ScraperPort scraperPort, JobRepository jobRepository, EmailDraftRepository emailDraftRepository,
-                            JobAnalysisRepository jobAnalysisRepository) {
+                            JobAnalysisRepository jobAnalysisRepository, KeywordResolver keywordResolver) {
         this.scraperPort = scraperPort;
         this.jobRepository = jobRepository;
         this.emailDraftRepository = emailDraftRepository;
         this.jobAnalysisRepository = jobAnalysisRepository;
+        this.keywordResolver = keywordResolver;
     }
 
     @Override
-    public FetchResult fetchAndSave() {
-        var result = scraperPort.fetch();
+    public FetchResult fetchAndSave(Long userId) {
+        var keywords = List.copyOf(keywordResolver.resolve(userId));
+        var result = scraperPort.fetch(keywords);
         var jobs = result.jobs();
 
         int totalSaved = 0;

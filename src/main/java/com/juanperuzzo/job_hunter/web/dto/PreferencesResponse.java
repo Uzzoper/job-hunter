@@ -9,5 +9,6 @@ import java.util.List;
 public record PreferencesResponse(
         WorkPreferenceDto workPreference,
         Integer salaryFloor,
-        List<String> excludedCompanies
+        List<String> excludedCompanies,
+        List<String> keywords
 ) {}

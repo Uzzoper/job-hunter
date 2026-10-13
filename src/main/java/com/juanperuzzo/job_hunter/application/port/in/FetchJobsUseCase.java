@@ -7,5 +7,5 @@ public interface FetchJobsUseCase {
      *
      * @return aggregate fetch statistics
      */
-    FetchResult fetchAndSave();
+    FetchResult fetchAndSave(Long userId);
 }
