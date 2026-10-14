@@ -479,4 +479,99 @@ class InfoJobsProviderTest {
             verify(getRequestedFor(urlPathEqualTo("/vagas-de-emprego-desenvolvedor.aspx")));
         }
     }
+
+    @Nested
+    @DisplayName("Early dedupe: skip detail HTTP for already-known URLs")
+    class EarlyDedupe {
+
+        private InfoJobsProvider cappedProvider(int maxDetailFetch) {
+            var permissiveRateLimiter = new com.juanperuzzo.job_hunter.infrastructure.scraper.ratelimit.TokenBucketRateLimiter(1000, 100, java.util.Map.of());
+            var sharedRestClient = org.springframework.web.client.RestClient.builder().baseUrl(baseUrl).build();
+            return new InfoJobsProvider(baseUrl, 5, List.of("desenvolvedor"), 1, retry,
+                    2, 5, sharedRestClient, permissiveRateLimiter, maxDetailFetch);
+        }
+
+        private void stubSearchWithTwoCards() {
+            stubFor(get(urlPathEqualTo("/vagas-de-emprego-desenvolvedor.aspx"))
+                    .willReturn(ok("""
+                        <html><body>
+                        <article class="js_rowCard">
+                          <h2><a href="/vaga-de-1__DEV" title="Vaga 1">Vaga 1</a></h2>
+                          <span class="company">A</span>
+                          <p class="descricao">card1</p>
+                        </article>
+                        <article class="js_rowCard">
+                          <h2><a href="/vaga-de-2__DEV" title="Vaga 2">Vaga 2</a></h2>
+                          <span class="company">B</span>
+                          <p class="descricao">card2</p>
+                        </article>
+                        </body></html>
+                        """)));
+            for (int i = 1; i <= 2; i++) {
+                stubFor(get(urlPathEqualTo("/vaga-de-" + i + "__DEV"))
+                        .willReturn(ok("<html><body><div class=\"js_vacancyDataPanels\"><p class=\"mb-16 text-break white-space-pre-line\">detail" + i + "</p></div></body></html>")));
+            }
+        }
+
+        @Test
+        @DisplayName("extract should skip the detail HTTP call and keep the card snippet for a known URL")
+        void extract_whenJobUrlKnown_shouldSkipDetailHttpAndKeepCardSnippet() {
+            var knownProvider = cappedProvider(100);
+            stubSearchWithTwoCards();
+
+            var jobs = knownProvider.extract(List.of("desenvolvedor"),
+                    url -> url.endsWith("/vaga-de-1__DEV"));
+
+            assertEquals(2, jobs.size());
+            var known = jobs.stream().filter(j -> j.url().endsWith("/vaga-de-1__DEV")).findFirst().orElseThrow();
+            assertEquals("card1", known.description(), "a known URL must keep its basic card snippet");
+            var unknown = jobs.stream().filter(j -> j.url().endsWith("/vaga-de-2__DEV")).findFirst().orElseThrow();
+            assertTrue(unknown.description().startsWith("detail"), "an unknown URL must still be enriched");
+            verify(0, getRequestedFor(urlPathEqualTo("/vaga-de-1__DEV")));
+            verify(1, getRequestedFor(urlPathEqualTo("/vaga-de-2__DEV")));
+        }
+
+        @Test
+        @DisplayName("extract should keep the maxDetailFetch window and fetch no detail HTTP when every window job is known")
+        void extract_whenKnownJobsFillTheCapWindow_shouldSkipAllDetailHttpAndKeepCap() {
+            var cappedProvider = cappedProvider(2);
+            stubFor(get(urlPathEqualTo("/vagas-de-emprego-desenvolvedor.aspx"))
+                    .willReturn(ok("""
+                        <html><body>
+                        <article class="js_rowCard">
+                          <h2><a href="/vaga-de-1__DEV" title="Vaga 1">Vaga 1</a></h2>
+                          <span class="company">A</span>
+                          <p class="descricao">card1</p>
+                        </article>
+                        <article class="js_rowCard">
+                          <h2><a href="/vaga-de-2__DEV" title="Vaga 2">Vaga 2</a></h2>
+                          <span class="company">B</span>
+                          <p class="descricao">card2</p>
+                        </article>
+                        <article class="js_rowCard">
+                          <h2><a href="/vaga-de-3__DEV" title="Vaga 3">Vaga 3</a></h2>
+                          <span class="company">C</span>
+                          <p class="descricao">card3</p>
+                        </article>
+                        </body></html>
+                        """)));
+            for (int i = 1; i <= 3; i++) {
+                stubFor(get(urlPathEqualTo("/vaga-de-" + i + "__DEV"))
+                        .willReturn(ok("<html><body><div class=\"js_vacancyDataPanels\"><p class=\"mb-16 text-break white-space-pre-line\">detail" + i + "</p></div></body></html>")));
+            }
+
+            var jobs = cappedProvider.extract(List.of("desenvolvedor"), url -> true);
+
+            assertEquals(3, jobs.size(), "every job must still be returned");
+            verify(0, getRequestedFor(urlMatching("/vaga-de-[123]__DEV")));
+            var skipped = jobs.stream()
+                    .filter(j -> "true".equals(j.metadata().get("detailSkipped")))
+                    .toList();
+            assertEquals(1, skipped.size(), "the maxDetailFetch window must stay capped (one job beyond it)");
+            assertTrue(jobs.stream()
+                            .filter(j -> !"true".equals(j.metadata().get("detailSkipped")))
+                            .allMatch(j -> j.description().startsWith("card")),
+                    "in-window known jobs must keep their basic card snippet");
+        }
+    }
 }

@@ -20,6 +20,7 @@ import java.util.Optional;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Semaphore;
+import java.util.function.Predicate;
 
 public class InfoJobsProvider implements ExtractionStrategy {
 
@@ -128,6 +129,11 @@ public class InfoJobsProvider implements ExtractionStrategy {
 
     @Override
     public List<RawJob> extract(List<String> keywordOverride) {
+        return extract(keywordOverride, url -> false);
+    }
+
+    @Override
+    public List<RawJob> extract(List<String> keywordOverride, Predicate<String> isKnownUrl) {
         var uniqueJobs = new HashMap<String, RawJob>();
         var effective = (keywordOverride == null || keywordOverride.isEmpty()) ? keywords : keywordOverride;
 
@@ -155,7 +161,7 @@ public class InfoJobsProvider implements ExtractionStrategy {
         }
 
         var jobs = List.copyOf(uniqueJobs.values());
-        var enriched = enrichWithDetails(jobs);
+        var enriched = enrichWithDetails(jobs, isKnownUrl);
         log.info("{}: total unique jobs fetched: {}", providerId, enriched.size());
         return enriched;
     }
@@ -170,18 +176,34 @@ public class InfoJobsProvider implements ExtractionStrategy {
      * snippet with {@code metadata.detailSkipped=true} (not {@code detailFailed})
      * to bound aggregate fetch volume — an untried job is not a failure.
      */
-    private List<RawJob> enrichWithDetails(List<RawJob> jobs) {
+    private List<RawJob> enrichWithDetails(List<RawJob> jobs, Predicate<String> isKnownUrl) {
         if (jobs.isEmpty() || detailConcurrency <= 0) {
             return jobs;
         }
 
-        var toEnrich = jobs.subList(0, Math.min(jobs.size(), maxDetailFetch));
-        var remaining = jobs.subList(Math.min(jobs.size(), maxDetailFetch), jobs.size());
+        var windowSize = Math.min(jobs.size(), maxDetailFetch);
+        var window = jobs.subList(0, windowSize);
+        var remaining = jobs.subList(windowSize, jobs.size());
 
-        var enriched = enrichBatch(toEnrich);
+        // Early dedupe (option b): the maxDetailFetch window is unchanged, but known
+        // URLs inside it keep their basic card snippet and consume no detail HTTP and
+        // are NOT marked detailSkipped (a known job is not an untried one).
+        var fetchTargets = new ArrayList<RawJob>();
+        for (var job : window) {
+            if (!isKnownUrl.test(job.url())) {
+                fetchTargets.add(job);
+            }
+        }
+        var enrichedByUrl = new HashMap<String, RawJob>();
+        for (var job : enrichBatch(fetchTargets)) {
+            enrichedByUrl.put(job.url(), job);
+        }
 
         var results = new ArrayList<RawJob>(jobs.size());
-        results.addAll(enriched);
+        for (var job : window) {
+            var enriched = enrichedByUrl.get(job.url());
+            results.add(enriched == null ? job : enriched);
+        }
         for (var job : remaining) {
             results.add(markDetailSkipped(job));
         }

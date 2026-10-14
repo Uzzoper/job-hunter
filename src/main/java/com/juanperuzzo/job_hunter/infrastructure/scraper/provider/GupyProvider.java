@@ -16,7 +16,9 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.function.Predicate;
 
 public class GupyProvider implements ExtractionStrategy {
 
@@ -100,6 +102,11 @@ public class GupyProvider implements ExtractionStrategy {
 
     @Override
     public List<RawJob> extract(List<String> keywordOverride) {
+        return extract(keywordOverride, url -> false);
+    }
+
+    @Override
+    public List<RawJob> extract(List<String> keywordOverride, Predicate<String> isKnownUrl) {
         var uniqueJobs = new HashMap<String, RawJob>();
         var authFailed = false;
         var effective = (keywordOverride == null || keywordOverride.isEmpty()) ? keywords : keywordOverride;
@@ -129,7 +136,7 @@ public class GupyProvider implements ExtractionStrategy {
         }
 
         var result = List.copyOf(uniqueJobs.values());
-        var resolved = resolveCompanyDomains(result);
+        var resolved = resolveCompanyDomains(result, isKnownUrl);
         log.info("{}: total unique jobs fetched: {}", providerId, resolved.size());
         return resolved;
     }
@@ -152,23 +159,60 @@ public class GupyProvider implements ExtractionStrategy {
      * failure never fails the provider fetch. When detail resolution is disabled
      * (no resolver or no positive cap) the jobs are returned unchanged.
      */
-    private List<RawJob> resolveCompanyDomains(List<RawJob> jobs) {
+    private List<RawJob> resolveCompanyDomains(List<RawJob> jobs, Predicate<String> isKnownUrl) {
         if (jobs.isEmpty() || companyDomainResolver == null || maxDetailDomains <= 0) {
             return jobs;
         }
 
-        var jobUrls = jobs.stream().map(RawJob::url).toList();
-        var resolvedWebsites = companyDomainResolver.resolveCompanyWebsites(jobUrls, maxDetailDomains);
+        // Per-host early dedupe (early-dedupe spec): a host is skipped ONLY when
+        // EVERY one of its job URLs is already persisted, so a partially-known host
+        // still resolves exactly as today. Grouping mirrors the resolver (first-seen
+        // host order) so passing one representative URL per host to resolve yields
+        // byte-identical output for the all-unknown case.
+        var jobsByHost = new LinkedHashMap<String, List<RawJob>>();
+        for (var job : jobs) {
+            jobsByHost.computeIfAbsent(hostOf(job.url()), host -> new ArrayList<>()).add(job);
+        }
+        var representativeByHost = new LinkedHashMap<String, String>();
+        for (var entry : jobsByHost.entrySet()) {
+            var anyUnknown = entry.getValue().stream().anyMatch(job -> !isKnownUrl.test(job.url()));
+            if (anyUnknown) {
+                representativeByHost.put(entry.getKey(), entry.getValue().get(0).url());
+            }
+        }
+        if (representativeByHost.isEmpty()) {
+            return jobs;
+        }
+
+        var resolvedWebsites = companyDomainResolver.resolveCompanyWebsites(
+                List.copyOf(representativeByHost.values()), maxDetailDomains);
         if (resolvedWebsites.isEmpty()) {
+            return jobs;
+        }
+
+        var websiteByHost = new HashMap<String, String>();
+        for (var entry : representativeByHost.entrySet()) {
+            var website = resolvedWebsites.get(entry.getValue());
+            if (website != null) {
+                websiteByHost.put(entry.getKey(), website);
+            }
+        }
+        if (websiteByHost.isEmpty()) {
             return jobs;
         }
 
         var results = new ArrayList<RawJob>(jobs.size());
         for (var job : jobs) {
-            var website = resolvedWebsites.get(job.url());
+            var website = websiteByHost.get(hostOf(job.url()));
             results.add(website == null ? job : withCompanyWebsite(job, website));
         }
         return results;
+    }
+
+    /** Host used for grouping: mirrors {@link UrlNormalizer#host(String)}; unparseable URLs share the {@code ""} bucket. */
+    private static String hostOf(String url) {
+        var host = UrlNormalizer.host(url);
+        return host == null ? "" : host;
     }
 
     private static RawJob withCompanyWebsite(RawJob job, String website) {

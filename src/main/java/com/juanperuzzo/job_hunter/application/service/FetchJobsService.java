@@ -42,7 +42,7 @@ public class FetchJobsService implements FetchJobsUseCase, ListJobsUseCase, GetJ
     @Override
     public FetchResult fetchAndSave(Long userId) {
         var keywords = List.copyOf(keywordResolver.resolve(userId));
-        var result = scraperPort.fetch(keywords);
+        var result = scraperPort.fetch(keywords, jobRepository::existsByUrl);
         var jobs = result.jobs();
 
         int totalSaved = 0;

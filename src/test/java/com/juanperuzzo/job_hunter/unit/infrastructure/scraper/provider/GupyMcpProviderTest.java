@@ -736,4 +736,46 @@ class GupyMcpProviderTest {
                     .withRequestBody(matchingJsonPath("$.params.arguments.term", equalTo("desenvolvedor junior"))));
         }
     }
+
+    @Nested
+    @DisplayName("Early dedupe: skip get_job_by_id for already-known URLs")
+    class EarlyDedupe {
+
+        private String itemWithoutDescription() {
+            var node = object(JOB_ISA);
+            node.put("description", "");
+            return node.toString();
+        }
+
+        @Test
+        @DisplayName("extract should skip the get_job_by_id fallback and keep the basic job when the URL is known")
+        void extract_whenJobUrlKnown_shouldSkipGetJobByIdFallback() {
+            stubInitialize();
+            stubSearch("desenvolvedor junior", 0, "[" + itemWithoutDescription() + "]", 509, 100);
+            stubJobById(12436826, JOB_ISA);
+
+            var jobs = provider(100).extract(List.of("desenvolvedor junior"), url -> true);
+
+            assertEquals(1, jobs.size(), "the basic (unenriched) job must still be returned");
+            assertNull(jobs.get(0).description(), "no get_job_by_id call may run for a known URL");
+            verify(0, postRequestedFor(urlPathEqualTo(MCP_PATH))
+                    .withRequestBody(matchingJsonPath("$.params.name", equalTo("get_job_by_id"))));
+        }
+
+        @Test
+        @DisplayName("extract should call get_job_by_id exactly as today when the URL is unknown")
+        void extract_whenJobUrlUnknown_shouldFallbackAsToday() {
+            stubInitialize();
+            stubSearch("desenvolvedor junior", 0, "[" + itemWithoutDescription() + "]", 509, 100);
+            stubJobById(12436826, JOB_ISA);
+
+            var jobs = provider(100).extract(List.of("desenvolvedor junior"), url -> false);
+
+            assertEquals(1, jobs.size());
+            assertTrue(jobs.get(0).description().startsWith("Incluir a descrição da vaga:"),
+                    "an unknown URL must still fall back to get_job_by_id");
+            verify(1, postRequestedFor(urlPathEqualTo(MCP_PATH))
+                    .withRequestBody(matchingJsonPath("$.params.name", equalTo("get_job_by_id"))));
+        }
+    }
 }

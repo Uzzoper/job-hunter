@@ -13,16 +13,20 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.function.Predicate;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -67,7 +71,7 @@ class FetchSourceJobsServiceTest {
                     "https://example.com/job/1", "Description",
                     LocalDate.now(), "gupy");
 
-            when(sourceFetchPort.fetch(eq("gupy"), anyList())).thenReturn(List.of(rawJob));
+            when(sourceFetchPort.fetch(eq("gupy"), anyList(), any())).thenReturn(List.of(rawJob));
             when(normalizer.normalize(eq(rawJob), anyList())).thenReturn(job);
             when(jobRepository.existsByUrl("https://example.com/job/1")).thenReturn(false);
 
@@ -89,7 +93,7 @@ class FetchSourceJobsServiceTest {
         @Test
         @DisplayName("fetchAndSave should capture the error in FetchResult instead of failing the request")
         void fetchAndSave_whenProviderFails_shouldReportError() {
-            when(sourceFetchPort.fetch(eq("gupy"), anyList())).thenThrow(new ScraperException("Failed to fetch from gupy"));
+            when(sourceFetchPort.fetch(eq("gupy"), anyList(), any())).thenThrow(new ScraperException("Failed to fetch from gupy"));
 
             var result = service.fetchAndSave(USER_ID, "gupy");
 
@@ -108,7 +112,7 @@ class FetchSourceJobsServiceTest {
         @Test
         @DisplayName("fetchAndSave should not save any job when source returns empty list")
         void fetchAndSave_whenEmpty_shouldReturnEmptyList() {
-            when(sourceFetchPort.fetch(eq("gupy"), anyList())).thenReturn(List.of());
+            when(sourceFetchPort.fetch(eq("gupy"), anyList(), any())).thenReturn(List.of());
 
             var result = service.fetchAndSave(USER_ID, "gupy");
 
@@ -133,7 +137,7 @@ class FetchSourceJobsServiceTest {
                     "https://example.com/job/1", "Description",
                     LocalDate.now(), "gupy", "rh@acme.com", null);
 
-            when(sourceFetchPort.fetch(eq("gupy"), anyList())).thenReturn(List.of(rawWithoutEmail));
+            when(sourceFetchPort.fetch(eq("gupy"), anyList(), any())).thenReturn(List.of(rawWithoutEmail));
             when(normalizer.normalize(eq(rawWithoutEmail), anyList())).thenReturn(jobWithEmail);
             when(jobRepository.existsByUrl("https://example.com/job/1")).thenReturn(false);
 
@@ -159,14 +163,33 @@ class FetchSourceJobsServiceTest {
                     LocalDate.now(), "gupy");
 
             when(keywordResolver.resolve(USER_ID)).thenReturn(List.of("rust", "kotlin"));
-            when(sourceFetchPort.fetch("gupy", List.of("rust", "kotlin"))).thenReturn(List.of(rawJob));
+            when(sourceFetchPort.fetch(eq("gupy"), eq(List.of("rust", "kotlin")), any())).thenReturn(List.of(rawJob));
             when(normalizer.normalize(rawJob, List.of("rust", "kotlin"))).thenReturn(job);
             when(jobRepository.existsByUrl("https://example.com/job/1")).thenReturn(false);
 
             service.fetchAndSave(USER_ID, "gupy");
 
-            verify(sourceFetchPort).fetch("gupy", List.of("rust", "kotlin"));
+            verify(sourceFetchPort).fetch(eq("gupy"), eq(List.of("rust", "kotlin")), any());
             verify(normalizer).normalize(rawJob, List.of("rust", "kotlin"));
+        }
+
+        @Test
+        @DisplayName("fetchAndSave should wire the known-URL predicate from jobRepository::existsByUrl")
+        void fetchAndSave_whenResolvingKnownUrls_shouldDelegateToExistsByUrl() {
+            when(sourceFetchPort.fetch(eq("gupy"), anyList(), any())).thenReturn(List.of());
+
+            service.fetchAndSave(USER_ID, "gupy");
+
+            var predicateCaptor = ArgumentCaptor.forClass(Predicate.class);
+            verify(sourceFetchPort).fetch(eq("gupy"), anyList(), predicateCaptor.capture());
+            @SuppressWarnings("unchecked")
+            var isKnownUrl = (Predicate<String>) predicateCaptor.getValue();
+
+            when(jobRepository.existsByUrl("https://example.com/known")).thenReturn(true);
+
+            assertTrue(isKnownUrl.test("https://example.com/known"),
+                    "the wired predicate must delegate to jobRepository.existsByUrl");
+            verify(jobRepository).existsByUrl("https://example.com/known");
         }
     }
 }

@@ -1101,4 +1101,64 @@ List<RawJob> jobs = client.extract();
                     .withQueryParam("keywords", equalTo("desenvolvedor")));
         }
     }
+
+    @Nested
+    @DisplayName("Early dedupe: skip detail HTTP for already-known URLs")
+    class EarlyDedupe {
+
+        private void stubSearchWithOneJob() {
+            stubFor(get(urlPathEqualTo("/api/jobs"))
+                    .withQueryParam("keywords", equalTo("desenvolvedor"))
+                    .willReturn(okJson("""
+                            {
+                              "success": true,
+                              "data": [
+                                { "id": "12345", "title": "Desenvolvedor Java Júnior", "company": "TechCo",
+                                  "location": "SP", "postedAt": "", "summary": "" }
+                              ]
+                            }
+                            """)));
+        }
+
+        private void stubDetail() {
+            stubFor(get(urlPathEqualTo("/api/jobs/12345"))
+                    .willReturn(okJson("""
+                            {
+                              "success": true,
+                              "data": {
+                                "id": "12345", "title": "Desenvolvedor Java Júnior", "company": "TechCo",
+                                "location": "SP", "postedAt": "", "summary": "",
+                                "description": "<p>full detail description</p>"
+                              }
+                            }
+                            """)));
+        }
+
+        @Test
+        @DisplayName("extract should skip the detail HTTP call and keep the basic job when the URL is known")
+        void extract_whenJobUrlKnown_shouldSkipDetailHttpAndKeepBasicJob() {
+            stubSearchWithOneJob();
+            stubDetail();
+
+            var jobs = client.extract(List.of("desenvolvedor"), url -> true);
+
+            assertEquals(1, jobs.size(), "the basic (unenriched) job must still be returned");
+            assertEquals("", jobs.get(0).description(), "no detail HTTP may run for a known URL");
+            verify(0, getRequestedFor(urlPathEqualTo("/api/jobs/12345")));
+        }
+
+        @Test
+        @DisplayName("extract should enrich exactly as today when the URL is unknown")
+        void extract_whenJobUrlUnknown_shouldEnrichAsToday() {
+            stubSearchWithOneJob();
+            stubDetail();
+
+            var jobs = client.extract(List.of("desenvolvedor"), url -> false);
+
+            assertEquals(1, jobs.size());
+            assertTrue(jobs.get(0).description().contains("full detail description"),
+                    "an unknown URL must still be enriched");
+            verify(1, getRequestedFor(urlPathEqualTo("/api/jobs/12345")));
+        }
+    }
 }

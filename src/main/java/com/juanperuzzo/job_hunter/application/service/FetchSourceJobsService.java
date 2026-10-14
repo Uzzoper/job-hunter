@@ -47,7 +47,7 @@ public class FetchSourceJobsService implements FetchSourceJobsUseCase {
         String error = null;
 
         try {
-            var rawJobs = sourceFetchPort.fetch(sourceId, keywords);
+            var rawJobs = sourceFetchPort.fetch(sourceId, keywords, jobRepository::existsByUrl);
             fetched = rawJobs.size();
 
             for (var raw : rawJobs) {

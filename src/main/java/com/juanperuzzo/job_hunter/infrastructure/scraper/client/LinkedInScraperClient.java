@@ -18,6 +18,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
 public class LinkedInScraperClient implements ExtractionStrategy {
@@ -84,6 +85,11 @@ public class LinkedInScraperClient implements ExtractionStrategy {
 
     @Override
     public List<RawJob> extract(List<String> keywordOverride) {
+        return extract(keywordOverride, url -> false);
+    }
+
+    @Override
+    public List<RawJob> extract(List<String> keywordOverride, Predicate<String> isKnownUrl) {
         var configuredKeywords = (keywordOverride == null || keywordOverride.isEmpty())
                 ? properties.keywords()
                 : keywordOverride;
@@ -159,7 +165,7 @@ public class LinkedInScraperClient implements ExtractionStrategy {
         for (int i = 0; i < results.size(); i++) {
             var card = results.get(i);
             var jobId = card.metadata().get("jobId");
-            if (jobId != null && !jobId.isBlank()) {
+            if (jobId != null && !jobId.isBlank() && !isKnownUrl.test(card.url())) {
                 try {
                     if (i > 0) {
                         Thread.sleep(properties.detailFetchDelayMillis());

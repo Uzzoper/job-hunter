@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.juanperuzzo.job_hunter.application.port.out.CompanyDomainResolverPort;
 import com.juanperuzzo.job_hunter.application.port.out.RawJob;
 import com.juanperuzzo.job_hunter.domain.exception.ScraperException;
+import com.juanperuzzo.job_hunter.infrastructure.scraper.normalizer.UrlNormalizer;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.retry.RetryStrategy;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.strategy.ExtractionStrategy;
 import org.slf4j.Logger;
@@ -20,6 +21,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Predicate;
 
 /**
  * Gupy provider speaking the official candidate MCP server over Streamable HTTP
@@ -124,6 +126,11 @@ public class GupyMcpProvider implements ExtractionStrategy {
 
     @Override
     public List<RawJob> extract(List<String> keywordOverride) {
+        return extract(keywordOverride, url -> false);
+    }
+
+    @Override
+    public List<RawJob> extract(List<String> keywordOverride, Predicate<String> isKnownUrl) {
         var uniqueJobs = new LinkedHashMap<String, RawJob>();
         var effective = (keywordOverride == null || keywordOverride.isEmpty()) ? keywords : keywordOverride;
 
@@ -145,7 +152,7 @@ public class GupyMcpProvider implements ExtractionStrategy {
                 break;
             }
             try {
-                collectQuery(keyword, uniqueJobs);
+                collectQuery(keyword, uniqueJobs, isKnownUrl);
             } catch (Exception e) {
                 // Per-query isolation (spec §5): a dead query is logged and skipped, the
                 // fetch as a whole never fails.
@@ -153,7 +160,7 @@ public class GupyMcpProvider implements ExtractionStrategy {
             }
         }
 
-        var result = resolveCompanyDomains(List.copyOf(uniqueJobs.values()));
+        var result = resolveCompanyDomains(List.copyOf(uniqueJobs.values()), isKnownUrl);
         if (result.size() > maxJobs) {
             result = result.subList(0, maxJobs);
         }
@@ -181,7 +188,7 @@ public class GupyMcpProvider implements ExtractionStrategy {
      * Stops on a short page, on the merged {@code maxJobs} cap, or when a page adds no
      * new URL (the live server replays page 1 once {@code offset} exceeds its capped total).
      */
-    private void collectQuery(String keyword, Map<String, RawJob> sink) {
+    private void collectQuery(String keyword, Map<String, RawJob> sink, Predicate<String> isKnownUrl) {
         int offset = 0;
         while (sink.size() < maxJobs) {
             var pageOffset = offset;
@@ -196,7 +203,8 @@ public class GupyMcpProvider implements ExtractionStrategy {
                 if (sink.size() >= maxJobs) {
                     break;
                 }
-                var job = mapNode(withFallbackDescription(item));
+                var enriched = withFallbackDescription(item, isKnownUrl);
+                var job = mapNode(enriched);
                 if (job == null) {
                     continue;
                 }
@@ -244,9 +252,15 @@ public class GupyMcpProvider implements ExtractionStrategy {
      * description, so the detail call is made only when the search item has none.
      * A failed fallback is logged and the search item is kept as-is.
      */
-    private JsonNode withFallbackDescription(JsonNode item) {
+    private JsonNode withFallbackDescription(JsonNode item, Predicate<String> isKnownUrl) {
         var description = item.path("description").asText("");
         if (!description.isBlank() || !item.hasNonNull("id")) {
+            return item;
+        }
+        // Early dedupe: a URL already persisted needs no detail call — the basic
+        // search item is kept as-is (downstream still dedupes on save).
+        var url = item.path("jobUrl").asText("");
+        if (!url.isBlank() && isKnownUrl.test(url)) {
             return item;
         }
         var id = item.get("id");
@@ -496,23 +510,57 @@ public class GupyMcpProvider implements ExtractionStrategy {
      * jobs keep their list-level metadata. When resolution is disabled (no resolver or
      * a non-positive cap) the jobs are returned unchanged.
      */
-    private List<RawJob> resolveCompanyDomains(List<RawJob> jobs) {
+    private List<RawJob> resolveCompanyDomains(List<RawJob> jobs, Predicate<String> isKnownUrl) {
         if (jobs.isEmpty() || companyDomainResolver == null || maxDetailDomains <= 0) {
             return jobs;
         }
 
-        var jobUrls = jobs.stream().map(RawJob::url).toList();
-        var resolvedWebsites = companyDomainResolver.resolveCompanyWebsites(jobUrls, maxDetailDomains);
+        // Per-host early dedupe: skip a host only when EVERY one of its job URLs is
+        // already known; a partially-known host is resolved exactly as before.
+        var jobsByHost = new LinkedHashMap<String, List<RawJob>>();
+        for (var job : jobs) {
+            jobsByHost.computeIfAbsent(hostOf(job.url()), host -> new ArrayList<>()).add(job);
+        }
+        var representativeByHost = new LinkedHashMap<String, String>();
+        for (var entry : jobsByHost.entrySet()) {
+            var anyUnknown = entry.getValue().stream().anyMatch(job -> !isKnownUrl.test(job.url()));
+            if (anyUnknown) {
+                representativeByHost.put(entry.getKey(), entry.getValue().get(0).url());
+            }
+        }
+        if (representativeByHost.isEmpty()) {
+            return jobs;
+        }
+
+        var resolvedWebsites = companyDomainResolver.resolveCompanyWebsites(
+                List.copyOf(representativeByHost.values()), maxDetailDomains);
         if (resolvedWebsites.isEmpty()) {
+            return jobs;
+        }
+
+        var websiteByHost = new LinkedHashMap<String, String>();
+        for (var entry : representativeByHost.entrySet()) {
+            var website = resolvedWebsites.get(entry.getValue());
+            if (website != null) {
+                websiteByHost.put(entry.getKey(), website);
+            }
+        }
+        if (websiteByHost.isEmpty()) {
             return jobs;
         }
 
         var results = new ArrayList<RawJob>(jobs.size());
         for (var job : jobs) {
-            var website = resolvedWebsites.get(job.url());
+            var website = websiteByHost.get(hostOf(job.url()));
             results.add(website == null ? job : withCompanyWebsite(job, website));
         }
         return results;
+    }
+
+    /** Host used for grouping: mirrors {@link UrlNormalizer#host(String)}; unparseable URLs share the {@code ""} bucket. */
+    private static String hostOf(String url) {
+        var host = UrlNormalizer.host(url);
+        return host == null ? "" : host;
     }
 
     private static RawJob withCompanyWebsite(RawJob job, String website) {
