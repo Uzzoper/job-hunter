@@ -560,4 +560,59 @@ class GupyProviderTest {
                     .withQueryParam("jobName", equalTo("desenvolvedor")));
         }
     }
+
+    @Nested
+    @DisplayName("Early dedupe: per-host detail-domain skip")
+    class EarlyDedupe {
+
+        private GupyProvider detailProvider(int maxDetailDomains) {
+            var detailRestClient = RestClient.builder().baseUrl(baseUrl).build();
+            var detailRateLimiter = new TokenBucketRateLimiter(100, 10, java.util.Map.of());
+            var resolver = new HttpCompanyDomainResolver(detailRestClient, retry, detailRateLimiter);
+            return new GupyProvider("gupy", apiStrategy, retry, List.of("desenvolvedor"), 20,
+                    resolver, maxDetailDomains);
+        }
+
+        private void stubTwoJobsSameHost() {
+            stubFor(get(urlPathEqualTo("/api/v1/jobs"))
+                    .willReturn(okJson("""
+                        {"data": [
+                          {"name": "Dev Java", "jobUrl": "%s/gupy/techco/jobs/1", "publishedDate": "2026-07-01"},
+                          {"name": "Dev Spring", "jobUrl": "%s/gupy/techco/jobs/2", "publishedDate": "2026-07-01"}
+                        ]}
+                        """.formatted(baseUrl, baseUrl))));
+            var detailPage = "<html><body><a href=\"https://www.techco.com.br/\">Site</a></body></html>";
+            stubFor(get(urlEqualTo("/gupy/techco/jobs/1")).willReturn(ok(detailPage)));
+            stubFor(get(urlEqualTo("/gupy/techco/jobs/2")).willReturn(ok(detailPage)));
+        }
+
+        @Test
+        @DisplayName("extract should skip the host detail HTTP entirely when every job URL of the host is known")
+        void extract_whenEveryHostJobUrlKnown_shouldSkipHostDetailHttp() {
+            var provider = detailProvider(100);
+            stubTwoJobsSameHost();
+
+            var jobs = provider.extract(List.of("desenvolvedor"), url -> true);
+
+            assertEquals(2, jobs.size(), "known jobs must still be returned (basic)");
+            assertTrue(jobs.stream().allMatch(job -> job.metadata().get("companyWebsite") == null),
+                    "no host may be resolved when all of its job URLs are known");
+            verify(0, getRequestedFor(urlMatching("/gupy/techco/jobs/[12]")));
+        }
+
+        @Test
+        @DisplayName("extract should still resolve the host when at least one job URL of the host is unknown")
+        void extract_whenHostHasSomeUnknownJobUrl_shouldResolveHostAsToday() {
+            var provider = detailProvider(100);
+            stubTwoJobsSameHost();
+
+            var jobs = provider.extract(List.of("desenvolvedor"),
+                    url -> url.endsWith("/gupy/techco/jobs/1"));
+
+            assertEquals(2, jobs.size());
+            assertTrue(jobs.stream().allMatch(job -> "https://www.techco.com.br".equals(job.metadata().get("companyWebsite"))),
+                    "a partially-known host must be resolved exactly as today");
+            verify(1, getRequestedFor(urlMatching("/gupy/techco/jobs/[12]")));
+        }
+    }
 }

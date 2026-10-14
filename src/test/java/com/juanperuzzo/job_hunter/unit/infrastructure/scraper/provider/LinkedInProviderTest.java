@@ -437,4 +437,65 @@ class LinkedInProviderTest {
                     .withQueryParam("keywords", equalTo("desenvolvedor")));
         }
     }
+
+    @Nested
+    @DisplayName("Early dedupe: skip detail HTTP for already-known URLs")
+    class EarlyDedupe {
+
+        @Test
+        @DisplayName("extract should skip every detail HTTP call and still return the list jobs for known URLs")
+        void extract_whenUrlsKnown_shouldSkipAllDetailHttp() {
+            stubFor(get(urlPathEqualTo("/jobs/search"))
+                    .withQueryParam("keywords", equalTo("desenvolvedor"))
+                    .willReturn(ok(loadFixture("search-page.html"))));
+
+            var jobs = provider.extract(List.of("desenvolvedor"), url -> true);
+
+            assertEquals(3, jobs.size(), "known jobs must still be returned (list data)");
+            verify(0, getRequestedFor(urlMatching("/jobs/view/.*")));
+        }
+
+        @Test
+        @DisplayName("extract should enrich exactly as today when every URL is unknown")
+        void extract_whenEveryUrlUnknown_shouldEnrichAsToday() {
+            stubFor(get(urlPathEqualTo("/jobs/search"))
+                    .withQueryParam("keywords", equalTo("desenvolvedor"))
+                    .willReturn(ok(loadFixture("search-page.html"))));
+            stubFor(get(urlPathEqualTo("/jobs/view/desenvolvedor-java-123"))
+                    .willReturn(ok(loadFixture("detail-page-1.html"))));
+            stubFor(get(urlPathEqualTo("/jobs/view/desenvolvedor-python-456"))
+                    .willReturn(ok(loadFixture("detail-page-2.html"))));
+            stubFor(get(urlPathEqualTo("/jobs/view/estagio-frontend-789"))
+                    .willReturn(ok("<html><body><div class=\"show-more-less-html__markup\"><p>Detalhes do estágio frontend.</p></div></body></html>")));
+
+            var jobs = provider.extract(List.of("desenvolvedor"), url -> false);
+
+            assertEquals(3, jobs.size());
+            for (var job : jobs) {
+                assertNotNull(job.description(), "unknown URLs must still be enriched from their detail page");
+            }
+            verify(3, getRequestedFor(urlMatching("/jobs/view/.*")));
+        }
+
+        @Test
+        @DisplayName("extract should still enrich when the fallback provider is used with an explicit known predicate")
+        void extract_whenSingleUrlKnown_shouldSkipOnlyThatView() {
+            stubFor(get(urlPathEqualTo("/jobs/search"))
+                    .withQueryParam("keywords", equalTo("desenvolvedor"))
+                    .willReturn(ok(loadFixture("search-page.html"))));
+            stubFor(get(urlPathEqualTo("/jobs/view/desenvolvedor-java-123"))
+                    .willReturn(ok(loadFixture("detail-page-1.html"))));
+            stubFor(get(urlPathEqualTo("/jobs/view/desenvolvedor-python-456"))
+                    .willReturn(ok(loadFixture("detail-page-2.html"))));
+            stubFor(get(urlPathEqualTo("/jobs/view/estagio-frontend-789"))
+                    .willReturn(ok("<html><body><div class=\"show-more-less-html__markup\"><p>Detalhes do estágio frontend.</p></div></body></html>")));
+
+            provider.extract(List.of("desenvolvedor"),
+                    url -> url.contains("desenvolvedor-java-123"));
+
+            verify(0, getRequestedFor(urlPathEqualTo("/jobs/view/desenvolvedor-java-123")));
+            verify(1, getRequestedFor(urlPathEqualTo("/jobs/view/desenvolvedor-python-456")));
+            verify(1, getRequestedFor(urlPathEqualTo("/jobs/view/estagio-frontend-789")));
+        }
+    }
 }

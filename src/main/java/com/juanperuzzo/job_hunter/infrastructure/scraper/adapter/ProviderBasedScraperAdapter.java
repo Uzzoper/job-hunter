@@ -15,6 +15,7 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Predicate;
 
 public class ProviderBasedScraperAdapter implements ScraperPort {
 
@@ -67,8 +68,9 @@ public class ProviderBasedScraperAdapter implements ScraperPort {
     }
 
     @Override
-    public ScraperResult fetch(java.util.List<String> keywordOverride) {
+    public ScraperResult fetch(java.util.List<String> keywordOverride, Predicate<String> isKnownUrl) {
         java.util.List<String> override = keywordOverride == null ? java.util.List.of() : keywordOverride;
+        Predicate<String> known = isKnownUrl == null ? url -> false : isKnownUrl;
         if (registry.isEmpty()) {
             log.warn("No providers registered, returning empty result");
             return new ScraperResult(List.of(), List.of());
@@ -83,7 +85,7 @@ public class ProviderBasedScraperAdapter implements ScraperPort {
                     .map(entry -> {
                         var providerId = entry.strategy().providerId();
                         var timeout = timeoutFor(providerId);
-                        return CompletableFuture.supplyAsync(() -> fetchProvider(entry, override), executor)
+                        return CompletableFuture.supplyAsync(() -> fetchProvider(entry, override, known), executor)
                                 .orTimeout(timeout.toSeconds(), TimeUnit.SECONDS)
                                 .exceptionally(ex -> {
                                     var cause = ex.getCause() != null ? ex.getCause() : ex;
@@ -109,12 +111,13 @@ public class ProviderBasedScraperAdapter implements ScraperPort {
         return new ScraperResult(List.copyOf(allJobs.values()), perProvider);
     }
 
-    private ProviderResult fetchProvider(ProviderRegistry.ProviderEntry entry, java.util.List<String> keywordOverride) {
+    private ProviderResult fetchProvider(ProviderRegistry.ProviderEntry entry, java.util.List<String> keywordOverride,
+                                         Predicate<String> isKnownUrl) {
         java.util.List<String> override = keywordOverride == null ? java.util.List.of() : keywordOverride;
         var providerId = entry.strategy().providerId();
         log.debug("Fetching from provider: {}", providerId);
 
-        var rawJobs = entry.strategy().extract(override);
+        var rawJobs = entry.strategy().extract(override, isKnownUrl);
         var detailFailedCount = (int) rawJobs.stream()
                 .filter(raw -> "true".equals(raw.metadata().get("detailFailed")))
                 .count();

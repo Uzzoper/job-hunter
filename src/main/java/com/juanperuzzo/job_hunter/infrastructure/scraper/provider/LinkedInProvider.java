@@ -20,6 +20,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Optional;
+import java.util.function.Predicate;
 import java.util.regex.Pattern;
 
 public class LinkedInProvider implements com.juanperuzzo.job_hunter.infrastructure.scraper.strategy.ExtractionStrategy {
@@ -110,6 +111,11 @@ public class LinkedInProvider implements com.juanperuzzo.job_hunter.infrastructu
 
     @Override
     public List<RawJob> extract(List<String> keywordOverride) {
+        return extract(keywordOverride, url -> false);
+    }
+
+    @Override
+    public List<RawJob> extract(List<String> keywordOverride, Predicate<String> isKnownUrl) {
         var uniqueJobs = new HashMap<String, RawJob>();
         var effective = (keywordOverride == null || keywordOverride.isEmpty()) ? keywords : keywordOverride;
         int totalFetched = 0;
@@ -144,7 +150,7 @@ public class LinkedInProvider implements com.juanperuzzo.job_hunter.infrastructu
             jobList = new ArrayList<>(jobList.subList(0, maxJobs));
         }
 
-        var enrichedJobs = enrichWithDetailPages(jobList);
+        var enrichedJobs = enrichWithDetailPages(jobList, isKnownUrl);
 
         log.info("{}: total unique jobs fetched: {}", PROVIDER_ID, enrichedJobs.size());
         return enrichedJobs;
@@ -345,14 +351,16 @@ public class LinkedInProvider implements com.juanperuzzo.job_hunter.infrastructu
         return String.join(" | ", snippetParts);
     }
 
-    private List<RawJob> enrichWithDetailPages(List<RawJob> jobs) {
+    private List<RawJob> enrichWithDetailPages(List<RawJob> jobs, Predicate<String> isKnownUrl) {
         var enrichedJobs = new ArrayList<RawJob>();
 
         for (var i = 0; i < jobs.size(); i++) {
             var job = jobs.get(i);
             var jobId = job.metadata().get("jobId");
 
-            if (jobId == null || jobId.isEmpty() || jobId.startsWith("search-")) {
+            // Early dedupe: a URL already persisted keeps its list data and consumes
+            // no detail HTTP.
+            if (jobId == null || jobId.isEmpty() || jobId.startsWith("search-") || isKnownUrl.test(job.url())) {
                 enrichedJobs.add(job);
                 continue;
             }

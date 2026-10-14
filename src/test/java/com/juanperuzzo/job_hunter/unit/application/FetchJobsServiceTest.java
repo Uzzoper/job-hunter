@@ -21,6 +21,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -29,6 +30,7 @@ import java.time.LocalDateTime;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
+import java.util.function.Predicate;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -37,6 +39,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -76,7 +79,7 @@ class FetchJobsServiceTest {
             var newJob = new Job(null, "Java Developer", "Company A", "https://example.com/job/1", "Description", LocalDate.now(), "gupy");
             var existingJob = new Job(null, "Java Developer", "Company B", "https://example.com/job/2", "Description", LocalDate.now(), "gupy");
 
-            when(scraperPort.fetch(anyList())).thenReturn(new ScraperResult(
+            when(scraperPort.fetch(anyList(), any())).thenReturn(new ScraperResult(
                     List.of(newJob, existingJob),
                     List.of(new ProviderFetchStats("gupy", 2, 0, 0, 0, 0, null))));
             when(jobRepository.existsByUrl("https://example.com/job/1")).thenReturn(false);
@@ -101,7 +104,7 @@ class FetchJobsServiceTest {
         void fetchAndSave_whenNoNewJobs_shouldNotSaveAnyJob() {
             var existingJob = new Job(null, "Java Developer", "Company A", "https://example.com/job/1", "Description", LocalDate.now(), "gupy");
 
-            when(scraperPort.fetch(anyList())).thenReturn(new ScraperResult(
+            when(scraperPort.fetch(anyList(), any())).thenReturn(new ScraperResult(
                     List.of(existingJob),
                     List.of(new ProviderFetchStats("gupy", 1, 0, 0, 0, 0, null))));
             when(jobRepository.existsByUrl("https://example.com/job/1")).thenReturn(true);
@@ -121,7 +124,7 @@ class FetchJobsServiceTest {
         @Test
         @DisplayName("fetchAndSave should propagate ScraperException when scraper fails")
         void fetchAndSave_whenScraperFails_shouldPropagateException() {
-            when(scraperPort.fetch(anyList())).thenThrow(new ScraperException("Scraping failed"));
+            when(scraperPort.fetch(anyList(), any())).thenThrow(new ScraperException("Scraping failed"));
 
             try {
                 fetchJobsService.fetchAndSave(7L);
@@ -140,7 +143,7 @@ class FetchJobsServiceTest {
         @Test
         @DisplayName("fetchAndSave should not save any job when scraper returns empty list")
         void fetchAndSave_whenEmptyListReturned_shouldNotSaveAnyJob() {
-            when(scraperPort.fetch(anyList())).thenReturn(new ScraperResult(List.of(), List.of()));
+            when(scraperPort.fetch(anyList(), any())).thenReturn(new ScraperResult(List.of(), List.of()));
 
             var result = fetchJobsService.fetchAndSave(7L);
 
@@ -160,7 +163,7 @@ class FetchJobsServiceTest {
             var jobWithWebsite = new Job(null, "Java Dev", "Acme", "https://example.com/job/1",
                     "Description", LocalDate.now(), "gupy", null, "https://acme.com");
 
-            when(scraperPort.fetch(anyList())).thenReturn(new ScraperResult(
+            when(scraperPort.fetch(anyList(), any())).thenReturn(new ScraperResult(
                     List.of(jobWithWebsite),
                     List.of(new ProviderFetchStats("gupy", 1, 1, 0, 0, 0, null))));
             when(jobRepository.existsByUrl(any())).thenReturn(false);
@@ -190,7 +193,7 @@ class FetchJobsServiceTest {
             var jobWithoutEmail = new Job(null, "React Dev", "Beta", "https://example.com/job/2",
                     "Description", LocalDate.now(), "gupy");
 
-            when(scraperPort.fetch(anyList())).thenReturn(new ScraperResult(
+            when(scraperPort.fetch(anyList(), any())).thenReturn(new ScraperResult(
                     List.of(jobWithEmail, jobWithoutEmail),
                     List.of(new ProviderFetchStats("gupy", 2, 0, 0, 0, 0, null))));
             when(jobRepository.existsByUrl(any())).thenReturn(false);
@@ -596,24 +599,43 @@ class FetchJobsServiceTest {
         @DisplayName("fetchAndSave should resolve the user's keywords and pass them to the scraper")
         void fetchAndSave_whenKeywordsStored_shouldPassResolvedKeywordsToScraper() {
             when(keywordResolver.resolve(USER_ID)).thenReturn(List.of("rust", "kotlin"));
-            when(scraperPort.fetch(List.of("rust", "kotlin")))
+            when(scraperPort.fetch(eq(List.of("rust", "kotlin")), any()))
                     .thenReturn(new ScraperResult(List.of(), List.of()));
 
             fetchJobsService.fetchAndSave(USER_ID);
 
             verify(keywordResolver).resolve(USER_ID);
-            verify(scraperPort).fetch(List.of("rust", "kotlin"));
+            verify(scraperPort).fetch(eq(List.of("rust", "kotlin")), any());
         }
 
         @Test
         @DisplayName("fetchAndSave should pass an empty keyword list when the user has none stored")
         void fetchAndSave_whenNoKeywordsStored_shouldPassEmptyListToScraper() {
             when(keywordResolver.resolve(USER_ID)).thenReturn(List.of());
-            when(scraperPort.fetch(List.of())).thenReturn(new ScraperResult(List.of(), List.of()));
+            when(scraperPort.fetch(eq(List.of()), any())).thenReturn(new ScraperResult(List.of(), List.of()));
 
             fetchJobsService.fetchAndSave(USER_ID);
 
-            verify(scraperPort).fetch(List.of());
+            verify(scraperPort).fetch(eq(List.of()), any());
+        }
+
+        @Test
+        @DisplayName("fetchAndSave should wire the known-URL predicate from jobRepository::existsByUrl")
+        void fetchAndSave_shouldPassRepositoryExistsByUrlAsKnownUrlPredicate() {
+            when(scraperPort.fetch(anyList(), any())).thenReturn(new ScraperResult(List.of(), List.of()));
+
+            fetchJobsService.fetchAndSave(USER_ID);
+
+            var predicateCaptor = ArgumentCaptor.forClass(Predicate.class);
+            verify(scraperPort).fetch(anyList(), predicateCaptor.capture());
+            @SuppressWarnings("unchecked")
+            var isKnownUrl = (Predicate<String>) predicateCaptor.getValue();
+
+            when(jobRepository.existsByUrl("https://example.com/known")).thenReturn(true);
+
+            assertTrue(isKnownUrl.test("https://example.com/known"),
+                    "the wired predicate must delegate to jobRepository.existsByUrl");
+            verify(jobRepository).existsByUrl("https://example.com/known");
         }
     }
 }

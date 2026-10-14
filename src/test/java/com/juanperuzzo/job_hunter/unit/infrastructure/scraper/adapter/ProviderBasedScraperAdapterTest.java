@@ -22,6 +22,8 @@ import java.time.ZoneId;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -297,8 +299,8 @@ class ProviderBasedScraperAdapterTest {
 
             when(strategy1.providerId()).thenReturn("p1");
             when(strategy2.providerId()).thenReturn("p2");
-            when(strategy1.extract(override)).thenReturn(List.of(raw1));
-            when(strategy2.extract(override)).thenReturn(List.of(raw2));
+            when(strategy1.extract(eq(override), any())).thenReturn(List.of(raw1));
+            when(strategy2.extract(eq(override), any())).thenReturn(List.of(raw2));
             when(normalizer1.normalize(raw1, override)).thenReturn(job1);
             when(normalizer2.normalize(raw2, override)).thenReturn(job2);
 
@@ -309,8 +311,8 @@ class ProviderBasedScraperAdapterTest {
             var result = adapter.fetch(override);
 
             assertEquals(2, result.jobs().size());
-            verify(strategy1).extract(override);
-            verify(strategy2).extract(override);
+            verify(strategy1).extract(eq(override), any());
+            verify(strategy2).extract(eq(override), any());
             verify(normalizer1).normalize(raw1, override);
             verify(normalizer2).normalize(raw2, override);
         }
@@ -331,8 +333,8 @@ class ProviderBasedScraperAdapterTest {
 
             when(strategy1.providerId()).thenReturn("p1");
             when(strategy2.providerId()).thenReturn("p2");
-            when(strategy1.extract(emptyOverride)).thenReturn(List.of(raw1));
-            when(strategy2.extract(emptyOverride)).thenReturn(List.of(raw2));
+            when(strategy1.extract(eq(emptyOverride), any())).thenReturn(List.of(raw1));
+            when(strategy2.extract(eq(emptyOverride), any())).thenReturn(List.of(raw2));
             when(normalizer1.normalize(raw1, emptyOverride)).thenReturn(job1);
             when(normalizer2.normalize(raw2, emptyOverride)).thenReturn(job2);
 
@@ -343,8 +345,8 @@ class ProviderBasedScraperAdapterTest {
             var result = adapter.fetch(List.of());
 
             assertEquals(2, result.jobs().size());
-            verify(strategy1).extract(List.of());
-            verify(strategy2).extract(List.of());
+            verify(strategy1).extract(eq(List.of()), any());
+            verify(strategy2).extract(eq(List.of()), any());
             verify(normalizer1).normalize(raw1, List.of());
             verify(normalizer2).normalize(raw2, List.of());
         }

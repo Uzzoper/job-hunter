@@ -11,6 +11,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.function.Predicate;
 
 public class ProviderRegistry implements SourceFetchPort {
 
@@ -44,9 +45,9 @@ public class ProviderRegistry implements SourceFetchPort {
     }
 
     @Override
-    public List<RawJob> fetch(String sourceId, List<String> keywordOverride) {
+    public List<RawJob> fetch(String sourceId, List<String> keywordOverride, Predicate<String> isKnownUrl) {
         var entry = getProvider(sourceId)
                 .orElseThrow(() -> new IllegalArgumentException("Unknown source: " + sourceId));
-        return entry.strategy().extract(keywordOverride);
+        return entry.strategy().extract(keywordOverride, isKnownUrl);
     }
 }
