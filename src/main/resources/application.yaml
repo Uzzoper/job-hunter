@@ -125,6 +125,11 @@ scraper:
     search-timeout-seconds: 90   # heavy paginated /api/jobs search read timeout (production fix — must be search-specific)
     detail-fetch-delay-millis: 500
     base-job-url: https://www.linkedin.com/jobs/view/
+    # Enrichment pacing (issue #99): permit rate/burst for the dedicated "linkedin"
+    # bucket of the shared rateLimiter bean (overrides map). Detail enrichment takes
+    # one permit per job; other providers keep the shared defaults unchanged.
+    enrich-permits-per-second: 1.0
+    enrich-burst: 1
 
 ats:
   # ATS board providers (Greenhouse/Ashby/Lever) — disabled by default until the

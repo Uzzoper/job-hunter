@@ -5,6 +5,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.juanperuzzo.job_hunter.application.port.out.RawJob;
 import com.juanperuzzo.job_hunter.domain.exception.ScraperException;
 import com.juanperuzzo.job_hunter.infrastructure.config.LinkedInScraperProperties;
+import com.juanperuzzo.job_hunter.infrastructure.scraper.ratelimit.RateLimiter;
+import com.juanperuzzo.job_hunter.infrastructure.scraper.retry.RetryStrategy;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.strategy.ExtractionStrategy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -34,9 +36,13 @@ public class LinkedInScraperClient implements ExtractionStrategy {
     private final RestClient searchRestClient;
     private final ObjectMapper objectMapper;
     private final LinkedInScraperProperties properties;
+    private final RetryStrategy retry;
+    private final RateLimiter rateLimiter;
 
-    public LinkedInScraperClient(LinkedInScraperProperties properties) {
+    public LinkedInScraperClient(LinkedInScraperProperties properties, RetryStrategy retry, RateLimiter rateLimiter) {
         this.properties = properties;
+        this.retry = retry;
+        this.rateLimiter = rateLimiter;
         this.objectMapper = new ObjectMapper();
 
         // Detail/enrichment calls keep the shared 30s read timeout: each job page
@@ -170,7 +176,13 @@ public class LinkedInScraperClient implements ExtractionStrategy {
                     if (i > 0) {
                         Thread.sleep(properties.detailFetchDelayMillis());
                     }
-                    var detail = extractDetail(jobId);
+                    // Enrichment pacing (issue #99): take one limiter permit for the
+                    // "linkedin" bucket, then retry the detail call with exponential
+                    // backoff (429/timeout/5xx are retryable). The fixed sleep above
+                    // stays as the base pacing; on retry exhaustion the generic catch
+                    // below keeps the card unenriched instead of failing the fetch.
+                    rateLimiter.acquire(PROVIDER_ID);
+                    var detail = retry.execute(() -> extractDetail(jobId));
                     card = mergeDetailIntoRawJob(card, detail);
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
