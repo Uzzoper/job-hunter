@@ -5,7 +5,6 @@ import com.juanperuzzo.job_hunter.application.port.out.CompanyDomainResolverPort
 import com.juanperuzzo.job_hunter.application.port.out.RawJob;
 import com.juanperuzzo.job_hunter.domain.PortalDomains;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.normalizer.UrlNormalizer;
-import com.juanperuzzo.job_hunter.infrastructure.scraper.normalizer.UrlNormalizer;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.retry.ExponentialBackoffRetry;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.strategy.ExtractionStrategy;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.strategy.RestApiStrategy;
@@ -19,7 +18,6 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.function.Predicate;
 
 public class GupyProvider implements ExtractionStrategy {
