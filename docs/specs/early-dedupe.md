@@ -14,7 +14,10 @@ provider's `extract()`, before normalization and before any DB check.
 ## Goal
 
 Skip the enrichment HTTP for URLs already in the DB, keeping downstream
-results byte-identical (same jobs returned, same counts, same saves).
+results identical (same jobs saved, same counts). The intermediate
+normalized list may omit known URLs whose keyword match depended on the
+enriched description — unobservable downstream, since known jobs are never
+saved regardless.
 
 ## Design (established pattern: resolve once in service, pass down immutable)
 
