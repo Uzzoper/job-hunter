@@ -168,7 +168,7 @@ linkedinScraperClient.ifPresent(p -> registry.register(p, retry, rateLimiter, li
 ### Scenario 3: HTTP 429 rate limited
 - **GIVEN** the Node.js service returns HTTP 429
 - **WHEN** `extract()` is called
-- **THEN** throws `ScraperException` with a message containing "429" or "RATE_LIMITED"
+- **THEN** skips that keyword (warn + continue) and returns the jobs already fetched from other keywords, never throwing
 
 ### Scenario 4: HTTP 503 service unavailable
 - **GIVEN** the Node.js service returns HTTP 503 (browser down)
@@ -264,7 +264,7 @@ linkedinScraperClient.ifPresent(p -> registry.register(p, retry, rateLimiter, li
 1. Valid search response → mapped `RawJob` list with `source=linkedin`
 2. Configured geo IDs → only the first value forwarded to the service
 3. Empty search response → empty list
-4. HTTP 429 → `ScraperException`
+4. HTTP 429 → keyword skipped, empty list (no throw)
 5. HTTP 503 → `ScraperException`
 6. Connection timeout → `ScraperException`
 7. Detail endpoint → `RawJob` with description
@@ -273,7 +273,7 @@ linkedinScraperClient.ifPresent(p -> registry.register(p, retry, rateLimiter, li
 
 Test method naming: `methodName_scenario_expectedResult()`, e.g.:
 - `extract_whenValidResponse_shouldReturnRawJobs()`
-- `extract_whenServiceReturns429_shouldThrowScraperException()`
+- `extract_whenServiceReturns429_shouldReturnEmptyList()`
 
 ---
 
