@@ -1,5 +1,9 @@
 package com.juanperuzzo.job_hunter.integration;
 
+import com.juanperuzzo.job_hunter.infrastructure.scraper.client.LinkedInScraperClient;
+import com.juanperuzzo.job_hunter.infrastructure.scraper.ratelimit.RateLimiter;
+import com.juanperuzzo.job_hunter.infrastructure.scraper.retry.ExponentialBackoffRetry;
+import com.juanperuzzo.job_hunter.infrastructure.scraper.strategy.ExtractionStrategy;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -15,6 +19,7 @@ import java.nio.file.Path;
 
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 
 /**
  * Verifies the shared scraping RestClient and the InfoJobs detail RestClient are wired
@@ -57,6 +62,17 @@ class AppConfigRestClientTest {
     @Qualifier("infojobsDetailRestClient")
     private RestClient infojobsDetailRestClient;
 
+    @Autowired
+    @Qualifier("linkedinScraperClient")
+    private ExtractionStrategy linkedinScraperClient;
+
+    @Autowired
+    @Qualifier("rateLimiter")
+    private RateLimiter rateLimiter;
+
+    @Autowired
+    private ExponentialBackoffRetry exponentialBackoffRetry;
+
     @Test
     @DisplayName("shared and InfoJobs detail RestClients should be wired as two distinct beans")
     void restClients_whenWired_shouldBeDistinctBeans() {
@@ -65,5 +81,25 @@ class AppConfigRestClientTest {
         // Two distinct beans: the detail client is a separate bean from the shared one,
         // so its shorter timeout never leaks into search-page fetches (and vice-versa).
         assertNotSame(scraperRestClient, infojobsDetailRestClient);
+    }
+
+    @Test
+    @DisplayName("LinkedIn scraper client should receive the retry strategy and the shared rate limiter")
+    void linkedinScraperClient_whenWired_shouldReceiveRetryAndRateLimiter() throws Exception {
+        assertNotNull(linkedinScraperClient, "linkedinScraperClient bean should be wired in service mode");
+        // mode: service is active in application.yaml, so the bean is the concrete client.
+        assertSame(LinkedInScraperClient.class, linkedinScraperClient.getClass(),
+                "the service-mode bean must be the HTTP client (not the jsoup provider)");
+
+        var retryField = LinkedInScraperClient.class.getDeclaredField("retry");
+        retryField.setAccessible(true);
+        var limiterField = LinkedInScraperClient.class.getDeclaredField("rateLimiter");
+        limiterField.setAccessible(true);
+
+        // Same singleton instances the context exposes: pacing/retry are shared infrastructure.
+        assertSame(exponentialBackoffRetry, retryField.get(linkedinScraperClient),
+                "the client must reuse the shared ExponentialBackoffRetry bean");
+        assertSame(rateLimiter, limiterField.get(linkedinScraperClient),
+                "the client must reuse the shared rateLimiter bean");
     }
 }

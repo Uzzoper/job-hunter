@@ -2,10 +2,14 @@ package com.juanperuzzo.job_hunter.unit.infrastructure.scraper.client;
 
 import com.github.tomakehurst.wiremock.junit5.WireMockExtension;
 import com.github.tomakehurst.wiremock.junit5.WireMockRuntimeInfo;
+import com.github.tomakehurst.wiremock.stubbing.Scenario;
 import com.juanperuzzo.job_hunter.application.port.out.RawJob;
 import com.juanperuzzo.job_hunter.domain.exception.ScraperException;
 import com.juanperuzzo.job_hunter.infrastructure.config.LinkedInScraperProperties;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.client.LinkedInScraperClient;
+import com.juanperuzzo.job_hunter.infrastructure.scraper.ratelimit.RateLimiter;
+import com.juanperuzzo.job_hunter.infrastructure.scraper.ratelimit.TokenBucketRateLimiter;
+import com.juanperuzzo.job_hunter.infrastructure.scraper.retry.ExponentialBackoffRetry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -14,10 +18,13 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
 
+import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.*;
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
 
 @ExtendWith(WireMockExtension.class)
 @DisplayName("LinkedInScraperClient tests")
@@ -26,6 +33,16 @@ class LinkedInScraperClientTest {
     private String baseUrl;
     private LinkedInScraperClient client;
     private LinkedInScraperProperties properties;
+
+    /** Fast retry (1ms base) so tests never wait on backoff; 3 attempts as in production. */
+    private static ExponentialBackoffRetry fastRetry() {
+        return new ExponentialBackoffRetry(3, Duration.ofMillis(1), Duration.ofMillis(2), Duration.ofMillis(1));
+    }
+
+    /** Effectively-unlimited limiter so pacing never slows a behavioral test. */
+    private static RateLimiter permissiveRateLimiter() {
+        return new TokenBucketRateLimiter(1000, 100, Map.of());
+    }
 
     @BeforeEach
     void setUp(WireMockRuntimeInfo wmRuntimeInfo) {
@@ -49,7 +66,7 @@ class LinkedInScraperClientTest {
                 "https://www.linkedin.com/jobs/view/",
                 90
         );
-        client = new LinkedInScraperClient(properties);
+        client = new LinkedInScraperClient(properties, fastRetry(), permissiveRateLimiter());
     }
 
     @Nested
@@ -517,7 +534,7 @@ List<RawJob> jobs = client.extract();
                     0,
                     "https://www.linkedin.com/jobs/view/",
                     90
-            ));
+            ), fastRetry(), permissiveRateLimiter());
         }
 
         @Test
@@ -904,7 +921,8 @@ List<RawJob> jobs = client.extract();
                     true, "service", baseUrl, 30, 5, 25, "https://www.linkedin.com",
                     List.of("desenvolvedor"), "Brazil", List.of("106057199"),
                     List.of("entry_level"), List.of("remote"), "past_week", 1, 0,
-                    "https://www.linkedin.com/jobs/view/", 1));
+                    "https://www.linkedin.com/jobs/view/", 1),
+                    fastRetry(), permissiveRateLimiter());
 
             stubFor(get(urlPathEqualTo("/api/jobs"))
                     .withQueryParam("keywords", equalTo("desenvolvedor"))
@@ -928,8 +946,8 @@ List<RawJob> jobs = client.extract();
         }
 
         @Nested
-    @DisplayName("Search facet forwarding (spec scenarios 1-3, 5-6: work-type/seniority/time-range)")
-    class SearchFacets {
+        @DisplayName("Search facet forwarding (spec scenarios 1-3, 5-6: work-type/seniority/time-range)")
+        class SearchFacets {
 
         private LinkedInScraperClient clientWith(List<String> workType, List<String> seniority, String timeRange) {
             return new LinkedInScraperClient(new LinkedInScraperProperties(
@@ -950,7 +968,7 @@ List<RawJob> jobs = client.extract();
                     0,
                     "https://www.linkedin.com/jobs/view/",
                     90
-            ));
+            ), fastRetry(), permissiveRateLimiter());
         }
 
         @Test
@@ -1159,6 +1177,127 @@ List<RawJob> jobs = client.extract();
             assertTrue(jobs.get(0).description().contains("full detail description"),
                     "an unknown URL must still be enriched");
             verify(1, getRequestedFor(urlPathEqualTo("/api/jobs/12345")));
+        }
+    }
+
+    @Nested
+    @DisplayName("Enrichment pacing: rate-limited detail calls are retried, never fatal")
+    class EnrichmentPacing {
+
+        private static final String DETAIL_PATH = "/api/jobs/55555";
+
+        private void stubSearchWithOneJob() {
+            stubFor(get(urlPathEqualTo("/api/jobs"))
+                    .withQueryParam("keywords", equalTo("desenvolvedor"))
+                    .willReturn(okJson("""
+                            {
+                              "success": true,
+                              "data": [
+                                { "id": "55555", "title": "Desenvolvedor Java Júnior", "company": "TechCo",
+                                  "location": "SP", "postedAt": "", "summary": "" }
+                              ]
+                            }
+                            """)));
+        }
+
+        private void stubRateLimited() {
+            stubFor(get(urlPathEqualTo(DETAIL_PATH))
+                    .willReturn(status(429)
+                            .withHeader("Content-Type", "application/json")
+                            .withBody("""
+                                {
+                                  "success": false,
+                                  "error": { "code": "RATE_LIMITED", "message": "Please try again later." }
+                                }
+                                """)));
+        }
+
+        @Test
+        @DisplayName("extract should retry the detail call on 429 and enrich once it succeeds")
+        void extract_whenDetailReturns429TwiceThenSuccess_shouldRetryAndEnrich() {
+            stubSearchWithOneJob();
+            stubFor(get(urlPathEqualTo(DETAIL_PATH))
+                    .inScenario("retry-detail")
+                    .whenScenarioStateIs(Scenario.STARTED)
+                    .willReturn(status(429)
+                            .withHeader("Content-Type", "application/json")
+                            .withBody("""
+                                {
+                                  "success": false,
+                                  "error": { "code": "RATE_LIMITED", "message": "Please try again later." }
+                                }
+                                """))
+                    .willSetStateTo("second-attempt"));
+            stubFor(get(urlPathEqualTo(DETAIL_PATH))
+                    .inScenario("retry-detail")
+                    .whenScenarioStateIs("second-attempt")
+                    .willReturn(status(429)
+                            .withHeader("Content-Type", "application/json")
+                            .withBody("""
+                                {
+                                  "success": false,
+                                  "error": { "code": "RATE_LIMITED", "message": "Please try again later." }
+                                }
+                                """))
+                    .willSetStateTo("third-attempt"));
+            stubFor(get(urlPathEqualTo(DETAIL_PATH))
+                    .inScenario("retry-detail")
+                    .whenScenarioStateIs("third-attempt")
+                    .willReturn(okJson("""
+                            {
+                              "success": true,
+                              "data": {
+                                "id": "55555", "title": "Desenvolvedor Java Júnior", "company": "TechCo",
+                                "location": "SP", "postedAt": "", "summary": "",
+                                "description": "<p>descrição enriquecida após retry</p>"
+                              }
+                            }
+                            """)));
+
+            var jobs = client.extract();
+
+            assertEquals(1, jobs.size());
+            assertTrue(jobs.get(0).description().contains("descrição enriquecida após retry"),
+                    "the 429s must be retried until the detail call succeeds");
+            // 1 initial attempt + 2 retries = 3 HTTP calls to the detail endpoint
+            verify(3, getRequestedFor(urlPathEqualTo(DETAIL_PATH)));
+        }
+
+        @Test
+        @DisplayName("extract should keep the job unenriched without throwing when every detail attempt is rate-limited")
+        void extract_whenDetailAlwaysRateLimited_shouldKeepUnenrichedWithoutThrowing() {
+            stubSearchWithOneJob();
+            stubRateLimited();
+
+            var jobs = client.extract();
+
+            assertEquals(1, jobs.size(), "a rate-limited detail call must not discard the job");
+            assertEquals("", jobs.get(0).description(), "the job must fall back to its unenriched list data");
+            // max-attempts backoff params govern the attempt count
+            verify(3, getRequestedFor(urlPathEqualTo(DETAIL_PATH)));
+        }
+
+        @Test
+        @DisplayName("extract should acquire one limiter permit per detail-enrichment call")
+        void extract_whenDetailEnriched_shouldAcquireLimiterOncePerDetailCall() {
+            var limiter = mock(RateLimiter.class);
+            client = new LinkedInScraperClient(properties, fastRetry(), limiter);
+            stubSearchWithOneJob();
+            stubFor(get(urlPathEqualTo(DETAIL_PATH))
+                    .willReturn(okJson("""
+                            {
+                              "success": true,
+                              "data": {
+                                "id": "55555", "title": "Desenvolvedor Java Júnior", "company": "TechCo",
+                                "location": "SP", "postedAt": "", "summary": "",
+                                "description": "<p>detail</p>"
+                              }
+                            }
+                            """)));
+
+            client.extract();
+
+            verify(limiter).acquire("linkedin");
         }
     }
 }

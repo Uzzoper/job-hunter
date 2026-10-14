@@ -107,8 +107,14 @@ public class AppConfig {
     @Bean
     public RateLimiter rateLimiter(
             @Value("${scraper.rate-limiter.default-permits-per-second}") double permitsPerSecond,
-            @Value("${scraper.rate-limiter.default-burst}") int burst) {
-        return new TokenBucketRateLimiter(permitsPerSecond, burst, java.util.Map.of());
+            @Value("${scraper.rate-limiter.default-burst}") int burst,
+            @Value("${scraper.linkedin.enrich-permits-per-second:1.0}") double linkedinEnrichPermitsPerSecond,
+            @Value("${scraper.linkedin.enrich-burst:1}") int linkedinEnrichBurst) {
+        // LinkedIn enrichment pacing (issue #99) overrides only the "linkedin" bucket,
+        // so every other provider keeps the shared default permit/burst.
+        var overrides = java.util.Map.of("linkedin",
+                new TokenBucketRateLimiter.RateLimitConfig(linkedinEnrichPermitsPerSecond, linkedinEnrichBurst));
+        return new TokenBucketRateLimiter(permitsPerSecond, burst, overrides);
     }
 
     @Bean
@@ -250,8 +256,11 @@ public class AppConfig {
     @Bean
     @Qualifier("linkedinScraperClient")
     @ConditionalOnProperty(name = "scraper.linkedin.mode", havingValue = "service")
-    public ExtractionStrategy linkedinScraperClient(LinkedInScraperProperties props) {
-        return new LinkedInScraperClient(props);
+    public ExtractionStrategy linkedinScraperClient(
+            LinkedInScraperProperties props,
+            ExponentialBackoffRetry exponentialBackoffRetry,
+            RateLimiter rateLimiter) {
+        return new LinkedInScraperClient(props, exponentialBackoffRetry, rateLimiter);
     }
 
     @Bean
