@@ -621,7 +621,7 @@ class FetchJobsServiceTest {
 
         @Test
         @DisplayName("fetchAndSave should wire the known-URL predicate from jobRepository::existsByUrl")
-        void fetchAndSave_shouldPassRepositoryExistsByUrlAsKnownUrlPredicate() {
+        void fetchAndSave_whenResolvingKnownUrls_shouldDelegateToExistsByUrl() {
             when(scraperPort.fetch(anyList(), any())).thenReturn(new ScraperResult(List.of(), List.of()));
 
             fetchJobsService.fetchAndSave(USER_ID);

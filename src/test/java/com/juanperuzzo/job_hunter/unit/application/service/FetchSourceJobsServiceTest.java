@@ -175,7 +175,7 @@ class FetchSourceJobsServiceTest {
 
         @Test
         @DisplayName("fetchAndSave should wire the known-URL predicate from jobRepository::existsByUrl")
-        void fetchAndSave_shouldPassRepositoryExistsByUrlAsKnownUrlPredicate() {
+        void fetchAndSave_whenResolvingKnownUrls_shouldDelegateToExistsByUrl() {
             when(sourceFetchPort.fetch(eq("gupy"), anyList(), any())).thenReturn(List.of());
 
             service.fetchAndSave(USER_ID, "gupy");
