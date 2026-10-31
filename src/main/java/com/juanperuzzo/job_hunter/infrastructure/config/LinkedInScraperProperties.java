@@ -22,5 +22,17 @@ public record LinkedInScraperProperties(
     int maxPages,
     long detailFetchDelayMillis,
     String baseJobUrl,
-    int searchTimeoutSeconds
-) {}
+    int searchTimeoutSeconds,
+    /**
+     * jsoup fallback knobs ({@code scraper.linkedin.jsoup.*}). Nested so the
+     * fallback path has its own pagination knob independent of the service mode.
+     */
+    Jsoup jsoup
+) {
+
+    /** Knobs for the jsoup fallback strategy ({@code scraper.linkedin.jsoup.max-pages}). */
+    public record Jsoup(
+        /** Pagination cap per keyword for the jsoup fallback (LinkedInProvider). */
+        int maxPages
+    ) {}
+}

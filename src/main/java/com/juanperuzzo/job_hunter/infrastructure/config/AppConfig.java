@@ -249,8 +249,16 @@ public class AppConfig {
         return linkedinJobNormalizer;
     }
 
+    /**
+     * Jsoup LinkedIn fallback strategy. Two independent gates (fase-a-sourcing-restoration
+     * Scenario 8): {@code mode} selects <strong>which</strong> strategy runs, while
+     * {@code scraper.linkedin.enabled} (default {@code true}) selects <strong>whether</strong>
+     * any LinkedIn bean is registered at all. Repeated {@code @ConditionalOnProperty}
+     * annotations are AND-combined.
+     */
     @Bean
     @Qualifier("linkedinProvider")
+    @ConditionalOnProperty(name = "scraper.linkedin.enabled", havingValue = "true", matchIfMissing = true)
     @ConditionalOnProperty(name = "scraper.linkedin.mode", havingValue = "jsoup", matchIfMissing = true)
     public ExtractionStrategy linkedinProvider(
             LinkedInScraperProperties props,
@@ -260,8 +268,14 @@ public class AppConfig {
                 exponentialBackoffRetry);
     }
 
+    /**
+     * Playwright-microservice LinkedIn strategy — same dual gate as
+     * {@link #linkedinProvider}: {@code enabled} selects <em>whether</em>,
+     * {@code mode} selects <em>which</em>.
+     */
     @Bean
     @Qualifier("linkedinScraperClient")
+    @ConditionalOnProperty(name = "scraper.linkedin.enabled", havingValue = "true", matchIfMissing = true)
     @ConditionalOnProperty(name = "scraper.linkedin.mode", havingValue = "service")
     public ExtractionStrategy linkedinScraperClient(
             LinkedInScraperProperties props,

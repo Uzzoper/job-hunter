@@ -88,7 +88,10 @@ public class LinkedInProvider implements com.juanperuzzo.job_hunter.infrastructu
         this.baseUrl = UrlNormalizer.noTrailingSlash(properties.baseUrl());
         this.timeoutSeconds = properties.timeoutSeconds();
         this.keywords = properties.keywords();
-        this.maxPages = properties.maxPages();
+        // jsoup pagination knob (fase-a-sourcing-restoration Scenario 8): bound under
+        // scraper.linkedin.jsoup.max-pages; falls back to the legacy flat key when the
+        // nested block is absent.
+        this.maxPages = properties.jsoup() != null ? properties.jsoup().maxPages() : properties.maxPages();
         this.retry = retry;
         this.detailFetchDelayMillis = properties.detailFetchDelayMillis();
         this.location = properties.locations();

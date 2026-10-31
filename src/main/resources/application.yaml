@@ -101,6 +101,8 @@ scraper:
     batch-default-limit: 200
     batch-max-limit: 200
   linkedin:
+    # Gates BOTH LinkedIn strategies (fase-a-sourcing-restoration Scenario 8):
+    # mode selects *which* (jsoup/service), enabled selects *whether* (default true).
     enabled: true
     mode: service          # "service" (Playwright) | "jsoup" (current, fallback)
     service-url: http://linkedin-scraper:3000
@@ -134,6 +136,11 @@ scraper:
     # one permit per job; other providers keep the shared defaults unchanged.
     enrich-permits-per-second: 1.0
     enrich-burst: 1
+    jsoup:
+      # Pagination cap for the jsoup fallback strategy (mode: jsoup) — binds the
+      # LinkedInProvider record knob (fase-a-sourcing-restoration Scenario 8).
+      # Previously record-default unbound (0 → the fallback fetched zero pages).
+      max-pages: 3
 
 # Gupy MCP gateway — the sole live Gupy source. MCP strategy is default-on;
 # keywords + detail-domain knobs live under scraper.gupy.* (one canonical home).
