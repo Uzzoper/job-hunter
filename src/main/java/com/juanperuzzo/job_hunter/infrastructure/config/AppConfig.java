@@ -91,6 +91,17 @@ import com.juanperuzzo.job_hunter.infrastructure.scraper.resolver.HttpCompanyDom
 @EnableScheduling
 public class AppConfig {
 
+    /**
+     * Senior-exclude regex shared by every provider normalizer (fase-a-sourcing-restoration
+     * Scenario 6): {@code pleno} joins the senior set so mid-level listings are dropped.
+     * The bare abbreviation {@code pl} is deliberately NOT added — it false-positives on
+     * "PL/SQL"-style tokens ({@code JobNormalizer.normalizeText} already expands a
+     * standalone "Pl" token to "pleno" for matching, so common junior lookup paths of
+     * "Pl" titles are still covered; direct regex matching of the raw token is not).
+     */
+    public static final Pattern SENIOR_EXCLUDE_PATTERN = Pattern.compile(
+            "(?i)\\b(s[eê]nior|senior|sr\\.?|especialista|lead|coordenador|manager|bdr|pleno)\\b");
+
     @Bean
     public ExponentialBackoffRetry exponentialBackoffRetry(
             @Value("${scraper.retry.max-attempts}") int maxAttempts,
@@ -213,9 +224,7 @@ public class AppConfig {
             UserRepository userRepository,
             @Value("#{'${scraper.gupy.keywords}'.split(',')}") List<String> keywords,
             @Value("${scraper.normalizer.max-age-days}") int maxAgeDays) {
-        var excludePatterns = List.of(
-                Pattern.compile("(?i)\\b(s[eê]nior|senior|sr\\.?|especialista|lead|coordenador|manager|bdr)\\b"));
-        return new JobNormalizer(dateParser, keywords, excludePatterns, List.of(), maxAgeDays, Clock.systemUTC(),
+        return new JobNormalizer(dateParser, keywords, List.of(SENIOR_EXCLUDE_PATTERN), List.of(), maxAgeDays, Clock.systemUTC(),
                 userRepository);
     }
 
@@ -225,9 +234,7 @@ public class AppConfig {
             UserRepository userRepository,
             @Value("#{'${scraper.linkedin.keywords}'.split(',')}") List<String> keywords,
             @Value("${scraper.normalizer.max-age-days}") int maxAgeDays) {
-        var excludePatterns = List.of(
-                Pattern.compile("(?i)\\b(s[eê]nior|senior|sr\\.?|especialista|lead|coordenador|manager|bdr)\\b"));
-        return new JobNormalizer(dateParser, keywords, excludePatterns, List.of(), maxAgeDays, Clock.systemUTC(),
+        return new JobNormalizer(dateParser, keywords, List.of(SENIOR_EXCLUDE_PATTERN), List.of(), maxAgeDays, Clock.systemUTC(),
                 userRepository);
     }
 
