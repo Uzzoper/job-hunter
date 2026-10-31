@@ -6,7 +6,12 @@ Issue: TBD (Gupy aggregator revival, after #74) · Status: approved (implementin
 
 The public Gupy search JSON API is dead on every probed host
 (`employability-portal.gupy.io`: 404 incl. root; `portal.gupy.io/api/v1/jobs`:
-200 but SPA HTML; per-company `/api/v1/jobs`: 404). Gupy's official candidate
+200 but SPA HTML; per-company `/api/v1/jobs`: 404). Re-probed 2026-10-23
+(fase-a-sourcing-restoration recon): `GET
+employability-portal.gupy.io/api/v1/jobs?jobName=…` → nginx **404** while
+`GET candidates.mcp.api.gupy.io/mcp` → JSON-RPC **405** (formal expect-POST
+response — the MCP gateway is alive; full probe evidence stored in
+`application.yaml` comments). Gupy's official candidate
 MCP server (`https://candidates.mcp.api.gupy.io/mcp`, `gupy-portal-mcp
 v1.0.0`, no auth) exposes the same universe with filters: proven live
 2026-10-04 (`desenvolvedor` = 509 jobs; +`isRemote` = 265; `junior` = 1019).
@@ -24,7 +29,8 @@ unchanged (keywords, max-age, junior filters, URL dedupe, `EmailExtractor`).
 gupy:
   mcp-url: https://candidates.mcp.api.gupy.io/mcp   # single endpoint, no auth
   timeout-seconds: 30
-  keywords: [desenvolvedor junior, dev junior, programador junior, ...]  # CSV, junior-first compounds (LinkedIn lesson)
+  # NOTE: keyword list moved — see §9: MCP reads scraper.gupy.keywords (single
+  # canonical list, the old gupy.keywords second home is removed).
   limit: 100        # per-query limit param
   max-jobs: 200     # merged cap across queries (junior-first ordering mitigates head-overlap)
 ```
@@ -72,31 +78,50 @@ company suffix strip. Naming `methodName_scenario_expectedResult` +
 
 ## 7. Acceptance criteria
 
-- [ ] `search_jobs` returns title/company/url/description/postedAt/location
-      through the `RawJob` contract; old host/paths removed (no dead code).
-- [ ] WireMock suites green (valid / paged / empty / 500 / 429); full
-      `./mvnw test` green; no Spring in new unit tests.
+- [x] `search_jobs` returns title/company/url/description/postedAt/location
+      through the `RawJob` contract. ~~old host/paths removed (no dead code)~~ —
+      amended by fase-a-sourcing-restoration: the REST `GupyProvider` code stays
+      as a documented regression hatch (`gupy.rest.enabled=true` only, default
+      off) until Phase B deletes it after MCP volume proof.
+- [x] WireMock suites green (valid / paged / empty / 500 / 429); full
+      `./mvnw test` green; no Spring in new unit tests. (Fase-A added
+      Spring-context *wiring integration* tests only — they live in
+      `src/test/java/.../integration/` per the house `AiPortWiringTest` pattern;
+      new provider-level unit tests remain context-free.)
 - [ ] Parity sample: same keyword set via MCP vs 100 stored pre-death Gupy
       rows — field presence compared (title 100%, company 100%, url 100%,
       description substantively present, dates parseable).
-- [ ] Junior-relevance validated on a sample fetch before enabling by default
-      (`gupy.enabled` gate pattern like `ats.enabled`, default `false` until
-      sample sign-off, then `true`).
-- [ ] `AppConfig` is the only `@Value` layer; records, no Lombok,
+- [x] ~~Junior-relevance validated on a sample fetch before enabling by default~~ —
+      superseded by fase-a-sourcing-restoration (operator-approved
+      config-first decision): `gupy.enabled` flips to default `true` BEFORE the
+      parity sample (REST is dead-by-config, so MCP is the only live source);
+      MCP volume proof remains the open gate for Phase B code deletion.
+      `gupy.keywords` no longer exists — the keyword source is the canonical
+      `scraper.gupy.keywords` (9 terms), wired default-on
+      (`defaultWiring_usesGupyMcpProvider` / `mcpKeywords_comeFromScraperGupyKeywords`).
+- [x] `AppConfig` is the only `@Value` layer; records, no Lombok,
       conventional commits, SDD+TDD pair commits.
 
 ## 9. Wiring & rollout
 
-- `gupy.enabled` (default `false`): when `true`, `AppConfig` registers
-  `GupyMcpProvider` under providerId `"gupy"` via `@ConditionalOnProperty`
-  and replaces the legacy REST `GupyProvider` for that id (never both).
-  When `false`, the REST `GupyProvider` is registered under `"gupy"`.
-- Config keys: `gupy.mcp-url`, `gupy.timeout-seconds`, `gupy.keywords`,
-  `gupy.limit`, `gupy.max-jobs`, `gupy.enabled` (all `@Value` only in AppConfig).
-- Precondition for flipping `gupy.enabled=true` (default `false`): run a
-  parity sample (keyword set via MCP vs 100 stored pre-death Gupy rows) and
-  sign off on field presence/date/description/workModel (Acceptance §7). Keep
-  the REST provider the default until sample passes.
+- `gupy.enabled` (default `true` as of fase-a-sourcing-restoration): when
+  `true`, `AppConfig` registers `GupyMcpProvider` under providerId `"gupy"` via
+  `@ConditionalOnProperty` (`matchIfMissing = true`) and it is the sole live
+  source for `"gupy"`. The legacy REST `GupyProvider` is retired from the
+  default path — it only returns with `gupy.rest.enabled=true`
+  (dead-by-config regression hatch). The registry prefers MCP whenever both
+  are present, so the two can never double-register the `"gupy"` id.
+- Config keys: `gupy.mcp-url`, `gupy.timeout-seconds`, `gupy.limit`,
+  `gupy.max-jobs`, `gupy.enabled` (`/gupy.rest.enabled` hatch) — all `@Value`
+  only in AppConfig. Keywords are NOT owned here anymore: the MCP provider
+  reads `scraper.gupy.keywords` (9 terms — single canonical list shared with
+  the normalizers and the REST hatch; verified by
+  `mcpKeywords_comeFromScraperGupyKeywords`). `scraper.gupy.max-detail-domains`
+  caps the #74 detail-domain resolution in the same MCP bean.
+- ~~Precondition for flipping `gupy.enabled=true` (default `false`)~~ —
+  superseded: fase-a-sourcing-restoration flipped the default before the parity
+  sample (REST probed 404, MCP probed 405 — see §1). The MCP volume proof
+  (parity sample + providerFetchStats smoke) remains the gate for Phase B.
 
 
 ## 8. Out of scope
