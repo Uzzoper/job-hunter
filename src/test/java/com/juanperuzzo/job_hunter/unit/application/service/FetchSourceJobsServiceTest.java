@@ -42,7 +42,10 @@ class FetchSourceJobsServiceTest {
     private JobRepository jobRepository;
 
     @Mock
-    private NormalizerPort normalizer;
+    private NormalizerPort linkedinNormalizer;
+
+    @Mock
+    private NormalizerPort sourceNormalizer;
 
     @Mock
     private KeywordResolver keywordResolver;
@@ -51,7 +54,8 @@ class FetchSourceJobsServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new FetchSourceJobsService(sourceFetchPort, jobRepository, normalizer, keywordResolver);
+        service = new FetchSourceJobsService(
+                sourceFetchPort, jobRepository, linkedinNormalizer, sourceNormalizer, keywordResolver);
         lenient().when(keywordResolver.resolve(any())).thenReturn(List.of());
     }
 
@@ -72,7 +76,7 @@ class FetchSourceJobsServiceTest {
                     LocalDate.now(), "gupy");
 
             when(sourceFetchPort.fetch(eq("gupy"), anyList(), any())).thenReturn(List.of(rawJob));
-            when(normalizer.normalize(eq(rawJob), anyList())).thenReturn(job);
+            when(sourceNormalizer.normalize(eq(rawJob), anyList())).thenReturn(job);
             when(jobRepository.existsByUrl("https://example.com/job/1")).thenReturn(false);
 
             var result = service.fetchAndSave(USER_ID, "gupy");
@@ -138,7 +142,7 @@ class FetchSourceJobsServiceTest {
                     LocalDate.now(), "gupy", "rh@acme.com", null);
 
             when(sourceFetchPort.fetch(eq("gupy"), anyList(), any())).thenReturn(List.of(rawWithoutEmail));
-            when(normalizer.normalize(eq(rawWithoutEmail), anyList())).thenReturn(jobWithEmail);
+            when(sourceNormalizer.normalize(eq(rawWithoutEmail), anyList())).thenReturn(jobWithEmail);
             when(jobRepository.existsByUrl("https://example.com/job/1")).thenReturn(false);
 
             var result = service.fetchAndSave(USER_ID, "gupy");
@@ -164,13 +168,13 @@ class FetchSourceJobsServiceTest {
 
             when(keywordResolver.resolve(USER_ID)).thenReturn(List.of("rust", "kotlin"));
             when(sourceFetchPort.fetch(eq("gupy"), eq(List.of("rust", "kotlin")), any())).thenReturn(List.of(rawJob));
-            when(normalizer.normalize(rawJob, List.of("rust", "kotlin"))).thenReturn(job);
+            when(sourceNormalizer.normalize(rawJob, List.of("rust", "kotlin"))).thenReturn(job);
             when(jobRepository.existsByUrl("https://example.com/job/1")).thenReturn(false);
 
             service.fetchAndSave(USER_ID, "gupy");
 
             verify(sourceFetchPort).fetch(eq("gupy"), eq(List.of("rust", "kotlin")), any());
-            verify(normalizer).normalize(rawJob, List.of("rust", "kotlin"));
+            verify(sourceNormalizer).normalize(rawJob, List.of("rust", "kotlin"));
         }
 
         @Test
@@ -190,6 +194,51 @@ class FetchSourceJobsServiceTest {
             assertTrue(isKnownUrl.test("https://example.com/known"),
                     "the wired predicate must delegate to jobRepository.existsByUrl");
             verify(jobRepository).existsByUrl("https://example.com/known");
+        }
+    }
+
+    @Nested
+    @DisplayName("Scenario (fase-a-sourcing-restoration A3 §5): source-aware normalizer")
+    class NormalizerSelectionTests {
+
+        private static final RawJob RAW_JOB = new RawJob(
+                "Java Developer", "Company A", "https://example.com/job/1",
+                "Description", "2025-01-01", "Remote", null, "gupy", null);
+
+        @Test
+        @DisplayName("fetchSourceJobs when source is gupy should use the gupy/source normalizer, not the LinkedIn one")
+        void fetchSourceJobs_gupySource_usesGupyNormalizer() {
+            var job = new Job(null, "Java Developer", "Company A",
+                    "https://example.com/job/1", "Description",
+                    LocalDate.now(), "gupy");
+
+            when(sourceFetchPort.fetch(eq("gupy"), anyList(), any())).thenReturn(List.of(RAW_JOB));
+            when(sourceNormalizer.normalize(eq(RAW_JOB), anyList())).thenReturn(job);
+            when(jobRepository.existsByUrl("https://example.com/job/1")).thenReturn(false);
+
+            var result = service.fetchAndSave(USER_ID, "gupy");
+
+            verify(sourceNormalizer).normalize(eq(RAW_JOB), anyList());
+            verifyNoInteractions(linkedinNormalizer);
+            assertEquals(1, result.totalSaved(), "the gupy-sourced job must be saved via the source normalizer");
+        }
+
+        @Test
+        @DisplayName("fetchAndSave when source is linkedin should keep using the LinkedIn compound-keywords normalizer")
+        void fetchSourceJobs_linkedinSource_usesLinkedinNormalizer() {
+            var job = new Job(null, "Java Developer", "Company A",
+                    "https://example.com/job/1", "Description",
+                    LocalDate.now(), "linkedin");
+
+            when(sourceFetchPort.fetch(eq("linkedin"), anyList(), any())).thenReturn(List.of(RAW_JOB));
+            when(linkedinNormalizer.normalize(eq(RAW_JOB), anyList())).thenReturn(job);
+            when(jobRepository.existsByUrl("https://example.com/job/1")).thenReturn(false);
+
+            var result = service.fetchAndSave(USER_ID, "linkedin");
+
+            verify(linkedinNormalizer).normalize(eq(RAW_JOB), anyList());
+            verifyNoInteractions(sourceNormalizer);
+            assertEquals(1, result.totalSaved(), "the linkedin-sourced job must be saved via the linkedin normalizer");
         }
     }
 }

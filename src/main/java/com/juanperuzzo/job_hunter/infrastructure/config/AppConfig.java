@@ -447,9 +447,23 @@ public class AppConfig {
         return new FetchJobsService(scraperPort, jobRepository, emailDraftRepository, jobAnalysisRepository, keywordResolver);
     }
 
+    /**
+     * {@link FetchSourceJobsService} resolves its normalizer per requested source
+     * (fase-a-sourcing-restoration Scenario 5): {@code fetch/linkedin} keeps the
+     * LinkedIn compound-keywords normalizer; every other source (gupy, infojobs, ...)
+     * uses the non-LinkedIn normalizer built from {@code scraper.gupy.keywords}.
+     * The unqualified {@link NormalizerPort} resolves to the {@code @Primary}
+     * {@code normalizerPort} bean.
+     */
     @Bean
-    public FetchSourceJobsService fetchSourceJobsService(SourceFetchPort sourceFetchPort, JobRepository jobRepository, @Qualifier("linkedinNormalizerPort") NormalizerPort normalizerPort, KeywordResolver keywordResolver) {
-        return new FetchSourceJobsService(sourceFetchPort, jobRepository, normalizerPort, keywordResolver);
+    public FetchSourceJobsService fetchSourceJobsService(
+            SourceFetchPort sourceFetchPort,
+            JobRepository jobRepository,
+            @Qualifier("linkedinNormalizerPort") NormalizerPort linkedinNormalizerPort,
+            NormalizerPort normalizerPort,
+            KeywordResolver keywordResolver) {
+        return new FetchSourceJobsService(
+                sourceFetchPort, jobRepository, linkedinNormalizerPort, normalizerPort, keywordResolver);
     }
 
     @Bean

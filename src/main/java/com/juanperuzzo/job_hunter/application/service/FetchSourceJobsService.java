@@ -17,20 +17,31 @@ public class FetchSourceJobsService implements FetchSourceJobsUseCase {
 
     private static final Logger log = LoggerFactory.getLogger(FetchSourceJobsService.class);
     private static final int ERROR_MESSAGE_MAX_LENGTH = 300;
+    /** Source id whose raw jobs normalize with the LinkedIn compound-keywords normalizer. */
+    private static final String LINKEDIN_SOURCE_ID = "linkedin";
 
     private final SourceFetchPort sourceFetchPort;
     private final JobRepository jobRepository;
-    private final NormalizerPort normalizer;
+    private final NormalizerPort linkedinNormalizer;
+    private final NormalizerPort sourceNormalizer;
     private final KeywordResolver keywordResolver;
 
+    /**
+     * Normalizer is picked per source (fase-a-sourcing-restoration Scenario 5):
+     * {@code linkedinNormalizer} serves only the {@code linkedin} source — it carries
+     * the LinkedIn compound keyword list; every other source (gupy, infojobs, ...)
+     * normalizes with {@code sourceNormalizer} (built from {@code scraper.gupy.keywords}).
+     */
     public FetchSourceJobsService(
             SourceFetchPort sourceFetchPort,
             JobRepository jobRepository,
-            NormalizerPort normalizer,
+            NormalizerPort linkedinNormalizer,
+            NormalizerPort sourceNormalizer,
             KeywordResolver keywordResolver) {
         this.sourceFetchPort = sourceFetchPort;
         this.jobRepository = jobRepository;
-        this.normalizer = normalizer;
+        this.linkedinNormalizer = linkedinNormalizer;
+        this.sourceNormalizer = sourceNormalizer;
         this.keywordResolver = keywordResolver;
     }
 
@@ -47,6 +58,7 @@ public class FetchSourceJobsService implements FetchSourceJobsUseCase {
         String error = null;
 
         try {
+            var normalizer = normalizerFor(sourceId);
             var rawJobs = sourceFetchPort.fetch(sourceId, keywords, jobRepository::existsByUrl);
             fetched = rawJobs.size();
 
@@ -83,6 +95,14 @@ public class FetchSourceJobsService implements FetchSourceJobsUseCase {
                 sourceId, fetched, saved, withEmail, detailFailedCount, detailSkippedCount, error));
         log.info("{}: completed - {} saved, {} with email", sourceId, saved, withEmail);
         return new FetchResult(fetched, saved, withEmail, perProvider);
+    }
+
+    /**
+     * Normalizer matched to the requested source: the LinkedIn compound-keywords
+     * normalizer only for {@code linkedin}; the general source normalizer otherwise.
+     */
+    private NormalizerPort normalizerFor(String sourceId) {
+        return LINKEDIN_SOURCE_ID.equals(sourceId) ? linkedinNormalizer : sourceNormalizer;
     }
 
     private static String truncate(String message) {
