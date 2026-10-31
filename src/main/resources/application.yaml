@@ -162,30 +162,45 @@ gupy:
   max-jobs: 200     # merged cap across queries (junior-first ordering mitigates head-overlap)
 
 ats:
-  # ATS board providers (Greenhouse/Ashby/Lever) — disabled by default until the
-  # junior-relevance sample is confirmed (docs/specs/ats-provider.md §7).
-  enabled: false
+  # ATS board providers (Greenhouse/Ashby/Lever) — ENABLED in fase A
+  # (docs/specs/fase-a-sourcing-restoration.md A2). Board tokens below are curated
+  # externally (librarian lane) and pending live verification (HTTP 200 + >=1 job
+  # probe); slugs are finalized by a separate lane — lists keep their current
+  # contents until then. A board returning 404/empty is logged and skipped, never
+  # aborting the fetch cycle (ats-provider.md:63-67).
+  enabled: true
   timeout-seconds: 30
   # NOTE: board lists MUST stay CSV, never YAML flow style ([a, b]): @Value
   # List<String> binding silently resolves flow style to an empty list on
   # Spring Boot 4.0.6 (proven live: 0 boards configured vs CSV working).
-  greenhouse-boards: stone,xpinc,c6bank,gympass,quintoandar,ebanx,thoughtworks,vtex,feedzai,elastic,gitlab,remotecom,grafanalabs,mozilla,monzo,tailscale,wikimedia
-  ashby-boards: nubank,notion,cursor,preply,replit,linear,zapier
-  lever-sites: dlocal,outreach,metabase
+  # -- board tokens VERIFIED live on 2026-10-23: every token answered its public
+  # API with HTTP 200 + >=1 job (fase-a-sourcing-restoration.md A2, Scenario 3).
+  # Curator candidate tokens verified alive but dropped as non-eng-BR noise:
+  # figma/pinterest/ripple/twilio (Greenhouse), alternative: comment them back in.
+  # Counts snapshot: stone 369, btgpactual 258, c6bank 162, quintoandar 108, xpinc 131,
+  # vtex 31, ebanx 40, brex 257, datadog 440, coinbase 223, gitlab 231, databricks 898,
+  # rdstation 7, agilize 7, nubank 97, supabase 59, belvo 3, snyk 33, ciandt 176,
+  # neon 8, dlocal 50, spotify 80, kavak 9, despegar 111 (drifts daily).
+  greenhouse-boards: stone,btgpactual,c6bank,quintoandar,xpinc,vtex,ebanx,brex,datadog,coinbase,gitlab,databricks,rdstation,agilize
+  ashby-boards: nubank,supabase,belvo,snyk
+  lever-sites: ciandt,neon,dlocal,spotify,kavak,despegar
   lever-page-size: 100            # Lever pagination page size (spec §4)
   lever-max-pages: 3              # hard cap per site, mirrors scraper.infojobs.max-pages (PR#84 P2-a)
   # Company label per board (Ashby/Lever responses carry no company). Injected via
   # @Value("#{${ats.display-names}}") — must stay a single-line SpEL map literal
   # (nested YAML maps flatten into per-key properties and cannot be resolved).
-  display-names: "{nubank: 'Nubank', notion: 'Notion', cursor: 'Cursor', preply: 'Preply', replit: 'Replit', linear: 'Linear', zapier: 'Zapier', dlocal: 'dLocal', outreach: 'Outreach', metabase: 'Metabase'}"
+  # -- display names map covers exactly the verified ashby-boards + lever-sites tokens
+  display-names: "{nubank: 'Nubank', supabase: 'Supabase', belvo: 'Belvo', snyk: 'Snyk', ciandt: 'CI&T', neon: 'Neon', dlocal: 'dLocal', spotify: 'Spotify', kavak: 'Kavak', despegar: 'Despegar'}"
 
 github:
-  # GitHub "jobs" community boards (frontendbr/backend-br) — disabled by default until
-  # the junior-relevance sample is confirmed (docs/specs/github-jobs.md §7).
-  enabled: false
+  # GitHub "jobs" community boards (frontendbr/backend-br) — ENABLED in fase A
+  # (docs/specs/fase-a-sourcing-restoration.md A2). Open issues with hiring labels
+  # surface as jobs (github-jobs.md), deduped by URL like every other provider.
+  enabled: true
   timeout-seconds: 30
   # Owner/repo pairs, CSV (never YAML flow style — @Value List<String> binds flow style
   # to an empty list on Spring Boot 4.0.6, proven live on the ats.* lists).
+  # -- repos verified public & active (community hiring boards, backend-br/vagas junior-rich)
   repos: frontendbr/vagas,backend-br/vagas
 
 auto-send:
