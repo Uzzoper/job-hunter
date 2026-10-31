@@ -420,8 +420,12 @@ impl JobListScreen {
                     || job.description.to_lowercase().contains(&query)
                     || job.source.to_lowercase().contains(&query);
 
+                // minScore filter: drop jobs below threshold or unanalyzed
+                // (no cached score). Mirrors the Java list-filter contract
+                // (FetchJobsService.java:108-112): with no threshold set, no
+                // exclusion happens and `job.id` never participates.
                 let matches_score = min_score.is_none_or(|ms| {
-                    job.id > 0 && ms <= 100
+                    self.get_job_score(job).is_some_and(|score| score >= ms)
                 });
 
                 let matches_apply_type = match apply_type_filter {
@@ -1858,6 +1862,91 @@ mod tests {
 
         screen.dev_only = true;
         assert!(screen.dev_only);
+    }
+
+    // --- Min-score filter tests (spec fase-a-sourcing-restoration, Scenario 7) ---
+    /// Jobs for min-score tests with ids fixed by convention:
+    /// id 1 = analyzed high score, id 2 = unanalyzed (NULL), id 3 = analyzed low score.
+    fn sample_jobs_with_scores() -> Vec<JobResponse> {
+        vec![
+            JobResponse { id: 1, title: "High Score Job".into(), company: "A".into(), url: "https://example.com/job/1".into(), description: "desc".into(), posted_at: NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(), source: "gupy".into(), contact_email: None },
+            JobResponse { id: 2, title: "Unanalyzed Job".into(), company: "B".into(), url: "https://example.com/job/2".into(), description: "desc".into(), posted_at: NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(), source: "linkedin".into(), contact_email: None },
+            JobResponse { id: 3, title: "Low Score Job".into(), company: "C".into(), url: "https://example.com/job/3".into(), description: "desc".into(), posted_at: NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(), source: "infojobs".into(), contact_email: None },
+        ]
+    }
+
+    #[test]
+    fn min_score_filter_no_threshold_shows_all_jobs() {
+        let mut screen = create_test_screen();
+        screen.set_jobs(sample_jobs_with_scores());
+        screen.score_cache.insert(1, Some(85));
+        screen.score_cache.insert(2, None);
+        screen.score_cache.insert(3, Some(40));
+
+        // No threshold set → no exclusion (matches the Java list-filter contract).
+        screen.min_score_filter = None;
+        screen.apply_filters();
+
+        assert_eq!(screen.filtered_jobs.len(), 3);
+    }
+
+    #[test]
+    fn min_score_filter_uses_job_score() {
+        let mut screen = create_test_screen();
+        screen.set_jobs(sample_jobs_with_scores());
+        screen.score_cache.insert(1, Some(85));
+        screen.score_cache.insert(2, None);
+        screen.score_cache.insert(3, Some(40));
+
+        screen.set_min_score_filter(Some(80));
+
+        assert_eq!(screen.filtered_jobs.len(), 1);
+        assert_eq!(screen.filtered_jobs[0].id, 1);
+    }
+
+    #[test]
+    fn min_score_filter_excludes_unanalyzed_job() {
+        let mut screen = create_test_screen();
+        screen.set_jobs(sample_jobs_with_scores());
+        screen.score_cache.insert(1, None);
+        screen.score_cache.insert(2, None);
+        screen.score_cache.insert(3, Some(50));
+
+        // Unanalyzed (NULL score) jobs are excluded whenever a threshold is imposed.
+        screen.set_min_score_filter(Some(1));
+
+        assert_eq!(screen.filtered_jobs.len(), 1);
+        assert_eq!(screen.filtered_jobs[0].id, 3);
+    }
+
+    #[test]
+    fn min_score_filter_includes_job_at_threshold() {
+        let mut screen = create_test_screen();
+        screen.set_jobs(sample_jobs_with_scores());
+        screen.score_cache.insert(1, Some(80));
+        screen.score_cache.insert(2, None);
+        screen.score_cache.insert(3, None);
+
+        screen.set_min_score_filter(Some(80));
+
+        assert_eq!(screen.filtered_jobs.len(), 1);
+        assert_eq!(screen.filtered_jobs[0].id, 1);
+    }
+
+    #[test]
+    fn min_score_filter_ignores_job_id() {
+        let mut screen = create_test_screen();
+        let jobs = vec![
+            JobResponse { id: 0, title: "Job With Zero Id".into(), company: "A".into(), url: "https://example.com/job/0".into(), description: "desc".into(), posted_at: NaiveDate::from_ymd_opt(2026, 7, 14).unwrap(), source: "gupy".into(), contact_email: None },
+        ];
+        screen.set_jobs(jobs);
+        screen.score_cache.insert(0, Some(85));
+
+        // job.id must not participate in the comparison — only the score does.
+        screen.set_min_score_filter(Some(50));
+
+        assert_eq!(screen.filtered_jobs.len(), 1);
+        assert_eq!(screen.filtered_jobs[0].id, 0);
     }
 
     // --- Fetch trigger (`f` key) tests ---
