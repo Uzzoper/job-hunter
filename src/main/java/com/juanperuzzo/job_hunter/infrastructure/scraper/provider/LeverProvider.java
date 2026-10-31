@@ -32,6 +32,8 @@ import java.util.Map;
 public class LeverProvider implements ExtractionStrategy {
 
     private static final Logger log = LoggerFactory.getLogger(LeverProvider.class);
+    /** Honest UA header — consistent with the other ATS providers; probed 2026-10-23. */
+    private static final Map<String, String> ATS_DEFAULT_HEADERS = Map.of("User-Agent", "JobHunter/1.0");
 
     private final String providerId;
     private final ExponentialBackoffRetry retry;
@@ -62,7 +64,8 @@ public class LeverProvider implements ExtractionStrategy {
         this.retry = retry;
         this.sites = sites.stream().map(site -> {
             var displayName = displayNames.getOrDefault(site, site);
-            var strategy = new RestApiStrategy(providerId, baseUrl, timeoutSeconds, "", node -> mapNode(node, displayName));
+            var strategy = new RestApiStrategy(providerId, baseUrl, timeoutSeconds, "",
+                    node -> mapNode(node, displayName), ATS_DEFAULT_HEADERS);
             return new SiteStrategy(site, strategy);
         }).toList();
         this.pageSize = pageSize;
