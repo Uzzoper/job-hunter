@@ -115,6 +115,15 @@ public class GupyMcpProvider implements ExtractionStrategy {
     }
 
     /**
+     * Keywords the provider plans its {@code search_jobs} queries with.
+     * Sourced from the single canonical list {@code scraper.gupy.keywords}
+     * (fase-a-sourcing-restoration Scenario 2 — gupy-mcp-provider.md §9).
+     */
+    public List<String> keywords() {
+        return keywords;
+    }
+
+    /**
      * Runs the keyword loop against the MCP server, with offset pagination,
      * deduplication by URL, optional description fallback via {@code get_job_by_id}
      * and optional company-domain resolution (#74).

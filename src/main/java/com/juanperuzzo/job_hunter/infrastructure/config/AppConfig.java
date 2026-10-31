@@ -270,12 +270,20 @@ public class AppConfig {
         return new LinkedInScraperClient(props, exponentialBackoffRetry, rateLimiter);
     }
 
+    /**
+     * Gupy MCP strategy — the default gupy source since fase-a-sourcing-restoration A1
+     * (the REST search gateway answers 404; the MCP gateway answers formal 405 on GET).
+     * Registered unless {@code gupy.enabled=false} explicitly; the legacy REST
+     * {@code gupyProvider} only returns with {@code gupy.rest.enabled=true}.
+     * Keywords come from the single canonical list {@code scraper.gupy.keywords}
+     * (the old {@code gupy.keywords} second home is gone).
+     */
     @Bean
-    @ConditionalOnProperty(name = "gupy.enabled", havingValue = "true")
+    @ConditionalOnProperty(name = "gupy.enabled", havingValue = "true", matchIfMissing = true)
     public ExtractionStrategy gupyMcpProvider(
             @Value("${gupy.mcp-url:https://candidates.mcp.api.gupy.io/mcp}") String mcpUrl,
             @Value("${gupy.timeout-seconds:30}") int timeoutSeconds,
-            @Value("#{T(org.springframework.util.StringUtils).commaDelimitedListToStringArray('${gupy.keywords:desenvolvedor junior}')}") List<String> keywords,
+            @Value("#{T(org.springframework.util.StringUtils).commaDelimitedListToStringArray('${scraper.gupy.keywords}')}") List<String> keywords,
             @Value("${gupy.limit:100}") int limit,
             @Value("${gupy.max-jobs:200}") int maxJobs,
             @Value("${scraper.gupy.max-detail-domains:100}") int maxDetailDomains,
@@ -285,7 +293,14 @@ public class AppConfig {
                 exponentialBackoffRetry, companyDomainResolverPort, maxDetailDomains);
     }
 
+    /**
+     * Legacy REST Gupy strategy — regression hatch only. The REST search gateway is
+     * dead (probed 404 on every host, see application.yaml evidence comments), so this
+     * bean is registered exclusively with {@code gupy.rest.enabled=true} and never by
+     * default. Deleted in Phase B once MCP volume is proven.
+     */
     @Bean(name = "gupyProvider")
+    @ConditionalOnProperty(name = "gupy.rest.enabled", havingValue = "true")
     public ExtractionStrategy gupyProvider(
             @Value("${scraper.gupy.base-url}") String baseUrl,
             @Value("${scraper.gupy.timeout-seconds}") int timeoutSeconds,
@@ -377,7 +392,7 @@ public class AppConfig {
 
     @Bean
     public ProviderRegistry providerRegistry(
-            @Qualifier("gupyProvider") ExtractionStrategy gupyProvider,
+            @Qualifier("gupyProvider") Optional<ExtractionStrategy> gupyProvider,
             @Qualifier("gupyMcpProvider") Optional<ExtractionStrategy> gupyMcpProvider,
             @Qualifier("infojobsProvider") ExtractionStrategy infojobsProvider,
             @Qualifier("linkedinProvider") Optional<ExtractionStrategy> linkedinProvider,
@@ -391,11 +406,14 @@ public class AppConfig {
             JobNormalizer jobNormalizer,
             JobNormalizer linkedinJobNormalizer) {
         var registry = new ProviderRegistry();
+        // MCP preferred when present (default wiring); the REST regression hatch only
+        // serves gupy when MCP is explicitly disabled — never both (never duplicated id).
         if (gupyMcpProvider.isPresent()) {
             gupyMcpProvider.ifPresent(provider ->
                     registry.register(provider, exponentialBackoffRetry, rateLimiter, jobNormalizer));
-        } else {
-            registry.register(gupyProvider, exponentialBackoffRetry, rateLimiter, jobNormalizer);
+        } else if (gupyProvider.isPresent()) {
+            gupyProvider.ifPresent(provider ->
+                    registry.register(provider, exponentialBackoffRetry, rateLimiter, jobNormalizer));
         }
         registry.register(infojobsProvider, exponentialBackoffRetry, rateLimiter, jobNormalizer);
         linkedinProvider.ifPresent(provider ->

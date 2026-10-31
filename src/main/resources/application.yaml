@@ -64,6 +64,8 @@ scraper:
     max-age-days: 90
   gupy:
     base-url: https://employability-portal.gupy.io
+    # 9-term include list — the single canonical keyword list for EVERY provider that
+    # reads gupy keywords (REST, MCP, normalizers). CSV format (see ats.* binding note).
     keywords: desenvolvedor,programador,estágio,junior,ti,tecnologia,dev,software,analista
     limit: 100
     timeout-seconds: 10
@@ -71,6 +73,8 @@ scraper:
     # per career-page host; hosts beyond this cap per fetch are logged and skipped.
     # Keep this cap >= limit above: a fetch can never overflow its own cap, which
     # is what the backfill straggler guarantee ("covered going forward") relies on.
+    # (Read both via scraper.gupy.max-detail-domains and referenced as
+    # gupy.max-detail-domains in the MCP knob block below — one live key.)
     max-detail-domains: 100
   infojobs:
     base-url: https://www.infojobs.com.br
@@ -130,6 +134,25 @@ scraper:
     # one permit per job; other providers keep the shared defaults unchanged.
     enrich-permits-per-second: 1.0
     enrich-burst: 1
+
+# Gupy MCP gateway — the sole live Gupy source. MCP strategy is default-on;
+# keywords + detail-domain knobs live under scraper.gupy.* (one canonical home).
+# Probe evidence (fase-a-sourcing-restoration.md Context, probed 2026-10-23):
+#   REST  GET employability-portal.gupy.io/api/v1/jobs?jobName=… → nginx 404
+#   MCP   GET candidates.mcp.api.gupy.io/mcp                    → JSON-RPC 405
+#         (formal expect-POST response — the MCP server is alive; Gupy MCP verified
+#          live on 2026-10-04 per docs/specs/gupy-mcp-provider.md §1)
+gupy:
+  enabled: true                    # GupyMcpProvider registered by default (fase-a Scenario 1)
+  # Dead-gateway regression hatch: the REST provider returns ONLY with this flag
+  # (never both strategies serve "gupy" — the registry prefers MCP). Full code
+  # deletion follows in Phase B once MCP volume is proven.
+  rest:
+    enabled: false
+  mcp-url: https://candidates.mcp.api.gupy.io/mcp   # single endpoint, no auth
+  timeout-seconds: 30
+  limit: 100        # per-query limit param (one paging-knob home, per gupy-mcp-provider.md §2)
+  max-jobs: 200     # merged cap across queries (junior-first ordering mitigates head-overlap)
 
 ats:
   # ATS board providers (Greenhouse/Ashby/Lever) — disabled by default until the
