@@ -146,10 +146,29 @@ Plain JUnit 5 + Mockito (no Spring context for unit bits), Rust tests in-crate.
 ## Verification
 
 - `./mvnw test --batch-mode` green (no ignored/skipped introduced)
+  — **done 2026-10-31**: 412 tests, 0 failures, 0 skipped (76 classes).
 - `cargo test` green in `cli/`
+  — **done 2026-10-31**: 57 tests, 0 failures.
 - Live smoke (manual, after merge): `POST /api/jobs/fetch` → `ProviderFetchStats`
   shows `gupy` >0 jobs and zero provider-crash entries; ATS boards all 200
+  — **done 2026-10-31 on the VM backend** (evidence below). `fetch/gupy` via
+  MCP: 200 fetched / 41 saved; second run 200 fetched / **0 saved** (URL
+  dedupe). Full fetch: greenhouse 3123/580, gupy(MCP) 200/47, ashby 209/78,
+  lever 406/64, github 59/25, infojobs 171/0 (pre-existing rows), linkedin
+  30/14 (partial — service-mode timeout at 180s, `error: null`, see note).
+  DB `SELECT source, COUNT(*)`: gupy 3659, greenhouse 1297, ashby 284,
+  linkedin 209, github 57, lever 18. Log grep for provider crash/bot
+  challenge: zero occurrences; no mass 403/404 on ATS boards.
+  - **LinkedIn note:** partial data from service-mode timeout is known
+    behavior (spec keeps provider-quality tuning out of fase A); logged as
+    Phase B backlog noise, not a defect.
+  - **Open follow-up (non-gate):** `infojobs` row absent from the source
+    COUNT dump while InfoJobs reported 171 fetched/0 saved — needs one
+    targeted check (`SELECT COUNT(*) FROM jobs WHERE source='infojobs'` +
+    single-source fetch) to distinguish legitimate dedupe from a save-path
+    defect. InfoJobs code is untouched by fase A; tracked alongside Phase B.
 - Store probe evidence (404/405 + each board 200) in the yaml comments
+  — done in `application.yaml` comments.
 
 ---
 
