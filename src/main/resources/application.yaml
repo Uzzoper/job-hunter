@@ -164,10 +164,9 @@ gupy:
 ats:
   # ATS board providers (Greenhouse/Ashby/Lever) — ENABLED in fase A
   # (docs/specs/fase-a-sourcing-restoration.md A2). Board tokens below are curated
-  # externally (librarian lane) and pending live verification (HTTP 200 + >=1 job
-  # probe); slugs are finalized by a separate lane — lists keep their current
-  # contents until then. A board returning 404/empty is logged and skipped, never
-  # aborting the fetch cycle (ats-provider.md:63-67).
+  # externally (librarian lane) and were VERIFIED live before shipping — see the
+  # "board tokens VERIFIED" note alongside the lists. A board returning 404/empty
+  # is logged and skipped, never aborting the fetch cycle (ats-provider.md:63-67).
   enabled: true
   timeout-seconds: 30
   # NOTE: board lists MUST stay CSV, never YAML flow style ([a, b]): @Value
