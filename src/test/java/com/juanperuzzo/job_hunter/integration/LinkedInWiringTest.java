@@ -12,7 +12,6 @@ import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.context.ConfigurableApplicationContext;
 
 import java.io.IOException;
-import java.lang.reflect.Field;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -63,7 +62,7 @@ class LinkedInWiringTest {
 
     @Test
     @DisplayName("with scraper.linkedin.enabled=false no LinkedIn ExtractionStrategy bean is registered (jsoup or service)")
-    void linkedinBeans_gatedByEnabledFlag() throws IOException {
+    void boot_withEnabledFalse_registersNoLinkedinBeans() throws IOException {
         boot("--scraper.linkedin.enabled=false");
 
         var registry = context.getBean("providerRegistry", ProviderRegistry.class);
@@ -78,7 +77,7 @@ class LinkedInWiringTest {
 
     @Test
     @DisplayName("with the shipped yaml the LinkedIn strategy is registered and scraper.linkedin.jsoup.max-pages binds")
-    void linkedinDefaultWiring_registersStrategyAndBindsJsoupMaxPages() throws IOException {
+    void boot_withShippedYaml_registersStrategyAndBindsJsoupMaxPages() throws IOException {
         boot();
 
         var registry = context.getBean("providerRegistry", ProviderRegistry.class);

@@ -13,7 +13,6 @@ import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.context.ConfigurableApplicationContext;
 
 import java.io.IOException;
-import java.lang.reflect.Field;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -76,7 +75,7 @@ class GupyProviderWiringTest {
 
     @Test
     @DisplayName("default wiring when only scraper.gupy.keywords is present should register GupyMcpProvider and no gupyProvider bean")
-    void defaultWiring_usesGupyMcpProvider() throws IOException {
+    void boot_withDefaultConfig_usesGupyMcpProvider() throws IOException {
         boot();
 
         var registry = context.getBean("providerRegistry", ProviderRegistry.class);
@@ -91,7 +90,7 @@ class GupyProviderWiringTest {
 
     @Test
     @DisplayName("with gupy.enabled=false and gupy.rest.enabled=true the REST gupyProvider bean is resurrected and used")
-    void restEnabledProperty_resurrectsGupyProvider() throws IOException {
+    void boot_withRestHatch_servesGupyViaRestProvider() throws IOException {
         boot("--gupy.enabled=false", "--gupy.rest.enabled=true");
 
         var registry = context.getBean("providerRegistry", ProviderRegistry.class);
@@ -106,7 +105,7 @@ class GupyProviderWiringTest {
 
     @Test
     @DisplayName("GupyMcpProvider keywords should come from scraper.gupy.keywords (9 terms, no gupy.keywords second home)")
-    void mcpKeywords_comeFromScraperGupyKeywords() throws IOException {
+    void boot_withDefaultConfig_mcpKeywordsComeFromScraperGupyKeywords() throws IOException {
         boot();
 
         var registryGupy = registryGupyStrategy(context.getBean("providerRegistry", ProviderRegistry.class));
