@@ -29,8 +29,6 @@ import java.util.Map;
 public class AshbyProvider implements ExtractionStrategy {
 
     private static final Logger log = LoggerFactory.getLogger(AshbyProvider.class);
-    /** Honest UA header — Ashby rejects bare default Java/python UAs with 403 (probed 2026-10-23). */
-    private static final Map<String, String> ATS_DEFAULT_HEADERS = Map.of("User-Agent", "JobHunter/1.0");
 
     private final String providerId;
     private final ExponentialBackoffRetry retry;
@@ -56,7 +54,7 @@ public class AshbyProvider implements ExtractionStrategy {
         this.boards = boardNames.stream().map(board -> {
             var displayName = displayNames.getOrDefault(board, board);
             var strategy = new RestApiStrategy(providerId, baseUrl, timeoutSeconds, "jobs",
-                    node -> mapNode(node, displayName), ATS_DEFAULT_HEADERS);
+                    node -> mapNode(node, displayName), AtsHttpHeaders.DEFAULT);
             return new BoardStrategy(board, strategy);
         }).toList();
     }

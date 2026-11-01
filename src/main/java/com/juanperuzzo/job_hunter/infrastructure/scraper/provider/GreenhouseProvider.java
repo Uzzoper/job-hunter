@@ -13,7 +13,6 @@ import org.springframework.web.util.HtmlUtils;
 import java.text.Normalizer;
 import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 
 /**
  * Greenhouse board provider ({@code providerId}: "greenhouse") — reads the
@@ -30,8 +29,6 @@ public class GreenhouseProvider implements ExtractionStrategy {
 
     private static final Logger log = LoggerFactory.getLogger(GreenhouseProvider.class);
     private static final String JSON_PATH = "jobs";
-    /** Honest UA header — ATS edges (Ashby confirmed 2026-10-23) reject bare Java/python UAs with 403. */
-    private static final Map<String, String> ATS_DEFAULT_HEADERS = Map.of("User-Agent", "JobHunter/1.0");
 
     private final String providerId;
     private final RestApiStrategy apiStrategy;
@@ -50,10 +47,9 @@ public class GreenhouseProvider implements ExtractionStrategy {
         this.providerId = "greenhouse";
         this.boardTokens = boardTokens;
         this.retry = retry;
-        // Explicit honest UA header: Ashby (and potentially other ATS edges) rejects
-        // bare default Java/urllib User-Agents with HTTP 403 (probed 2026-10-23, Phase A).
+        // Honest shared UA (AtsHttpHeaders): ATS edges 403 bare Java/urllib UAs (probed 2026-10-23).
         this.apiStrategy = new RestApiStrategy(providerId, baseUrl, timeoutSeconds, JSON_PATH, this::mapNode,
-                ATS_DEFAULT_HEADERS);
+                AtsHttpHeaders.DEFAULT);
     }
 
     /**
