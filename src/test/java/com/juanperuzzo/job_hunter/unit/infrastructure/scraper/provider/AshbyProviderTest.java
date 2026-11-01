@@ -260,4 +260,25 @@ class AshbyProviderTest {
             return jobs.stream().filter(j -> url.equals(j.url())).findFirst().orElseThrow();
         }
     }
+
+    @Nested
+    @DisplayName("Scenario: honest user-agent header")
+    class HonestUserAgent {
+
+        @Test
+        @DisplayName("extract should send the shared AtsHttpHeaders UA so ATS edges do not 403")
+        void extract_whenBoardProbed_sendsHonestUserAgent() {
+            stubFor(get(urlPathEqualTo("/posting-api/job-board/nubank"))
+                    .willReturn(okJson("""
+                        {"apiVersion": "1", "jobs": []}
+                        """)));
+
+            provider.extract();
+
+            var requests = findAll(getRequestedFor(urlPathEqualTo("/posting-api/job-board/nubank")));
+            assertFalse(requests.isEmpty());
+            assertEquals("JobHunter/1.0", requests.get(0).getHeader("User-Agent"),
+                    "ATS edges reject bare Java UAs with 403 (probed 2026-10-23); the shared honest UA must ride every request");
+        }
+    }
 }

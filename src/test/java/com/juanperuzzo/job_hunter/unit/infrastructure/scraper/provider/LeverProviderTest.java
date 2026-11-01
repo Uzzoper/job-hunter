@@ -390,4 +390,26 @@ class LeverProviderTest {
             return jobs.stream().filter(j -> url.equals(j.url())).findFirst().orElseThrow();
         }
     }
+
+    @Nested
+    @DisplayName("Scenario: honest user-agent header")
+    class HonestUserAgent {
+
+        @Test
+        @DisplayName("extract should send the shared AtsHttpHeaders UA via the production constructor")
+        void extract_whenSiteProbed_sendsHonestUserAgent() {
+            // The production constructor is the only wiring that installs the shared honest UA.
+            var prodProvider = new LeverProvider(baseUrl, 5, List.of("dlocal"), displayNames, retry, 100, 3);
+            stubFor(get(urlPathEqualTo("/v0/postings/dlocal"))
+                    .withQueryParam("mode", equalTo("json"))
+                    .willReturn(okJson("[]")));
+
+            prodProvider.extract();
+
+            var requests = findAll(getRequestedFor(urlPathEqualTo("/v0/postings/dlocal")));
+            assertFalse(requests.isEmpty());
+            assertEquals("JobHunter/1.0", requests.get(0).getHeader("User-Agent"),
+                    "ATS edges reject bare Java UAs with 403 (probed 2026-10-23); the shared honest UA must ride every request");
+        }
+    }
 }
