@@ -56,8 +56,17 @@ zero tokens, ATS is merely idle, never broken).
 - **WHEN** the MCP provider plans its queries
 - **THEN** its keywords come from `scraper.gupy.keywords` (no `gupy.keywords`
 second home; the duplicate key is removed)
-- **AND** MCP paging knobs (`gupy.limit:100`, `gupy.max-jobs:200`,
-`gupy.max-detail-domains:100`) live once under the existing Qualifier block
+- **AND** MCP paging knobs live once for the MCP strategy
+  (`gupy.limit:100`, `gupy.max-jobs:200` under the `gupy:` block)
+- **Amendment (2026-11-01, review round 2):** shipped reality diverges from
+  the original clause on two knobs, on purpose:
+  (a) `max-detail-domains` stays a single `scraper.gupy.*` key — it is shared
+  by the MCP bean, the legacy REST hatch and the detail-domain resolver
+  (#74), so mirroring it as `gupy.max-detail-domains` would create a second
+  home instead of removing one;
+  (b) the legacy REST hatch keeps its own `scraper.gupy.limit` — MCP's limit
+  single-homes at `gupy.limit` (per `gupy-mcp-provider.md` §2). Both hatches
+  are Phase-B deletions, which collapses this split permanently.
 
 ### A2 — ATS + GitHub enabled
 
@@ -92,8 +101,16 @@ keywords normalizer
 - **GIVEN** a listing titled "Desenvolvedor Java Pleno"
 - **WHEN** the include includes the keyword and the exclude regex runs
 - **THEN** the job is dropped (`\bpleno\b` joins the senior-exclude set;
-the bare abbreviation `pl` is NOT added — false-positive on "PL/SQL"-style
-tokens is documented as the reason)
+the bare abbreviation `pl` is NOT added — the raw token false-positives on
+"PL/SQL"-style strings)
+- **Amendment (2026-11-01, review round 2):** `JobNormalizer.normalizeText`
+already expands a standalone "Pl" token to "pleno" *before* the exclude
+match, so (a) raw `Pl`-abbreviated junior titles are dropped anyway — the
+intended coverage is intact — and (b) titles like "Desenvolvedor PL/SQL"
+are dropped too (expansion yields `pleno/sql`). This accepted loss of rare
+junior PL/SQL listings is pinned by
+`normalize_whenPlSqlTitle_dropsViaPlExpansion` and re-evaluated in the
+Phase B normalizer-quality work.
 
 #### Scenario 7: TUI min-score filters real scores
 - **GIVEN** the TUI list screen with a minScore filter
@@ -132,23 +149,31 @@ Plain JUnit 5 + Mockito (no Spring context for unit bits), Rust tests in-crate.
 
 | # | Test | Verifies |
 |---|---|---|
-| 1 | `defaultWiring_usesGupyMcpProvider` | registry's gupy slot is `GupyMcpProvider` under default yaml |
-| 2 | `restEnabledProperty_resurrectsGupyProvider` | with `gupy.rest.enabled=true` the REST bean exists again and registry uses it when MCP disabled |
-| 3 | `mcpKeywords_comeFromScraperGupyKeywords` | MCP provider receives the 9-term list |
+| 1 | `boot_withDefaultConfig_usesGupyMcpProvider` | registry's gupy slot is `GupyMcpProvider` under default yaml |
+| 2 | `boot_withRestHatch_servesGupyViaRestProvider` | with `gupy.rest.enabled=true` the REST bean exists again and registry uses it when MCP disabled |
+| 3 | `boot_withDefaultConfig_mcpKeywordsComeFromScraperGupyKeywords` | MCP provider receives the 9-term list |
 | 4 | `fetchSourceJobs_gupySource_usesGupyNormalizer` | source=gupy → keywords list `scraper.gupy.keywords`, not LinkedIn compounds |
 | 5 | `normalize_whenPlenoTitle_shouldDropJob` | "Java Pleno" dropped |
-| 6 | `normalize_whenSeniorStillDropped` | regression guard on existing excludes |
+| 6 | `normalize_whenSeniorTitle_shouldStillDrop` | regression guard on existing excludes |
 | 7 | Rust `min_score_filter_uses_job_score` | score-based exclusion, NULL handling per list semantics |
-| 8 | `linkedinBeans_gatedByEnabledFlag` | enabled=false → no LinkedIn bean; absent → default true |
+| 8 | `boot_withEnabledFalse_registersNoLinkedinBeans` | enabled=false → no LinkedIn bean; absent → default true |
 
 ---
 
 ## Verification
 
 - `./mvnw test --batch-mode` green (no ignored/skipped introduced)
-  — **done 2026-10-31**: 412 tests, 0 failures, 0 skipped (76 classes).
+  — **done 2026-10-31**, re-verified 2026-11-01: **962 tests, 0 failures,
+  0 errors, 0 skipped (76 top-level suites)**. Count source: surefire XML
+  `TEST-*.xml` suite attributes (includes `@Nested` classes); errata — an
+  earlier record said "412, parsing error", which was wrong: the reviewer's
+  958 was the correct count at their snapshot (962 − the 4 tests added in
+  review round 2); our "412" came from summing the parent `.txt` "Tests
+  run:" lines, where Surefire reports 0 for `@Nested` classes.
 - `cargo test` green in `cli/`
-  — **done 2026-10-31**: 57 tests, 0 failures.
+  — **done 2026-10-31**: 577 tests across 5 suites, 0 failures (count
+  corrected 2026-11-01; an earlier "57" recorded only the last suite's
+  result line).
 - Live smoke (manual, after merge): `POST /api/jobs/fetch` → `ProviderFetchStats`
   shows `gupy` >0 jobs and zero provider-crash entries; ATS boards all 200
   — **done 2026-10-31 on the VM backend** (evidence below). `fetch/gupy` via
@@ -167,6 +192,13 @@ Plain JUnit 5 + Mockito (no Spring context for unit bits), Rust tests in-crate.
     targeted check (`SELECT COUNT(*) FROM jobs WHERE source='infojobs'` +
     single-source fetch) to distinguish legitimate dedupe from a save-path
     defect. InfoJobs code is untouched by fase A; tracked alongside Phase B.
+  - **Open follow-up (non-gate, added 2026-11-01):** same-dump lever
+    arithmetic — full fetch saved lever **64**, yet the same session's
+    `SELECT source, COUNT(*)` shows `lever 18`; 64 saves cannot leave 18
+    rows. Stronger than the infojobs gap, and unflagged by the VM agent's
+    evidence paste. Re-measure with a fresh COUNT immediately after a
+    controlled lever-only fetch before trusting (or fixing) the lever save
+    path; code is untouched by fase A.
 - Store probe evidence (404/405 + each board 200) in the yaml comments
   — done in `application.yaml` comments.
 

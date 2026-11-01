@@ -98,7 +98,8 @@ company suffix strip. Naming `methodName_scenario_expectedResult` +
       MCP volume proof remains the open gate for Phase B code deletion.
       `gupy.keywords` no longer exists — the keyword source is the canonical
       `scraper.gupy.keywords` (9 terms), wired default-on
-      (`defaultWiring_usesGupyMcpProvider` / `mcpKeywords_comeFromScraperGupyKeywords`).
+      (`boot_withDefaultConfig_usesGupyMcpProvider`/
+      `boot_withDefaultConfig_mcpKeywordsComeFromScraperGupyKeywords`).
 - [x] `AppConfig` is the only `@Value` layer; records, no Lombok,
       conventional commits, SDD+TDD pair commits.
 
@@ -116,7 +117,8 @@ company suffix strip. Naming `methodName_scenario_expectedResult` +
   only in AppConfig. Keywords are NOT owned here anymore: the MCP provider
   reads `scraper.gupy.keywords` (9 terms — single canonical list shared with
   the normalizers and the REST hatch; verified by
-  `mcpKeywords_comeFromScraperGupyKeywords`). `scraper.gupy.max-detail-domains`
+  `boot_withDefaultConfig_mcpKeywordsComeFromScraperGupyKeywords`).
+  `scraper.gupy.max-detail-domains`
   caps the #74 detail-domain resolution in the same MCP bean.
 - ~~Precondition for flipping `gupy.enabled=true` (default `false`)~~ —
   superseded: fase-a-sourcing-restoration flipped the default before the parity
