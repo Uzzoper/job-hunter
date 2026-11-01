@@ -230,12 +230,22 @@ class JobNormalizerTest {
 
         @Test
         @DisplayName("should keep dropping senior titles (regression guard on existing excludes)")
-        void normalize_whenSeniorStillDropped() {
+        void normalize_whenSeniorTitle_shouldStillDrop() {
             normalizer = appConfigWiredNormalizer();
             var job = normalizer.normalize(new RawJob(
                     "Desenvolvedor Java Sênior", "Company", "https://example.com/senior1",
                     "Description", "2026-07-01", null, "Presencial", "gupy", null));
             assertNull(job);
+        }
+
+        @Test
+        @DisplayName("should drop 'Desenvolvedor PL/SQL' — the Pl→pleno expansion feeds the exclude match (accepted loss, logged for Phase B)")
+        void normalize_whenPlSqlTitle_dropsViaPlExpansion() {
+            normalizer = appConfigWiredNormalizer();
+            var job = normalizer.normalize(new RawJob(
+                    "Desenvolvedor PL/SQL", "Company", "https://example.com/plsql1",
+                    "Description", "2026-07-01", null, "Presencial", "gupy", null));
+            assertNull(job, "normalizeText expands Pl→pleno, so PL/SQL titles match the pleno exclude term");
         }
     }
 

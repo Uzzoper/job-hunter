@@ -94,10 +94,14 @@ public class AppConfig {
     /**
      * Senior-exclude regex shared by every provider normalizer (fase-a-sourcing-restoration
      * Scenario 6): {@code pleno} joins the senior set so mid-level listings are dropped.
-     * The bare abbreviation {@code pl} is deliberately NOT added — it false-positives on
-     * "PL/SQL"-style tokens ({@code JobNormalizer.normalizeText} already expands a
-     * standalone "Pl" token to "pleno" for matching, so common junior lookup paths of
-     * "Pl" titles are still covered; direct regex matching of the raw token is not).
+     * The bare abbreviation {@code pl} is deliberately NOT added — the raw token
+     * false-positives on "PL/SQL"-style strings. Behavior note (verified, pinned by
+     * {@code JobNormalizerTest.PlenoExclusion}): {@code JobNormalizer.normalizeText}
+     * expands a standalone "Pl" token to "pleno" BEFORE the exclude match, so
+     * raw "Pl"-abbreviated junior titles are dropped anyway (the intended lookup
+     * coverage), and titles like "Desenvolvedor PL/SQL" are dropped too — the
+     * expansion yields "pleno/sql". Loss of rare junior PL/SQL listings is accepted
+     * and re-evaluated in the Phase B normalizer-quality work.
      */
     public static final Pattern SENIOR_EXCLUDE_PATTERN = Pattern.compile(
             "(?i)\\b(s[eê]nior|senior|sr\\.?|especialista|lead|coordenador|manager|bdr|pleno)\\b");
