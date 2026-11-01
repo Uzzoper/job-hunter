@@ -73,8 +73,9 @@ scraper:
     # per career-page host; hosts beyond this cap per fetch are logged and skipped.
     # Keep this cap >= limit above: a fetch can never overflow its own cap, which
     # is what the backfill straggler guarantee ("covered going forward") relies on.
-    # (Read both via scraper.gupy.max-detail-domains and referenced as
-    # gupy.max-detail-domains in the MCP knob block below — one live key.)
+    # Single live key: read via scraper.gupy.max-detail-domains by the MCP bean,
+    # the legacy REST hatch and the detail-domain resolver — NO gupy.*
+    # root mirror exists.
     max-detail-domains: 100
   infojobs:
     base-url: https://www.infojobs.com.br
@@ -158,7 +159,8 @@ gupy:
     enabled: false
   mcp-url: https://candidates.mcp.api.gupy.io/mcp   # single endpoint, no auth
   timeout-seconds: 30
-  limit: 100        # per-query limit param (one paging-knob home, per gupy-mcp-provider.md §2)
+  limit: 100        # MCP per-query limit — the MCP strategy's single limit knob;
+                    # the legacy REST hatch keeps its own scraper.gupy.limit
   max-jobs: 200     # merged cap across queries (junior-first ordering mitigates head-overlap)
 
 ats:
