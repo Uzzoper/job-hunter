@@ -98,10 +98,11 @@ public class AppConfig {
      * false-positives on "PL/SQL"-style strings. Behavior note (verified, pinned by
      * {@code JobNormalizerTest.PlenoExclusion}): {@code JobNormalizer.normalizeText}
      * expands a standalone "Pl" token to "pleno" BEFORE the exclude match, so
-     * raw "Pl"-abbreviated junior titles are dropped anyway (the intended lookup
-     * coverage), and titles like "Desenvolvedor PL/SQL" are dropped too — the
-     * expansion yields "pleno/sql". Loss of rare junior PL/SQL listings is accepted
-     * and re-evaluated in the Phase B normalizer-quality work.
+     * a bare "Pl" abbreviation matches the exclude too (a match on the expanded
+     * token, not on the raw one), and titles like "Desenvolvedor PL/SQL" are
+     * dropped as a side effect — the expansion yields "pleno/sql". Loss of rare
+     * junior PL/SQL listings is accepted and re-evaluated in the Phase B
+     * normalizer-quality work.
      */
     public static final Pattern SENIOR_EXCLUDE_PATTERN = Pattern.compile(
             "(?i)\\b(s[eê]nior|senior|sr\\.?|especialista|lead|coordenador|manager|bdr|pleno)\\b");

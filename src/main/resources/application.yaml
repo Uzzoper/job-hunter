@@ -73,9 +73,9 @@ scraper:
     # per career-page host; hosts beyond this cap per fetch are logged and skipped.
     # Keep this cap >= limit above: a fetch can never overflow its own cap, which
     # is what the backfill straggler guarantee ("covered going forward") relies on.
-    # Single live key: read via scraper.gupy.max-detail-domains by the MCP bean,
-    # the legacy REST hatch and the detail-domain resolver — NO gupy.*
-    # root mirror exists.
+    # Single live key: read via scraper.gupy.max-detail-domains by the two
+    # Gupy beans (MCP default + REST hatch), which pass the cap into the
+    # detail-domain resolver — NO gupy.* root mirror exists.
     max-detail-domains: 100
   infojobs:
     base-url: https://www.infojobs.com.br
