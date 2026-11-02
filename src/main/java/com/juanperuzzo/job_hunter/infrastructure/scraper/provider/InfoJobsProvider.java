@@ -30,6 +30,9 @@ public class InfoJobsProvider implements ExtractionStrategy {
     private static final int DEFAULT_DETAIL_TIMEOUT_SECONDS = 5;
     private static final int DEFAULT_MAX_DETAIL_FETCH = 100;
     private static final String DETAIL_RATE_LIMIT_KEY = "infojobs-detail";
+    /** Visible short card dates ("30 out", "29 out") next to the title. */
+    private static final java.util.regex.Pattern SHORT_DATE_HINT =
+            java.util.regex.Pattern.compile("\\b\\d{1,2}\\s+[a-z]{2,3}\\b");
 
     private final String providerId;
     private final String baseUrl;
@@ -458,8 +461,39 @@ public class InfoJobsProvider implements ExtractionStrategy {
         var website = extractCompanyWebsite(card.get(), company);
 
         return Optional.of(new RawJob(
-                title, company, url, description, null, location, workModel, "infojobs",
-                metadata(website)));
+                title, company, url, description, extractPostingDate(card.get()),
+                location, workModel, "infojobs", metadata(website)));
+    }
+
+    /**
+     * Harvest the posting date from a live card (2026-11 markup drift: InfoJobs
+     * dropped every {@code data-testid} attribute, so mapping takes the
+     * {@code parseJobsFromLinks} fallback; dates now live in a hidden
+     * {@code div.js_date data-value="yyyy/MM/dd HH:mm:ss"} with the visible
+     * short date as a sibling). Prefer the machine-readable hidden stamp — it is
+     * present on every live card — and fall back to the "30 out" short text,
+     * which {@code DateParser}'s day-month form already accepts. Returns null
+     * when neither form is present; the normalizer's date gate then skips the
+     * job as it does today. The {@code yyyy/MM/dd} → {@code yyyy-MM-dd}
+     * normalization lives HERE, not in {@code DateParser}, so that class is
+     * never painted with ambiguous BR date forms.
+     */
+    private String extractPostingDate(Element card) {
+        var hidden = card.selectFirst("div.js_date[data-value]");
+        if (hidden != null) {
+            var value = clean(hidden.attr("data-value"));
+            if (!value.isEmpty()) {
+                return value.replace('/', '-');
+            }
+        }
+        var visible = first(card, "div.text-medium.small.text-nowrap");
+        if (visible.isPresent()) {
+            var text = clean(visible.get().text());
+            if (SHORT_DATE_HINT.matcher(text).find()) {
+                return text;
+            }
+        }
+        return null;
     }
 
     private Optional<RawJob> mapCardToRawJob(Element card) {

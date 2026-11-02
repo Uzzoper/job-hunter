@@ -105,6 +105,77 @@ class InfoJobsProviderTest {
     }
 
     @Nested
+    @DisplayName("Scenario: live 2026-11 card markup (data-testids dropped upstream)")
+    class LiveMarkup {
+
+        /**
+         * Fixture mirrors the LIVE card structure as fetched 2026-11-02 (full page
+         * evidence in the session archive): InfoJobs removed every data-testid
+         * attribute, so the card selectors miss and parsing takes parseJobsFromLinks;
+         * the posting date now lives in a hidden {@code div.js_date data-value}
+         * ("yyyy/MM/dd HH:mm:ss") plus a visible short date ("30 out"). The
+         * links fallback must harvest it — a null rawDate is silently dropped by
+         * the normalizer's date gate, which pinned InfoJobs at 0 saved forever.
+         */
+        private static final String LIVE_CARD = """
+            <html><body>
+            <div class="card card-shadow card-shadow-hover text-break mb-16 pb-24 grid-row js_rowCard active">
+              <div id="vacancy12173858" class="pt-24 px-24 cursor-pointer js_vacancyLoad js_rowCard js_cardLink"
+                   data-href="/vaga-de-desenvolvedor-mobile-em-ceara__12173858.aspx">
+                <div class="d-flex flex-wrap gap-8">
+                  <div hidden class="js_date" data-value="2026/10/30 02:19:00">
+                    <div class="tag mb-2 tag-outline-premium tag-sm"><span>NOVA</span></div>
+                  </div>
+                </div>
+                <div class="d-flex gap-8 justify-content-between">
+                  <a class="text-decoration-none" href="/vaga-de-desenvolvedor-mobile-em-ceara__12173858.aspx">
+                    <h2 class="h3 font-weight-bold text-body mb-2 js_vacancyTitle">Desenvolvedor Mobile</h2>
+                  </a>
+                  <div class="text-medium small text-nowrap">30 out</div>
+                </div>
+                <div class="d-flex align-items-baseline">
+                  <div class="text-body">
+                    <a class="text-body text-decoration-none"
+                       href="https://www.infojobs.com.br/empresa-evolua__513853.aspx">Evolua</a>
+                  </div>
+                </div>
+                <div class="mb-8">Fortaleza - CE</div>
+              </div>
+            </div>
+            </body></html>
+            """;
+
+        @Test
+        @DisplayName("extract should harvest the hidden js_date data-value when testids are gone")
+        void extract_whenLinksPathCard_shouldHarvestHiddenDataValueDate() {
+            stubFor(get(urlPathEqualTo("/vagas-de-emprego-desenvolvedor.aspx"))
+                    .willReturn(ok(LIVE_CARD)));
+
+            var jobs = provider.extract();
+
+            assertEquals(1, jobs.size(), "the live card must be mapped via the links fallback");
+            assertEquals("2026-10-30 02:19:00", jobs.get(0).rawDate(),
+                    "yyyy/MM/dd has to become ISO-parseable — null rawDate means the normalizer's date gate silently discards the job");
+        }
+
+        @Test
+        @DisplayName("extract should fall back to the visible short date when data-value is absent")
+        void extract_whenLinksPathCardLacksHiddenDate_shouldUseVisibleShortDate() {
+            var withoutDataValue = LIVE_CARD
+                    .replace(" data-value=\"2026/10/30 02:19:00\"", "")
+                    .replace("2026/10/30 02:19:00", "");
+            stubFor(get(urlPathEqualTo("/vagas-de-emprego-desenvolvedor.aspx"))
+                    .willReturn(ok(withoutDataValue)));
+
+            var jobs = provider.extract();
+
+            assertEquals(1, jobs.size());
+            assertEquals("30 out", jobs.get(0).rawDate(),
+                    "the visible short date matches DateParser's day-month form ('30 out' → Oct 30)");
+        }
+    }
+
+    @Nested
     @DisplayName("Scenario 3: bot challenge")
     class BotChallenge {
 
