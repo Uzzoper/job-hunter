@@ -165,6 +165,13 @@ public class InfoJobsProvider implements ExtractionStrategy {
 
         var jobs = List.copyOf(uniqueJobs.values());
         var enriched = enrichWithDetails(jobs, isKnownUrl);
+        var noDate = enriched.stream()
+                .filter(job -> job.rawDate() == null || job.rawDate().isBlank())
+                .count();
+        if (noDate > 0) {
+            log.warn("{}: {} of {} cards carry no posting date — markup drift likely; those jobs are dropped at the date gate",
+                    providerId, noDate, enriched.size());
+        }
         log.info("{}: total unique jobs fetched: {}", providerId, enriched.size());
         return enriched;
     }
