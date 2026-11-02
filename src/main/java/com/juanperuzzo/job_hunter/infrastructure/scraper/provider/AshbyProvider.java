@@ -53,7 +53,8 @@ public class AshbyProvider implements ExtractionStrategy {
         this.retry = retry;
         this.boards = boardNames.stream().map(board -> {
             var displayName = displayNames.getOrDefault(board, board);
-            var strategy = new RestApiStrategy(providerId, baseUrl, timeoutSeconds, "jobs", node -> mapNode(node, displayName));
+            var strategy = new RestApiStrategy(providerId, baseUrl, timeoutSeconds, "jobs",
+                    node -> mapNode(node, displayName), AtsHttpHeaders.DEFAULT);
             return new BoardStrategy(board, strategy);
         }).toList();
     }

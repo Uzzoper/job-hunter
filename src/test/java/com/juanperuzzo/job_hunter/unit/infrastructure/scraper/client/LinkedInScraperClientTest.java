@@ -64,7 +64,8 @@ class LinkedInScraperClientTest {
                 1,
                 500,
                 "https://www.linkedin.com/jobs/view/",
-                90
+                90,
+                new LinkedInScraperProperties.Jsoup(3)
         );
         client = new LinkedInScraperClient(properties, fastRetry(), permissiveRateLimiter());
     }
@@ -533,7 +534,8 @@ List<RawJob> jobs = client.extract();
                     1,
                     0,
                     "https://www.linkedin.com/jobs/view/",
-                    90
+                    90,
+                    new LinkedInScraperProperties.Jsoup(3)
             ), fastRetry(), permissiveRateLimiter());
         }
 
@@ -921,7 +923,8 @@ List<RawJob> jobs = client.extract();
                     true, "service", baseUrl, 30, 5, 25, "https://www.linkedin.com",
                     List.of("desenvolvedor"), "Brazil", List.of("106057199"),
                     List.of("entry_level"), List.of("remote"), "past_week", 1, 0,
-                    "https://www.linkedin.com/jobs/view/", 1),
+                    "https://www.linkedin.com/jobs/view/", 1,
+                    new LinkedInScraperProperties.Jsoup(3)),
                     fastRetry(), permissiveRateLimiter());
 
             stubFor(get(urlPathEqualTo("/api/jobs"))
@@ -967,7 +970,8 @@ List<RawJob> jobs = client.extract();
                     1,
                     0,
                     "https://www.linkedin.com/jobs/view/",
-                    90
+                    90,
+                    new LinkedInScraperProperties.Jsoup(3)
             ), fastRetry(), permissiveRateLimiter());
         }
 

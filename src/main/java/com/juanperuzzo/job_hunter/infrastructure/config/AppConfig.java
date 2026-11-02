@@ -91,6 +91,22 @@ import com.juanperuzzo.job_hunter.infrastructure.scraper.resolver.HttpCompanyDom
 @EnableScheduling
 public class AppConfig {
 
+    /**
+     * Senior-exclude regex shared by every provider normalizer (fase-a-sourcing-restoration
+     * Scenario 6): {@code pleno} joins the senior set so mid-level listings are dropped.
+     * The bare abbreviation {@code pl} is deliberately NOT added — the raw token
+     * false-positives on "PL/SQL"-style strings. Behavior note (verified, pinned by
+     * {@code JobNormalizerTest.PlenoExclusion}): {@code JobNormalizer.normalizeText}
+     * expands a standalone "Pl" token to "pleno" BEFORE the exclude match, so
+     * a bare "Pl" abbreviation matches the exclude too (a match on the expanded
+     * token, not on the raw one), and titles like "Desenvolvedor PL/SQL" are
+     * dropped as a side effect — the expansion yields "pleno/sql". Loss of rare
+     * junior PL/SQL listings is accepted and re-evaluated in the Phase B
+     * normalizer-quality work.
+     */
+    public static final Pattern SENIOR_EXCLUDE_PATTERN = Pattern.compile(
+            "(?i)\\b(s[eê]nior|senior|sr\\.?|especialista|lead|coordenador|manager|bdr|pleno)\\b");
+
     @Bean
     public ExponentialBackoffRetry exponentialBackoffRetry(
             @Value("${scraper.retry.max-attempts}") int maxAttempts,
@@ -213,9 +229,7 @@ public class AppConfig {
             UserRepository userRepository,
             @Value("#{'${scraper.gupy.keywords}'.split(',')}") List<String> keywords,
             @Value("${scraper.normalizer.max-age-days}") int maxAgeDays) {
-        var excludePatterns = List.of(
-                Pattern.compile("(?i)\\b(s[eê]nior|senior|sr\\.?|especialista|lead|coordenador|manager|bdr)\\b"));
-        return new JobNormalizer(dateParser, keywords, excludePatterns, List.of(), maxAgeDays, Clock.systemUTC(),
+        return new JobNormalizer(dateParser, keywords, List.of(SENIOR_EXCLUDE_PATTERN), List.of(), maxAgeDays, Clock.systemUTC(),
                 userRepository);
     }
 
@@ -225,9 +239,7 @@ public class AppConfig {
             UserRepository userRepository,
             @Value("#{'${scraper.linkedin.keywords}'.split(',')}") List<String> keywords,
             @Value("${scraper.normalizer.max-age-days}") int maxAgeDays) {
-        var excludePatterns = List.of(
-                Pattern.compile("(?i)\\b(s[eê]nior|senior|sr\\.?|especialista|lead|coordenador|manager|bdr)\\b"));
-        return new JobNormalizer(dateParser, keywords, excludePatterns, List.of(), maxAgeDays, Clock.systemUTC(),
+        return new JobNormalizer(dateParser, keywords, List.of(SENIOR_EXCLUDE_PATTERN), List.of(), maxAgeDays, Clock.systemUTC(),
                 userRepository);
     }
 
@@ -242,8 +254,16 @@ public class AppConfig {
         return linkedinJobNormalizer;
     }
 
+    /**
+     * Jsoup LinkedIn fallback strategy. Two independent gates (fase-a-sourcing-restoration
+     * Scenario 8): {@code mode} selects <strong>which</strong> strategy runs, while
+     * {@code scraper.linkedin.enabled} (default {@code true}) selects <strong>whether</strong>
+     * any LinkedIn bean is registered at all. Repeated {@code @ConditionalOnProperty}
+     * annotations are AND-combined.
+     */
     @Bean
     @Qualifier("linkedinProvider")
+    @ConditionalOnProperty(name = "scraper.linkedin.enabled", havingValue = "true", matchIfMissing = true)
     @ConditionalOnProperty(name = "scraper.linkedin.mode", havingValue = "jsoup", matchIfMissing = true)
     public ExtractionStrategy linkedinProvider(
             LinkedInScraperProperties props,
@@ -253,8 +273,14 @@ public class AppConfig {
                 exponentialBackoffRetry);
     }
 
+    /**
+     * Playwright-microservice LinkedIn strategy — same dual gate as
+     * {@link #linkedinProvider}: {@code enabled} selects <em>whether</em>,
+     * {@code mode} selects <em>which</em>.
+     */
     @Bean
     @Qualifier("linkedinScraperClient")
+    @ConditionalOnProperty(name = "scraper.linkedin.enabled", havingValue = "true", matchIfMissing = true)
     @ConditionalOnProperty(name = "scraper.linkedin.mode", havingValue = "service")
     public ExtractionStrategy linkedinScraperClient(
             LinkedInScraperProperties props,
@@ -263,12 +289,20 @@ public class AppConfig {
         return new LinkedInScraperClient(props, exponentialBackoffRetry, rateLimiter);
     }
 
+    /**
+     * Gupy MCP strategy — the default gupy source since fase-a-sourcing-restoration A1
+     * (the REST search gateway answers 404; the MCP gateway answers formal 405 on GET).
+     * Registered unless {@code gupy.enabled=false} explicitly; the legacy REST
+     * {@code gupyProvider} only returns with {@code gupy.rest.enabled=true}.
+     * Keywords come from the single canonical list {@code scraper.gupy.keywords}
+     * (the old {@code gupy.keywords} second home is gone).
+     */
     @Bean
-    @ConditionalOnProperty(name = "gupy.enabled", havingValue = "true")
+    @ConditionalOnProperty(name = "gupy.enabled", havingValue = "true", matchIfMissing = true)
     public ExtractionStrategy gupyMcpProvider(
             @Value("${gupy.mcp-url:https://candidates.mcp.api.gupy.io/mcp}") String mcpUrl,
             @Value("${gupy.timeout-seconds:30}") int timeoutSeconds,
-            @Value("#{T(org.springframework.util.StringUtils).commaDelimitedListToStringArray('${gupy.keywords:desenvolvedor junior}')}") List<String> keywords,
+            @Value("#{T(org.springframework.util.StringUtils).commaDelimitedListToStringArray('${scraper.gupy.keywords}')}") List<String> keywords,
             @Value("${gupy.limit:100}") int limit,
             @Value("${gupy.max-jobs:200}") int maxJobs,
             @Value("${scraper.gupy.max-detail-domains:100}") int maxDetailDomains,
@@ -278,7 +312,14 @@ public class AppConfig {
                 exponentialBackoffRetry, companyDomainResolverPort, maxDetailDomains);
     }
 
+    /**
+     * Legacy REST Gupy strategy — regression hatch only. The REST search gateway is
+     * dead (probed 404 on every host, see application.yaml evidence comments), so this
+     * bean is registered exclusively with {@code gupy.rest.enabled=true} and never by
+     * default. Deleted in Phase B once MCP volume is proven.
+     */
     @Bean(name = "gupyProvider")
+    @ConditionalOnProperty(name = "gupy.rest.enabled", havingValue = "true")
     public ExtractionStrategy gupyProvider(
             @Value("${scraper.gupy.base-url}") String baseUrl,
             @Value("${scraper.gupy.timeout-seconds}") int timeoutSeconds,
@@ -370,7 +411,7 @@ public class AppConfig {
 
     @Bean
     public ProviderRegistry providerRegistry(
-            @Qualifier("gupyProvider") ExtractionStrategy gupyProvider,
+            @Qualifier("gupyProvider") Optional<ExtractionStrategy> gupyProvider,
             @Qualifier("gupyMcpProvider") Optional<ExtractionStrategy> gupyMcpProvider,
             @Qualifier("infojobsProvider") ExtractionStrategy infojobsProvider,
             @Qualifier("linkedinProvider") Optional<ExtractionStrategy> linkedinProvider,
@@ -384,11 +425,14 @@ public class AppConfig {
             JobNormalizer jobNormalizer,
             JobNormalizer linkedinJobNormalizer) {
         var registry = new ProviderRegistry();
+        // MCP preferred when present (default wiring); the REST regression hatch only
+        // serves gupy when MCP is explicitly disabled — never both (never duplicated id).
         if (gupyMcpProvider.isPresent()) {
             gupyMcpProvider.ifPresent(provider ->
                     registry.register(provider, exponentialBackoffRetry, rateLimiter, jobNormalizer));
-        } else {
-            registry.register(gupyProvider, exponentialBackoffRetry, rateLimiter, jobNormalizer);
+        } else if (gupyProvider.isPresent()) {
+            gupyProvider.ifPresent(provider ->
+                    registry.register(provider, exponentialBackoffRetry, rateLimiter, jobNormalizer));
         }
         registry.register(infojobsProvider, exponentialBackoffRetry, rateLimiter, jobNormalizer);
         linkedinProvider.ifPresent(provider ->
@@ -440,9 +484,23 @@ public class AppConfig {
         return new FetchJobsService(scraperPort, jobRepository, emailDraftRepository, jobAnalysisRepository, keywordResolver);
     }
 
+    /**
+     * {@link FetchSourceJobsService} resolves its normalizer per requested source
+     * (fase-a-sourcing-restoration Scenario 5): {@code fetch/linkedin} keeps the
+     * LinkedIn compound-keywords normalizer; every other source (gupy, infojobs, ...)
+     * uses the non-LinkedIn normalizer built from {@code scraper.gupy.keywords}.
+     * The unqualified {@link NormalizerPort} resolves to the {@code @Primary}
+     * {@code normalizerPort} bean.
+     */
     @Bean
-    public FetchSourceJobsService fetchSourceJobsService(SourceFetchPort sourceFetchPort, JobRepository jobRepository, @Qualifier("linkedinNormalizerPort") NormalizerPort normalizerPort, KeywordResolver keywordResolver) {
-        return new FetchSourceJobsService(sourceFetchPort, jobRepository, normalizerPort, keywordResolver);
+    public FetchSourceJobsService fetchSourceJobsService(
+            SourceFetchPort sourceFetchPort,
+            JobRepository jobRepository,
+            @Qualifier("linkedinNormalizerPort") NormalizerPort linkedinNormalizerPort,
+            NormalizerPort normalizerPort,
+            KeywordResolver keywordResolver) {
+        return new FetchSourceJobsService(
+                sourceFetchPort, jobRepository, linkedinNormalizerPort, normalizerPort, keywordResolver);
     }
 
     @Bean

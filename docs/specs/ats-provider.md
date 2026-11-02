@@ -181,6 +181,13 @@ handling, Lever epoch-millis conversion, workModel inference matrix
 (Remoto/Híbrido/null). Naming `methodName_scenario_expectedResult` +
 `@DisplayName`.
 
+Fase A addition (round-2 review): each provider carries a User-Agent guard —
+`extract_whenBoardProbed_sendsHonestUserAgent` (Ashby, Greenhouse) and
+`extract_whenSiteProbed_sendsHonestUserAgent` (Lever, asserted through the
+production constructor) — asserting every ATS request sends the honest
+`User-Agent: JobHunter/1.0` shared via `AtsHttpHeaders.DEFAULT`. Without it
+the honest-UA fix would be CI-invisible (ATS edges 403 bare Java UAs).
+
 ## 7. Acceptance criteria (from #76)
 
 - [ ] Board list in §2 implemented; excluded boards documented, not fetched.

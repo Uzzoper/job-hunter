@@ -62,7 +62,8 @@ public class LeverProvider implements ExtractionStrategy {
         this.retry = retry;
         this.sites = sites.stream().map(site -> {
             var displayName = displayNames.getOrDefault(site, site);
-            var strategy = new RestApiStrategy(providerId, baseUrl, timeoutSeconds, "", node -> mapNode(node, displayName));
+            var strategy = new RestApiStrategy(providerId, baseUrl, timeoutSeconds, "",
+                    node -> mapNode(node, displayName), AtsHttpHeaders.DEFAULT);
             return new SiteStrategy(site, strategy);
         }).toList();
         this.pageSize = pageSize;

@@ -47,7 +47,9 @@ public class GreenhouseProvider implements ExtractionStrategy {
         this.providerId = "greenhouse";
         this.boardTokens = boardTokens;
         this.retry = retry;
-        this.apiStrategy = new RestApiStrategy(providerId, baseUrl, timeoutSeconds, JSON_PATH, this::mapNode);
+        // Honest shared UA (AtsHttpHeaders): ATS edges 403 bare Java/urllib UAs (probed 2026-10-23).
+        this.apiStrategy = new RestApiStrategy(providerId, baseUrl, timeoutSeconds, JSON_PATH, this::mapNode,
+                AtsHttpHeaders.DEFAULT);
     }
 
     /**

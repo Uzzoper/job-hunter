@@ -206,6 +206,50 @@ class JobNormalizerTest {
     }
 
     @Nested
+    @DisplayName("normalize - fase A pleno exclusion (docs/specs/fase-a-sourcing-restoration.md Scenario 6)")
+    class PlenoExclusion {
+
+        private JobNormalizer appConfigWiredNormalizer() {
+            // mirrors AppConfig: include list = scraper.gupy.keywords (9 terms),
+            // exclude = the shared AppConfig.SENIOR_EXCLUDE_PATTERN (senior set + pleno)
+            return new JobNormalizer(dateParser,
+                    List.of("desenvolvedor", "programador", "estágio", "junior", "ti", "tecnologia", "dev", "software", "analista"),
+                    List.of(com.juanperuzzo.job_hunter.infrastructure.config.AppConfig.SENIOR_EXCLUDE_PATTERN),
+                    List.of(), 90, FIXED_CLOCK, userRepository);
+        }
+
+        @Test
+        @DisplayName("should drop 'Desenvolvedor Java Pleno' (guru test: include-only job must not slip through)")
+        void normalize_whenPlenoTitle_shouldDropJob() {
+            normalizer = appConfigWiredNormalizer();
+            var job = normalizer.normalize(new RawJob(
+                    "Desenvolvedor Java Pleno", "Company", "https://example.com/pleno1",
+                    "Description", "2026-07-01", null, "Presencial", "gupy", null));
+            assertNull(job, "pleno-title jobs must be dropped by the exclude regex");
+        }
+
+        @Test
+        @DisplayName("should keep dropping senior titles (regression guard on existing excludes)")
+        void normalize_whenSeniorTitle_shouldStillDrop() {
+            normalizer = appConfigWiredNormalizer();
+            var job = normalizer.normalize(new RawJob(
+                    "Desenvolvedor Java Sênior", "Company", "https://example.com/senior1",
+                    "Description", "2026-07-01", null, "Presencial", "gupy", null));
+            assertNull(job);
+        }
+
+        @Test
+        @DisplayName("should drop 'Desenvolvedor PL/SQL' — the Pl→pleno expansion feeds the exclude match (accepted loss, logged for Phase B)")
+        void normalize_whenPlSqlTitle_dropsViaPlExpansion() {
+            normalizer = appConfigWiredNormalizer();
+            var job = normalizer.normalize(new RawJob(
+                    "Desenvolvedor PL/SQL", "Company", "https://example.com/plsql1",
+                    "Description", "2026-07-01", null, "Presencial", "gupy", null));
+            assertNull(job, "normalizeText expands Pl→pleno, so PL/SQL titles match the pleno exclude term");
+        }
+    }
+
+    @Nested
     @DisplayName("normalize - location matching")
     class LocationMatching {
 

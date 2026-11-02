@@ -64,6 +64,8 @@ scraper:
     max-age-days: 90
   gupy:
     base-url: https://employability-portal.gupy.io
+    # 9-term include list — the single canonical keyword list for EVERY provider that
+    # reads gupy keywords (REST, MCP, normalizers). CSV format (see ats.* binding note).
     keywords: desenvolvedor,programador,estágio,junior,ti,tecnologia,dev,software,analista
     limit: 100
     timeout-seconds: 10
@@ -71,6 +73,9 @@ scraper:
     # per career-page host; hosts beyond this cap per fetch are logged and skipped.
     # Keep this cap >= limit above: a fetch can never overflow its own cap, which
     # is what the backfill straggler guarantee ("covered going forward") relies on.
+    # Single live key: read via scraper.gupy.max-detail-domains by the two
+    # Gupy beans (MCP default + REST hatch), which pass the cap into the
+    # detail-domain resolver — NO gupy.* root mirror exists.
     max-detail-domains: 100
   infojobs:
     base-url: https://www.infojobs.com.br
@@ -97,6 +102,8 @@ scraper:
     batch-default-limit: 200
     batch-max-limit: 200
   linkedin:
+    # Gates BOTH LinkedIn strategies (fase-a-sourcing-restoration Scenario 8):
+    # mode selects *which* (jsoup/service), enabled selects *whether* (default true).
     enabled: true
     mode: service          # "service" (Playwright) | "jsoup" (current, fallback)
     service-url: http://linkedin-scraper:3000
@@ -130,32 +137,71 @@ scraper:
     # one permit per job; other providers keep the shared defaults unchanged.
     enrich-permits-per-second: 1.0
     enrich-burst: 1
+    jsoup:
+      # Pagination cap for the jsoup fallback strategy (mode: jsoup) — binds the
+      # LinkedInProvider record knob (fase-a-sourcing-restoration Scenario 8).
+      # Previously record-default unbound (0 → the fallback fetched zero pages).
+      max-pages: 3
+
+# Gupy MCP gateway — the sole live Gupy source. MCP strategy is default-on;
+# keywords + detail-domain knobs live under scraper.gupy.* (one canonical home).
+# Probe evidence (fase-a-sourcing-restoration.md Context, probed 2026-10-23):
+#   REST  GET employability-portal.gupy.io/api/v1/jobs?jobName=… → nginx 404
+#   MCP   GET candidates.mcp.api.gupy.io/mcp                    → JSON-RPC 405
+#         (formal expect-POST response — the MCP server is alive; Gupy MCP verified
+#          live on 2026-10-04 per docs/specs/gupy-mcp-provider.md §1)
+gupy:
+  enabled: true                    # GupyMcpProvider registered by default (fase-a Scenario 1)
+  # Dead-gateway regression hatch: the REST provider returns ONLY with this flag
+  # (never both strategies serve "gupy" — the registry prefers MCP). Full code
+  # deletion follows in Phase B once MCP volume is proven.
+  rest:
+    enabled: false
+  mcp-url: https://candidates.mcp.api.gupy.io/mcp   # single endpoint, no auth
+  timeout-seconds: 30
+  limit: 100        # MCP per-query limit — the MCP strategy's single limit knob;
+                    # the legacy REST hatch keeps its own scraper.gupy.limit
+  max-jobs: 200     # merged cap across queries (junior-first ordering mitigates head-overlap)
 
 ats:
-  # ATS board providers (Greenhouse/Ashby/Lever) — disabled by default until the
-  # junior-relevance sample is confirmed (docs/specs/ats-provider.md §7).
-  enabled: false
+  # ATS board providers (Greenhouse/Ashby/Lever) — ENABLED in fase A
+  # (docs/specs/fase-a-sourcing-restoration.md A2). Board tokens below are curated
+  # externally (librarian lane) and were VERIFIED live before shipping — see the
+  # "board tokens VERIFIED" note alongside the lists. A board returning 404/empty
+  # is logged and skipped, never aborting the fetch cycle (ats-provider.md:63-67).
+  enabled: true
   timeout-seconds: 30
   # NOTE: board lists MUST stay CSV, never YAML flow style ([a, b]): @Value
   # List<String> binding silently resolves flow style to an empty list on
   # Spring Boot 4.0.6 (proven live: 0 boards configured vs CSV working).
-  greenhouse-boards: stone,xpinc,c6bank,gympass,quintoandar,ebanx,thoughtworks,vtex,feedzai,elastic,gitlab,remotecom,grafanalabs,mozilla,monzo,tailscale,wikimedia
-  ashby-boards: nubank,notion,cursor,preply,replit,linear,zapier
-  lever-sites: dlocal,outreach,metabase
+  # -- board tokens VERIFIED live on 2026-10-23: every token answered its public
+  # API with HTTP 200 + >=1 job (fase-a-sourcing-restoration.md A2, Scenario 3).
+  # Curator candidate tokens verified alive but dropped as non-eng-BR noise:
+  # figma/pinterest/ripple/twilio (Greenhouse), alternative: comment them back in.
+  # Counts snapshot: stone 369, btgpactual 258, c6bank 162, quintoandar 108, xpinc 131,
+  # vtex 31, ebanx 40, brex 257, datadog 440, coinbase 223, gitlab 231, databricks 898,
+  # rdstation 7, agilize 7, nubank 97, supabase 59, belvo 3, snyk 33, ciandt 176,
+  # neon 8, dlocal 50, spotify 80, kavak 9, despegar 111 (drifts daily).
+  greenhouse-boards: stone,btgpactual,c6bank,quintoandar,xpinc,vtex,ebanx,brex,datadog,coinbase,gitlab,databricks,rdstation,agilize
+  ashby-boards: nubank,supabase,belvo,snyk
+  lever-sites: ciandt,neon,dlocal,spotify,kavak,despegar
   lever-page-size: 100            # Lever pagination page size (spec §4)
   lever-max-pages: 3              # hard cap per site, mirrors scraper.infojobs.max-pages (PR#84 P2-a)
   # Company label per board (Ashby/Lever responses carry no company). Injected via
   # @Value("#{${ats.display-names}}") — must stay a single-line SpEL map literal
   # (nested YAML maps flatten into per-key properties and cannot be resolved).
-  display-names: "{nubank: 'Nubank', notion: 'Notion', cursor: 'Cursor', preply: 'Preply', replit: 'Replit', linear: 'Linear', zapier: 'Zapier', dlocal: 'dLocal', outreach: 'Outreach', metabase: 'Metabase'}"
+  # -- display names map covers exactly the verified ashby-boards + lever-sites tokens
+  display-names: "{nubank: 'Nubank', supabase: 'Supabase', belvo: 'Belvo', snyk: 'Snyk', ciandt: 'CI&T', neon: 'Neon', dlocal: 'dLocal', spotify: 'Spotify', kavak: 'Kavak', despegar: 'Despegar'}"
 
 github:
-  # GitHub "jobs" community boards (frontendbr/backend-br) — disabled by default until
-  # the junior-relevance sample is confirmed (docs/specs/github-jobs.md §7).
-  enabled: false
+  # GitHub "jobs" community boards (frontendbr/backend-br) — ENABLED in fase A
+  # (docs/specs/fase-a-sourcing-restoration.md A2). Open issues with hiring labels
+  # surface as jobs (github-jobs.md), deduped by URL like every other provider.
+  enabled: true
   timeout-seconds: 30
   # Owner/repo pairs, CSV (never YAML flow style — @Value List<String> binds flow style
   # to an empty list on Spring Boot 4.0.6, proven live on the ats.* lists).
+  # -- repos verified public & active (community hiring boards, backend-br/vagas junior-rich)
   repos: frontendbr/vagas,backend-br/vagas
 
 auto-send:
