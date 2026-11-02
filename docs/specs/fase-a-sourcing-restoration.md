@@ -60,10 +60,11 @@ second home; the duplicate key is removed)
   (`gupy.limit:100`, `gupy.max-jobs:200` under the `gupy:` block)
 - **Amendment (2026-11-01, review round 2):** shipped reality diverges from
   the original clause on two knobs, on purpose:
-  (a) `max-detail-domains` stays a single `scraper.gupy.*` key — it is shared
-  by the MCP bean, the legacy REST hatch and the detail-domain resolver
-  (#74), so mirroring it as `gupy.max-detail-domains` would create a second
-  home instead of removing one;
+  (a) `max-detail-domains` stays a single `scraper.gupy.*` key — it is read
+  by the two Gupy beans (MCP default + REST hatch), which pass the cap into
+  the detail-domain resolver (#74; the resolver never reads the key
+  itself), so mirroring it as `gupy.max-detail-domains` would create a
+  second home instead of removing one;
   (b) the legacy REST hatch keeps its own `scraper.gupy.limit` — MCP's limit
   single-homes at `gupy.limit` (per `gupy-mcp-provider.md` §2). Both hatches
   are Phase-B deletions, which collapses this split permanently.
@@ -157,6 +158,9 @@ Plain JUnit 5 + Mockito (no Spring context for unit bits), Rust tests in-crate.
 | 6 | `normalize_whenSeniorTitle_shouldStillDrop` | regression guard on existing excludes |
 | 7 | Rust `min_score_filter_uses_job_score` | score-based exclusion, NULL handling per list semantics |
 | 8 | `boot_withEnabledFalse_registersNoLinkedinBeans` | enabled=false → no LinkedIn bean; absent → default true |
+| 9 | `normalize_whenPlSqlTitle_dropsViaPlExpansion` | Pl→pleno expansion feeds the exclude match — PL/SQL titles dropped (accepted loss, S6 amendment) |
+| 10 | `extract_whenBoardProbed_sendsHonestUserAgent` (Ashby, Greenhouse) | every ATS request carries the honest `JobHunter/1.0` UA from `AtsHttpHeaders.DEFAULT` |
+| 11 | `extract_whenSiteProbed_sendsHonestUserAgent` (Lever) | same guard asserted via the production constructor path |
 
 ---
 
@@ -174,6 +178,11 @@ Plain JUnit 5 + Mockito (no Spring context for unit bits), Rust tests in-crate.
   — **done 2026-10-31**: 577 tests across 5 suites, 0 failures (count
   corrected 2026-11-01; an earlier "57" recorded only the last suite's
   result line).
+  Caveat (2026-11-02, delta review): 577 is what compiles *and* runs;
+  `cli/src/tui/app_test.rs` (9 tests) and `cli/src/tui/auth_screen_test.rs`
+  (18 tests) are authored but **not declared in `tui/mod.rs`**, so their 27
+  tests never compile or run (604 authored − 27 = 577). Declaring both
+  modules is deferred to Phase B; this verification does not certify those.
 - Live smoke (manual, after merge): `POST /api/jobs/fetch` → `ProviderFetchStats`
   shows `gupy` >0 jobs and zero provider-crash entries; ATS boards all 200
   — **done 2026-10-31 on the VM backend** (evidence below). `fetch/gupy` via
