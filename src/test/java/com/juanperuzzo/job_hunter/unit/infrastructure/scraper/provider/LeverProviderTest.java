@@ -64,6 +64,19 @@ class LeverProviderTest {
         return null;
     }
 
+    @Test
+    @DisplayName("production constructor should pin the providerId to \"lever\" so the registry lookup by source id resolves")
+    void productionCtor_whenInstantiated_shouldExposeLeverSourceId() {
+        // The controller endpoint and the use case address this provider by the
+        // literal source id; a mock-based endpoint test cannot catch a wrong
+        // literal, so the production constructor pins it here.
+        var prodProvider = new LeverProvider(
+                "http://unused", 5, List.of("dlocal"), displayNames, retry, 100, 3);
+
+        assertEquals("lever", prodProvider.providerId(),
+                "fetchAndSave(userId, \"lever\") must resolve — a mismatch turns the dedicated endpoint into a silent zero");
+    }
+
     @Nested
     @DisplayName("Scenario 1: valid board response")
     class ValidResponse {
