@@ -198,16 +198,20 @@ Plain JUnit 5 + Mockito (no Spring context for unit bits), Rust tests in-crate.
     Phase B backlog noise, not a defect.
   - **Resolved (2026-11-02):** post-merge smoke re-run on the VM settled both
     anomalies. Lever: `15` pre-existing rows + the Oct 31 `64` saved = the
-    `79` rows measured 2026-11-02 — the old `18` was a COUNT taken mid-save;
-    lever save path is healthy, no defect. InfoJobs: NOT dedupe (the bot's
+    `79` rows measured 2026-11-02; most plausible reading is that the old
+    `18` was a COUNT taken mid-save (hypothesis — pruning and dedupe also
+    fit the artifacts), and the save path is roundly healthy either way.
+    InfoJobs: NOT dedupe (the bot's
     read was wrong — zero `source=infojobs` rows existed). Root cause found
     in code: live card markup dropped every `data-testid` attribute, so
     mapping falls to the `parseJobsFromLinks` fallback, which passed
     `rawDate=null`; `JobNormalizer`'s date gate then silently skipped 100%
     of fetched jobs (171/0 on Oct 31, 173/0 post-merge). Fixed in
     `fix/infojobs-card-date` (harvest hidden `js_date` data-value +
-    visible short-date fallback + WARN counters for future markup drift);
-    VM smoke goal: dedicated `POST /api/jobs/fetch/infojobs` → `saved > 0`.
+    visible short-date fallback borrowed-date guard for ambiguous
+    containers + one WARN counter), and arrived location-polluting leftmost
+    match repaired with a narrow location source — VM smoke goal: dedicated
+    `POST /api/jobs/fetch/infojobs` → `saved > 0`.
   - **Post-merge smoke 2026-11-02 (global fetch):** greenhouse 3155 fetched,
     +18 real rows; ashby +2; github 0; zero provider crashes (only
     `TimeoutException`). gupy/lever/linkedin/infojobs hit the 120s global

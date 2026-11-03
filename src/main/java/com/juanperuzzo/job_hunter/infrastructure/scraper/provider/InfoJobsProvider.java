@@ -30,9 +30,6 @@ public class InfoJobsProvider implements ExtractionStrategy {
     private static final int DEFAULT_DETAIL_TIMEOUT_SECONDS = 5;
     private static final int DEFAULT_MAX_DETAIL_FETCH = 100;
     private static final String DETAIL_RATE_LIMIT_KEY = "infojobs-detail";
-    /** Visible short card dates ("30 out", "29 out") next to the title. */
-    private static final java.util.regex.Pattern SHORT_DATE_HINT =
-            java.util.regex.Pattern.compile("\\b\\d{1,2}\\s+[a-z]{2,3}\\b");
 
     private final String providerId;
     private final String baseUrl;
@@ -462,7 +459,7 @@ public class InfoJobsProvider implements ExtractionStrategy {
 
         var cardText = clean(card.get().text());
         var company = extractCompanyFromLinks(titleLink, card.get());
-        var location = extractLocation(cardText);
+        var location = extractLocation(locationSource(card.get(), cardText));
         var workModel = extractWorkModel(cardText);
         var description = extractDescription(cardText, workModel);
         var website = extractCompanyWebsite(card.get(), company);
@@ -478,25 +475,34 @@ public class InfoJobsProvider implements ExtractionStrategy {
      * {@code parseJobsFromLinks} fallback; dates now live in a hidden
      * {@code div.js_date data-value="yyyy/MM/dd HH:mm:ss"} with the visible
      * short date as a sibling). Prefer the machine-readable hidden stamp — it is
-     * present on every live card — and fall back to the "30 out" short text,
-     * which {@code DateParser}'s day-month form already accepts. Returns null
-     * when neither form is present; the normalizer's date gate then skips the
-     * job as it does today. The {@code yyyy/MM/dd} → {@code yyyy-MM-dd}
-     * normalization lives HERE, not in {@code DateParser}, so that class is
-     * never painted with ambiguous BR date forms.
+     * present on every live card — and fall back to the short text node, whose
+     * content is returned ungated: {@code DateParser} already understands the
+     * formats InfoJobs shows there ("30 out", "hoje", "ontem", "há N dias"),
+     * and anything unparseable is dropped harmlessly at the date gate.
+     * Returns null (silently skipped at the gate, surfaced by the extract WARN)
+     * when no unambiguous date node is present. Two refusal rules keep a
+     * mis-climbed {@code findLikelyCardContainer} from converting a silent skip
+     * into a silently misdated job: a container that wraps more than one card
+     * link is ambiguous and yields nothing, and the date node must be unique
+     * inside it. The {@code yyyy/MM/dd} → {@code yyyy-MM-dd} normalization
+     * lives HERE, not in {@code DateParser}, so that class is never painted
+     * with ambiguous BR date forms.
      */
     private String extractPostingDate(Element card) {
-        var hidden = card.selectFirst("div.js_date[data-value]");
-        if (hidden != null) {
-            var value = clean(hidden.attr("data-value"));
+        if (card.select("a[href*=/vaga-de-][href*=__]").size() > 1) {
+            return null;
+        }
+        var hidden = card.select("div.js_date[data-value]");
+        if (hidden.size() == 1) {
+            var value = clean(hidden.first().attr("data-value"));
             if (!value.isEmpty()) {
                 return value.replace('/', '-');
             }
         }
-        var visible = first(card, "div.text-medium.small.text-nowrap");
-        if (visible.isPresent()) {
-            var text = clean(visible.get().text());
-            if (SHORT_DATE_HINT.matcher(text).find()) {
+        var visible = card.select("div.text-medium.small.text-nowrap");
+        if (visible.size() == 1) {
+            var text = clean(visible.first().text());
+            if (!text.isEmpty()) {
                 return text;
             }
         }
@@ -573,6 +579,22 @@ public class InfoJobsProvider implements ExtractionStrategy {
                 .filter(text -> !text.toLowerCase(java.util.Locale.ROOT).contains("vagas semelhantes"))
                 .findFirst()
                 .orElse("");
+    }
+
+    /**
+     * Source text for {@code extractLocation} on the links path. Live 2026-11
+     * markup puts the location in its own node (the div wrapping the distance
+     * span); matching against the whole card text lets the company name run
+     * leftmost into the city/state regex and pollutes the result
+     * ("out Evolua... Fortaleza"). Returns the narrow node's text when
+     * present, else the card text (legacy fallback).
+     */
+    private String locationSource(Element card, String cardText) {
+        var distanceSpan = card.selectFirst("span.js_divUserVagaDistance");
+        if (distanceSpan != null && distanceSpan.parent() != null) {
+            return clean(distanceSpan.parent().text());
+        }
+        return cardText;
     }
 
     private String extractLocation(String text) {
