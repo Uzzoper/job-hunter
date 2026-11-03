@@ -459,7 +459,10 @@ class JobControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.totalFetched").value(406))
                 .andExpect(jsonPath("$.totalSaved").value(64))
-                .andExpect(jsonPath("$.perProvider[0].source").value("lever"));
+                .andExpect(jsonPath("$.totalWithEmail").value(0))
+                .andExpect(jsonPath("$.perProvider[0].source").value("lever"))
+                .andExpect(jsonPath("$.perProvider[0].fetched").value(406))
+                .andExpect(jsonPath("$.perProvider[0].saved").value(64));
 
         verify(fetchSourceJobsUseCase).fetchAndSave(1L, "lever");
     }
