@@ -211,7 +211,14 @@ Plain JUnit 5 + Mockito (no Spring context for unit bits), Rust tests in-crate.
     visible short-date fallback borrowed-date guard for ambiguous
     containers + one WARN counter), and arrived location-polluting leftmost
     match repaired with a narrow location source — VM smoke goal: dedicated
-    `POST /api/jobs/fetch/infojobs` → `saved > 0`.
+    `POST /api/jobs/fetch/infojobs` → `saved > 0` — **achieved 2026-11-03 on
+    the VM, post-merge**: post-deploy first fetch went `0 → 99` rows saved
+    (eternally-dead channel now live); a second dedicated fetch re-measured
+    `173 fetched / 12 saved` (+12 fresh postings, `infojobs` 99 → 111;
+    161/173 already deduped by URL) with `detailSkippedCount=73` — those
+    keep their card-snippet description, only the cap-bounded detail page
+    was never fetched — and the drift canary (`cards carry no posting
+    date`) fired **0** times. Channel validated; no defect left open.
   - **Post-merge smoke 2026-11-02 (global fetch):** greenhouse 3155 fetched,
     +18 real rows; ashby +2; github 0; zero provider crashes (only
     `TimeoutException`). gupy/lever/linkedin/infojobs hit the 120s global
