@@ -446,6 +446,42 @@ class JobControllerTest {
     }
 
     @Test
+    @DisplayName("fetchLeverJobs should return 200 with FetchResult for the lever source")
+    void fetchLeverJobs_whenValidRequest_shouldReturnSavedJobCount() throws Exception {
+        authenticateAs(1L);
+
+        var result = new FetchResult(
+                406, 64, 0,
+                List.of(new ProviderFetchStats("lever", 406, 64, 0, 0, 0, null)));
+        when(fetchSourceJobsUseCase.fetchAndSave(1L, "lever")).thenReturn(result);
+
+        mockMvc.perform(post("/api/jobs/fetch/lever"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalFetched").value(406))
+                .andExpect(jsonPath("$.totalSaved").value(64))
+                .andExpect(jsonPath("$.perProvider[0].source").value("lever"));
+
+        verify(fetchSourceJobsUseCase).fetchAndSave(1L, "lever");
+    }
+
+    @Test
+    @DisplayName("fetchLeverJobs should return 500 when service throws exception")
+    void fetchLeverJobs_whenServiceFails_shouldReturnError() throws Exception {
+        authenticateAs(1L);
+
+        doThrow(new RuntimeException("Lever service unavailable"))
+                .when(fetchSourceJobsUseCase).fetchAndSave(1L, "lever");
+
+        mockMvc.perform(post("/api/jobs/fetch/lever"))
+                .andExpect(status().isInternalServerError())
+                .andExpect(jsonPath("$.status").value(500))
+                .andExpect(jsonPath("$.error").value("Internal Server Error"))
+                .andExpect(jsonPath("$.message").value("An unexpected error occurred"));
+
+        verify(fetchSourceJobsUseCase).fetchAndSave(1L, "lever");
+    }
+
+    @Test
     @DisplayName("analyzeJob should return 200 with analysis when successful")
     void analyzeJob_whenSuccessful_shouldReturn200() throws Exception {
         authenticateAs(1L);

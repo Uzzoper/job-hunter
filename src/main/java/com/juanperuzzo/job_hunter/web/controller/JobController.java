@@ -184,6 +184,13 @@ public class JobController {
         return ResponseEntity.ok(FetchResultResponse.from(result));
     }
 
+    @PostMapping("/fetch/lever")
+    public ResponseEntity<FetchResultResponse> fetchLeverJobs() {
+        Long userId = currentUserService.getCurrentUserId();
+        var result = fetchSourceJobsUseCase.fetchAndSave(userId, "lever");
+        return ResponseEntity.ok(FetchResultResponse.from(result));
+    }
+
     @PostMapping("/enrich-emails")
     public ResponseEntity<EnrichmentResultResponse> enrichEmails(
             @RequestParam(defaultValue = "${scraper.enricher.batch-default-limit:200}") int limit) {
