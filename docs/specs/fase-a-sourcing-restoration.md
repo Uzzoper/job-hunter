@@ -196,18 +196,37 @@ Plain JUnit 5 + Mockito (no Spring context for unit bits), Rust tests in-crate.
   - **LinkedIn note:** partial data from service-mode timeout is known
     behavior (spec keeps provider-quality tuning out of fase A); logged as
     Phase B backlog noise, not a defect.
-  - **Open follow-up (non-gate):** `infojobs` row absent from the source
-    COUNT dump while InfoJobs reported 171 fetched/0 saved — needs one
-    targeted check (`SELECT COUNT(*) FROM jobs WHERE source='infojobs'` +
-    single-source fetch) to distinguish legitimate dedupe from a save-path
-    defect. InfoJobs code is untouched by fase A; tracked alongside Phase B.
-  - **Open follow-up (non-gate, added 2026-11-01):** same-dump lever
-    arithmetic — full fetch saved lever **64**, yet the same session's
-    `SELECT source, COUNT(*)` shows `lever 18`; 64 saves cannot leave 18
-    rows. Stronger than the infojobs gap, and unflagged by the VM agent's
-    evidence paste. Re-measure with a fresh COUNT immediately after a
-    controlled lever-only fetch before trusting (or fixing) the lever save
-    path; code is untouched by fase A.
+  - **Resolved (2026-11-02):** post-merge smoke re-run on the VM settled both
+    anomalies. Lever: `15` pre-existing rows + the Oct 31 `64` saved = the
+    `79` rows measured 2026-11-02; most plausible reading is that the old
+    `18` was a COUNT taken mid-save (hypothesis — pruning and dedupe also
+    fit the artifacts), and the save path is roundly healthy either way.
+    InfoJobs: NOT dedupe (the bot's
+    read was wrong — zero `source=infojobs` rows existed). Root cause found
+    in code: live card markup dropped every `data-testid` attribute, so
+    mapping falls to the `parseJobsFromLinks` fallback, which passed
+    `rawDate=null`; `JobNormalizer`'s date gate then silently skipped 100%
+    of fetched jobs (171/0 on Oct 31, 173/0 post-merge). Fixed in
+    `fix/infojobs-card-date` (harvest hidden `js_date` data-value +
+    visible short-date fallback borrowed-date guard for ambiguous
+    containers + one WARN counter), and arrived location-polluting leftmost
+    match repaired with a narrow location source — VM smoke goal: dedicated
+    `POST /api/jobs/fetch/infojobs` → `saved > 0` — **achieved 2026-11-03 on
+    the VM, post-merge**: post-deploy first fetch went `0 → 99` rows saved
+    (eternally-dead channel now live); a second dedicated fetch re-measured
+    `173 fetched / 12 saved` (+12 fresh postings, `infojobs` 99 → 111;
+    161/173 already deduped by URL) with `detailSkippedCount=73` — those
+    keep their card-snippet description, only the cap-bounded detail page
+    was never fetched — and the drift canary (`cards carry no posting
+    date`) fired **0** times. Channel validated; no defect left open.
+  - **Post-merge smoke 2026-11-02 (global fetch):** greenhouse 3155 fetched,
+    +18 real rows; ashby +2; github 0; zero provider crashes (only
+    `TimeoutException`). gupy/lever/linkedin/infojobs hit the 120s global
+    budget and contributed 0 — dedicated endpoints (`/fetch/gupy`) are the
+    way to smoke single sources; lever/greenhouse have no dedicated endpoint
+    yet (open follow-up, next PR). Minor stats-vs-delta mismatch on
+    greenhouse (`saved=0` vs +18 rows) noted; likely expiry pruning or stat
+    timing, not investigated.
 - Store probe evidence (404/405 + each board 200) in the yaml comments
   — done in `application.yaml` comments.
 

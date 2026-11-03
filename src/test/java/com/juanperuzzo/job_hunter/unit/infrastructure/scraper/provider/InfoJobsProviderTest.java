@@ -105,6 +105,127 @@ class InfoJobsProviderTest {
     }
 
     @Nested
+    @DisplayName("Scenario: live 2026-11 card markup (data-testids dropped upstream)")
+    class LiveMarkup {
+
+        /**
+         * Fixture mirrors the LIVE card structure as fetched 2026-11-02 (full page
+         * evidence in the session archive): InfoJobs removed every data-testid
+         * attribute, so the card selectors miss and parsing takes parseJobsFromLinks;
+         * the posting date now lives in a hidden {@code div.js_date data-value}
+         * ("yyyy/MM/dd HH:mm:ss") plus a visible short date ("30 out"). The
+         * links fallback must harvest it — a null rawDate is silently dropped by
+         * the normalizer's date gate, which pinned InfoJobs at 0 saved forever.
+         */
+        private static final String LIVE_CARD = """
+            <html><body>
+            <div class="card card-shadow card-shadow-hover text-break mb-16 pb-24 grid-row js_rowCard active">
+              <div id="vacancy12173858" class="pt-24 px-24 cursor-pointer js_vacancyLoad js_rowCard js_cardLink"
+                   data-href="/vaga-de-desenvolvedor-mobile-em-ceara__12173858.aspx">
+                <div class="d-flex flex-wrap gap-8">
+                  <div hidden class="js_date" data-value="2026/10/30 02:19:00">
+                    <div class="tag mb-2 tag-outline-premium tag-sm"><span>NOVA</span></div>
+                  </div>
+                </div>
+                <div class="d-flex gap-8 justify-content-between">
+                  <a class="text-decoration-none" href="/vaga-de-desenvolvedor-mobile-em-ceara__12173858.aspx">
+                    <h2 class="h3 font-weight-bold text-body mb-2 js_vacancyTitle">Desenvolvedor Mobile</h2>
+                  </a>
+                  <div class="text-medium small text-nowrap">30 out</div>
+                </div>
+                <div class="d-flex align-items-baseline">
+                  <div class="text-body">
+                    <a class="text-body text-decoration-none"
+                       href="https://www.infojobs.com.br/empresa-evolua__513853.aspx">Evolua Consultoria e Treinamento</a>
+                  </div>
+                </div>
+                <div class="mb-8">Fortaleza - CE<span hidden class="js_divUserVagaDistance">, <span
+                        class="js_UserVagaDistance" data-vagalatitude="-3.7691387"
+                        data-vagalongitude="-38.4395049">0</span> Km de você.</span>
+                </div>
+              </div>
+            </div>
+            </body></html>
+            """;
+
+        @Test
+        @DisplayName("extract should harvest the hidden js_date data-value when testids are gone")
+        void extract_whenLinksPathCard_shouldHarvestHiddenDataValueDate() {
+            stubFor(get(urlPathEqualTo("/vagas-de-emprego-desenvolvedor.aspx"))
+                    .willReturn(ok(LIVE_CARD)));
+
+            var jobs = provider.extract();
+
+            assertEquals(1, jobs.size(), "the live card must be mapped via the links fallback");
+            assertEquals("Desenvolvedor Mobile", jobs.get(0).title());
+            assertEquals("Evolua Consultoria e Treinamento", jobs.get(0).company());
+            assertEquals("Fortaleza - CE", jobs.get(0).location());
+            assertEquals("2026-10-30 02:19:00", jobs.get(0).rawDate(),
+                    "yyyy/MM/dd has to become ISO-parseable — null rawDate means the normalizer's date gate silently discards the job");
+        }
+
+        @Test
+        @DisplayName("extract should fall back to the visible short date when data-value is absent")
+        void extract_whenLinksPathCardLacksHiddenDate_shouldUseVisibleShortDate() {
+            stubFor(get(urlPathEqualTo("/vagas-de-emprego-desenvolvedor.aspx"))
+                    .willReturn(ok(LIVE_CARD.replace(" data-value=\"2026/10/30 02:19:00\"", ""))));
+
+            var jobs = provider.extract();
+
+            assertEquals(1, jobs.size());
+            assertEquals("30 out", jobs.get(0).rawDate(),
+                    "the visible short date matches DateParser's day-month form ('30 out' → Oct 30)");
+        }
+
+        @Test
+        @DisplayName("extract should keep rawDate null when the card carries no date node")
+        void extract_whenLinksPathCardHasNoDateFields_shouldKeepRawDateNull() {
+            var withoutDates = LIVE_CARD
+                    .replace(" data-value=\"2026/10/30 02:19:00\"", "")
+                    .replace("<div hidden class=\"js_date\"", "<div hidden x-class=\"js_date\"")
+                    .replace("<div class=\"text-medium small text-nowrap\">30 out</div>", "");
+            stubFor(get(urlPathEqualTo("/vagas-de-emprego-desenvolvedor.aspx"))
+                    .willReturn(ok(withoutDates)));
+
+            var jobs = provider.extract();
+
+            assertEquals(1, jobs.size());
+            assertNull(jobs.get(0).rawDate(),
+                    "the date-gate contract: no harvestable date → null → the job is unpacked and dropped later, never misdated");
+        }
+
+        @Test
+        @DisplayName("extract should refuse a borrowed date when the container wraps several cards")
+        void extract_whenLinksContainerSpansMultipleCards_shouldKeepRawDateNull() {
+            var sparseWrapper = """
+                <html><body>
+                <div id="grid-list">
+                  <div class="js_rowCard">
+                    <a href="/vaga-de-dev-a__100.aspx"><h2>Dev A</h2></a>
+                    <div class="js_date" data-value="2026/10/30 01:00:00"></div>
+                    <span>Evolua SP</span>
+                    <p>Spring Boot REST</p>
+                  </div>
+                  <div class="js_rowCard">
+                    <a href="/vaga-de-dev-b__200.aspx"><h2>Dev B</h2></a>
+                    <span>Evolua SP</span>
+                    <p>Golang CLI tools</p>
+                  </div>
+                </div>
+                </body></html>
+                """;
+            stubFor(get(urlPathEqualTo("/vagas-de-emprego-desenvolvedor.aspx"))
+                    .willReturn(ok(sparseWrapper)));
+
+            var jobs = provider.extract();
+
+            assertEquals(2, jobs.size(), "sparse cards still map — only dates are refused");
+            assertTrue(jobs.stream().allMatch(j -> j.rawDate() == null),
+                    "borrowing card A's date for card B converts a silent skip into a silent misdate — refuse instead");
+        }
+    }
+
+    @Nested
     @DisplayName("Scenario 3: bot challenge")
     class BotChallenge {
 
