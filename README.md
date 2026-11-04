@@ -371,6 +371,7 @@ Watch the bot work live and take over logins/CAPTCHAs via the official Hermes **
 | `POST` | `/api/jobs/fetch/linkedin` | Trigger only LinkedIn scraper | Yes |
 | `POST` | `/api/jobs/fetch/gupy` | Trigger only Gupy scraper | Yes |
 | `POST` | `/api/jobs/fetch/infojobs` | Trigger only InfoJobs scraper | Yes |
+| `POST` | `/api/jobs/fetch/lever` | Trigger only Lever scraper | Yes |
 | `POST` | `/api/jobs/{id}/analyze` | Analyze job with AI | Yes |
 | `GET` | `/api/jobs/{id}/email` | Get generated email draft | Yes |
 | `POST` | `/api/jobs/{id}/email` | Generate new email for the job | Yes |
