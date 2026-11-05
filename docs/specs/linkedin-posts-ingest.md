@@ -56,9 +56,9 @@ scraper-sourced jobs.
    (`vagas`, `vaga`, `rh`, `recrutamento`, …) beat generic/`contato`/personal,
    position order breaks ties.
 5. **Não é vaga** — AI returns `ehVaga=false` → `200 {ignored: "not-a-job"}`, nothing saved.
-6. **IA indisponível** — AI fails or blows the timeout → `503 {error:
-   "ai-unavailable"}` (GlobalExceptionHandler mapping for `AiException`),
-   nothing saved, retryable.
+6. **IA indisponível** — AI fails or blows the timeout → `502 {error:
+   "ai-unavailable"}` (fits the existing `GlobalExceptionHandler` mapping:
+   `AiException → BAD_GATEWAY`); nothing saved, retryable.
 7. **Saída da IA inválida** — `title`/`company` blank or above the length cap →
    `200 {ignored: "invalid-extraction"}`, nothing saved.
 8. **Sucesso** — saves `Job{source: "linkedin-post", url: permalink,
@@ -101,7 +101,7 @@ Web (`JobIngestControllerTest`, `@WebMvcTest`):
 - `ingest_whenBodyWithoutPermalink_shouldReturn400AndNotCallAi`
 - `ingest_whenSaved_shouldReturn201WithJob`
 - `ingest_whenNoContact_shouldReturn200WithIgnoredBody`
-- `ingest_whenAiUnavailable_shouldReturn503`
+- `ingest_whenAiUnavailable_shouldReturn502`
 - `ingest_whenNeitherBotTokenNorJwt_shouldReturn401` (pins the filter
   coverage; likely green immediately — that is the point: the chain already
   covers the route)
