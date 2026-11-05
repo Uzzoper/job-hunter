@@ -141,7 +141,7 @@ Application (`IngestLinkedInPostServiceTest`, plain Mockito):
 - `ingest_whenValidPostWithBotPostedAt_shouldSaveLinkedinPostJob`
 - `ingest_whenPostedAtMissing_shouldFallbackToCollectionDate`
 - `ingest_whenPostedAtInFuture_shouldFallbackToCollectionDate`
-- `ingest_whenTextOverCap_shouldTruncateForPromptAndSaveWhileScanningFullText`
+- `ingest_whenTextOverCap_shouldTruncateForPromptAndRowWhileEmailScansFullText`
 Hardening-round additions:
 - `ingest_whenPromptBuilt_shouldFencePostAndInstructNeverToFollow`
 - `ingest_whenTextClosesThePostTag_shouldStayNeutralizedInPrompt`

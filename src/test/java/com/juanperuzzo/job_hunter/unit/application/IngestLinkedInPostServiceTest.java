@@ -97,14 +97,51 @@ class IngestLinkedInPostServiceTest {
     }
 
     @Test
-    @DisplayName("ingest should reject over-cap text before the pipeline")
-    void ingest_whenTextOverCap_shouldThrowIllegalArgument() {
-        var oversized = "x".repeat(3001);
-        assertThrows(IllegalArgumentException.class, () -> service.ingest(
+    @DisplayName("ingest should fall back to the collection date when the bot sends a future postedAt")
+    void ingest_whenPostedAtInFuture_shouldFallbackToCollectionDate() {
+        when(emailExtractorPort.extract(isNull(), anyString())).thenReturn("rh@acme.com.br");
+        when(jobRepository.existsByUrl(CANONICAL_URL)).thenReturn(false);
+        when(aiPort.complete(anyString()))
+                .thenReturn("{\"ehVaga\": true, \"title\": \"Dev Ruby\", \"company\": \"Acme TI\"}");
+        when(jobRepository.save(any(Job.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        service.ingest(command(LocalDate.of(2026, 11, 5)));
+
+        var captor = ArgumentCaptor.forClass(Job.class);
+        verify(jobRepository).save(captor.capture());
+        assertEquals(LocalDate.of(2026, 11, 4), captor.getValue().postedAt(),
+                "future postedAt must not be trusted; fallback = collection date from the injected Clock");
+    }
+
+    @Test
+    @DisplayName("ingest should truncate over-cap text for prompt and row while the e-mail scan still sees the full text")
+    void ingest_whenTextOverCap_shouldTruncateForPromptAndRowWhileEmailScansFullText() {
+        var tail = " vagas@tail.com";
+        var full = "x".repeat(3199) + tail;
+        when(emailExtractorPort.extract(isNull(), eq(full))).thenReturn("vagas@tail.com");
+        when(jobRepository.existsByUrl(CANONICAL_URL)).thenReturn(false);
+        when(aiPort.complete(anyString()))
+                .thenReturn("{\"ehVaga\": true, \"title\": \"Dev Ruby\", \"company\": \"Acme TI\"}");
+        when(jobRepository.save(any(Job.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        var result = service.ingest(
                 new com.juanperuzzo.job_hunter.application.port.in.IngestPostCommand(
-                        "https://www.linkedin.com/feed/update/urn:li:activity:7123456789012345678",
-                        oversized, "Autor", null)));
-        verifyNoInteractions(aiPort, jobRepository);
+                        PERMALINK, full, "Acme TI", LocalDate.of(2026, 11, 4)));
+
+        assertInstanceOf(
+                com.juanperuzzo.job_hunter.application.port.in.IngestResult.Saved.class, result);
+
+        var saveCaptor = ArgumentCaptor.forClass(Job.class);
+        verify(jobRepository).save(saveCaptor.capture());
+        var saved = saveCaptor.getValue();
+        assertEquals(3000, saved.description().length(), "description capped at 3000 chars");
+        assertFalse(saved.description().contains("vagas@tail.com"),
+                "content beyond the cap must be cut from the saved row");
+
+        var promptCaptor = ArgumentCaptor.forClass(String.class);
+        verify(aiPort).complete(promptCaptor.capture());
+        assertFalse(promptCaptor.getValue().contains("vagas@tail.com"),
+                "the AI prompt must not carry text beyond the cap");
     }
 
     @Test
@@ -364,6 +401,23 @@ class IngestLinkedInPostServiceTest {
         assertInstanceOf(
                 com.juanperuzzo.job_hunter.application.port.in.IngestResult.InvalidExtraction.class, result);
         verify(jobRepository, never()).save(any(Job.class));
+    }
+
+    @Test
+    @DisplayName("ingest should surface a duplicate-insert race as Duplicate instead of leaking the exception")
+    void ingest_whenSaveRacesWithDuplicateInsert_shouldReturnDuplicate() {
+        when(emailExtractorPort.extract(isNull(), anyString())).thenReturn("rh@acme.com.br");
+        when(jobRepository.existsByUrl(CANONICAL_URL)).thenReturn(false);
+        when(aiPort.complete(anyString()))
+                .thenReturn("{\"ehVaga\": true, \"title\": \"Dev Ruby\", \"company\": \"Acme TI\"}");
+        doThrow(new com.juanperuzzo.job_hunter.domain.exception.DuplicateUrlException(
+                "UNIQUE constraint failed: jobs.url (race)"))
+                .when(jobRepository).save(any(Job.class));
+
+        var result = service.ingest(command(LocalDate.of(2026, 11, 4)));
+
+        assertInstanceOf(
+                com.juanperuzzo.job_hunter.application.port.in.IngestResult.Duplicate.class, result);
     }
 
     @Test

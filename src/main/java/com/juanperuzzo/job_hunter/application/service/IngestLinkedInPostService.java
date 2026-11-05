@@ -10,6 +10,7 @@ import com.juanperuzzo.job_hunter.application.port.out.AiPort;
 import com.juanperuzzo.job_hunter.application.port.out.ContactEmailExtractorPort;
 import com.juanperuzzo.job_hunter.application.port.out.JobRepository;
 import com.juanperuzzo.job_hunter.domain.exception.AiException;
+import com.juanperuzzo.job_hunter.domain.exception.DuplicateUrlException;
 import com.juanperuzzo.job_hunter.domain.model.Job;
 
 import org.slf4j.Logger;
@@ -79,6 +80,8 @@ public class IngestLinkedInPostService implements IngestLinkedInPostUseCase {
         validate(command);
         var url = canonicalPermalink(command.url());
 
+        // The e-mail scan always sees the FULL text — capping is a prompt and
+        // row-size concern only, so an e-mail past the cap still counts.
         var email = emailExtractorPort.extract(
                 null, command.text());
         if (email == null || email.isBlank()) {
@@ -88,13 +91,28 @@ public class IngestLinkedInPostService implements IngestLinkedInPostUseCase {
             return new IngestResult.Duplicate();
         }
 
-        var aiReply = ingestAiPort.complete(buildPrompt(command));
+        var aiReply = ingestAiPort.complete(buildPrompt(command, truncate(command.text())));
 
         return switch (classify(aiReply)) {
             case NotAJob notAJob -> new IngestResult.NotJob();
             case InvalidExtraction invalidExtraction -> new IngestResult.InvalidExtraction();
-            case Vacancy vacancy -> new IngestResult.Saved(persist(vacancy, url, command, email));
+            case Vacancy vacancy -> savedOrDuplicate(vacancy, url, command, email);
         };
+    }
+
+    /**
+     * Wraps the save so a duplicate-insert race (another ingest persisted the
+     * same canonical URL between {@code existsByUrl} and {@code save}) reads
+     * as a plain {@code Duplicate}: the adapter converts the SQLite
+     * {@code UNIQUE constraint failed: jobs.url} violation into
+     * {@link DuplicateUrlException} and no Spring DAO type leaks up here.
+     */
+    private IngestResult savedOrDuplicate(Vacancy vacancy, String url, IngestPostCommand command, String email) {
+        try {
+            return new IngestResult.Saved(persist(vacancy, url, command, email));
+        } catch (DuplicateUrlException e) {
+            return new IngestResult.Duplicate();
+        }
     }
 
     /**
@@ -115,7 +133,9 @@ public class IngestLinkedInPostService implements IngestLinkedInPostUseCase {
 
     /**
      * Step 1: non-blank text; rides the existing 400 mapping (permalink shape
-     * and canonicalization live in {@link #canonicalPermalink}).
+     * and canonicalization live in {@link #canonicalPermalink}). Over-cap text
+     * is intentionally NOT rejected here — it gets truncated for the prompt
+     * and the row instead (2026-11-05 round).
      */
     private static void validate(IngestPostCommand command) {
         if (command == null) {
@@ -124,9 +144,11 @@ public class IngestLinkedInPostService implements IngestLinkedInPostUseCase {
         if (command.text() == null || command.text().isBlank()) {
             throw new IllegalArgumentException("text must not be blank");
         }
-        if (command.text().length() > MAX_TEXT_LENGTH) {
-            throw new IllegalArgumentException("text exceeds the " + MAX_TEXT_LENGTH + " character cap");
-        }
+    }
+
+    /** Caps untrusted text at {@value MAX_TEXT_LENGTH} chars (prompt + persisted description). */
+    private static String truncate(String text) {
+        return text.length() <= MAX_TEXT_LENGTH ? text : text.substring(0, MAX_TEXT_LENGTH);
     }
 
     /**
@@ -137,7 +159,7 @@ public class IngestLinkedInPostService implements IngestLinkedInPostUseCase {
      * forge header attributes (docs/specs/linkedin-posts-ingest.md, 2026-11-05
      * hardening round).
      */
-    private static String buildPrompt(IngestPostCommand command) {
+    private static String buildPrompt(IngestPostCommand command, String text) {
         var author = command.author();
         var isBlankAuthor = author == null || author.isBlank();
         if (!isBlankAuthor) {
@@ -154,7 +176,7 @@ public class IngestLinkedInPostService implements IngestLinkedInPostUseCase {
                 %s
                 %s
                 </post>
-                """.formatted(header, fence(command.text()));
+                """.formatted(header, fence(text));
     }
 
     /**
@@ -213,13 +235,18 @@ public class IngestLinkedInPostService implements IngestLinkedInPostUseCase {
     }
 
     private Job persist(Vacancy vacancy, String url, IngestPostCommand command, String email) {
-        var postedAt = command.postedAt() != null ? command.postedAt() : LocalDate.now(clock);
+        var postedAt = command.postedAt();
+        if (postedAt == null || postedAt.isAfter(LocalDate.now(clock))) {
+            // absent AND future dates both fall back to the collection date —
+            // the bot's DOM resolution is trusted read-only, never a time machine
+            postedAt = LocalDate.now(clock);
+        }
         return jobRepository.save(new Job(
                 null,
                 vacancy.title(),
                 vacancy.company(),
                 url,
-                command.text(),
+                truncate(command.text()),
                 postedAt,
                 SOURCE,
                 email,

@@ -1,7 +1,9 @@
 package com.juanperuzzo.job_hunter.infrastructure.persistence;
 
 import com.juanperuzzo.job_hunter.application.port.out.JobRepository;
+import com.juanperuzzo.job_hunter.domain.exception.DuplicateUrlException;
 import com.juanperuzzo.job_hunter.domain.model.Job;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Repository;
 
@@ -24,9 +26,18 @@ public class JobPersistenceAdapter implements JobRepository {
 
     @Override
     public Job save(Job job) {
-        JobEntity entity = toEntity(job);
-        JobEntity saved = jpaRepository.save(entity);
-        return toDomain(saved);
+        try {
+            JobEntity saved = jpaRepository.save(toEntity(job));
+            return toDomain(saved);
+        } catch (DataIntegrityViolationException e) {
+            // SQLite wording: only the jobs.url UNIQUE violation is a duplicate
+            // identity (Job identity is URL-based); anything else is a real
+            // integrity error and must surface untouched.
+            if (e.getMessage() != null && e.getMessage().contains("UNIQUE constraint failed: jobs.url")) {
+                throw new DuplicateUrlException("a job with this url already exists: " + job.url());
+            }
+            throw e;
+        }
     }
 
     @Override
