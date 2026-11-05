@@ -33,6 +33,11 @@ import java.util.regex.Pattern;
  * collection-date fallback. AI failures surface untouched as
  * {@link AiException} (mapped to 502 retryable) — nothing is saved, and no
  * adapter retries (Hermes gateway contract).
+ *
+ * <p>The classification call targets the optional dedicated ingest Hermes
+ * profile ({@code hermes.ingest-base-url}); when the property is absent the
+ * dedicated client is built against the shared profile and a startup WARN
+ * documents it (infrastructure/config {@code IngestAiConfig}).
  */
 public class IngestLinkedInPostService implements IngestLinkedInPostUseCase {
 
@@ -53,17 +58,17 @@ public class IngestLinkedInPostService implements IngestLinkedInPostUseCase {
             "globo.com", "terra.com.br");
 
     private final ContactEmailExtractorPort emailExtractorPort;
-    private final AiPort aiPort;
+    private final AiPort ingestAiPort;
     private final JobRepository jobRepository;
     private final Clock clock;
 
     public IngestLinkedInPostService(
             ContactEmailExtractorPort emailExtractorPort,
-            AiPort aiPort,
+            AiPort ingestAiPort,
             JobRepository jobRepository,
             Clock clock) {
         this.emailExtractorPort = emailExtractorPort;
-        this.aiPort = aiPort;
+        this.ingestAiPort = ingestAiPort;
         this.jobRepository = jobRepository;
         this.clock = clock;
     }
@@ -81,7 +86,7 @@ public class IngestLinkedInPostService implements IngestLinkedInPostUseCase {
             return new IngestResult.Duplicate();
         }
 
-        var aiReply = aiPort.complete(buildPrompt(command));
+        var aiReply = ingestAiPort.complete(buildPrompt(command));
 
         return switch (classify(aiReply)) {
             case NotAJob notAJob -> new IngestResult.NotJob();

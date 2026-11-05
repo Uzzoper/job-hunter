@@ -151,6 +151,9 @@ Hardening-round additions:
 - `ingest_whenAiReplyFencedOrProseWrapped_shouldStillClassifyVacancy`
 - `ingest_whenAiReplyHasNoJsonObject_shouldReturnInvalidExtraction`
 - `ingest_whenSaveRacesWithDuplicateInsert_shouldReturnDuplicate`
+Wiring (`IngestAiProfileWiringTest`, context runner, infrastructure/config):
+- with `hermes.ingest-base-url` → dedicated `HermesAgentClient` (observable
+  `baseUrl()`), no WARN; without → shared-profile fallback + startup WARN.
 Persistence (`JobPersistenceAdapterTest`, plain Mockito):
 - converts a `DataIntegrityViolationException` carrying
   `UNIQUE constraint failed: jobs.url` into `DuplicateUrlException`; other

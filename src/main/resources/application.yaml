@@ -225,6 +225,11 @@ hermes:
   api-key: ${HERMES_API_KEY}           # required; the context fails fast without it
   model: ${HERMES_MODEL:default}       # model pinned on the Bot profile
   timeout-seconds: 120
+  # ingest-base-url: http://127.0.0.1:8642/p/jobhunter-ingest/v1
+  #   Optional dedicated Hermes profile for the ingest classifier. When
+  #   absent (default), ingest falls back to base-url (the shared profile)
+  #   and logs a startup WARN. Provision the profile on the VM — the repo
+  #   only consumes the property. Keep the mandatory /v1 suffix.
 
 bot:
   memory:
