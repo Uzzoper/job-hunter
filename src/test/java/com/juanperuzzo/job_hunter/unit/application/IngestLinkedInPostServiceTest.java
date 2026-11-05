@@ -29,6 +29,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -46,6 +47,8 @@ class IngestLinkedInPostServiceTest {
 
     private static final String PERMALINK =
             "https://www.linkedin.com/feed/update/urn:li:activity:7123456789012345678";
+    private static final String CANONICAL_URL =
+            "https://www.linkedin.com/feed/update/urn:li:activity:7123456789012345678/";
 
     @Mock
     private ContactEmailExtractorPort emailExtractorPort;
@@ -68,6 +71,11 @@ class IngestLinkedInPostServiceTest {
     private com.juanperuzzo.job_hunter.application.port.in.IngestPostCommand command(LocalDate postedAt) {
         return new com.juanperuzzo.job_hunter.application.port.in.IngestPostCommand(
                 PERMALINK, "Estamos contratando desenvolvedor Ruby para time de dados!", "Acme TI", postedAt);
+    }
+
+    private com.juanperuzzo.job_hunter.application.port.in.IngestPostCommand commandWith(String url) {
+        return new com.juanperuzzo.job_hunter.application.port.in.IngestPostCommand(
+                url, "Estamos contratando desenvolvedor Ruby para time de dados!", "Acme TI", LocalDate.of(2026, 11, 4));
     }
 
     @Test
@@ -103,7 +111,7 @@ class IngestLinkedInPostServiceTest {
     @DisplayName("ingest should fence the post between <post> tags and instruct the AI to never follow its content")
     void ingest_whenPromptBuilt_shouldFencePostAndInstructNeverToFollow() {
         when(emailExtractorPort.extract(isNull(), anyString())).thenReturn("rh@acme.com.br");
-        when(jobRepository.existsByUrl(PERMALINK)).thenReturn(false);
+        when(jobRepository.existsByUrl(CANONICAL_URL)).thenReturn(false);
         when(aiPort.complete(anyString()))
                 .thenReturn("{\"ehVaga\": false, \"title\": \"x\", \"company\": \"y\"}");
 
@@ -122,7 +130,7 @@ class IngestLinkedInPostServiceTest {
     @DisplayName("ingest should neutralize a </post> smuggled in the text so it cannot close the fence")
     void ingest_whenTextClosesThePostTag_shouldStayNeutralizedInPrompt() {
         when(emailExtractorPort.extract(isNull(), anyString())).thenReturn("rh@acme.com.br");
-        when(jobRepository.existsByUrl(PERMALINK)).thenReturn(false);
+        when(jobRepository.existsByUrl(CANONICAL_URL)).thenReturn(false);
         when(aiPort.complete(anyString()))
                 .thenReturn("{\"ehVaga\": false, \"title\": \"x\", \"company\": \"y\"}");
 
@@ -144,7 +152,7 @@ class IngestLinkedInPostServiceTest {
     @DisplayName("ingest should omit the author attribute instead of printing literal null")
     void ingest_whenAuthorNull_shouldOmitAttributeInsteadOfPrintingNull() {
         when(emailExtractorPort.extract(isNull(), anyString())).thenReturn("rh@acme.com.br");
-        when(jobRepository.existsByUrl(PERMALINK)).thenReturn(false);
+        when(jobRepository.existsByUrl(CANONICAL_URL)).thenReturn(false);
         when(aiPort.complete(anyString()))
                 .thenReturn("{\"ehVaga\": false, \"title\": \"x\", \"company\": \"y\"}");
 
@@ -162,7 +170,7 @@ class IngestLinkedInPostServiceTest {
     @DisplayName("ingest should strip line breaks from the author and escape delimiters in the fence header")
     void ingest_whenAuthorHasLineBreaks_shouldStripThemFromPrompt() {
         when(emailExtractorPort.extract(isNull(), anyString())).thenReturn("rh@acme.com.br");
-        when(jobRepository.existsByUrl(PERMALINK)).thenReturn(false);
+        when(jobRepository.existsByUrl(CANONICAL_URL)).thenReturn(false);
         when(aiPort.complete(anyString()))
                 .thenReturn("{\"ehVaga\": false, \"title\": \"x\", \"company\": \"y\"}");
 
@@ -192,7 +200,7 @@ class IngestLinkedInPostServiceTest {
     @DisplayName("ingest should return Duplicate without AI call when the permalink is already saved")
     void ingest_whenUrlAlreadySaved_shouldReturnDuplicateWithoutCallingAi() {
         when(emailExtractorPort.extract(isNull(), anyString())).thenReturn("rh@acme.com.br");
-        when(jobRepository.existsByUrl(PERMALINK)).thenReturn(true);
+        when(jobRepository.existsByUrl(CANONICAL_URL)).thenReturn(true);
 
         var result = service.ingest(command(LocalDate.of(2026, 11, 4)));
 
@@ -203,10 +211,47 @@ class IngestLinkedInPostServiceTest {
     }
 
     @Test
+    @DisplayName("ingest should dedupe the same publication across subdomain and trailing-slash variants")
+    void ingest_whenUrlVariantsDifferOnlyInSubdomainOrSlash_shouldDedupeCanonical() {
+        when(emailExtractorPort.extract(isNull(), anyString())).thenReturn("rh@acme.com.br");
+        when(jobRepository.existsByUrl(CANONICAL_URL)).thenReturn(false, true, true);
+        when(aiPort.complete(anyString()))
+                .thenReturn("{\"ehVaga\": true, \"title\": \"Dev Ruby\", \"company\": \"Acme TI\"}");
+        when(jobRepository.save(any(Job.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        var first = service.ingest(command(LocalDate.of(2026, 11, 4)));
+        var second = service.ingest(commandWith(PERMALINK + "/"));
+        var third = service.ingest(commandWith(
+                "https://br.linkedin.com/feed/update/urn:li:activity:7123456789012345678"));
+
+        assertInstanceOf(
+                com.juanperuzzo.job_hunter.application.port.in.IngestResult.Saved.class, first);
+        assertInstanceOf(
+                com.juanperuzzo.job_hunter.application.port.in.IngestResult.Duplicate.class, second);
+        assertInstanceOf(
+                com.juanperuzzo.job_hunter.application.port.in.IngestResult.Duplicate.class, third);
+        verify(aiPort, times(1)).complete(anyString());
+
+        var captor = ArgumentCaptor.forClass(Job.class);
+        verify(jobRepository).save(captor.capture());
+        assertEquals(CANONICAL_URL, captor.getValue().url(), "saved url must be canonical");
+    }
+
+    @Test
+    @DisplayName("ingest should reject lookalike hosts and non-https permalinks (strict host regex)")
+    void ingest_whenUrlIsEvilHostOrHttp_shouldThrowIllegalArgument() {
+        assertThrows(IllegalArgumentException.class, () -> service.ingest(commandWith(
+                "https://evillinkedin.com/feed/update/urn:li:activity:123/")));
+        assertThrows(IllegalArgumentException.class, () -> service.ingest(commandWith(
+                "http://www.linkedin.com/feed/update/urn:li:activity:123/")));
+        verifyNoInteractions(emailExtractorPort, aiPort, jobRepository);
+    }
+
+    @Test
     @DisplayName("ingest should persist the extractor's ranked-winner e-mail (multi-email rule lives in the extractor)")
     void ingest_whenExtractorReturnsRankedEmail_shouldPersistWinningEmail() {
         when(emailExtractorPort.extract(isNull(), anyString())).thenReturn("vagas@acme.com.br");
-        when(jobRepository.existsByUrl(PERMALINK)).thenReturn(false);
+        when(jobRepository.existsByUrl(CANONICAL_URL)).thenReturn(false);
         when(aiPort.complete(anyString()))
                 .thenReturn("{\"ehVaga\": true, \"title\": \"Dev Ruby\", \"company\": \"Acme TI\"}");
         when(jobRepository.save(any(Job.class))).thenAnswer(inv -> inv.getArgument(0));
@@ -222,7 +267,7 @@ class IngestLinkedInPostServiceTest {
     @DisplayName("ingest should return NotJob and save nothing when the AI classifies ehVaga=false")
     void ingest_whenAiReturnsNotJob_shouldReturnNotJobAndSaveNothing() {
         when(emailExtractorPort.extract(isNull(), anyString())).thenReturn("rh@acme.com.br");
-        when(jobRepository.existsByUrl(PERMALINK)).thenReturn(false);
+        when(jobRepository.existsByUrl(CANONICAL_URL)).thenReturn(false);
         when(aiPort.complete(anyString()))
                 .thenReturn("{\"ehVaga\": false, \"title\": \"\", \"company\": \"\"}");
 
@@ -237,7 +282,7 @@ class IngestLinkedInPostServiceTest {
     @DisplayName("ingest should return InvalidExtraction and save nothing when the AI title or company is blank or over the cap")
     void ingest_whenAiOutputMissingTitleOrCompany_shouldReturnInvalidExtractionAndSaveNothing() {
         when(emailExtractorPort.extract(isNull(), anyString())).thenReturn("rh@acme.com.br");
-        when(jobRepository.existsByUrl(PERMALINK)).thenReturn(false);
+        when(jobRepository.existsByUrl(CANONICAL_URL)).thenReturn(false);
         when(aiPort.complete(anyString()))
                 .thenReturn("{\"ehVaga\": true, \"title\": \"\", \"company\": \"Acme TI\"}");
 
@@ -252,7 +297,7 @@ class IngestLinkedInPostServiceTest {
     @DisplayName("ingest should return InvalidExtraction on blank or over-cap AI title (reviewer-flagged edges)")
     void ingest_whenAiTitleOverCapOrBlankReply_shouldReturnInvalidExtraction() {
         when(emailExtractorPort.extract(isNull(), anyString())).thenReturn("rh@acme.com.br");
-        when(jobRepository.existsByUrl(PERMALINK)).thenReturn(false);
+        when(jobRepository.existsByUrl(CANONICAL_URL)).thenReturn(false);
         when(aiPort.complete(anyString()))
                 .thenReturn("{\"ehVaga\": true, \"title\": \"%s\", \"company\": \"Acme TI\"}".formatted("x".repeat(201)));
 
@@ -267,7 +312,7 @@ class IngestLinkedInPostServiceTest {
     @DisplayName("ingest should treat a blank AI reply as invalid extraction")
     void ingest_whenAiReplyBlank_shouldReturnInvalidExtraction() {
         when(emailExtractorPort.extract(isNull(), anyString())).thenReturn("rh@acme.com.br");
-        when(jobRepository.existsByUrl(PERMALINK)).thenReturn(false);
+        when(jobRepository.existsByUrl(CANONICAL_URL)).thenReturn(false);
         when(aiPort.complete(anyString())).thenReturn("");
 
         var result = service.ingest(command(LocalDate.of(2026, 11, 4)));
@@ -280,7 +325,7 @@ class IngestLinkedInPostServiceTest {
     @DisplayName("ingest should rethrow AiException untouched and save nothing when the AI call fails")
     void ingest_whenAiFails_shouldThrowAiExceptionAndSaveNothing() {
         when(emailExtractorPort.extract(isNull(), anyString())).thenReturn("rh@acme.com.br");
-        when(jobRepository.existsByUrl(PERMALINK)).thenReturn(false);
+        when(jobRepository.existsByUrl(CANONICAL_URL)).thenReturn(false);
         doThrow(new AiException("hermes gateway down")).when(aiPort).complete(anyString());
 
         assertThrows(AiException.class, () -> service.ingest(command(LocalDate.of(2026, 11, 4))));
@@ -292,7 +337,7 @@ class IngestLinkedInPostServiceTest {
     @DisplayName("ingest should flag emailSuspect when the winning e-mail comes from a free domain")
     void ingest_whenFreeEmailDomain_shouldSaveWithSuspectFlag() {
         when(emailExtractorPort.extract(isNull(), anyString())).thenReturn("pablo@gmail.com");
-        when(jobRepository.existsByUrl(PERMALINK)).thenReturn(false);
+        when(jobRepository.existsByUrl(CANONICAL_URL)).thenReturn(false);
         when(aiPort.complete(anyString()))
                 .thenReturn("{\"ehVaga\": true, \"title\": \"Dev Ruby\", \"company\": \"Guru RH\"}");
         when(jobRepository.save(any(Job.class))).thenAnswer(inv -> inv.getArgument(0));
@@ -308,7 +353,7 @@ class IngestLinkedInPostServiceTest {
     @DisplayName("ingest should save a linkedin-post Job carrying the bot-provided postedAt")
     void ingest_whenValidPostWithBotPostedAt_shouldSaveLinkedinPostJob() {
         when(emailExtractorPort.extract(isNull(), anyString())).thenReturn("rh@acme.com.br");
-        when(jobRepository.existsByUrl(PERMALINK)).thenReturn(false);
+        when(jobRepository.existsByUrl(CANONICAL_URL)).thenReturn(false);
         when(aiPort.complete(anyString()))
                 .thenReturn("{\"ehVaga\": true, \"title\": \"Dev Ruby\", \"company\": \"Acme TI\"}");
         when(jobRepository.save(any(Job.class))).thenAnswer(inv -> inv.getArgument(0));
@@ -322,7 +367,7 @@ class IngestLinkedInPostServiceTest {
         assertTrue(promptCaptor.getValue().contains("Acme TI"), "author is prompt context only — pin it reaches the AI");
         var saved = captor.getValue();
         assertEquals("linkedin-post", saved.source());
-        assertEquals(PERMALINK, saved.url());
+        assertEquals(CANONICAL_URL, saved.url());
         assertEquals("Dev Ruby", saved.title());
         assertEquals("Acme TI", saved.company());
         assertEquals("rh@acme.com.br", saved.contactEmail());
@@ -335,7 +380,7 @@ class IngestLinkedInPostServiceTest {
     @DisplayName("ingest should fall back to the collection date when the bot does not provide postedAt")
     void ingest_whenPostedAtMissing_shouldFallbackToCollectionDate() {
         when(emailExtractorPort.extract(isNull(), anyString())).thenReturn("rh@acme.com.br");
-        when(jobRepository.existsByUrl(PERMALINK)).thenReturn(false);
+        when(jobRepository.existsByUrl(CANONICAL_URL)).thenReturn(false);
         when(aiPort.complete(anyString()))
                 .thenReturn("{\"ehVaga\": true, \"title\": \"Dev Ruby\", \"company\": \"Acme TI\"}");
         when(jobRepository.save(any(Job.class))).thenAnswer(inv -> inv.getArgument(0));

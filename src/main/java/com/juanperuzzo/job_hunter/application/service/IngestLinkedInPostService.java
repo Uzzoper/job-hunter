@@ -47,8 +47,9 @@ public class IngestLinkedInPostService implements IngestLinkedInPostUseCase {
     private static final int MAX_COMPANY_LENGTH = 120;
     /** LinkedIn post texts top out far below this; the cap guards the gateway and the persisted description. */
     private static final int MAX_TEXT_LENGTH = 3000;
-    private static final Pattern VALID_PERMALINK =
-            Pattern.compile("https://[^/]*linkedin\\.com/feed/update/urn:li:activity:\\d+/?$");
+    /** Accepts www/two-letter-country subdomains; the activity id is the real identity. */
+    private static final Pattern VALID_PERMALINK = Pattern.compile(
+            "^https://(?:www\\.|[a-z]{2}\\.)?linkedin\\.com/feed/update/urn:li:activity:(\\d+)/?$");
     private static final ObjectMapper JSON = new ObjectMapper();
 
     /** Free providers mark the e-mail as suspect (unit-testable constant). */
@@ -76,13 +77,14 @@ public class IngestLinkedInPostService implements IngestLinkedInPostUseCase {
     @Override
     public IngestResult ingest(IngestPostCommand command) {
         validate(command);
+        var url = canonicalPermalink(command.url());
 
         var email = emailExtractorPort.extract(
                 null, command.text());
         if (email == null || email.isBlank()) {
             return new IngestResult.NoContact();
         }
-        if (jobRepository.existsByUrl(command.url())) {
+        if (jobRepository.existsByUrl(url)) {
             return new IngestResult.Duplicate();
         }
 
@@ -91,17 +93,33 @@ public class IngestLinkedInPostService implements IngestLinkedInPostUseCase {
         return switch (classify(aiReply)) {
             case NotAJob notAJob -> new IngestResult.NotJob();
             case InvalidExtraction invalidExtraction -> new IngestResult.InvalidExtraction();
-            case Vacancy vacancy -> new IngestResult.Saved(persist(vacancy, command, email));
+            case Vacancy vacancy -> new IngestResult.Saved(persist(vacancy, url, command, email));
         };
     }
 
-    /** Step 1: permalink shape and non-blank text; rides the existing 400 mapping. */
-    private static void validate(IngestPostCommand command) {
-        if (command == null
-                || command.url() == null
-                || !VALID_PERMALINK.matcher(command.url()).matches()) {
+    /**
+     * Normalizes a validated permalink to the canonical {@code www} form with
+     * a trailing slash, and rejects lookalike hosts ({@code evillinkedin.com})
+     * and non-https schemes. Variant forms of the same publication collapse
+     * onto one URL, so URL-based dedupe cannot be bypassed (2026-11-05
+     * hardening round).
+     */
+    private static String canonicalPermalink(String url) {
+        var matcher = VALID_PERMALINK.matcher(url);
+        if (!matcher.matches()) {
             throw new IllegalArgumentException(
                     "url must be a linkedin.com/feed/update/urn:li:activity:<id> permalink");
+        }
+        return "https://www.linkedin.com/feed/update/urn:li:activity:" + matcher.group(1) + "/";
+    }
+
+    /**
+     * Step 1: non-blank text; rides the existing 400 mapping (permalink shape
+     * and canonicalization live in {@link #canonicalPermalink}).
+     */
+    private static void validate(IngestPostCommand command) {
+        if (command == null) {
+            throw new IllegalArgumentException("command must not be null");
         }
         if (command.text() == null || command.text().isBlank()) {
             throw new IllegalArgumentException("text must not be blank");
@@ -177,13 +195,13 @@ public class IngestLinkedInPostService implements IngestLinkedInPostUseCase {
         }
     }
 
-    private Job persist(Vacancy vacancy, IngestPostCommand command, String email) {
+    private Job persist(Vacancy vacancy, String url, IngestPostCommand command, String email) {
         var postedAt = command.postedAt() != null ? command.postedAt() : LocalDate.now(clock);
         return jobRepository.save(new Job(
                 null,
                 vacancy.title(),
                 vacancy.company(),
-                command.url(),
+                url,
                 command.text(),
                 postedAt,
                 SOURCE,
