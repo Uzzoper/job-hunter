@@ -84,7 +84,13 @@ Infrastructure facts supporting the scenarios:
   extraction infra.
 - `Job` record enforces `url/postedAt/source` non-null; title/company need
   explicit validation in the use case (scenario 7 caps: 200 chars title,
-  120 chars company; blank → invalid-extraction).
+  120 chars company, 3000 chars post text; blank → invalid-extraction).
+- Post-2026-11-04 review hardening: permalink regex anchored (`\d+/?$` — a
+  link with tracking params is by-construction invalid, so save-side dedupe
+  cannot be bypassed), blank/unparsable AI reply counts as invalid-extraction
+  (logged, narrow `JsonProcessingException` catch), free-domain match covers
+  subdomains, `Job.withContactEmail/withCompanyWebsite` preserve
+  `emailSuspect` (regression-pinned), `author`-in-prompt pinned by test.
 
 ## Schema (Flyway)
 
@@ -106,7 +112,9 @@ Application (`IngestLinkedInPostServiceTest`, plain Mockito):
 - `ingest_whenPostedAtMissing_shouldFallbackToCollectionDate`
 
 Web (`JobIngestControllerTest`, `@WebMvcTest`):
-- `ingest_whenBodyWithoutPermalink_shouldReturn400AndNotCallAi`
+- `ingest_whenPermalinkIsNotLinkedInFeed_shouldThrowIllegalArgument` +
+  `ingest_whenBlankText_shouldThrowIllegalArgument` (application) and
+  `ingest_whenBodyValidationFails_shouldReturn400` (web maps the 400)
 - `ingest_whenSaved_shouldReturn201WithJob`
 - `ingest_whenNoContact_shouldReturn200WithIgnoredBody`
 - `ingest_whenAiUnavailable_shouldReturn502`

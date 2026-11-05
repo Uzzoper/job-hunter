@@ -21,6 +21,7 @@ import java.time.ZoneOffset;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -83,6 +84,17 @@ class IngestLinkedInPostServiceTest {
         assertThrows(IllegalArgumentException.class, () -> service.ingest(
                 new com.juanperuzzo.job_hunter.application.port.in.IngestPostCommand(
                         "https://www.linkedin.com/feed/update/urn:li:activity:7123456789012345678", "   ", "Autor", null)));
+        verifyNoInteractions(aiPort, jobRepository);
+    }
+
+    @Test
+    @DisplayName("ingest should reject over-cap text before the pipeline")
+    void ingest_whenTextOverCap_shouldThrowIllegalArgument() {
+        var oversized = "x".repeat(3001);
+        assertThrows(IllegalArgumentException.class, () -> service.ingest(
+                new com.juanperuzzo.job_hunter.application.port.in.IngestPostCommand(
+                        "https://www.linkedin.com/feed/update/urn:li:activity:7123456789012345678",
+                        oversized, "Autor", null)));
         verifyNoInteractions(aiPort, jobRepository);
     }
 
@@ -159,6 +171,34 @@ class IngestLinkedInPostServiceTest {
     }
 
     @Test
+    @DisplayName("ingest should return InvalidExtraction on blank or over-cap AI title (reviewer-flagged edges)")
+    void ingest_whenAiTitleOverCapOrBlankReply_shouldReturnInvalidExtraction() {
+        when(emailExtractorPort.extract(isNull(), anyString())).thenReturn("rh@acme.com.br");
+        when(jobRepository.existsByUrl(PERMALINK)).thenReturn(false);
+        when(aiPort.complete(anyString()))
+                .thenReturn("{\"ehVaga\": true, \"title\": \"%s\", \"company\": \"Acme TI\"}".formatted("x".repeat(201)));
+
+        var result = service.ingest(command(LocalDate.of(2026, 11, 4)));
+
+        assertInstanceOf(
+                com.juanperuzzo.job_hunter.application.port.in.IngestResult.InvalidExtraction.class, result);
+        verify(jobRepository, never()).save(any(Job.class));
+    }
+
+    @Test
+    @DisplayName("ingest should treat a blank AI reply as invalid extraction")
+    void ingest_whenAiReplyBlank_shouldReturnInvalidExtraction() {
+        when(emailExtractorPort.extract(isNull(), anyString())).thenReturn("rh@acme.com.br");
+        when(jobRepository.existsByUrl(PERMALINK)).thenReturn(false);
+        when(aiPort.complete(anyString())).thenReturn("");
+
+        var result = service.ingest(command(LocalDate.of(2026, 11, 4)));
+
+        assertInstanceOf(
+                com.juanperuzzo.job_hunter.application.port.in.IngestResult.InvalidExtraction.class, result);
+    }
+
+    @Test
     @DisplayName("ingest should rethrow AiException untouched and save nothing when the AI call fails")
     void ingest_whenAiFails_shouldThrowAiExceptionAndSaveNothing() {
         when(emailExtractorPort.extract(isNull(), anyString())).thenReturn("rh@acme.com.br");
@@ -199,6 +239,9 @@ class IngestLinkedInPostServiceTest {
 
         var captor = ArgumentCaptor.forClass(Job.class);
         verify(jobRepository).save(captor.capture());
+        var promptCaptor = ArgumentCaptor.forClass(String.class);
+        verify(aiPort).complete(promptCaptor.capture());
+        assertTrue(promptCaptor.getValue().contains("Acme TI"), "author is prompt context only — pin it reaches the AI");
         var saved = captor.getValue();
         assertEquals("linkedin-post", saved.source());
         assertEquals(PERMALINK, saved.url());

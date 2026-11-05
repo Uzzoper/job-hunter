@@ -1,5 +1,6 @@
 package com.juanperuzzo.job_hunter.application.service;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.juanperuzzo.job_hunter.application.port.in.IngestLinkedInPostUseCase;
@@ -10,6 +11,9 @@ import com.juanperuzzo.job_hunter.application.port.out.ContactEmailExtractorPort
 import com.juanperuzzo.job_hunter.application.port.out.JobRepository;
 import com.juanperuzzo.job_hunter.domain.exception.AiException;
 import com.juanperuzzo.job_hunter.domain.model.Job;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.time.Clock;
 import java.time.LocalDate;
@@ -32,11 +36,14 @@ import java.util.regex.Pattern;
  */
 public class IngestLinkedInPostService implements IngestLinkedInPostUseCase {
 
+    private static final Logger log = LoggerFactory.getLogger(IngestLinkedInPostService.class);
     private static final String SOURCE = "linkedin-post";
     private static final int MAX_TITLE_LENGTH = 200;
     private static final int MAX_COMPANY_LENGTH = 120;
+    /** LinkedIn post texts top out far below this; the cap guards the gateway and the persisted description. */
+    private static final int MAX_TEXT_LENGTH = 3000;
     private static final Pattern VALID_PERMALINK =
-            Pattern.compile("https://[^/]*linkedin\\.com/feed/update/urn:li:activity:\\d+.*");
+            Pattern.compile("https://[^/]*linkedin\\.com/feed/update/urn:li:activity:\\d+/?$");
     private static final ObjectMapper JSON = new ObjectMapper();
 
     /** Free providers mark the e-mail as suspect (unit-testable constant). */
@@ -94,6 +101,9 @@ public class IngestLinkedInPostService implements IngestLinkedInPostUseCase {
         if (command.text() == null || command.text().isBlank()) {
             throw new IllegalArgumentException("text must not be blank");
         }
+        if (command.text().length() > MAX_TEXT_LENGTH) {
+            throw new IllegalArgumentException("text exceeds the " + MAX_TEXT_LENGTH + " character cap");
+        }
     }
 
     /**
@@ -113,7 +123,7 @@ public class IngestLinkedInPostService implements IngestLinkedInPostUseCase {
     /** Step 5: AI output gate; unparsable JSON is treated as invalid extraction. */
     private Classification classify(String aiReply) {
         if (aiReply == null || aiReply.isBlank()) {
-            return new NotAJob();
+            return new InvalidExtraction();
         }
         try {
             JsonNode node = JSON.readTree(aiReply);
@@ -127,7 +137,8 @@ public class IngestLinkedInPostService implements IngestLinkedInPostUseCase {
                 return new InvalidExtraction();
             }
             return new Vacancy(title, company);
-        } catch (Exception e) {
+        } catch (JsonProcessingException e) {
+            log.warn("ingest.ai: unparsable classification reply ({}) — treated as invalid extraction", aiReply.length());
             return new InvalidExtraction();
         }
     }
@@ -147,9 +158,11 @@ public class IngestLinkedInPostService implements IngestLinkedInPostUseCase {
                 isFreeDomain(email)));
     }
 
+    /** Free providers mark the e-mail as suspect; subdomains of one count as the provider itself. */
     private static boolean isFreeDomain(String email) {
         var domain = email.substring(email.lastIndexOf('@') + 1).toLowerCase(Locale.ROOT);
-        return FREE_EMAIL_DOMAINS.contains(domain);
+        return FREE_EMAIL_DOMAINS.stream()
+                .anyMatch(d -> domain.equals(d) || domain.endsWith("." + d));
     }
 
     private sealed interface Classification
