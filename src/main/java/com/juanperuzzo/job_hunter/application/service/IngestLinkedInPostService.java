@@ -172,13 +172,18 @@ public class IngestLinkedInPostService implements IngestLinkedInPostUseCase {
                 .replace("\"", "&quot;");
     }
 
-    /** Step 5: AI output gate; unparsable JSON is treated as invalid extraction. */
+    /** Step 5: AI output gate; fences and prose around the JSON are tolerated. */
     private Classification classify(String aiReply) {
         if (aiReply == null || aiReply.isBlank()) {
             return new InvalidExtraction();
         }
+        var payload = jsonPayload(aiReply);
+        if (payload == null) {
+            log.warn("ingest.ai: no JSON object in the classification reply — treated as invalid extraction");
+            return new InvalidExtraction();
+        }
         try {
-            JsonNode node = JSON.readTree(aiReply);
+            JsonNode node = JSON.readTree(payload);
             if (!node.path("ehVaga").asBoolean(false)) {
                 return new NotAJob();
             }
@@ -193,6 +198,18 @@ public class IngestLinkedInPostService implements IngestLinkedInPostUseCase {
             log.warn("ingest.ai: unparsable classification reply ({}) — treated as invalid extraction", aiReply.length());
             return new InvalidExtraction();
         }
+    }
+
+    /**
+     * Slices the reply from its first {@code {} to its last {@code }} so
+     * markdown fences and chatty prose around the object cannot break parsing
+     * (2026-11-05 hardening round). Returns null when the reply carries no
+     * braces — the caller then reports invalid extraction.
+     */
+    private static String jsonPayload(String reply) {
+        int first = reply.indexOf('{');
+        int last = reply.lastIndexOf('}');
+        return (first < 0 || last <= first) ? null : reply.substring(first, last + 1);
     }
 
     private Job persist(Vacancy vacancy, String url, IngestPostCommand command, String email) {

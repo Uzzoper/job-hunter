@@ -322,6 +322,51 @@ class IngestLinkedInPostServiceTest {
     }
 
     @Test
+    @DisplayName("ingest should classify a vacancy even when the AI wraps the JSON in a markdown fence")
+    void ingest_whenAiReplyIsFencedMarkdown_shouldStillClassifyVacancy() {
+        when(emailExtractorPort.extract(isNull(), anyString())).thenReturn("rh@acme.com.br");
+        when(jobRepository.existsByUrl(CANONICAL_URL)).thenReturn(false);
+        when(aiPort.complete(anyString()))
+                .thenReturn("```json\n{\"ehVaga\": true, \"title\": \"Dev Ruby\", \"company\": \"Acme TI\"}\n```");
+        when(jobRepository.save(any(Job.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        var result = service.ingest(command(LocalDate.of(2026, 11, 4)));
+
+        assertInstanceOf(
+                com.juanperuzzo.job_hunter.application.port.in.IngestResult.Saved.class, result);
+    }
+
+    @Test
+    @DisplayName("ingest should classify a vacancy even when the AI writes prose around the JSON")
+    void ingest_whenAiReplyHasProseAroundJson_shouldStillClassifyVacancy() {
+        when(emailExtractorPort.extract(isNull(), anyString())).thenReturn("rh@acme.com.br");
+        when(jobRepository.existsByUrl(CANONICAL_URL)).thenReturn(false);
+        when(aiPort.complete(anyString()))
+                .thenReturn("Claro! Aqui está a classificação: "
+                        + "{\"ehVaga\": true, \"title\": \"Dev Ruby\", \"company\": \"Acme TI\"} Precisa de mais algo?");
+        when(jobRepository.save(any(Job.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        var result = service.ingest(command(LocalDate.of(2026, 11, 4)));
+
+        assertInstanceOf(
+                com.juanperuzzo.job_hunter.application.port.in.IngestResult.Saved.class, result);
+    }
+
+    @Test
+    @DisplayName("ingest should return InvalidExtraction when the AI reply carries no JSON object at all")
+    void ingest_whenAiReplyHasNoJsonObject_shouldReturnInvalidExtraction() {
+        when(emailExtractorPort.extract(isNull(), anyString())).thenReturn("rh@acme.com.br");
+        when(jobRepository.existsByUrl(CANONICAL_URL)).thenReturn(false);
+        when(aiPort.complete(anyString())).thenReturn("Desculpe, não consegui classificar este post.");
+
+        var result = service.ingest(command(LocalDate.of(2026, 11, 4)));
+
+        assertInstanceOf(
+                com.juanperuzzo.job_hunter.application.port.in.IngestResult.InvalidExtraction.class, result);
+        verify(jobRepository, never()).save(any(Job.class));
+    }
+
+    @Test
     @DisplayName("ingest should rethrow AiException untouched and save nothing when the AI call fails")
     void ingest_whenAiFails_shouldThrowAiExceptionAndSaveNothing() {
         when(emailExtractorPort.extract(isNull(), anyString())).thenReturn("rh@acme.com.br");
