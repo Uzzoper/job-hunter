@@ -13,7 +13,8 @@ public record Job(
         LocalDate postedAt,
         String source,
         String contactEmail,
-        String companyWebsite
+        String companyWebsite,
+        boolean emailSuspect
 ) {
     private static final int EXPIRATION_DAYS = 30;
 
@@ -24,11 +25,15 @@ public record Job(
     }
 
     public Job(Long id, String title, String company, String url, String description, LocalDate postedAt, String source) {
-        this(id, title, company, url, description, postedAt, source, null, null);
+        this(id, title, company, url, description, postedAt, source, null, null, false);
     }
 
     public Job(Long id, String title, String company, String url, String description, LocalDate postedAt, String source, String contactEmail) {
-        this(id, title, company, url, description, postedAt, source, contactEmail, null);
+        this(id, title, company, url, description, postedAt, source, contactEmail, null, false);
+    }
+
+    public Job(Long id, String title, String company, String url, String description, LocalDate postedAt, String source, String contactEmail, String companyWebsite) {
+        this(id, title, company, url, description, postedAt, source, contactEmail, companyWebsite, false);
     }
 
     @Override

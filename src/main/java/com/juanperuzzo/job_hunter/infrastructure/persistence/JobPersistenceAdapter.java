@@ -87,7 +87,8 @@ public class JobPersistenceAdapter implements JobRepository {
                 job.postedAt(),
                 job.source(),
                 job.contactEmail(),
-                job.companyWebsite()
+                job.companyWebsite(),
+                job.emailSuspect()
         );
     }
 
@@ -101,7 +102,8 @@ public class JobPersistenceAdapter implements JobRepository {
                 entity.getPostedAt(),
                 entity.getSource(),
                 entity.getContactEmail(),
-                entity.getCompanyWebsite()
+                entity.getCompanyWebsite(),
+                entity.isEmailSuspect()
         );
     }
 }
