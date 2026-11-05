@@ -1,8 +1,9 @@
 # LinkedIn posts ingest
 
-> Status: spec (pre-implementation). Feature branch: `feat/linkedin-posts-ingest`
-> (based on `dev`). Flow agreed 2026-11-04; implements the bot-collected feed
-> pipeline. Out of scope: automatic sending; LinkedIn usage rules stay bot-side.
+> Status: implemented in `feat/linkedin-posts-ingest` (PR #106 → `dev`); this
+> revision is the 2026-11-05 hardening round (injection fence, strict URL
+> canonicalization, tolerant AI parsing, duplicate race, dedicated profile
+> option). Out of scope: automatic sending; LinkedIn usage rules stay bot-side.
 
 ## Context
 
@@ -16,13 +17,21 @@ scraper-sourced jobs.
 
 ## Pipeline (cheap → expensive)
 
-1. Validate body (400 on bad input, never calls AI)
-2. No e-mail → `200 {ignored: "no-contact"}` (never calls AI)
-3. URL duplicate → `200 {ignored: "duplicate"}` (never calls AI)
-4. AI classification (ehVaga, title, company)
+1. Validate body (400 on bad input, never calls AI): permalink shape
+   (strict host regex) and non-blank text; the permalink is then
+   canonicalized to `https://www.linkedin.com/feed/update/urn:li:activity:{id}/`
+2. No e-mail → `200 {ignored: "no-contact"}` (never calls AI) — e-mail scan
+   runs on the FULL text, capping is a prompt/row-size concern only
+3. URL duplicate (canonical form) → `200 {ignored: "duplicate"}` (never
+   calls AI)
+4. AI classification (ehVaga, title, company) — the prompt fences the
+   untrusted post content between `<post>` tags with an explicit
+   never-follow-instructions instruction
 5. Validate AI output (non-blank, length-capped) → `200 {ignored:
-   "invalid-extraction"}` when unparsable
-6. Save + `201` with the `Job` (`503 {error: "ai-unavailable"}` when AI
+   "invalid-extraction"}` when unparsable; the JSON payload is sliced from
+   the first `{` to the last `}` so surrounding text and markdown fences do
+   not break parsing
+6. Save + `201` with the `Job` (`502 {error: "ai-unavailable"}` when AI
    fails/times out — retryable, nothing saved)
 
 ## Contract
@@ -34,9 +43,14 @@ scraper-sourced jobs.
   "author": "Empresas RJ", "postedAt": "2026-11-04" }
 ```
 
-- `postedAt` optional, fallback: collection date. Respects the reuse rule:
-  the bot sends the real post date when the DOM shows one ("3d" → resolved),
-  otherwise null.
+- `url` may carry `www.`/two-letter-country subdomain and a trailing slash;
+  it is normalized to the canonical `https://www.linkedin.com/.../{id}/`
+  form for dedupe and storage.
+- `postedAt` optional; a future date (relative to the server clock falls
+  back to the collection date, which also covers null.
+- Text longer than 3000 chars is truncated for the AI prompt and for
+  `Job.description` (blank text still 400) — the e-mail scan keeps the full
+  text, so an e-mail after the cap still counts.
 - Auth: `BotTokenFilter` is already first in the chain
   (`[BotTokenFilter, JwtTokenFilter, UPAF]`) and `JwtTokenFilter` skips when
   the bot authenticated — the route is covered by `anyRequest().authenticated()`
@@ -63,15 +77,18 @@ scraper-sourced jobs.
    `AiException → BAD_GATEWAY`); nothing saved, retryable.
 7. **Saída da IA inválida** — `title`/`company` blank or above the length cap →
    `200 {ignored: "invalid-extraction"}`, nothing saved.
-8. **Sucesso** — saves `Job{source: "linkedin-post", url: permalink,
-   postedAt: bot-provided (fallback collection date), contactEmail,
-   title/company from AI}` → `201` with the `Job` response.
+8. **Sucesso** — saves `Job{source: "linkedin-post", url: canonical
+   permalink, postedAt: bot-provided or collection date (never future),
+   contactEmail, title/company from AI, description: text truncated at
+   3000}` → `201` with the `Job` response.
 9. **Domínio suspeito** — free-mail domain (gmail, hotmail, yahoo, outlook,
    ig, uol…) → saves with `emailSuspect = true`; flag appears in the job
    detail response.
-10. **Auth** — no `X-Bot-Token`/JWT → `401`. Pinned by the existing
-    `BotTokenFilterTest` (the chain covers every request by construction —
-    `[BotTokenFilter, JwtTokenFilter, UPAF]`) — no duplicate web test.
+10. **Auth** — no `X-Bot-Token`/JWT → `401`. The filter contract stays
+    pinned by `BotTokenFilterTest`; this spec additionally pins the ROUTE
+    against the real chain with `JobIngestControllerSecurityTest`
+    (`[BotTokenFilter, JwtTokenFilter, UPAF]`, service-token properties,
+    401 + no use-case interaction).
 
 Body field `author` is classifier context only (feeds the AI prompt for
 better `ehVaga`/title/company extraction); it is NOT persisted — `Job` has
@@ -85,12 +102,23 @@ Infrastructure facts supporting the scenarios:
 - `Job` record enforces `url/postedAt/source` non-null; title/company need
   explicit validation in the use case (scenario 7 caps: 200 chars title,
   120 chars company, 3000 chars post text; blank → invalid-extraction).
-- Post-2026-11-04 review hardening: permalink regex anchored (`\d+/?$` — a
-  link with tracking params is by-construction invalid, so save-side dedupe
-  cannot be bypassed), blank/unparsable AI reply counts as invalid-extraction
-  (logged, narrow `JsonProcessingException` catch), free-domain match covers
-  subdomains, `Job.withContactEmail/withCompanyWebsite` preserve
-  `emailSuspect` (regression-pinned), `author`-in-prompt pinned by test.
+- 2026-11-04 review hardening: blank/unparsable AI reply counts as
+  invalid-extraction (narrow `JsonProcessingException` catch), free-domain
+  match covers subdomains, `Job.withContactEmail/withCompanyWebsite`
+  preserve `emailSuspect` (regression-pinned), `author`-in-prompt pinned.
+- 2026-11-05 hardening round: strict host regex + canonicalization (the old
+  suffix-matching regex accepted `evillinkedin.com` — reviewer-found);
+  prompt fencing neutralizes `<`/`>` and `"` and author line breaks, so a
+  post cannot close the `<post>` delimiter; AI replies are JSON-sliced
+  before `readTree`; a duplicate race (checked against the `jobs.url`
+  UNIQUE constraint from V1) is converted in the persistence adapter into
+  the domain `DuplicateUrlException` and surfaced as `Duplicate` — other
+  integrity violations rethrow unchanged; a dedicated gateway profile is
+  supported via the optional `hermes.ingest-base-url` property (falls back
+  to the shared profile with a startup WARN when absent — the profile
+  itself is provisioned on the VM, not in this repo, per the 2026-11-05
+  requirement that the shared `jobhunter-bot` profile may carry gateway-side
+  memory/toolsets the code cannot inspect).
 
 ## Schema (Flyway)
 
@@ -106,10 +134,31 @@ Application (`IngestLinkedInPostServiceTest`, plain Mockito):
 - `ingest_whenExtractorReturnsRankedEmail_shouldPersistWinningEmail`
 - `ingest_whenAiReturnsNotJob_shouldReturnNotJobAndSaveNothing`
 - `ingest_whenAiOutputMissingTitleOrCompany_shouldReturnInvalidExtractionAndSaveNothing`
+- `ingest_whenAiTitleOverCapOrBlankReply_shouldReturnInvalidExtraction`
+- `ingest_whenAiReplyBlank_shouldReturnInvalidExtraction`
 - `ingest_whenAiFails_shouldThrowAiExceptionAndSaveNothing`
 - `ingest_whenFreeEmailDomain_shouldSaveWithSuspectFlag`
 - `ingest_whenValidPostWithBotPostedAt_shouldSaveLinkedinPostJob`
 - `ingest_whenPostedAtMissing_shouldFallbackToCollectionDate`
+- `ingest_whenPostedAtInFuture_shouldFallbackToCollectionDate`
+- `ingest_whenTextOverCap_shouldTruncateForPromptAndSaveWhileScanningFullText`
+Hardening-round additions:
+- `ingest_whenPromptBuilt_shouldFencePostAndInstructNeverToFollow`
+- `ingest_whenTextClosesThePostTag_shouldStayNeutralizedInPrompt`
+- `ingest_whenAuthorNull_shouldOmitAttributeInsteadOfPrintingNull`
+- `ingest_whenUrlVariantsDifferOnlyInSubdomainOrSlash_shouldDedupeCanonical`
+- `ingest_whenUrlIsEvilHostOrHttp_shouldThrow400Mapping`
+- `ingest_whenAiReplyFencedOrProseWrapped_shouldStillClassifyVacancy`
+- `ingest_whenAiReplyHasNoJsonObject_shouldReturnInvalidExtraction`
+- `ingest_whenSaveRacesWithDuplicateInsert_shouldReturnDuplicate`
+Persistence (`JobPersistenceAdapterTest`, plain Mockito):
+- converts a `DataIntegrityViolationException` carrying
+  `UNIQUE constraint failed: jobs.url` into `DuplicateUrlException`; other
+  violations rethrow unchanged.
+Security (new, real chain): `JobIngestControllerSecurityTest` — POST
+`/api/jobs/ingest` without `X-Bot-Token` or JWT → 401 (pattern of
+`BotTokenFilterTest`: `@Import` SecurityConfig + both filters,
+service-token `@TestPropertySource`).
 
 Web (`JobIngestControllerTest`, `@WebMvcTest`):
 - `ingest_whenPermalinkIsNotLinkedInFeed_shouldThrowIllegalArgument` +
@@ -130,6 +179,9 @@ behavior): `IngestLinkedInPostUseCase` (port/in),
 ## Out of scope
 
 - Automatic sending; the analysis/e-mail/approval flow is unchanged.
+- Provisioning the dedicated Hermes profile on the VM — the repo only adds
+  the optional property; profile creation and its toolset/memory hygiene
+  belong to the VM owner (2026-11-05 decision).
 - Backend rate limiting of ingest (bot-side LinkedIn rules are trusted;
   revisit only if abuse/accidents appear in evidence).
 - Free-domain list beyond a starter constant in the use case.
