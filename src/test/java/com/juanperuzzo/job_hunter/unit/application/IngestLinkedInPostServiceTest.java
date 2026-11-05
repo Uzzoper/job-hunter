@@ -301,6 +301,45 @@ class IngestLinkedInPostServiceTest {
     }
 
     @Test
+    @DisplayName("ingest should reject a missing permalink with IllegalArgumentException riding the 400 mapping")
+    void ingest_whenUrlMissing_shouldThrowIllegalArgument() {
+        assertThrows(IllegalArgumentException.class, () -> service.ingest(
+                new com.juanperuzzo.job_hunter.application.port.in.IngestPostCommand(
+                        null, "Vaga Ruby", "Acme TI", LocalDate.of(2026, 11, 4))));
+        verifyNoInteractions(emailExtractorPort, aiPort, jobRepository);
+    }
+
+    @Test
+    @DisplayName("ingest should return InvalidExtraction when the AI reply omits ehVaga")
+    void ingest_whenAiReplyOmitsEhVaga_shouldReturnInvalidExtraction() {
+        when(emailExtractorPort.extract(isNull(), anyString())).thenReturn("rh@acme.com.br");
+        when(jobRepository.existsByUrl(CANONICAL_URL)).thenReturn(false);
+        when(aiPort.complete(anyString()))
+                .thenReturn("{\"title\": \"Dev Ruby\", \"company\": \"Acme TI\"}");
+
+        var result = service.ingest(command(LocalDate.of(2026, 11, 4)));
+
+        assertInstanceOf(
+                com.juanperuzzo.job_hunter.application.port.in.IngestResult.InvalidExtraction.class, result);
+        verify(jobRepository, never()).save(any(Job.class));
+    }
+
+    @Test
+    @DisplayName("ingest should return InvalidExtraction when ehVaga is not a boolean")
+    void ingest_whenEhVagaNotBoolean_shouldReturnInvalidExtraction() {
+        when(emailExtractorPort.extract(isNull(), anyString())).thenReturn("rh@acme.com.br");
+        when(jobRepository.existsByUrl(CANONICAL_URL)).thenReturn(false);
+        when(aiPort.complete(anyString()))
+                .thenReturn("{\"ehVaga\": \"sim\", \"title\": \"Dev Ruby\", \"company\": \"Acme TI\"}");
+
+        var result = service.ingest(command(LocalDate.of(2026, 11, 4)));
+
+        assertInstanceOf(
+                com.juanperuzzo.job_hunter.application.port.in.IngestResult.InvalidExtraction.class, result);
+        verify(jobRepository, never()).save(any(Job.class));
+    }
+
+    @Test
     @DisplayName("ingest should return NotJob and save nothing when the AI classifies ehVaga=false")
     void ingest_whenAiReturnsNotJob_shouldReturnNotJobAndSaveNothing() {
         when(emailExtractorPort.extract(isNull(), anyString())).thenReturn("rh@acme.com.br");

@@ -123,6 +123,11 @@ public class IngestLinkedInPostService implements IngestLinkedInPostUseCase {
      * hardening round).
      */
     private static String canonicalPermalink(String url) {
+        if (url == null) {
+            // absent permalink is a 400 contract (scenario 1), not a NullPointerException
+            throw new IllegalArgumentException(
+                    "url must be a linkedin.com/feed/update/urn:li:activity:<id> permalink");
+        }
         var matcher = VALID_PERMALINK.matcher(url);
         if (!matcher.matches()) {
             throw new IllegalArgumentException(
@@ -206,7 +211,13 @@ public class IngestLinkedInPostService implements IngestLinkedInPostUseCase {
         }
         try {
             JsonNode node = JSON.readTree(payload);
-            if (!node.path("ehVaga").asBoolean(false)) {
+            JsonNode ehVaga = node.path("ehVaga");
+            if (!ehVaga.isBoolean()) {
+                // absent/malformed type is an unusable reply, not a semantic verdict
+                // (2026-11-05 review round) — keep NotJob for explicit false only
+                return new InvalidExtraction();
+            }
+            if (!ehVaga.asBoolean()) {
                 return new NotAJob();
             }
             String title = node.path("title").asText("").strip();

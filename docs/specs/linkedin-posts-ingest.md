@@ -30,7 +30,9 @@ scraper-sourced jobs.
 5. Validate AI output (non-blank, length-capped) → `200 {ignored:
    "invalid-extraction"}` when unparsable; the JSON payload is sliced from
    the first `{` to the last `}` so surrounding text and markdown fences do
-   not break parsing
+   not break parsing, and an absent/malformed `ehVaga` field (not a
+   boolean) also counts as invalid-extraction — only an explicit false is
+   `not-a-job`
 6. Save + `201` with the `Job` (`502 {error: "ai-unavailable"}` when AI
    fails/times out — retryable, nothing saved)
 
@@ -75,8 +77,10 @@ scraper-sourced jobs.
 6. **IA indisponível** — AI fails or blows the timeout → `502 {error:
    "ai-unavailable"}` (fits the existing `GlobalExceptionHandler` mapping:
    `AiException → BAD_GATEWAY`); nothing saved, retryable.
-7. **Saída da IA inválida** — `title`/`company` blank or above the length cap →
-   `200 {ignored: "invalid-extraction"}`, nothing saved.
+7. **Saída da IA inválida** — `title`/`company` blank or above the length cap,
+   or `ehVaga` missing/not a boolean → `200 {ignored: "invalid-extraction"}`,
+   nothing saved. (A permalink absent from the request body is also a 400,
+   never a 500 — the null URL reaches validation, not the regex engine.)
 8. **Sucesso** — saves `Job{source: "linkedin-post", url: canonical
    permalink, postedAt: bot-provided or collection date (never future),
    contactEmail, title/company from AI, description: text truncated at
