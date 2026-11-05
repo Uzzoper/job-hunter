@@ -469,11 +469,16 @@ public class AppConfig {
     }
 
     /**
-     * Sole {@link AiPort} bean: the Hermes Agent gateway is the single AI backend for
-     * analysis and email generation (docs/specs/hermes-only-ai.md). Unconditional on
-     * purpose — {@code HERMES_API_KEY} is mandatory and startup fails fast without it.
+     * Shared {@link AiPort} bean: the Hermes Agent gateway is the single AI
+     * backend for analysis, email generation and every other AI consumer
+     * (docs/specs/hermes-only-ai.md) — {@code @Primary} so the by-type
+     * injection sites keep resolving here even after the dedicated ingest
+     * client (below) joined the context, which never renounces its named
+     * bean. Unconditional on purpose — {@code HERMES_API_KEY} is mandatory
+     * and startup fails fast without it.
      */
     @Bean
+    @Primary
     public HermesAgentClient hermesAgentClient(
             @Value("${hermes.base-url}") String baseUrl,
             @Value("${hermes.api-key}") String apiKey,
@@ -594,7 +599,7 @@ public class AppConfig {
     @Bean
     public IngestLinkedInPostUseCase ingestLinkedInPostUseCase(
             ContactEmailExtractorPort contactEmailExtractorPort,
-            AiPort ingestAiPort,
+            @Qualifier("ingestAiPort") AiPort ingestAiPort,
             JobRepository jobRepository) {
         // The classifier is the only consumer of the optional dedicated Hermes
         // profile (hermes.ingest-base-url); everything else keeps the shared client.
