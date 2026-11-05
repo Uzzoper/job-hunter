@@ -1,6 +1,7 @@
 package com.juanperuzzo.job_hunter.infrastructure.config;
 
 import com.juanperuzzo.job_hunter.application.port.in.AutoSendEligibilityUseCase;
+import com.juanperuzzo.job_hunter.application.port.in.IngestLinkedInPostUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.SendEmailUseCase;
 import com.juanperuzzo.job_hunter.application.port.out.AiPort;
 import com.juanperuzzo.job_hunter.application.port.out.EmailDraftRepository;
@@ -40,6 +41,7 @@ import com.juanperuzzo.job_hunter.application.service.RecordExternalApplyService
 import com.juanperuzzo.job_hunter.application.service.AuthService;
 import com.juanperuzzo.job_hunter.application.service.AutoSendEligibilityService;
 import com.juanperuzzo.job_hunter.application.service.BackfillContactEmailsService;
+import com.juanperuzzo.job_hunter.application.service.IngestLinkedInPostService;
 import com.juanperuzzo.job_hunter.application.service.BackfillCompanyWebsitesService;
 import com.juanperuzzo.job_hunter.application.service.ResumeUploadService;
 import com.juanperuzzo.job_hunter.application.service.TemplateEmailService;
@@ -553,6 +555,14 @@ public class AppConfig {
             JobRepository jobRepository,
             ContactEmailExtractorPort contactEmailExtractorPort) {
         return new BackfillContactEmailsService(jobRepository, contactEmailExtractorPort);
+    }
+
+    @Bean
+    public IngestLinkedInPostUseCase ingestLinkedInPostUseCase(
+            ContactEmailExtractorPort contactEmailExtractorPort,
+            AiPort aiPort,
+            JobRepository jobRepository) {
+        return new IngestLinkedInPostService(contactEmailExtractorPort, aiPort, jobRepository, Clock.systemUTC());
     }
 
     @Bean
