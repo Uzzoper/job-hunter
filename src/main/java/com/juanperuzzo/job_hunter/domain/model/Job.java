@@ -54,11 +54,11 @@ public record Job(
 
     /** Return a copy of this job with a new {@code contactEmail}, preserving all other fields. */
     public Job withContactEmail(String newContactEmail) {
-        return new Job(id, title, company, url, description, postedAt, source, newContactEmail, companyWebsite);
+        return new Job(id, title, company, url, description, postedAt, source, newContactEmail, companyWebsite, emailSuspect);
     }
 
     /** Return a copy of this job with a new {@code companyWebsite}, preserving all other fields. */
     public Job withCompanyWebsite(String newCompanyWebsite) {
-        return new Job(id, title, company, url, description, postedAt, source, contactEmail, newCompanyWebsite);
+        return new Job(id, title, company, url, description, postedAt, source, contactEmail, newCompanyWebsite, emailSuspect);
     }
 }
