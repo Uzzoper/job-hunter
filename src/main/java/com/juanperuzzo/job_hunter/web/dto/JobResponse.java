@@ -19,5 +19,7 @@ public record JobResponse(
     /** Current user's AI match score (0-100) for the job; null when not analyzed. */
     Integer matchScore,
     /** Explicit application lifecycle (issue #56); null when the job has no lifecycle yet. */
-    ApplicationLifecycle lifecycleState
+    ApplicationLifecycle lifecycleState,
+    /** Contact e-mail from a free provider — flagged for review, not silently trusted (linkedin-posts-ingest spec). */
+    boolean emailSuspect
 ) {}

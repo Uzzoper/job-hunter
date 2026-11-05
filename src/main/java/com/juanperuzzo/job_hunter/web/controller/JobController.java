@@ -120,7 +120,8 @@ public class JobController {
                 job.contactEmail(),
                 entry.draftStatus(),
                 entry.matchScore(),
-                entry.lifecycleState()
+                entry.lifecycleState(),
+                job.emailSuspect()
         );
     }
 
