@@ -50,11 +50,13 @@ scraper-sourced jobs.
    `200 {ignored: "no-contact"}`, no AI call.
 3. **Duplicado** — `JobRepository` already has the URL →
    `200 {ignored: "duplicate"}`, no AI call.
-4. **Vários e-mails** — reuses `ContactEmailExtractorPort` as-is: plain text
-   pushed through the shared pipeline; documented preference rule (shared
-   `EmailExtractor`): `mailto:` pass > regex pass, hiring local-parts
-   (`vagas`, `vaga`, `rh`, `recrutamento`, …) beat generic/`contato`/personal,
-   position order breaks ties.
+4. **Vários e-mails** — reuses `ContactEmailExtractorPort` as-is: the post
+   text is passed as a single scan blob and the port's ranked-winner rule
+   decides (shared `EmailExtractor`: `mailto:` pass > regex pass, hiring
+   local-parts (`vagas`, `vaga`, `rh`, `recrutamento`, …) beat
+   generic/`contato`/personal, position order breaks ties). The rule itself
+   is already pinned by `EmailExtractorRecallMeasurementTest`; the service
+   test only pins that the winner's email is what gets persisted.
 5. **Não é vaga** — AI returns `ehVaga=false` → `200 {ignored: "not-a-job"}`, nothing saved.
 6. **IA indisponível** — AI fails or blows the timeout → `502 {error:
    "ai-unavailable"}` (fits the existing `GlobalExceptionHandler` mapping:
@@ -67,7 +69,13 @@ scraper-sourced jobs.
 9. **Domínio suspeito** — free-mail domain (gmail, hotmail, yahoo, outlook,
    ig, uol…) → saves with `emailSuspect = true`; flag appears in the job
    detail response.
-10. **Auth** — no `X-Bot-Token`/JWT → `401`.
+10. **Auth** — no `X-Bot-Token`/JWT → `401`. Pinned by the existing
+    `BotTokenFilterTest` (the chain covers every request by construction —
+    `[BotTokenFilter, JwtTokenFilter, UPAF]`) — no duplicate web test.
+
+Body field `author` is classifier context only (feeds the AI prompt for
+better `ehVaga`/title/company extraction); it is NOT persisted — `Job` has
+no author, and inventing storage was not justified.
 
 Infrastructure facts supporting the scenarios:
 - `ContactEmailExtractorPort` (`application/port/out/`) already exposes the
@@ -89,7 +97,7 @@ domain `Job` record gain the field. Naming: `emailSuspect` in domain/DTOs.
 Application (`IngestLinkedInPostServiceTest`, plain Mockito):
 - `ingest_whenTextHasNoEmail_shouldReturnNoContactWithoutCallingAi`
 - `ingest_whenUrlAlreadySaved_shouldReturnDuplicateWithoutCallingAi`
-- `ingest_whenMultipleEmails_shouldPickRankedWinnerPerExtractorRule`
+- `ingest_whenExtractorReturnsRankedEmail_shouldPersistWinningEmail`
 - `ingest_whenAiReturnsNotJob_shouldReturnNotJobAndSaveNothing`
 - `ingest_whenAiOutputMissingTitleOrCompany_shouldReturnInvalidExtractionAndSaveNothing`
 - `ingest_whenAiFails_shouldThrowAiExceptionAndSaveNothing`
@@ -102,9 +110,9 @@ Web (`JobIngestControllerTest`, `@WebMvcTest`):
 - `ingest_whenSaved_shouldReturn201WithJob`
 - `ingest_whenNoContact_shouldReturn200WithIgnoredBody`
 - `ingest_whenAiUnavailable_shouldReturn502`
-- `ingest_whenNeitherBotTokenNorJwt_shouldReturn401` (pins the filter
-  coverage; likely green immediately — that is the point: the chain already
-  covers the route)
+- 401 is NOT re-tested here: `BotTokenFilterTest` already pins the filter,
+  and the chain covers the route by construction. The web layer pins the
+  authenticated happy path via the shared `authenticateAs` helper.
 
 New contracts introduced by the tests (interfaces + records only, no
 behavior): `IngestLinkedInPostUseCase` (port/in),
