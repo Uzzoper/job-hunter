@@ -136,6 +136,7 @@ class JobIngestControllerTest {
                         .content(validBody()))
                 .andExpect(status().isBadGateway())
                 .andExpect(jsonPath("$.status").value(502))
+                .andExpect(jsonPath("$.error").value("Bad Gateway"))
                 .andExpect(jsonPath("$.message").value("hermes gateway down"));
     }
 
