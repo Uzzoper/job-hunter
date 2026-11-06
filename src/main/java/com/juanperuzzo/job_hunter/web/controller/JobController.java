@@ -109,19 +109,7 @@ public class JobController {
 
     private JobResponse toJobResponse(JobWithDraftStatus entry) {
         Job job = entry.job();
-        return new JobResponse(
-                job.id(),
-                job.title(),
-                job.company(),
-                job.url(),
-                job.description(),
-                job.postedAt(),
-                job.source(),
-                job.contactEmail(),
-                entry.draftStatus(),
-                entry.matchScore(),
-                entry.lifecycleState()
-        );
+        return JobResponse.from(job, entry.draftStatus(), entry.matchScore(), entry.lifecycleState());
     }
 
     @PostMapping("/{id}/analyze")

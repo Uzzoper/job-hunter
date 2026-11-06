@@ -105,7 +105,30 @@ class JobTest {
                 new Job(null, "Java Developer", "Company A", "https://example.com/job/123", "Description", null, "test")
             );
         }
+        @Nested
+    @DisplayName("emailSuspect flag preservation on copy methods")
+    class SuspectFlagTests {
+
+        private Job flagged() {
+            return new Job(1L, "Dev Ruby", "Acme TI", "https://linkedin.com/feed/update/urn:li:activity:1",
+                    "desc", LocalDate.now(), "linkedin-post", "pablo@gmail.com", null, true);
+        }
+
+        @Test
+        @DisplayName("withContactEmail on a flagged job should preserve the suspect flag")
+        void givenFlaggedJob_whenWithContactEmail_thenSuspectFlagPreserved() {
+            var copy = flagged().withContactEmail("rh@acme.com.br");
+
+            assertTrue(copy.emailSuspect(),
+                    "backfill/enrichment mutates saved rows — a flagged row must not silently lose the flag");
+        }
+
+        @Test
+        @DisplayName("withCompanyWebsite on a flagged job should preserve the suspect flag")
+        void givenFlaggedJob_whenWithCompanyWebsite_thenSuspectFlagPreserved() {
+            var copy = flagged().withCompanyWebsite("https://acme.com.br");
+
+            assertTrue(copy.emailSuspect(), "same contract: preserve all other fields, flag included");
+        }
     }
-
-
-}
+}}

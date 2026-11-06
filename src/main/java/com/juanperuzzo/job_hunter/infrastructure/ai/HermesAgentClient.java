@@ -35,10 +35,12 @@ public class HermesAgentClient implements AiPort {
     private static final Pattern QUOTE_LINE = Pattern.compile("^>+\\s?.*");
 
     private final RestClient restClient;
+    private final String baseUrl;
     private final String model;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public HermesAgentClient(String baseUrl, String apiKey, String model, int timeoutSeconds) {
+        this.baseUrl = baseUrl;
         this.model = model;
         var factory = new SimpleClientHttpRequestFactory();
         factory.setConnectTimeout(Duration.ofSeconds(timeoutSeconds));
@@ -49,6 +51,14 @@ public class HermesAgentClient implements AiPort {
                 .defaultHeader("Authorization", "Bearer " + apiKey)
                 .requestFactory(factory)
                 .build();
+    }
+
+    /**
+     * Base URL this client points at. Observability surface for wiring tests
+     * only (e.g. the dedicated ingest-profile runner test).
+     */
+    public String baseUrl() {
+        return baseUrl;
     }
 
     @Override

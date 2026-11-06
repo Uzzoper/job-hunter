@@ -48,7 +48,12 @@ email generation. Decided open points:
 
 - **GIVEN** any configuration without `ai.provider`
 - **WHEN** the Spring context starts (with `HERMES_API_KEY` set)
-- **THEN** exactly one `AiPort` bean exists and it is a `HermesAgentClient`
+- **THEN** the shared `AiPort` bean exists and is a `HermesAgentClient`
+  (`@Primary`, resolved by type by default)
+- **AND** since the 2026-11-05 ingest round
+  (`docs/specs/linkedin-posts-ingest.md`) a second dedicated
+  `ingestAiPort` `HermesAgentClient` may exist for the ingest classifier —
+  still Hermes-only; no third provider
 - **AND** no `@ConditionalOnProperty(name = "ai.provider", ...)` remains on any
   AI bean
 
