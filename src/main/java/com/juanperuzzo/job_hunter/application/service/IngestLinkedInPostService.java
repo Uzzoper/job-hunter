@@ -220,8 +220,14 @@ public class IngestLinkedInPostService implements IngestLinkedInPostUseCase {
             if (!ehVaga.asBoolean()) {
                 return new NotAJob();
             }
-            String title = node.path("title").asText("").strip();
-            String company = node.path("company").asText("").strip();
+            JsonNode titleNode = node.path("title");
+            JsonNode companyNode = node.path("company");
+            if (!titleNode.isTextual() || !companyNode.isTextual()) {
+                // numeric/boolean "42"/"false" would survive asText — unusable reply
+                return new InvalidExtraction();
+            }
+            String title = titleNode.asText().strip();
+            String company = companyNode.asText().strip();
             if (title.isEmpty() || title.length() > MAX_TITLE_LENGTH
                     || company.isEmpty() || company.length() > MAX_COMPANY_LENGTH) {
                 return new InvalidExtraction();

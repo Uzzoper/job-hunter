@@ -355,6 +355,36 @@ class IngestLinkedInPostServiceTest {
     }
 
     @Test
+    @DisplayName("ingest should return InvalidExtraction when the AI title is not a JSON string")
+    void ingest_whenAiTitleNotTextual_shouldReturnInvalidExtraction() {
+        when(emailExtractorPort.extract(isNull(), anyString())).thenReturn("rh@acme.com.br");
+        when(jobRepository.existsByUrl(CANONICAL_URL)).thenReturn(false);
+        when(aiPort.complete(anyString()))
+                .thenReturn("{\"ehVaga\": true, \"title\": 42, \"company\": \"Acme TI\"}");
+
+        var result = service.ingest(command(LocalDate.of(2026, 11, 4)));
+
+        assertInstanceOf(
+                com.juanperuzzo.job_hunter.application.port.in.IngestResult.InvalidExtraction.class, result);
+        verify(jobRepository, never()).save(any(Job.class));
+    }
+
+    @Test
+    @DisplayName("ingest should return InvalidExtraction when the AI company is not a JSON string")
+    void ingest_whenAiCompanyNotTextual_shouldReturnInvalidExtraction() {
+        when(emailExtractorPort.extract(isNull(), anyString())).thenReturn("rh@acme.com.br");
+        when(jobRepository.existsByUrl(CANONICAL_URL)).thenReturn(false);
+        when(aiPort.complete(anyString()))
+                .thenReturn("{\"ehVaga\": true, \"title\": \"Dev Ruby\", \"company\": false}");
+
+        var result = service.ingest(command(LocalDate.of(2026, 11, 4)));
+
+        assertInstanceOf(
+                com.juanperuzzo.job_hunter.application.port.in.IngestResult.InvalidExtraction.class, result);
+        verify(jobRepository, never()).save(any(Job.class));
+    }
+
+    @Test
     @DisplayName("ingest should return InvalidExtraction and save nothing when the AI title or company is blank or over the cap")
     void ingest_whenAiOutputMissingTitleOrCompany_shouldReturnInvalidExtractionAndSaveNothing() {
         when(emailExtractorPort.extract(isNull(), anyString())).thenReturn("rh@acme.com.br");
