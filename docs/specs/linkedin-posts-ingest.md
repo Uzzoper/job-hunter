@@ -33,8 +33,10 @@ scraper-sourced jobs.
    not break parsing, and an absent/malformed `ehVaga` field (not a
    boolean) also counts as invalid-extraction — only an explicit false is
    `not-a-job`
-6. Save + `201` with the `Job` (`502 {error: "ai-unavailable"}` when AI
-   fails/times out — retryable, nothing saved)
+6. Save + `201` with the `Job` (`502` with the shared error body
+   `{status: 502, error: "Bad Gateway", message: <AiException message>}` —
+   the `GlobalExceptionHandler` mapping, retryable; nothing saved) when AI
+   fails/times out
 
 ## Contract
 
@@ -74,9 +76,11 @@ scraper-sourced jobs.
    is already pinned by `EmailExtractorRecallMeasurementTest`; the service
    test only pins that the winner's email is what gets persisted.
 5. **Não é vaga** — AI returns `ehVaga=false` → `200 {ignored: "not-a-job"}`, nothing saved.
-6. **IA indisponível** — AI fails or blows the timeout → `502 {error:
-   "ai-unavailable"}` (fits the existing `GlobalExceptionHandler` mapping:
-   `AiException → BAD_GATEWAY`); nothing saved, retryable.
+6. **IA indisponível** — AI fails or blows the timeout → `502` with the shared
+   error body `{status: 502, error: "Bad Gateway", message:
+   <exception message>}` (no special-cased payload: the `GlobalExceptionHandler`
+   header is global for every `AiException` consumer — analysis, e-mail,
+   ingest); nothing saved, retryable.
 7. **Saída da IA inválida** — `title`/`company` blank or above the length cap,
    or `ehVaga` missing/not a boolean → `200 {ignored: "invalid-extraction"}`,
    nothing saved. (A permalink absent from the request body is also a 400,
