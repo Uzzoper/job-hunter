@@ -51,19 +51,7 @@ public class JobIngestController {
         var command = toCommand(request);
         return switch (ingestLinkedInPostUseCase.ingest(command)) {
             case IngestResult.Saved saved -> ResponseEntity.status(HttpStatus.CREATED)
-                    .body((Object) new JobResponse(
-                            saved.job().id(),
-                            saved.job().title(),
-                            saved.job().company(),
-                            saved.job().url(),
-                            saved.job().description(),
-                            saved.job().postedAt(),
-                            saved.job().source(),
-                            saved.job().contactEmail(),
-                            null,
-                            null,
-                            null,
-                            saved.job().emailSuspect()));
+                    .body((Object) JobResponse.from(saved.job(), null, null, null));
             case IngestResult.NoContact ignored -> ResponseEntity.ok((Object) Map.of("ignored", "no-contact"));
             case IngestResult.Duplicate ignored -> ResponseEntity.ok((Object) Map.of("ignored", "duplicate"));
             case IngestResult.NotJob ignored -> ResponseEntity.ok((Object) Map.of("ignored", "not-a-job"));
