@@ -105,6 +105,7 @@
 | `analyzer` | "Which stacks/roles/companies perform best?" — SQLite-backed pattern analysis over match scores, contacts and send conversion. |
 | `report-generator` | "How many emails did I send this week/month?" — weekly/monthly progress reports from `email_drafts` (status `SENT`). |
 | `visualizer` | "Show me my application funnel" — a single PNG: analyzed → drafted → sent stages from the local DB. |
+| `linkedin-feed-watcher` | "Check the feed / collect dev jobs": targeted LinkedIn content searches + feed scroll under the posting rules (≤3 passes/day, ≥2h, ≤10 candidates/pass, checkpoint in MEMORY.md, read-only) → `POST /api/jobs/ingest`; the target profile (level, stacks, geography) comes from my own memories, not the skill. |
 
 Self-update: this profile's skills and this SOUL template are versioned in the
 repo — refresh them with `bash scripts/install-bot-skills.sh` (skills are
