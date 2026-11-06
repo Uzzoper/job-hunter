@@ -1,6 +1,7 @@
 package com.juanperuzzo.job_hunter.infrastructure.config;
 
 import com.juanperuzzo.job_hunter.application.port.in.AutoSendEligibilityUseCase;
+import com.juanperuzzo.job_hunter.application.port.in.IngestLinkedInPostUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.SendEmailUseCase;
 import com.juanperuzzo.job_hunter.application.port.out.AiPort;
 import com.juanperuzzo.job_hunter.application.port.out.EmailDraftRepository;
@@ -40,6 +41,7 @@ import com.juanperuzzo.job_hunter.application.service.RecordExternalApplyService
 import com.juanperuzzo.job_hunter.application.service.AuthService;
 import com.juanperuzzo.job_hunter.application.service.AutoSendEligibilityService;
 import com.juanperuzzo.job_hunter.application.service.BackfillContactEmailsService;
+import com.juanperuzzo.job_hunter.application.service.IngestLinkedInPostService;
 import com.juanperuzzo.job_hunter.application.service.BackfillCompanyWebsitesService;
 import com.juanperuzzo.job_hunter.application.service.ResumeUploadService;
 import com.juanperuzzo.job_hunter.application.service.TemplateEmailService;
@@ -49,6 +51,8 @@ import com.juanperuzzo.job_hunter.infrastructure.scraper.retry.ExponentialBackof
 import com.juanperuzzo.job_hunter.infrastructure.scraper.ratelimit.RateLimiter;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.ratelimit.TokenBucketRateLimiter;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.strategy.ExtractionStrategy;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -465,17 +469,54 @@ public class AppConfig {
     }
 
     /**
-     * Sole {@link AiPort} bean: the Hermes Agent gateway is the single AI backend for
-     * analysis and email generation (docs/specs/hermes-only-ai.md). Unconditional on
-     * purpose — {@code HERMES_API_KEY} is mandatory and startup fails fast without it.
+     * Shared {@link AiPort} bean: the Hermes Agent gateway is the single AI
+     * backend for analysis, email generation and every other AI consumer
+     * (docs/specs/hermes-only-ai.md) — {@code @Primary} so the by-type
+     * injection sites keep resolving here even after the dedicated ingest
+     * client (below) joined the context, which never renounces its named
+     * bean. Unconditional on purpose — {@code HERMES_API_KEY} is mandatory
+     * and startup fails fast without it.
      */
     @Bean
+    @Primary
     public HermesAgentClient hermesAgentClient(
             @Value("${hermes.base-url}") String baseUrl,
             @Value("${hermes.api-key}") String apiKey,
             @Value("${hermes.model}") String model,
             @Value("${hermes.timeout-seconds}") int timeoutSeconds) {
         return new HermesAgentClient(baseUrl, apiKey, model, timeoutSeconds);
+    }
+
+    /**
+     * Optional dedicated Hermes profile for the ingest classifier
+     * ({@code docs/specs/linkedin-posts-ingest.md}, 2026-11-05 round): the
+     * shared {@code jobhunter-bot} profile may carry gateway-side
+     * memory/toolsets the code cannot inspect, so the owner can provision a
+     * clean ingest profile on the VM and point {@code hermes.ingest-base-url}
+     * at it. When the property is absent (the default), the ingest client
+     * falls back to the shared profile and this startup WARN documents it.
+     * The profile itself is provisioned on the VM — the repo only consumes
+     * the property.
+     */
+    @Configuration(proxyBeanMethods = false)
+    public static class IngestAiConfig {
+
+        private static final Logger log = LoggerFactory.getLogger(IngestAiConfig.class);
+
+        @Bean
+        AiPort ingestAiPort(
+                @Value("${hermes.base-url}") String sharedBaseUrl,
+                @Value("${hermes.api-key}") String apiKey,
+                @Value("${hermes.model:default}") String model,
+                @Value("${hermes.timeout-seconds:120}") int timeoutSeconds,
+                @Value("${hermes.ingest-base-url:}") String ingestBaseUrl) {
+            if (ingestBaseUrl == null || ingestBaseUrl.isBlank()) {
+                log.warn("hermes.ingest-base-url is not set — the ingest classifier uses the "
+                        + "shared Hermes profile at {} (set hermes.ingest-base-url to isolate it)", sharedBaseUrl);
+                return new HermesAgentClient(sharedBaseUrl, apiKey, model, timeoutSeconds);
+            }
+            return new HermesAgentClient(ingestBaseUrl, apiKey, model, timeoutSeconds);
+        }
     }
 
     @Bean
@@ -553,6 +594,16 @@ public class AppConfig {
             JobRepository jobRepository,
             ContactEmailExtractorPort contactEmailExtractorPort) {
         return new BackfillContactEmailsService(jobRepository, contactEmailExtractorPort);
+    }
+
+    @Bean
+    public IngestLinkedInPostUseCase ingestLinkedInPostUseCase(
+            ContactEmailExtractorPort contactEmailExtractorPort,
+            @Qualifier("ingestAiPort") AiPort ingestAiPort,
+            JobRepository jobRepository) {
+        // The classifier is the only consumer of the optional dedicated Hermes
+        // profile (hermes.ingest-base-url); everything else keeps the shared client.
+        return new IngestLinkedInPostService(contactEmailExtractorPort, ingestAiPort, jobRepository, Clock.systemUTC());
     }
 
     @Bean

@@ -18,9 +18,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Contract for {@code docs/specs/hermes-only-ai.md} Scenario 1: with {@code ai.provider}
- * ABSENT the application context must boot and expose exactly one {@link AiPort} bean,
- * and that bean must be a {@link HermesAgentClient}. {@code ai.provider} no longer exists;
- * the Hermes bean is wired unconditionally.
+ * ABSENT the application context must boot and every {@link AiPort} bean must be a
+ * {@link HermesAgentClient} — provider stays Hermes-only. {@code ai.provider} no longer
+ * exists; the shared Hermes bean is wired unconditionally ({@code @Primary}), and since
+ * the 2026-11-05 ingest round (docs/specs/linkedin-posts-ingest.md) an additional
+ * dedicated {@code ingestAiPort} Hermes client may join it for the ingest classifier.
  *
  * <p>{@code HERMES_API_KEY} is supplied as a dummy so the mandatory fail-fast key resolves
  * at startup.
@@ -58,15 +60,15 @@ class AiPortWiringTest {
     private AiPort aiPort;
 
     @Test
-    @DisplayName("AiPort when ai.provider is absent should resolve to a single HermesAgentClient bean")
+    @DisplayName("AiPort when ai.provider is absent should resolve every bean to the Hermes client")
     void aiPort_whenAiProviderAbsent_shouldResolveToHermesAgentClient() {
         var aiPortBeans = applicationContext.getBeansOfType(AiPort.class);
 
         assertThat(aiPortBeans)
-                .as("exactly one AiPort bean must exist")
-                .hasSize(1);
+                .as("wired AiPort beans (shared primary + dedicated ingest) must all be Hermes clients")
+                .values().allSatisfy(bean -> assertThat(bean).isInstanceOf(HermesAgentClient.class));
         assertThat(aiPort)
-                .as("the sole AiPort bean must be the Hermes client")
+                .as("the by-type AiPort entry point must stay the shared (primary) Hermes client")
                 .isInstanceOf(HermesAgentClient.class);
     }
 }

@@ -37,6 +37,13 @@ public class JobEntity {
     @Column(name = "company_website", length = 512)
     private String companyWebsite;
 
+    /**
+     * Contact e-mail from a free provider (gmail, hotmail, …) flagged for
+     * review instead of silently trusted — {@code linkedin-posts-ingest} spec.
+     */
+    @Column(name = "email_suspect", nullable = false)
+    private boolean emailSuspect = false;
+
     @Column(name = "created_at", nullable = false, updatable = false, insertable = false, columnDefinition = "TIMESTAMP DEFAULT NOW()")
     private LocalDateTime createdAt;
 
@@ -44,6 +51,10 @@ public class JobEntity {
     }
 
     public JobEntity(Long id, String title, String company, String url, String description, LocalDate postedAt, String source, String contactEmail, String companyWebsite) {
+        this(id, title, company, url, description, postedAt, source, contactEmail, companyWebsite, false);
+    }
+
+    public JobEntity(Long id, String title, String company, String url, String description, LocalDate postedAt, String source, String contactEmail, String companyWebsite, boolean emailSuspect) {
         this.id = id;
         this.title = title;
         this.company = company;
@@ -53,6 +64,7 @@ public class JobEntity {
         this.source = source;
         this.contactEmail = contactEmail;
         this.companyWebsite = companyWebsite;
+        this.emailSuspect = emailSuspect;
     }
 
     public Long getId() {
@@ -117,6 +129,14 @@ public class JobEntity {
 
     public void setContactEmail(String contactEmail) {
         this.contactEmail = contactEmail;
+    }
+
+    public boolean isEmailSuspect() {
+        return emailSuspect;
+    }
+
+    public void setEmailSuspect(boolean emailSuspect) {
+        this.emailSuspect = emailSuspect;
     }
 
     public String getCompanyWebsite() {

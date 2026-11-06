@@ -142,10 +142,13 @@ infrastructure → domain
 ## AI integration
 
 ### Single provider: Hermes gateway
-Hermes is the only AI backend — there is no provider switch. `AppConfig` always
-wires exactly one `AiPort` bean, `HermesAgentClient`, and `HERMES_API_KEY` is
-mandatory: the Spring context fails fast at startup without it (no silent
-fallback).
+Hermes is the only AI backend — there is no provider switch. `AppConfig` wires
+the shared `AiPort` bean (`HermesAgentClient`, `@Primary`) plus an optional
+dedicated `ingestAiPort` `HermesAgentClient` for the ingest classifier
+(`hermes.ingest-base-url`; absent → shared profile with a startup WARN). Both
+beans must be Hermes clients — see `docs/specs/linkedin-posts-ingest.md`.
+`HERMES_API_KEY` is mandatory: the Spring context fails fast at startup
+without it (no silent fallback).
 
 ```yaml
 hermes:                                # shared block — also used by the email-sending bot
