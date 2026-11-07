@@ -28,11 +28,15 @@ scraper-sourced jobs.
    untrusted post content between `<post>` tags with an explicit
    never-follow-instructions instruction
 5. Validate AI output (non-blank, length-capped) → `200 {ignored:
-   "invalid-extraction"}` when unparsable; the JSON payload is sliced from
+   "invalid-extraction"}` when unusable; the JSON payload is sliced from
    the first `{` to the last `}` so surrounding text and markdown fences do
-   not break parsing, and an absent/malformed `ehVaga` field (not a
-   boolean) also counts as invalid-extraction — only an explicit false is
-   `not-a-job`
+   not break parsing. `ehVaga` must be a boolean (absent/malformed field →
+   invalid-extraction — only an explicit false is `not-a-job`); `title`
+   must be textual, non-blank and ≤ the cap; `company` is OPTIONAL —
+   absent/null/non-textual/blank/over-cap falls back to the visible
+   placeholder "Empresa não informada" (WARN-logged), because curators'/
+   recruiters' shares without a named hiring company are a valid vacancy
+   class (incident 2026-11-07)
 6. Save + `201` with the `Job` (`502` with the shared error body
    `{status: 502, error: "Bad Gateway", message: <AiException message>}` —
    the `GlobalExceptionHandler` mapping, retryable; nothing saved) when AI
@@ -81,10 +85,13 @@ scraper-sourced jobs.
    <exception message>}` (no special-cased payload: the `GlobalExceptionHandler`
    header is global for every `AiException` consumer — analysis, e-mail,
    ingest); nothing saved, retryable.
-7. **Saída da IA inválida** — `title`/`company` blank or above the length cap,
-   or `ehVaga` missing/not a boolean → `200 {ignored: "invalid-extraction"}`,
-   nothing saved. (A permalink absent from the request body is also a 400,
-   never a 500 — the null URL reaches validation, not the regex engine.)
+7. **Saída da IA inválida** — `title` non-textual/blank/over the cap, or
+   `ehVaga` missing/not a boolean → `200 {ignored: "invalid-extraction"}`,
+   nothing saved. `company` absent/null/non-textual/blank/over-cap is NOT
+   an invalid reply: the row saves with the placeholder "Empresa não
+   informada" (spec amendment 2026-11-07). (A permalink absent from the
+   request body is still a 400, never a 500 — the null URL reaches
+   validation, not the regex engine.)
 8. **Sucesso** — saves `Job{source: "linkedin-post", url: canonical
    permalink, postedAt: bot-provided or collection date (never future),
    contactEmail, title/company from AI, description: text truncated at
