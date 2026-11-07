@@ -199,9 +199,15 @@ public class IngestLinkedInPostService implements IngestLinkedInPostUseCase {
                 .replace("\"", "&quot;");
     }
 
+    /** Bounded diagnostic excerpt so ingest logs never carry an unbounded reply. */
+    private static String payloadHead(String payload) {
+        return payload.length() <= 300 ? payload : payload.substring(0, 300) + "...";
+    }
+
     /** Step 5: AI output gate; fences and prose around the JSON are tolerated. */
     private Classification classify(String aiReply) {
         if (aiReply == null || aiReply.isBlank()) {
+            log.warn("ingest.ai: empty classification reply — treated as invalid extraction");
             return new InvalidExtraction();
         }
         var payload = jsonPayload(aiReply);
@@ -215,6 +221,10 @@ public class IngestLinkedInPostService implements IngestLinkedInPostUseCase {
             if (!ehVaga.isBoolean()) {
                 // absent/malformed type is an unusable reply, not a semantic verdict
                 // (2026-11-05 review round) — keep NotJob for explicit false only
+                log.warn(
+                        "ingest.ai: classification rejected — ehVaga missing or not boolean (nodeType={} payload={})",
+                        ehVaga.getNodeType(),
+                        payloadHead(payload));
                 return new InvalidExtraction();
             }
             if (!ehVaga.asBoolean()) {
@@ -224,12 +234,23 @@ public class IngestLinkedInPostService implements IngestLinkedInPostUseCase {
             JsonNode companyNode = node.path("company");
             if (!titleNode.isTextual() || !companyNode.isTextual()) {
                 // numeric/boolean "42"/"false" would survive asText — unusable reply
+                log.warn(
+                        "ingest.ai: classification rejected — title/company not textual (titleType={} companyType={} payload={})",
+                        titleNode.getNodeType(),
+                        companyNode.getNodeType(),
+                        payloadHead(payload));
                 return new InvalidExtraction();
             }
             String title = titleNode.asText().strip();
             String company = companyNode.asText().strip();
             if (title.isEmpty() || title.length() > MAX_TITLE_LENGTH
                     || company.isEmpty() || company.length() > MAX_COMPANY_LENGTH) {
+                log.warn(
+                        "ingest.ai: classification rejected — title/company blank or over cap (titleLen={} titleCap={} companyLen={} companyCap={})",
+                        title.length(),
+                        MAX_TITLE_LENGTH,
+                        company.length(),
+                        MAX_COMPANY_LENGTH);
                 return new InvalidExtraction();
             }
             return new Vacancy(title, company);
