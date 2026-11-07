@@ -370,23 +370,72 @@ class IngestLinkedInPostServiceTest {
     }
 
     @Test
-    @DisplayName("ingest should return InvalidExtraction when the AI company is not a JSON string")
-    void ingest_whenAiCompanyNotTextual_shouldReturnInvalidExtraction() {
+    @DisplayName("ingest should save an explicit-null company with the default placeholder (live incident replica)")
+    void ingest_whenAiCompanyNull_shouldSaveWithPlaceholderCompany() {
+        when(emailExtractorPort.extract(isNull(), anyString())).thenReturn("polianamatosrh@gmail.com");
+        when(jobRepository.existsByUrl(CANONICAL_URL)).thenReturn(false);
+        when(aiPort.complete(anyString()))
+                .thenReturn("{\"ehVaga\":true,\"title\":\"Desenvolvedor .NET\",\"company\":null}");
+        when(jobRepository.save(any(Job.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        service.ingest(command(LocalDate.of(2026, 11, 7)));
+
+        var captor = ArgumentCaptor.forClass(Job.class);
+        verify(jobRepository).save(captor.capture());
+        assertEquals("Empresa não informada", captor.getValue().company());
+        assertEquals("Desenvolvedor .NET", captor.getValue().title());
+    }
+
+    @Test
+    @DisplayName("ingest should fall back to the placeholder company when it is absent")
+    void ingest_whenAiCompanyAbsent_shouldSaveWithPlaceholderCompany() {
+        when(emailExtractorPort.extract(isNull(), anyString())).thenReturn("rh@acme.com.br");
+        when(jobRepository.existsByUrl(CANONICAL_URL)).thenReturn(false);
+        when(aiPort.complete(anyString())).thenReturn("{\"ehVaga\": true, \"title\": \"Dev Ruby\"}");
+        when(jobRepository.save(any(Job.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        service.ingest(command(LocalDate.of(2026, 11, 7)));
+
+        var captor = ArgumentCaptor.forClass(Job.class);
+        verify(jobRepository).save(captor.capture());
+        assertEquals("Empresa não informada", captor.getValue().company());
+    }
+
+    @Test
+    @DisplayName("ingest should fall back to the placeholder company when it is not textual")
+    void ingest_whenAiCompanyNonTextual_shouldSaveWithPlaceholderCompany() {
         when(emailExtractorPort.extract(isNull(), anyString())).thenReturn("rh@acme.com.br");
         when(jobRepository.existsByUrl(CANONICAL_URL)).thenReturn(false);
         when(aiPort.complete(anyString()))
                 .thenReturn("{\"ehVaga\": true, \"title\": \"Dev Ruby\", \"company\": false}");
+        when(jobRepository.save(any(Job.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        var result = service.ingest(command(LocalDate.of(2026, 11, 4)));
+        service.ingest(command(LocalDate.of(2026, 11, 7)));
 
-        assertInstanceOf(
-                com.juanperuzzo.job_hunter.application.port.in.IngestResult.InvalidExtraction.class, result);
-        verify(jobRepository, never()).save(any(Job.class));
+        var captor = ArgumentCaptor.forClass(Job.class);
+        verify(jobRepository).save(captor.capture());
+        assertEquals("Empresa não informada", captor.getValue().company());
     }
 
     @Test
-    @DisplayName("ingest should return InvalidExtraction and save nothing when the AI title or company is blank or over the cap")
-    void ingest_whenAiOutputMissingTitleOrCompany_shouldReturnInvalidExtractionAndSaveNothing() {
+    @DisplayName("ingest should fall back to the placeholder company when it is blank or over the cap")
+    void ingest_whenAiCompanyBlankOrOverCap_shouldSaveWithPlaceholderCompany() {
+        when(emailExtractorPort.extract(isNull(), anyString())).thenReturn("rh@acme.com.br");
+        when(jobRepository.existsByUrl(CANONICAL_URL)).thenReturn(false);
+        when(aiPort.complete(anyString()))
+                .thenReturn("{\"ehVaga\": true, \"title\": \"Dev Ruby\", \"company\": \"%s\"}".formatted("y".repeat(121)));
+        when(jobRepository.save(any(Job.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        service.ingest(command(LocalDate.of(2026, 11, 7)));
+
+        var captor = ArgumentCaptor.forClass(Job.class);
+        verify(jobRepository).save(captor.capture());
+        assertEquals("Empresa não informada", captor.getValue().company());
+    }
+
+    @Test
+    @DisplayName("ingest should return InvalidExtraction and save nothing when the AI title is blank")
+    void ingest_whenAiTitleBlank_shouldReturnInvalidExtractionAndSaveNothing() {
         when(emailExtractorPort.extract(isNull(), anyString())).thenReturn("rh@acme.com.br");
         when(jobRepository.existsByUrl(CANONICAL_URL)).thenReturn(false);
         when(aiPort.complete(anyString()))
