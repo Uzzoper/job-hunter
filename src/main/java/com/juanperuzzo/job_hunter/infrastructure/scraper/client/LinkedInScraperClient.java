@@ -115,7 +115,8 @@ public class LinkedInScraperClient implements ExtractionStrategy {
             Consumer<KeywordRun> keywordListener) {
         var configuredKeywords = (keywordOverride == null || keywordOverride.isEmpty())
                 ? properties.keywords()
-                : keywordOverride;        var keywords = configuredKeywords.isEmpty() ? List.of("desenvolvedor") : configuredKeywords;
+                : keywordOverride;
+        var keywords = configuredKeywords.isEmpty() ? List.of("desenvolvedor") : configuredKeywords;
         var location = properties.locations().isBlank() ? "Brazil" : properties.locations().split(",")[0].trim();
 
         // Per-keyword query loop (production defects fixed): bare senior-heavy
@@ -151,6 +152,8 @@ public class LinkedInScraperClient implements ExtractionStrategy {
         var uniqueJobs = new LinkedHashMap<String, RawJob>();
         for (var keyword : effectiveKeywords) {
             var startedNanos = System.nanoTime();
+            KeywordRun.Status status;
+            int jobsFound;
             try {
                 var batch = fetchJobsForKeyword(keyword, location);
                 var addedForKeyword = 0;
@@ -165,12 +168,23 @@ public class LinkedInScraperClient implements ExtractionStrategy {
                         addedForKeyword++;
                     }
                 }
-                keywordListener.accept(KeywordRun.ok(keyword, batch.size(), elapsedMs(startedNanos)));
+                status = KeywordRun.Status.OK;
+                jobsFound = batch.size();
                 log.debug("{}: fetched {} jobs for keyword '{}'", PROVIDER_ID, batch.size(), keyword);
             } catch (Exception e) {
-                keywordListener.accept(new KeywordRun(keyword, timeoutOrError(e), 0, elapsedMs(startedNanos)));
+                status = timeoutOrError(e);
+                jobsFound = 0;
                 log.warn("{}: skipping keyword '{}' after failure: {}", PROVIDER_ID, keyword, e.getMessage());
             }
+            // Exactly one KeywordRun per term, emitted OUTSIDE the catch so a
+            // throwing listener can never turn an ok keyword into a phantom
+            // error run (issue #116 review, 2026-11-12).
+            var durationMs = elapsedMs(startedNanos);
+            keywordListener.accept(switch (status) {
+                case OK -> KeywordRun.ok(keyword, jobsFound, durationMs);
+                case TIMEOUT -> KeywordRun.timeout(keyword, durationMs);
+                case ERROR -> KeywordRun.error(keyword, durationMs);
+            });
             if (uniqueJobs.size() >= properties.maxJobs()) {
                 break;
             }
