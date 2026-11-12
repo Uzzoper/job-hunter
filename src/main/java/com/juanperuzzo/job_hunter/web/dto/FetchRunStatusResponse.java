@@ -2,6 +2,7 @@ package com.juanperuzzo.job_hunter.web.dto;
 
 import com.juanperuzzo.job_hunter.application.port.out.FetchRun;
 import com.juanperuzzo.job_hunter.application.port.out.KeywordRun;
+import com.juanperuzzo.job_hunter.application.service.LinkedInAsyncFetchService;
 
 import java.time.Instant;
 import java.util.List;
@@ -34,7 +35,7 @@ public record FetchRunStatusResponse(
         var stats = run.result() == null
                 ? null
                 : run.result().perProvider().stream()
-                        .filter(provider -> "linkedin".equals(provider.source()))
+                        .filter(provider -> LinkedInAsyncFetchService.SOURCE_ID.equals(provider.source()))
                         .findFirst()
                         .orElse(null);
         return new FetchRunStatusResponse(
