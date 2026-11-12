@@ -2,6 +2,7 @@ package com.juanperuzzo.job_hunter.unit.application.service;
 
 import com.juanperuzzo.job_hunter.application.port.out.JobRepository;
 import com.juanperuzzo.job_hunter.application.port.out.KeywordResolver;
+import com.juanperuzzo.job_hunter.application.port.out.KeywordRun;
 import com.juanperuzzo.job_hunter.application.port.out.RawJob;
 import com.juanperuzzo.job_hunter.application.port.out.SourceFetchPort;
 import com.juanperuzzo.job_hunter.application.service.FetchSourceJobsService;
@@ -19,6 +20,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.function.Consumer;
 import java.util.function.Predicate;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -57,6 +59,24 @@ class FetchSourceJobsServiceTest {
         service = new FetchSourceJobsService(
                 sourceFetchPort, jobRepository, linkedinNormalizer, sourceNormalizer, keywordResolver);
         lenient().when(keywordResolver.resolve(any())).thenReturn(List.of());
+    }
+
+    @Nested
+    @DisplayName("Per-keyword listener forwarding (issue #116)")
+    class ListenerForwardingTests {
+
+        @Test
+        @DisplayName("fetchAndSave with a keyword listener should forward it to the source port")
+        void fetchAndSave_withListener_shouldForwardListenerToSourcePort() {
+            when(keywordResolver.resolve(USER_ID)).thenReturn(List.of("dev junior"));
+            Consumer<KeywordRun> listener = run -> {};
+            when(sourceFetchPort.fetch(eq("linkedin"), eq(List.of("dev junior")), any(Predicate.class), eq(listener)))
+                    .thenReturn(List.of());
+
+            service.fetchAndSave(USER_ID, "linkedin", listener);
+
+            verify(sourceFetchPort).fetch(eq("linkedin"), eq(List.of("dev junior")), any(Predicate.class), eq(listener));
+        }
     }
 
     @Nested

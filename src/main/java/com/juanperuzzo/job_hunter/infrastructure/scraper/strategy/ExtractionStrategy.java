@@ -1,8 +1,10 @@
 package com.juanperuzzo.job_hunter.infrastructure.scraper.strategy;
 
+import com.juanperuzzo.job_hunter.application.port.out.KeywordRun;
 import com.juanperuzzo.job_hunter.application.port.out.RawJob;
 
 import java.util.List;
+import java.util.function.Consumer;
 import java.util.function.Predicate;
 
 public interface ExtractionStrategy {
@@ -25,5 +27,17 @@ public interface ExtractionStrategy {
      */
     default List<RawJob> extract(List<String> keywordOverride, Predicate<String> isKnownUrl) {
         return extract(keywordOverride);
+    }
+
+    /**
+     * Listener-aware variant (issue #116): providers with a per-keyword loop
+     * override this to emit one {@link KeywordRun} per keyword; the default
+     * keeps the plain extraction and never emits.
+     */
+    default List<RawJob> extract(
+            List<String> keywordOverride,
+            Predicate<String> isKnownUrl,
+            Consumer<KeywordRun> keywordListener) {
+        return extract(keywordOverride, isKnownUrl);
     }
 }

@@ -2,6 +2,7 @@ package com.juanperuzzo.job_hunter.infrastructure.scraper.client;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.juanperuzzo.job_hunter.application.port.out.KeywordRun;
 import com.juanperuzzo.job_hunter.application.port.out.RawJob;
 import com.juanperuzzo.job_hunter.domain.exception.ScraperException;
 import com.juanperuzzo.job_hunter.infrastructure.config.LinkedInScraperProperties;
@@ -14,12 +15,14 @@ import org.springframework.http.HttpStatusCode;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.util.UriComponentsBuilder;
 
+import java.net.SocketTimeoutException;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.function.Consumer;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
@@ -96,6 +99,20 @@ public class LinkedInScraperClient implements ExtractionStrategy {
 
     @Override
     public List<RawJob> extract(List<String> keywordOverride, Predicate<String> isKnownUrl) {
+        return extract(keywordOverride, isKnownUrl, keywordListener -> { });
+    }
+
+    /**
+     * Listener-aware extraction (issue #116): the per-keyword loop below emits
+     * one {@link KeywordRun} per term — ok with the raw batch size, or
+     * timeout/error when that keyword's search fails. One failed keyword never
+     * discards the others' jobs (P1-1), and now the failure never hides either.
+     */
+    @Override
+    public List<RawJob> extract(
+            List<String> keywordOverride,
+            Predicate<String> isKnownUrl,
+            Consumer<KeywordRun> keywordListener) {
         var configuredKeywords = (keywordOverride == null || keywordOverride.isEmpty())
                 ? properties.keywords()
                 : keywordOverride;
@@ -134,6 +151,9 @@ public class LinkedInScraperClient implements ExtractionStrategy {
         var perKeywordQuota = (int) Math.ceil((double) properties.maxJobs() / effectiveKeywords.size());
         var uniqueJobs = new LinkedHashMap<String, RawJob>();
         for (var keyword : effectiveKeywords) {
+            var startedNanos = System.nanoTime();
+            KeywordRun.Status status;
+            int jobsFound;
             try {
                 var batch = fetchJobsForKeyword(keyword, location);
                 var addedForKeyword = 0;
@@ -148,10 +168,23 @@ public class LinkedInScraperClient implements ExtractionStrategy {
                         addedForKeyword++;
                     }
                 }
+                status = KeywordRun.Status.OK;
+                jobsFound = batch.size();
                 log.debug("{}: fetched {} jobs for keyword '{}'", PROVIDER_ID, batch.size(), keyword);
             } catch (Exception e) {
+                status = timeoutOrError(e);
+                jobsFound = 0;
                 log.warn("{}: skipping keyword '{}' after failure: {}", PROVIDER_ID, keyword, e.getMessage());
             }
+            // Exactly one KeywordRun per term, emitted OUTSIDE the catch so a
+            // throwing listener can never turn an ok keyword into a phantom
+            // error run (issue #116 review, 2026-11-12).
+            var durationMs = elapsedMs(startedNanos);
+            keywordListener.accept(switch (status) {
+                case OK -> KeywordRun.ok(keyword, jobsFound, durationMs);
+                case TIMEOUT -> KeywordRun.timeout(keyword, durationMs);
+                case ERROR -> KeywordRun.error(keyword, durationMs);
+            });
             if (uniqueJobs.size() >= properties.maxJobs()) {
                 break;
             }
@@ -196,6 +229,25 @@ public class LinkedInScraperClient implements ExtractionStrategy {
 
         log.info("{}: fetched {} jobs", PROVIDER_ID, enriched.size());
         return enriched;
+    }
+
+    /** Milliseconds elapsed since the given {@code startedNanos} mark. */
+    private static long elapsedMs(long startedNanos) {
+        return (System.nanoTime() - startedNanos) / 1_000_000L;
+    }
+
+    /**
+     * Classifies a keyword failure for the status payload (issue #116): a
+     * socket/read timeout anywhere in the cause chain is TIMEOUT; anything
+     * else is ERROR.
+     */
+    private static KeywordRun.Status timeoutOrError(Throwable failure) {
+        for (var cause = failure; cause != null; cause = cause.getCause() == cause ? null : cause.getCause()) {
+            if (cause instanceof SocketTimeoutException) {
+                return KeywordRun.Status.TIMEOUT;
+            }
+        }
+        return KeywordRun.Status.ERROR;
     }
 
     /** Search the scraper service for a single keyword and map its JSON response. */
