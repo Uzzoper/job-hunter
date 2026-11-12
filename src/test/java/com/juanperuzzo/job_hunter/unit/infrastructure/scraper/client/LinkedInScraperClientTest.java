@@ -3,6 +3,7 @@ package com.juanperuzzo.job_hunter.unit.infrastructure.scraper.client;
 import com.github.tomakehurst.wiremock.junit5.WireMockExtension;
 import com.github.tomakehurst.wiremock.junit5.WireMockRuntimeInfo;
 import com.github.tomakehurst.wiremock.stubbing.Scenario;
+import com.juanperuzzo.job_hunter.application.port.out.KeywordRun;
 import com.juanperuzzo.job_hunter.application.port.out.RawJob;
 import com.juanperuzzo.job_hunter.domain.exception.ScraperException;
 import com.juanperuzzo.job_hunter.infrastructure.config.LinkedInScraperProperties;
@@ -19,6 +20,7 @@ import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
 
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -147,6 +149,127 @@ class LinkedInScraperClientTest {
             assertEquals("https://www.linkedin.com/jobs/view/67890", job2.url());
             assertEquals("2026-06-28T10:30:00.000Z", job2.rawDate());
             assertEquals("Rio de Janeiro, RJ", job2.location());
+        }
+    }
+
+    @Nested
+    @DisplayName("Per-keyword run status (issue #116)")
+    class KeywordRunStatus {
+
+        private LinkedInScraperClient clientWithProperties(
+                List<String> keywords, int searchTimeoutSeconds, long detailFetchDelayMillis) {
+            var customProperties = new LinkedInScraperProperties(
+                    true,
+                    "service",
+                    baseUrl,
+                    30,
+                    5,
+                    25,
+                    "https://www.linkedin.com",
+                    keywords,
+                    "Brazil",
+                    List.of("106057199", "102927786", "105972731", "105906364"),
+                    List.of("entry_level"),
+                    List.of("remote"),
+                    "past_week",
+                    1,
+                    detailFetchDelayMillis,
+                    "https://www.linkedin.com/jobs/view/",
+                    searchTimeoutSeconds,
+                    new LinkedInScraperProperties.Jsoup(3)
+            );
+            return new LinkedInScraperClient(customProperties, fastRetry(), permissiveRateLimiter());
+        }
+
+        @Test
+        @DisplayName("extract should emit keyword runs and keep other keywords' jobs when one keyword times out")
+        void extract_whenOneKeywordTimesOut_shouldEmitKeywordRunAndKeepOtherKeywordsJobs() {
+            var timeoutClient = new LinkedInScraperClient(
+                    timeoutProperties(List.of("dev junior", "estagio desenvolvedor"), 1),
+                    singleAttemptRetry(),
+                    permissiveRateLimiter());
+
+            stubFor(get(urlPathEqualTo("/api/jobs"))
+                    .withQueryParam("keywords", equalTo("dev junior"))
+                    .willReturn(aResponse()
+                            .withStatus(200)
+                            .withFixedDelay(3000)
+                            .withBody("""
+                                { "success": true, "data": [] }
+                                """)));
+            stubFor(get(urlPathEqualTo("/api/jobs"))
+                    .withQueryParam("keywords", equalTo("estagio desenvolvedor"))
+                    .willReturn(okJson("""
+                        { "success": true, "data": [
+                            { "id": "1", "title": "Dev Jr", "company": "C",
+                              "location": "BR", "postedAt": "", "summary": "" }
+                        ] }
+                        """)));
+
+            var runs = new ArrayList<KeywordRun>();
+            var jobs = timeoutClient.extract(
+                    List.of("dev junior", "estagio desenvolvedor"), url -> false, runs::add);
+
+            assertEquals(1, jobs.size());
+            assertEquals(2, runs.size());
+            assertEquals("dev junior", runs.get(0).term());
+            assertEquals(KeywordRun.Status.TIMEOUT, runs.get(0).status());
+            assertEquals(0, runs.get(0).jobsFound());
+            assertTrue(runs.get(0).durationMs() >= 1000);
+            assertEquals("estagio desenvolvedor", runs.get(1).term());
+            assertEquals(KeywordRun.Status.OK, runs.get(1).status());
+            assertEquals(1, runs.get(1).jobsFound());
+        }
+
+        @Test
+        @DisplayName("extract should report a per-keyword duration on successful searches")
+        void extract_shouldReportDurationPerKeyword() {
+            var slowClient = clientWithProperties(List.of("dev junior"), 5, 0L);
+
+            stubFor(get(urlPathEqualTo("/api/jobs"))
+                    .withQueryParam("keywords", equalTo("dev junior"))
+                    .willReturn(aResponse()
+                            .withStatus(200)
+                            .withFixedDelay(200)
+                            .withBody("""
+                                { "success": true, "data": [] }
+                                """)));
+
+            var runs = new ArrayList<KeywordRun>();
+            slowClient.extract(List.of("dev junior"), url -> false, runs::add);
+
+            assertEquals(1, runs.size());
+            assertEquals("dev junior", runs.get(0).term());
+            assertEquals(KeywordRun.Status.OK, runs.get(0).status());
+            assertTrue(runs.get(0).durationMs() >= 100);
+        }
+
+        private LinkedInScraperProperties timeoutProperties(List<String> keywords, int searchTimeoutSeconds) {
+            return new LinkedInScraperProperties(
+                    true,
+                    "service",
+                    baseUrl,
+                    30,
+                    5,
+                    25,
+                    "https://www.linkedin.com",
+                    keywords,
+                    "Brazil",
+                    List.of("106057199", "102927786", "105972731", "105906364"),
+                    List.of("entry_level"),
+                    List.of("remote"),
+                    "past_week",
+                    1,
+                    0L,
+                    "https://www.linkedin.com/jobs/view/",
+                    searchTimeoutSeconds,
+                    new LinkedInScraperProperties.Jsoup(3)
+            );
+        }
+
+        /** One attempt only: the delayed keyword fails once, without backoff retries. */
+        private ExponentialBackoffRetry singleAttemptRetry() {
+            return new ExponentialBackoffRetry(1, Duration.ofMillis(1), Duration.ofMillis(2), Duration.ofMillis(1));
         }
     }
 

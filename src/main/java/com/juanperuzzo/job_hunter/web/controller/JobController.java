@@ -6,6 +6,8 @@ import com.juanperuzzo.job_hunter.application.port.in.BackfillContactEmailsUseCa
 import com.juanperuzzo.job_hunter.application.port.in.BackfillCompanyWebsitesUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.CompanyEnrichmentUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.FetchJobsUseCase;
+import com.juanperuzzo.job_hunter.application.port.in.FetchLinkedInAsyncUseCase;
+import com.juanperuzzo.job_hunter.application.port.in.FetchRunStatusUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.FetchSourceJobsUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.GenerateEmailUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.GetEmailDraftUseCase;
@@ -23,6 +25,8 @@ import com.juanperuzzo.job_hunter.web.dto.EmailDraftResponse;
 import com.juanperuzzo.job_hunter.web.dto.EnrichmentResultResponse;
 import com.juanperuzzo.job_hunter.web.dto.ExternalApplyResponse;
 import com.juanperuzzo.job_hunter.web.dto.FetchResultResponse;
+import com.juanperuzzo.job_hunter.web.dto.FetchRunStatusResponse;
+import com.juanperuzzo.job_hunter.web.dto.FetchStartedResponse;
 import com.juanperuzzo.job_hunter.web.dto.BackfillResultResponse;
 import com.juanperuzzo.job_hunter.web.dto.JobResponse;
 import org.springframework.http.HttpHeaders;
@@ -40,6 +44,8 @@ public class JobController {
 
     private final FetchJobsUseCase fetchJobsUseCase;
     private final FetchSourceJobsUseCase fetchSourceJobsUseCase;
+    private final FetchLinkedInAsyncUseCase fetchLinkedInAsyncUseCase;
+    private final FetchRunStatusUseCase fetchRunStatusUseCase;
     private final AnalyzeJobUseCase analyzeJobUseCase;
     private final GenerateEmailUseCase generateEmailUseCase;
     private final ListJobsUseCase listJobsUseCase;
@@ -57,6 +63,8 @@ public class JobController {
     public JobController(
             FetchJobsUseCase fetchJobsUseCase,
             FetchSourceJobsUseCase fetchSourceJobsUseCase,
+            FetchLinkedInAsyncUseCase fetchLinkedInAsyncUseCase,
+            FetchRunStatusUseCase fetchRunStatusUseCase,
             AnalyzeJobUseCase analyzeJobUseCase,
             GenerateEmailUseCase generateEmailUseCase,
             ListJobsUseCase listJobsUseCase,
@@ -72,6 +80,8 @@ public class JobController {
             CurrentUserProvider currentUserService) {
         this.fetchJobsUseCase = fetchJobsUseCase;
         this.fetchSourceJobsUseCase = fetchSourceJobsUseCase;
+        this.fetchLinkedInAsyncUseCase = fetchLinkedInAsyncUseCase;
+        this.fetchRunStatusUseCase = fetchRunStatusUseCase;
         this.analyzeJobUseCase = analyzeJobUseCase;
         this.generateEmailUseCase = generateEmailUseCase;
         this.listJobsUseCase = listJobsUseCase;
@@ -151,11 +161,29 @@ public class JobController {
         return ResponseEntity.ok(FetchResultResponse.from(result));
     }
 
+    /**
+     * Async LinkedIn fetch (issue #116, docs/specs/linkedin-async-fetch.md):
+     * answers before the fetch finishes — the caller polls the status endpoint
+     * instead of blocking. Single-flight: 409 while a run is active. The userId
+     * is resolved here so runtime keywords are the caller's own.
+     */
     @PostMapping("/fetch/linkedin")
-    public ResponseEntity<FetchResultResponse> fetchLinkedInJobs() {
+    public ResponseEntity<FetchStartedResponse> fetchLinkedInJobs() {
         Long userId = currentUserService.getCurrentUserId();
-        var result = fetchSourceJobsUseCase.fetchAndSave(userId, "linkedin");
-        return ResponseEntity.ok(FetchResultResponse.from(result));
+        var started = fetchLinkedInAsyncUseCase.start(userId);
+        return started.outcome() == FetchLinkedInAsyncUseCase.StartOutcome.STARTED
+                ? ResponseEntity.accepted().body(FetchStartedResponse.started(started.startedAt()))
+                : ResponseEntity.status(HttpStatus.CONFLICT).body(FetchStartedResponse.running(started.startedAt()));
+    }
+
+    /**
+     * Poll side of the async LinkedIn fetch (issue #116): idle | running |
+     * completed | failed, counts and per-keyword outcomes — no keyword is
+     * skipped without a caller-visible entry.
+     */
+    @GetMapping("/fetch/linkedin/status")
+    public ResponseEntity<FetchRunStatusResponse> fetchLinkedInStatus() {
+        return ResponseEntity.ok(FetchRunStatusResponse.from(fetchRunStatusUseCase.status()));
     }
 
     @PostMapping("/fetch/gupy")

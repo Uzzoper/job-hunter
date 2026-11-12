@@ -1,6 +1,8 @@
 package com.juanperuzzo.job_hunter.unit.infrastructure.scraper.provider;
 
 import com.juanperuzzo.job_hunter.application.port.out.UserRepository;
+import com.juanperuzzo.job_hunter.application.port.out.KeywordRun;
+import com.juanperuzzo.job_hunter.application.port.out.RawJob;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.normalizer.DateParser;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.normalizer.JobNormalizer;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.provider.ProviderRegistry;
@@ -12,7 +14,10 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Consumer;
+import java.util.function.Predicate;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.mock;
@@ -46,6 +51,29 @@ class ProviderRegistryTest {
 
         assertFalse(registry.isEmpty());
         assertTrue(registry.getProvider("test").isPresent());
+    }
+
+    @Test
+    @DisplayName("fetch with a keyword listener should forward the listener to the strategy")
+    void fetchWithKeywordListener_shouldForwardListenerToStrategy() {
+        var runs = new ArrayList<KeywordRun>();
+        ExtractionStrategy strategy = new ExtractionStrategy() {
+            @Override public String providerId() { return "linkedin"; }
+            @Override public List<RawJob> extract() { return List.of(); }
+            @Override public List<RawJob> extract(
+                    List<String> keywordOverride,
+                    Predicate<String> isKnownUrl,
+                    Consumer<KeywordRun> keywordListener) {
+                keywordListener.accept(KeywordRun.ok("dev junior", 1, 5));
+                return List.of();
+            }
+        };
+        registry.register(strategy, null, rateLimiter, null);
+
+        registry.fetch("linkedin", List.of("dev junior"), url -> false, runs::add);
+
+        assertEquals(1, runs.size());
+        assertEquals(KeywordRun.Status.OK, runs.get(0).status());
     }
 
     @Test

@@ -1,5 +1,6 @@
 package com.juanperuzzo.job_hunter.infrastructure.scraper.provider;
 
+import com.juanperuzzo.job_hunter.application.port.out.KeywordRun;
 import com.juanperuzzo.job_hunter.application.port.out.RawJob;
 import com.juanperuzzo.job_hunter.application.port.out.SourceFetchPort;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.normalizer.JobNormalizer;
@@ -11,6 +12,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.function.Consumer;
 import java.util.function.Predicate;
 
 public class ProviderRegistry implements SourceFetchPort {
@@ -49,5 +51,20 @@ public class ProviderRegistry implements SourceFetchPort {
         var entry = getProvider(sourceId)
                 .orElseThrow(() -> new IllegalArgumentException("Unknown source: " + sourceId));
         return entry.strategy().extract(keywordOverride, isKnownUrl);
+    }
+
+    /**
+     * Listener-aware fetch (issue #116): forwards the consumer so keyword-aware
+     * strategies can emit one {@link KeywordRun} per executed term.
+     */
+    @Override
+    public List<RawJob> fetch(
+            String sourceId,
+            List<String> keywordOverride,
+            Predicate<String> isKnownUrl,
+            Consumer<KeywordRun> keywordListener) {
+        var entry = getProvider(sourceId)
+                .orElseThrow(() -> new IllegalArgumentException("Unknown source: " + sourceId));
+        return entry.strategy().extract(keywordOverride, isKnownUrl, keywordListener);
     }
 }
