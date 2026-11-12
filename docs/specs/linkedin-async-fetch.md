@@ -53,9 +53,12 @@ does not say so:
 
 - `idle` before the first run since process start; `completed` carries the
   last run's `FetchResult` summary; `failed` carries the error message
-  (bounded, same style as `FetchResult`).
+  (bounded, same style as `FetchResult`) plus the per-keyword outcomes
+  collected before the failure — partial progress stays caller-visible.
 - **Per-keyword status kills the silent skip**: every term reports
   `ok|timeout|error` — a skipped keyword becomes caller-visible data.
+  Keywords after the `maxJobs` cap-stop (P1-2) are never searched and
+  therefore emit no entry — that is the designed guard, not a silent skip.
 
 ## Design
 
@@ -64,7 +67,11 @@ does not say so:
   `try/finally` around the existing `SourceFetchPort.fetch` call, so the
   registry reflects the *actual* outcome, independent of the adapter's
   `orTimeout` completion semantics (evidence: saves continue past client
-  death — the registry must not lie about that).
+  death — the registry must not lie about that). The sync use case keeps
+  its internal catch-all and surfaces scraper failures as a provider error
+  inside a normal `FetchResult`; the async service translates that provider
+  error into a `failed` run — a dead fetch must never read as a clean
+  completion (review, 2026-11-12).
 - **Executor**: dedicated single-thread executor bean; the controller
   submits and returns `202`. No thread-pool growth per request.
 - **Keyword listener**: `SourceFetchPort` gains an overload accepting a
@@ -82,15 +89,27 @@ does not say so:
 
 ## Testing plan (RED before GREEN)
 
-- `web`: `fetchLinkedIn_whenPost_shouldReturn202WithStarted`,
-  `fetchLinkedIn_whenAlreadyRunning_shouldReturn409`,
+Delivered names (draft names renamed during the 2026-11-12 review):
+
+- `web` (`JobControllerTest`): `fetchLinkedInJobs_whenPost_shouldReturn202WithStarted`,
+  `fetchLinkedInJobs_whenAlreadyRunning_shouldReturn409`,
+  `fetchLinkedInJobs_whenServiceFails_shouldReturnError`,
   `fetchLinkedInStatus_whenIdle_shouldReturnIdleState`,
   `fetchLinkedInStatus_afterRun_shouldReportCountsAndKeywordRuns`.
-- `application`: `fetchAndSave_whenLinkedInRuns_shouldTransitionRunningToCompleted`,
-  `fetchAndSave_whenFetchThrows_shouldMarkFailedWithBoundedError`,
-  `fetchAndSave_whenSecondRunRequestedWhileRunning_shouldReject`.
-- `infrastructure` (WireMock): `extract_whenOneKeywordTimesOut_shouldEmitKeywordRunAndKeepOtherKeywordsJobs`,
-  `extract_shouldReportDurationPerKeyword`.
+- `application` (`LinkedInAsyncFetchServiceTest`): `start_whenIdle_shouldBeginRunAndScheduleFetch`,
+  `start_whenAlreadyRunning_shouldRejectWithoutScheduling`,
+  `start_whenExecutorRejects_shouldFailRunAndRethrow`,
+  `run_whenFetchSucceeds_shouldCompleteRunWithCollectedKeywordRuns`,
+  `run_whenProviderReportsError_shouldMarkRunFailedWithKeywordRuns`,
+  `run_whenFetchThrows_shouldMarkRunFailed`,
+  `run_whenErrorEscapes_shouldReleaseStuckRun`,
+  `status_whenQueried_shouldDelegateToStore`;
+  plus `InMemoryFetchRunStoreTest` (single-flight transitions, complete/fail
+  carrying keyword runs, bounded error, concurrent winner), `FetchSourceJobsServiceTest`
+  and `ProviderRegistryTest` (listener forwarding).
+- `infrastructure` (WireMock, `LinkedInScraperClientTest`):
+  `extract_whenOneKeywordTimesOut_shouldEmitKeywordRunAndKeepOtherKeywordsJobs`,
+  `extract_whenSearchSucceeds_shouldReportDurationPerKeyword`.
 
 ## Acceptance
 
