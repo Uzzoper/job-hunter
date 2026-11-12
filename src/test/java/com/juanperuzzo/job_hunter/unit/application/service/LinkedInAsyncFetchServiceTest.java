@@ -16,10 +16,12 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Executor;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.function.Consumer;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
@@ -84,7 +86,7 @@ class LinkedInAsyncFetchServiceTest {
 
         verify(runStore).complete(
                 eq(LinkedInAsyncFetchService.SOURCE_ID), any(Instant.class), eq(result), eq(List.of(emitted)));
-        verify(runStore, never()).fail(anyString(), any(Instant.class), anyString());
+        verify(runStore, never()).fail(anyString(), any(Instant.class), anyString(), anyList());
     }
 
     @Test
@@ -103,7 +105,30 @@ class LinkedInAsyncFetchServiceTest {
     }
 
     @Test
-    @DisplayName("fetch failure should mark the run failed and pass the raw error for the store to bound")
+    @DisplayName("executing the scheduled work should mark the run failed when the provider itself reports an error")
+    void run_whenProviderReportsError_shouldMarkRunFailedWithKeywordRuns() {
+        when(runStore.tryBegin(anyString(), any(Instant.class))).thenReturn(true);
+        var emitted = KeywordRun.ok("dev junior", 2, 100);
+        var result = new FetchResult(
+                0, 0, 0,
+                List.of(new ProviderFetchStats("linkedin", 0, 0, 0, 0, 0, "Read timed out")));
+        when(fetchSourceJobs.fetchAndSave(eq(USER_ID), eq(LinkedInAsyncFetchService.SOURCE_ID), any()))
+                .thenAnswer(invocation -> {
+                    Consumer<KeywordRun> keywordListener = invocation.getArgument(2);
+                    keywordListener.accept(emitted);
+                    return result;
+                });
+
+        service.start(USER_ID);
+        submitted.get(0).run();
+
+        verify(runStore).fail(
+                eq(LinkedInAsyncFetchService.SOURCE_ID), any(Instant.class), eq("Read timed out"), eq(List.of(emitted)));
+        verify(runStore, never()).complete(anyString(), any(Instant.class), any(), anyList());
+    }
+
+    @Test
+    @DisplayName("executing the scheduled work should mark the run failed and pass the raw error for the store to bound")
     void run_whenFetchThrows_shouldMarkRunFailed() {
         when(runStore.tryBegin(anyString(), any(Instant.class))).thenReturn(true);
         var failureMessage = "boom-".repeat(100);
@@ -113,8 +138,45 @@ class LinkedInAsyncFetchServiceTest {
         service.start(USER_ID);
         submitted.get(0).run();
 
-        verify(runStore).fail(eq(LinkedInAsyncFetchService.SOURCE_ID), any(Instant.class), eq(failureMessage));
+        verify(runStore).fail(
+                eq(LinkedInAsyncFetchService.SOURCE_ID), any(Instant.class), eq(failureMessage), anyList());
         verify(runStore, never()).complete(anyString(), any(Instant.class), any(), anyList());
+    }
+
+    @Test
+    @DisplayName("an Error escaping the executor thread must still release the stuck run (try/finally guard)")
+    void run_whenErrorEscapes_shouldReleaseStuckRun() {
+        when(runStore.tryBegin(anyString(), any(Instant.class))).thenReturn(true);
+        when(runStore.get(LinkedInAsyncFetchService.SOURCE_ID)).thenReturn(FetchRun.running(Instant.now()));
+        when(fetchSourceJobs.fetchAndSave(eq(USER_ID), eq(LinkedInAsyncFetchService.SOURCE_ID), any()))
+                .thenThrow(new AssertionError("boom"));
+
+        service.start(USER_ID);
+
+        assertThrows(AssertionError.class, () -> submitted.get(0).run());
+
+        verify(runStore).fail(
+                eq(LinkedInAsyncFetchService.SOURCE_ID),
+                any(Instant.class),
+                eq("unexpected error escaped the fetch"),
+                anyList());
+        verify(runStore, never()).complete(anyString(), any(Instant.class), any(), anyList());
+    }
+
+    @Test
+    @DisplayName("executor rejection should fail the run instead of leaving it stuck in RUNNING")
+    void start_whenExecutorRejects_shouldFailRunAndRethrow() {
+        when(runStore.tryBegin(anyString(), any(Instant.class))).thenReturn(true);
+        Executor rejectingExecutor = command -> { throw new RejectedExecutionException(); };
+        service = new LinkedInAsyncFetchService(fetchSourceJobs, runStore, rejectingExecutor);
+
+        assertThrows(RejectedExecutionException.class, () -> service.start(USER_ID));
+
+        verify(runStore).fail(
+                eq(LinkedInAsyncFetchService.SOURCE_ID),
+                any(Instant.class),
+                eq("executor rejected the fetch: RejectedExecutionException"),
+                anyList());
     }
 
     @Test

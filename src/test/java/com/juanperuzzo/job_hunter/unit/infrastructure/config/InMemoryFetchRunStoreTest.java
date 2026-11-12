@@ -94,7 +94,7 @@ class InMemoryFetchRunStoreTest {
     void fail_shouldRecordBoundedError() {
         assertTrue(store.tryBegin(SOURCE, T0));
 
-        store.fail(SOURCE, T1, "x".repeat(500));
+        store.fail(SOURCE, T1, "x".repeat(500), List.of(KeywordRun.timeout("dev junior", 90_000)));
 
         var run = store.get(SOURCE);
         assertEquals(FetchRun.State.FAILED, run.state());
@@ -102,13 +102,14 @@ class InMemoryFetchRunStoreTest {
         assertEquals(T1, run.finishedAt());
         assertNull(run.result());
         assertEquals(300, run.error().length());
+        assertEquals(List.of(KeywordRun.timeout("dev junior", 90_000)), run.keywordRuns());
     }
 
     @Test
     @DisplayName("tryBegin after a failure should allow a new run (single-flight releases)")
     void tryBegin_afterFailure_shouldAllowNewRun() {
         assertTrue(store.tryBegin(SOURCE, T0));
-        store.fail(SOURCE, T1, "failed");
+        store.fail(SOURCE, T1, "failed", List.of());
 
         assertTrue(store.tryBegin(SOURCE, T1.plusSeconds(1)));
 

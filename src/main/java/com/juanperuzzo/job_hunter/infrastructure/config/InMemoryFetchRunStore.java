@@ -43,13 +43,13 @@ public class InMemoryFetchRunStore implements FetchRunStore {
     }
 
     @Override
-    public void fail(String sourceId, Instant finishedAt, String error) {
+    public void fail(String sourceId, Instant finishedAt, String error, List<KeywordRun> keywordRuns) {
         runs.compute(sourceId, (id, current) -> new FetchRun(
                 FetchRun.State.FAILED,
                 current == null ? null : current.startedAt(),
                 finishedAt,
                 null,
-                List.of(),
+                List.copyOf(keywordRuns),
                 bound(error)));
     }
 

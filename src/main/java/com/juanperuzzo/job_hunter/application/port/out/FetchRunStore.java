@@ -22,9 +22,12 @@ public interface FetchRunStore {
     /** Marks the active run completed and attaches its aggregate + per-keyword outcomes. */
     void complete(String sourceId, Instant finishedAt, FetchResult result, List<KeywordRun> keywordRuns);
 
-    /** Marks the active run failed with an error message (bounded by the implementation). */
-    void fail(String sourceId, Instant finishedAt, String error);
-
+    /**
+     * Marks the active run failed with an error message (bounded by the
+     * implementation), keeping the per-keyword outcomes collected before the
+     * failure so partial progress stays caller-visible (issue #116).
+     */
+    void fail(String sourceId, Instant finishedAt, String error, List<KeywordRun> keywordRuns);
     /** Current run snapshot; {@link FetchRun#idle()} when never run since process start. */
     FetchRun get(String sourceId);
 }
