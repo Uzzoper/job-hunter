@@ -55,7 +55,7 @@ class ProviderRegistryTest {
 
     @Test
     @DisplayName("fetch with a keyword listener should forward the listener to the strategy")
-    void fetchWithKeywordListener_shouldForwardListenerToStrategy() {
+    void fetch_withKeywordListener_shouldForwardListenerToStrategy() {
         var runs = new ArrayList<KeywordRun>();
         ExtractionStrategy strategy = new ExtractionStrategy() {
             @Override public String providerId() { return "linkedin"; }

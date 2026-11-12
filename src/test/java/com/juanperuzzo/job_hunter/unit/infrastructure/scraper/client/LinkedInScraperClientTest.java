@@ -223,7 +223,7 @@ class LinkedInScraperClientTest {
 
         @Test
         @DisplayName("extract should report a per-keyword duration on successful searches")
-        void extract_shouldReportDurationPerKeyword() {
+        void extract_whenSearchSucceeds_shouldReportDurationPerKeyword() {
             var slowClient = clientWithProperties(List.of("dev junior"), 5, 0L);
 
             stubFor(get(urlPathEqualTo("/api/jobs"))

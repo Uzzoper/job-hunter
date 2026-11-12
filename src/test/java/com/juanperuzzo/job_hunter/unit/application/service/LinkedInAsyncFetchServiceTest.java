@@ -181,7 +181,7 @@ class LinkedInAsyncFetchServiceTest {
 
     @Test
     @DisplayName("status should read the current run snapshot from the store")
-    void status_shouldDelegateToStore() {
+    void status_whenQueried_shouldDelegateToStore() {
         when(runStore.get(LinkedInAsyncFetchService.SOURCE_ID)).thenReturn(FetchRun.idle());
 
         var run = service.status();

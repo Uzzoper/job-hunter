@@ -69,7 +69,7 @@ class InMemoryFetchRunStoreTest {
 
     @Test
     @DisplayName("complete should attach the aggregate result and per-keyword outcomes")
-    void complete_shouldAttachResultAndKeywordRuns() {
+    void complete_whenRunActive_shouldAttachResultAndKeywordRuns() {
         assertTrue(store.tryBegin(SOURCE, T0));
         var result = new FetchResult(
                 4, 4, 1,
