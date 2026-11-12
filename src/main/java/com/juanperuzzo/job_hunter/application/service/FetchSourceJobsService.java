@@ -5,6 +5,7 @@ import com.juanperuzzo.job_hunter.application.port.in.FetchSourceJobsUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.ProviderFetchStats;
 import com.juanperuzzo.job_hunter.application.port.out.JobRepository;
 import com.juanperuzzo.job_hunter.application.port.out.KeywordResolver;
+import com.juanperuzzo.job_hunter.application.port.out.KeywordRun;
 import com.juanperuzzo.job_hunter.application.port.out.NormalizerPort;
 import com.juanperuzzo.job_hunter.application.port.out.SourceFetchPort;
 import com.juanperuzzo.job_hunter.domain.model.Job;
@@ -12,6 +13,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.List;
+import java.util.function.Consumer;
 
 public class FetchSourceJobsService implements FetchSourceJobsUseCase {
 
@@ -47,6 +49,17 @@ public class FetchSourceJobsService implements FetchSourceJobsUseCase {
 
     @Override
     public FetchResult fetchAndSave(Long userId, String sourceId) {
+        return fetchAndSave(userId, sourceId, null);
+    }
+
+    /**
+     * Listener-aware variant (issue #116): {@code keywordListener} receives one
+     * {@link KeywordRun} per executed keyword when the source's scraper emits
+     * them; {@code null} keeps the legacy port call so the synchronous sources
+     * behave exactly as before.
+     */
+    @Override
+    public FetchResult fetchAndSave(Long userId, String sourceId, Consumer<KeywordRun> keywordListener) {
         log.info("Fetching jobs from source: {}", sourceId);
         var keywords = List.copyOf(keywordResolver.resolve(userId));
 
@@ -59,7 +72,9 @@ public class FetchSourceJobsService implements FetchSourceJobsUseCase {
 
         try {
             var normalizer = normalizerFor(sourceId);
-            var rawJobs = sourceFetchPort.fetch(sourceId, keywords, jobRepository::existsByUrl);
+            var rawJobs = keywordListener == null
+                    ? sourceFetchPort.fetch(sourceId, keywords, jobRepository::existsByUrl)
+                    : sourceFetchPort.fetch(sourceId, keywords, jobRepository::existsByUrl, keywordListener);
             fetched = rawJobs.size();
 
             for (var raw : rawJobs) {

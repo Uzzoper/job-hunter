@@ -10,6 +10,7 @@ import com.juanperuzzo.job_hunter.application.port.out.JobRepository;
 import com.juanperuzzo.job_hunter.application.port.out.CompanySiteEnrichmentPort;
 import com.juanperuzzo.job_hunter.application.port.out.CompanyDomainResolverPort;
 import com.juanperuzzo.job_hunter.application.port.out.NormalizerPort;
+import com.juanperuzzo.job_hunter.application.port.out.FetchRunStore;
 import com.juanperuzzo.job_hunter.application.port.out.PdfRendererPort;
 import com.juanperuzzo.job_hunter.application.port.out.ScraperPort;
 import com.juanperuzzo.job_hunter.application.port.out.SourceFetchPort;
@@ -21,6 +22,7 @@ import com.juanperuzzo.job_hunter.application.service.EmailGenerationService;
 import com.juanperuzzo.job_hunter.application.service.EmailSendingService;
 import com.juanperuzzo.job_hunter.application.service.FetchJobsService;
 import com.juanperuzzo.job_hunter.application.service.FetchSourceJobsService;
+import com.juanperuzzo.job_hunter.application.service.LinkedInAsyncFetchService;
 import com.juanperuzzo.job_hunter.application.service.ResumeTailoringService;
 import com.juanperuzzo.job_hunter.infrastructure.ai.HermesAgentClient;
 import com.juanperuzzo.job_hunter.infrastructure.botmemory.FileSystemBotMemoryAdapter;
@@ -69,6 +71,8 @@ import java.time.Clock;
 import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
 import java.util.regex.Pattern;
 import java.nio.file.Path;
 
@@ -542,6 +546,34 @@ public class AppConfig {
             KeywordResolver keywordResolver) {
         return new FetchSourceJobsService(
                 sourceFetchPort, jobRepository, linkedinNormalizerPort, normalizerPort, keywordResolver);
+    }
+
+    /**
+     * Dedicated single-thread executor for the async LinkedIn fetch (issue #116,
+     * docs/specs/linkedin-async-fetch.md): the controller submits and returns the
+     * 202 while one run at a time executes here. Daemon thread — never blocks
+     * JVM shutdown; no pool growth per request.
+     */
+    @Bean
+    public Executor linkedinFetchExecutor() {
+        return Executors.newSingleThreadExecutor(runnable -> {
+            var thread = new Thread(runnable, "linkedin-fetch");
+            thread.setDaemon(true);
+            return thread;
+        });
+    }
+
+    /**
+     * Async LinkedIn fetch use case (issue #116): wraps the synchronous
+     * {@link FetchSourceJobsService} with the single-flight registry and the
+     * dedicated executor; implements both the start and the status port-in.
+     */
+    @Bean
+    public LinkedInAsyncFetchService linkedinAsyncFetchService(
+            FetchSourceJobsService fetchSourceJobsService,
+            FetchRunStore fetchRunStore,
+            @Qualifier("linkedinFetchExecutor") Executor linkedinFetchExecutor) {
+        return new LinkedInAsyncFetchService(fetchSourceJobsService, fetchRunStore, linkedinFetchExecutor);
     }
 
     @Bean

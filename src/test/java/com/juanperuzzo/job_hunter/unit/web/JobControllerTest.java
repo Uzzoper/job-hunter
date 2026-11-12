@@ -7,7 +7,9 @@ import com.juanperuzzo.job_hunter.application.port.in.BackfillCompanyWebsitesUse
 import com.juanperuzzo.job_hunter.application.port.in.CompanyEnrichmentUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.EnrichmentResult;
 import com.juanperuzzo.job_hunter.application.port.in.FetchJobsUseCase;
+import com.juanperuzzo.job_hunter.application.port.in.FetchLinkedInAsyncUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.FetchResult;
+import com.juanperuzzo.job_hunter.application.port.in.FetchRunStatusUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.FetchSourceJobsUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.GenerateEmailUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.GetEmailDraftUseCase;
@@ -20,6 +22,8 @@ import com.juanperuzzo.job_hunter.application.port.in.RecordExternalApplyUseCase
 import com.juanperuzzo.job_hunter.application.port.in.SendEmailUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.TailorResumeUseCase;
 import com.juanperuzzo.job_hunter.application.port.out.TokenProvider;
+import com.juanperuzzo.job_hunter.application.port.out.FetchRun;
+import com.juanperuzzo.job_hunter.application.port.out.KeywordRun;
 import com.juanperuzzo.job_hunter.domain.model.ApplicationLifecycle;
 import com.juanperuzzo.job_hunter.domain.model.CompanyTone;
 import com.juanperuzzo.job_hunter.domain.model.EmailDraft;
@@ -46,6 +50,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -80,6 +85,12 @@ class JobControllerTest {
 
     @MockitoBean
     private FetchSourceJobsUseCase fetchSourceJobsUseCase;
+
+    @MockitoBean
+    private FetchLinkedInAsyncUseCase fetchLinkedInAsyncUseCase;
+
+    @MockitoBean
+    private FetchRunStatusUseCase fetchRunStatusUseCase;
 
     @MockitoBean
     private AnalyzeJobUseCase analyzeJobUseCase;
@@ -372,31 +383,49 @@ class JobControllerTest {
     }
 
     @Test
-    @DisplayName("fetchLinkedInJobs should return 200 with FetchResult for the single source")
-    void fetchLinkedInJobs_whenValidRequest_shouldReturnSavedJobCount() throws Exception {
+    @DisplayName("fetchLinkedInJobs should return 202 with the started payload (async contract)")
+    void fetchLinkedInJobs_whenPost_shouldReturn202WithStarted() throws Exception {
         authenticateAs(1L);
 
-        var result = new FetchResult(
-                1, 1, 0,
-                List.of(new ProviderFetchStats("linkedin", 1, 1, 0, 0, 0, null)));
-        when(fetchSourceJobsUseCase.fetchAndSave(1L, "linkedin")).thenReturn(result);
+        var startedAt = Instant.parse("2026-11-12T03:00:00Z");
+        when(fetchLinkedInAsyncUseCase.start(1L))
+                .thenReturn(new FetchLinkedInAsyncUseCase.StartResult(
+                        FetchLinkedInAsyncUseCase.StartOutcome.STARTED, startedAt));
 
         mockMvc.perform(post("/api/jobs/fetch/linkedin"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.totalFetched").value(1))
-                .andExpect(jsonPath("$.totalSaved").value(1))
-                .andExpect(jsonPath("$.perProvider[0].source").value("linkedin"));
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.status").value("started"))
+                .andExpect(jsonPath("$.startedAt").exists());
 
-        verify(fetchSourceJobsUseCase).fetchAndSave(1L, "linkedin");
+        verify(fetchLinkedInAsyncUseCase).start(1L);
+        verifyNoInteractions(fetchSourceJobsUseCase);
     }
 
     @Test
-    @DisplayName("fetchLinkedInJobs should return 500 when service throws exception")
+    @DisplayName("fetchLinkedInJobs should return 409 when a run is already active")
+    void fetchLinkedInJobs_whenAlreadyRunning_shouldReturn409() throws Exception {
+        authenticateAs(1L);
+
+        var startedAt = Instant.parse("2026-11-12T02:55:00Z");
+        when(fetchLinkedInAsyncUseCase.start(1L))
+                .thenReturn(new FetchLinkedInAsyncUseCase.StartResult(
+                        FetchLinkedInAsyncUseCase.StartOutcome.ALREADY_RUNNING, startedAt));
+
+        mockMvc.perform(post("/api/jobs/fetch/linkedin"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.status").value("running"))
+                .andExpect(jsonPath("$.startedAt").exists());
+
+        verifyNoInteractions(fetchSourceJobsUseCase);
+    }
+
+    @Test
+    @DisplayName("fetchLinkedInJobs should return 500 when the async use case throws")
     void fetchLinkedInJobs_whenServiceFails_shouldReturnError() throws Exception {
         authenticateAs(1L);
 
         doThrow(new RuntimeException("LinkedIn service unavailable"))
-                .when(fetchSourceJobsUseCase).fetchAndSave(1L, "linkedin");
+                .when(fetchLinkedInAsyncUseCase).start(1L);
 
         mockMvc.perform(post("/api/jobs/fetch/linkedin"))
                 .andExpect(status().isInternalServerError())
@@ -404,7 +433,55 @@ class JobControllerTest {
                 .andExpect(jsonPath("$.error").value("Internal Server Error"))
                 .andExpect(jsonPath("$.message").value("An unexpected error occurred"));
 
-        verify(fetchSourceJobsUseCase).fetchAndSave(1L, "linkedin");
+        verifyNoInteractions(fetchSourceJobsUseCase);
+    }
+
+    @Test
+    @DisplayName("fetchLinkedInStatus should return the idle state before the first run")
+    void fetchLinkedInStatus_whenIdle_shouldReturnIdleState() throws Exception {
+        authenticateAs(1L);
+
+        when(fetchRunStatusUseCase.status()).thenReturn(FetchRun.idle());
+
+        mockMvc.perform(get("/api/jobs/fetch/linkedin/status"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.state").value("idle"))
+                .andExpect(jsonPath("$.keywords").isEmpty());
+    }
+
+    @Test
+    @DisplayName("fetchLinkedInStatus should report counts and per-keyword outcomes after a run")
+    void fetchLinkedInStatus_afterRun_shouldReportCountsAndKeywordRuns() throws Exception {
+        authenticateAs(1L);
+
+        var startedAt = Instant.parse("2026-11-12T03:00:00Z");
+        var finishedAt = Instant.parse("2026-11-12T03:04:00Z");
+        var result = new FetchResult(
+                3, 2, 1,
+                List.of(new ProviderFetchStats("linkedin", 3, 2, 1, 1, 0, null)));
+        var run = new FetchRun(FetchRun.State.COMPLETED, startedAt, finishedAt, result,
+                List.of(
+                        KeywordRun.ok("dev junior", 3, 8412),
+                        KeywordRun.timeout("programador junior", 90_000)),
+                null);
+        when(fetchRunStatusUseCase.status()).thenReturn(run);
+
+        mockMvc.perform(get("/api/jobs/fetch/linkedin/status"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.state").value("completed"))
+                .andExpect(jsonPath("$.startedAt").exists())
+                .andExpect(jsonPath("$.finishedAt").exists())
+                .andExpect(jsonPath("$.fetched").value(3))
+                .andExpect(jsonPath("$.saved").value(2))
+                .andExpect(jsonPath("$.withEmail").value(1))
+                .andExpect(jsonPath("$.detailFailed").value(1))
+                .andExpect(jsonPath("$.keywords.length()").value(2))
+                .andExpect(jsonPath("$.keywords[0].term").value("dev junior"))
+                .andExpect(jsonPath("$.keywords[0].status").value("ok"))
+                .andExpect(jsonPath("$.keywords[0].jobsFound").value(3))
+                .andExpect(jsonPath("$.keywords[0].durationMs").value(8412))
+                .andExpect(jsonPath("$.keywords[1].term").value("programador junior"))
+                .andExpect(jsonPath("$.keywords[1].status").value("timeout"));
     }
 
     @Test
