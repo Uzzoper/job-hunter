@@ -27,6 +27,11 @@ does not say so:
   small. Fix: `search-timeout-seconds` 90 → 180. Worst-case nightly run
   grows to ~4×150s + detail pacing ≈ 11min; accepted in #120 (the async
   source path has no total ceiling).
+- 2026-11-13 (first nightly run on the 180s budget): `completed` in
+  14min52s with **21 saved / 2 withEmail** — the volume channel is back.
+  But the in-run timings (143–180.4s) put the budget on a knife's edge:
+  two keywords finished within 3s of the cut and the broadest first
+  keyword timed out at 180.385s → budget raised to 240 (issue #123).
 
 ## Problem
 

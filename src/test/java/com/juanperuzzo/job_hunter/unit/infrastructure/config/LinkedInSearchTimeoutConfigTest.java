@@ -11,20 +11,22 @@ import java.util.regex.Pattern;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Guards the LinkedIn search-timeout invariant diagnosed in issue #120: the
- * live paginated search (exact backend query, single keyword) measured
- * <b>145.67s</b> with HTTP 200 and 120 jobs on 2026-11-12 — a 90s budget
- * starved every keyword into {@code timeout} and returned 0 jobs/night. The
- * configured {@code search-timeout-seconds} must always cover that measured
- * floor with margin; the value itself may grow (240, 300…), only the floor
- * is invariant. Plain JUnit on purpose: the invariant lives in
+ * Guards the LinkedIn search-timeout invariant diagnosed in issue #120 and
+ * refined by the first in-run measurement (#123): the live paginated search
+ * measured <b>145.67s</b> cold (exact backend query, single keyword,
+ * 2026-11-12) and <b>143–180.4s</b> back-to-back in the nightly run — two
+ * keywords finished within 3s of the 180s budget and the broadest first
+ * keyword timed out at 180.385s. The configured
+ * {@code search-timeout-seconds} must always cover that in-run floor with
+ * margin; the value itself may grow (240, 300…), only the floor is
+ * invariant. Plain JUnit on purpose: the invariant lives in
  * {@code application.yaml}, not in code (the record has no defaults).
  */
 @DisplayName("LinkedIn search timeout config should cover the measured search floor")
 class LinkedInSearchTimeoutConfigTest {
 
-    /** Measured live search time + margin (145.67s rounded up). */
-    private static final int MEASURED_FLOOR_SECONDS = 150;
+    /** In-run worst observed search (180.4s, issue #123) + margin. */
+    private static final int MEASURED_FLOOR_SECONDS = 200;
 
     private static final Pattern TIMEOUT_LINE =
             Pattern.compile("search-timeout-seconds:\\s*(\\d+)");
@@ -37,8 +39,8 @@ class LinkedInSearchTimeoutConfigTest {
 
         assertTrue(matcher.find(), "application.yaml must configure scraper.linkedin.search-timeout-seconds");
         int configuredSeconds = Integer.parseInt(matcher.group(1));
-        var message = ("search-timeout-seconds=%ds is below the measured live search floor (~145.67s, issue #120)"
-                + " — keywords would starve into timeout again").formatted(configuredSeconds);
+        var message = ("search-timeout-seconds=%ds is below the measured in-run search floor (~180.4s, issue #123)"
+                + " — the broadest keyword would starve into timeout again").formatted(configuredSeconds);
 
         assertTrue(configuredSeconds >= MEASURED_FLOOR_SECONDS, message);
     }
