@@ -129,7 +129,7 @@ scraper:
     time-range: "past_week"
     max-jobs: 60
     timeout-seconds: 30          # detail/enrichment read timeout (deliberate pacing, unchanged)
-    search-timeout-seconds: 90   # heavy paginated /api/jobs search read timeout (production fix — must be search-specific)
+    search-timeout-seconds: 180  # heavy paginated /api/jobs search read timeout — must cover the measured 145.67s live search (issue #120)
     detail-fetch-delay-millis: 500
     base-job-url: https://www.linkedin.com/jobs/view/
     # Enrichment pacing (issue #99): permit rate/burst for the dedicated "linkedin"
