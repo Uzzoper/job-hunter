@@ -110,7 +110,7 @@ scraper:
     time-range: "past_week"
     max-jobs: 60
     timeout-seconds: 30
-    search-timeout-seconds: 180
+    search-timeout-seconds: 240
     detail-fetch-delay-millis: 500
 ```
 
@@ -119,9 +119,14 @@ scraper:
 2026-11-12 the live search — single keyword, exact backend query — measured
 **145.67s** with HTTP 200 and 120 jobs, so the budget was raised 90 → 180
 (issue #120): config-only change, the search is bounded, the budget just
-had to fit it. The regression guard is
+had to fit it. The first nightly run on that budget (2026-11-13) showed
+in-run searches execute back-to-back at **143–180.4s** — two keywords
+finished within 3s of the cut and the broadest first keyword timed out at
+180.385s — so the budget was raised again to 240 (issue #123). The
+regression guard is
 `LinkedInSearchTimeoutConfigTest.searchTimeout_whenConfigured_shouldCoverMeasuredSearchTime`
-(asserts the configured value covers the measured floor with margin).
+(asserts the configured value covers the measured floor — 200s — with
+margin; the value itself may grow, only the floor is invariant).
 
 ### Local override (application-local.yaml)
 
