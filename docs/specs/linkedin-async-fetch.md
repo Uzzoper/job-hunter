@@ -16,8 +16,17 @@ does not say so:
   polled `GET /api/jobs` deltas and digested.
 - Meanwhile the caller pays the wall clock: hard `orTimeout` at 180s
   (`ProviderBasedScraperAdapter.LINKEDIN_PROVIDER_TIMEOUT`), per-keyword
-  searches capped at the 90s read budget, and on 2026-11-11 **3 of 4
-  keywords were skipped** (`Read timed out`) with no caller-visible trace.
+  searches capped at the (then-)90s read budget, and on 2026-11-11 **3 of
+  4 keywords were skipped** (`Read timed out`) with no caller-visible trace.
+- 2026-11-12 (first async production run, post-promote): contract verified
+  live (202 → 409 → poll `completed` in 6min01s) — but **all 4 keywords**
+  hit the 90s search budget → 0 jobs, every term caller-visible as
+  `timeout`. Direct microservice measurement with the exact backend query
+  (issue #120 diagnostic, read-only): the search returns **HTTP 200 with
+  120 jobs in 145.67s** — the search is bounded, the budget was simply too
+  small. Fix: `search-timeout-seconds` 90 → 180. Worst-case nightly run
+  grows to ~4×150s + detail pacing ≈ 11min; accepted in #120 (the async
+  source path has no total ceiling).
 
 ## Problem
 

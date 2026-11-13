@@ -110,8 +110,18 @@ scraper:
     time-range: "past_week"
     max-jobs: 60
     timeout-seconds: 30
+    search-timeout-seconds: 180
     detail-fetch-delay-millis: 500
 ```
+
+`timeout-seconds` (30s) covers detail/enrichment calls; the heavy paginated
+`/api/jobs` search gets its own larger read budget (split in ab4be70). On
+2026-11-12 the live search — single keyword, exact backend query — measured
+**145.67s** with HTTP 200 and 120 jobs, so the budget was raised 90 → 180
+(issue #120): config-only change, the search is bounded, the budget just
+had to fit it. The regression guard is
+`LinkedInSearchTimeoutConfigTest.searchTimeout_whenConfigured_shouldCoverMeasuredSearchTime`
+(asserts the configured value covers the measured floor with margin).
 
 ### Local override (application-local.yaml)
 
