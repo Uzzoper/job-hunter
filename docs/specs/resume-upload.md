@@ -160,7 +160,7 @@ ai:
 ## Out of scope
 
 - Multiple resumes per user (PDF is overwritten)
-- Resume download / retrieval endpoint
+- ~~Resume download / retrieval endpoint~~ — superseded by `bot-resume-retrieval.md` (issue #92 slice a)
 - Supporting `.docx`, `.txt`, or other formats
 - AI rewriting or reformatting the extracted text
 - Image-based PDFs (OCR — future enhancement)
