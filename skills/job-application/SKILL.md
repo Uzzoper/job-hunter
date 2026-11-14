@@ -1,3 +1,8 @@
+---
+name: job-application
+description: Apply to jobs via a structured, planner-driven workflow.
+---
+
 # Skill: Job Application (Gupy + InfoJobs, structured)
 
 > Hermes Agent skill for applying to job listings via a structured, planner-driven workflow.
@@ -145,7 +150,10 @@ New flags (all optional): `--job-id`, `--from-api`, `--api-base-url` (default
   exist in a real slug, and a hand-typed URL with one is rejected with
   `corrupt_gupy_slug` (exit 1), as are the record writers (contract problem
   `job_id.corrupt_gupy_slug`). Always source the URL from the API
-  (`--from-api` / `--job-id`), never by transcription.
+  (`--from-api` / `--job-id`), never by transcription. **Displayed tool output
+  elides long strings with a literal `...`**, so a valid base64 slug can *look*
+  truncated — confirm with `len(url)` / codepoints, or just navigate, before
+  concluding `corrupt_gupy_slug`.
 
 ---
 
@@ -160,6 +168,7 @@ New flags (all optional): `--job-id`, `--from-api`, `--api-base-url` (default
 
 - The application is sent **by email** — use the himalaya email tool / `company-scraper` skill instead.
 - The flow is unknown, multi-step/paginated, or needs login/session as the normal path (the loop assumes logged-in; a login page stops the loop with the hard `stop_on_auth_url` policy and hands off to the human — it does **not** silently retry). Use `job-portal-browser` for unknown/free navigation.
+- The posting is **closed** — the API/DB job list is a stale snapshot; a Gupy posting showing "Applications closed" / "No longer accepting applications" is dead even though the URL still resolves. Verify the posting is open (read the page) before planning a batch.
 - The portal is **not** Gupy or InfoJobs — `apply.py` errors cleanly (`unknown_portal`). **LinkedIn is explicitly OUT of scope for automation**: LinkedIn applications are done **manually** by the human only; the separate LinkedIn scraper microservice (Node.js) only *reads* listings and never submits applications. There is deliberately **no** `linkedin` portal in the allow-list — requesting `--portal linkedin` errors cleanly.
 - The paired draft is a `NO_APPLY` refusal — the bot must refuse to plan (guardrail #28).
 - The launch URL is not in hand (no sensible `--job-id` / `--from-api` source and the
@@ -203,6 +212,7 @@ Profile JSON:
 
 ## Steps
 
+0. **Refresh the resume — INTERIM, until slice c.** Any action that attaches the resume starts here: pull the canonical copy from `GET /api/profile/resume` and pass the sanity gate (200 / `application/pdf` / `%PDF-` / ~24.8 KB). Any failure aborts the action with the previous file kept. See *Interim: resume refresh before any attachment* below.
 1. **Plan** — the bot runs `apply.py` with the job URL (or API flags), profile, and portal:
    ```
    python3 skills/job-application/apply.py \
@@ -266,6 +276,14 @@ Config schema (`cdp_url` / `user_data_dir` optional — defaults apply;
 }
 ```
 
+- The config is a **setup artifact**, not a mid-run edit: create it from the
+  live CDP state before a real run — `GET <cdp_url>/json` gives the page
+  targets (`tabs`), and `active_page` is a `*.gupy.io` URL with
+  `authenticated: true` (the marker is observed by the browser tool, never
+  invented). **Regenerate it after any Chromium restart**: the tab ids in
+  `tabs` change on every launch and a stale id fails `browser_tool_attached`.
+  A missing default config fails CLOSED with `invalid_config`;
+  `--skip-preflight-check` is the documented opt-out.
 - The bot proceeds **only on a full pass**. A failing check stops the run and
   reports the check **verbatim** (fail-closed §3.4): no improvisation, no
   fallback browsers, no ad-hoc scripts, no config edits during the run.
@@ -277,6 +295,40 @@ Config schema (`cdp_url` / `user_data_dir` optional — defaults apply;
 - Exit codes propagate from `preflight.evaluate`: `1` = first failing check
   (verbatim payload), `2` = usage/config error. The standard `{error, detail,
   screenshot_path}` envelope is used only for apply.py's own gate failures.
+
+### Interim: resume refresh before any attachment (until slice c)
+
+> **INTERIM — delete this whole section when slice (c) ships.** Slice (c)
+> makes the apply flow consume the backend profile through the API, and the
+> local resume file ceases to exist. Until then this rule is ACTIVE.
+
+Every action that **attaches** the resume — a portal apply batch, an email send
+with the attachment — must START by refreshing the local copy from the
+backend. **The backend is the source of truth**
+(`uploads/resumes/2/resume.pdf`); the local file is only a working copy.
+
+```bash
+curl -sS -o ~/.hermes/profiles/jobhunter-bot/Juan-Peruzzo.pdf \
+  -H "X-Bot-Token: $BOT_SERVICE_API_KEY" \
+  "http://127.0.0.1:8080/api/profile/resume"
+```
+
+**Sanity gate BEFORE proceeding** — if ANY check fails: **ABORT** the action,
+keep the previous file, and report which check failed.
+
+| check | expected |
+|---|---|
+| `http=` | `200` |
+| `content_type` | `application/pdf` |
+| magic bytes | `%PDF-` |
+| size | ~24.8 KB (md5 `97e25856…` — current canonical build) |
+
+- **Never upload or hand-edit the local file** — refresh-only. The endpoint is
+  the read side of the source of truth.
+- The stale-file trap is real: on 14/11 the local copy was a Sep-16 build
+  (5.7 KB) while the backend served the Oct-3 canonical one (24.8 KB) — both
+  2-page PDFs, different text. Refresh first so applies/email carry the
+  current resume.
 
 ### Optional pre-batch consistency audit (issue #81)
 
@@ -380,6 +432,10 @@ The executor runs **observe → classify → act → verify** against each **liv
   Reporting a fill without re-snapshot evidence is a defect, not progress.
 - React-controlled inputs ignore direct `.value` assignment: dispatch native
   `input`/`change` events (bubbles) and always re-read field values afterwards.
+  Even then the form's submit button can stay **disabled** (React never registered
+  the value) — check the button's `disabled` flag after filling and, if it is
+  still disabled, re-fill with real keystroke typing (`fill_input`) until it
+  enables.
 
 ### Answer policy (issue #73 — the per-question gate, spec `answer-policy.md`)
 
@@ -501,8 +557,16 @@ with exit code 0 for `ready`/`needs_login` and 1 for `browser_unavailable`.
 | Remote debugging port | `9222` | passed through to `start_chromium` |
 
 > The persistent `user-data-dir` is what preserves the login session across
-> restarts: after the first `needs_login` round-trip, the same profile is reused,
-> so subsequent runs should skip the manual login step.
+restarts: after the first `needs_login` round-trip, the same profile is reused,
+so subsequent runs should skip the manual login step.
+
+> **Snap-wrapped Chromium cannot open CDP.** On hosts where `chromium` is a snap
+> wrapper, the plain launch dies with `No usable sandbox!` and the process exits —
+> CDP never opens and `--check-browser` reports `browser_unavailable`. Launch the
+> Playwright-bundled Chromium with `--no-sandbox` instead:
+> `~/.cache/ms-playwright/chromium-<ver>/chrome-linux64/chrome --no-sandbox
+> --remote-debugging-port=9222 --user-data-dir=<profile> --no-first-run`, then
+> re-run `--check-browser`.
 
 ---
 
@@ -554,6 +618,12 @@ detector. `--skip-session-check` / `--dry-run` skip the planner-side check only.
   explicit pre-authorization (policy flips to `false`) but never the safety gates.
 
 ---
+
+## Gupy form interaction pitfalls
+
+- **Locked company questions** (`input[disabled]`): when the company-questions step re-opens with the radios disabled, the answers were already saved. Forcing a different radio via JS does NOT persist — React reverts on save. Accept the locked answer, submit, and report the discrepancy (e.g. a salary band that differs from the user's stated pretensão).
+- **Step-advance clicks**: a JS `.click()` on "Salvar e continuar" can leave the step unchanged even with every field valid. Retry with a real coordinate click (`getBoundingClientRect` + `click_at_xy`) — see `references/cdp-react-button-fallback.md`.
+- **Resume dialog**: re-opening an in-progress application shows "Olá <name>, vamos continuar sua candidatura?" with a "Continuar" button, and often a profile-update dialog carrying the account's saved email/phone. Dismiss it ("Me lembrar depois") or click "Continuar" — never edit the pre-filled contact data.
 
 ## Recording & idempotency (#27)
 
@@ -633,6 +703,7 @@ Errors are always JSON: `{"error": <code>, "detail": <message>, "screenshot_path
 ## Guardrails (from related issues — MUST be honored)
 
 - **#27 idempotency** — never apply twice to the same job; memory record at `<memory-dir>/applications/<job_id>.json` gates re-applies.
+- **Applied-state completeness** — the DB draft count is not the full applied-state; Gupy applications made outside the bot (by the user, or an earlier session) never appear in `email_drafts`. Before deduping a batch, load `https://portal.gupy.io/my/applications` (both the "Em andamento" and "Finalizadas" tabs — the latter holds submissions the company already closed) and add every company + application id to the applied-state.
 - **#28 refusal** — never plan/send an application from a `NO_APPLY` draft; profile flag or `NO_APPLY` marker in cover text blocks planning.
 - **#31 memory consultation** — records live under the bot memory convention so preferences/history are honoured before applying.
 - **#38 auth/loop guard (retired for the apply loop)** — the deterministic planner guard was removed in cutover pkg 3; the executor loop re-checks the live page every step (`classify.py`): an auth page is a hard policy stop (`stop_on_auth_url`) and stalls burn the `max_steps` budget. `--visited-urls` / `--current-url` remain accepted flags.
