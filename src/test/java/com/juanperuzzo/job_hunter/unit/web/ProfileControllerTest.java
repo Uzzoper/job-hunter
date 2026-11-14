@@ -68,6 +68,9 @@ class ProfileControllerTest {
     @MockitoBean
     private ResumeUploadService resumeUploadService;
 
+    @MockitoBean
+    private com.juanperuzzo.job_hunter.application.port.in.ResumeRetrievalUseCase resumeRetrievalUseCase;
+
     @AfterEach
     void tearDown() {
         SecurityContextHolder.clearContext();
@@ -649,5 +652,37 @@ class ProfileControllerTest {
                 .andExpect(jsonPath("$.email").value("account@test.com"))
                 // contactEmail stays the resume-extracted value — identity is separate
                 .andExpect(jsonPath("$.contactEmail").value("stored@example.com"));
+    }
+
+    @Test
+    @DisplayName("getResume should return the stored PDF bytes as an attachment")
+    void getResume_whenPdfStored_shouldReturn200WithPdf() throws Exception {
+        var authentication = new UsernamePasswordAuthenticationToken(
+                new User(1L, "test@test.com", "Test", "hash"), null, List.of());
+        SecurityContextHolder.getContext().setAuthentication(authentication);
+
+        var pdfBytes = "%PDF-1.4 fake".getBytes();
+        when(resumeRetrievalUseCase.downloadResume(1L)).thenReturn(pdfBytes);
+
+        mockMvc.perform(get("/api/profile/resume"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentType(MediaType.APPLICATION_PDF))
+                .andExpect(content().bytes(pdfBytes))
+                .andExpect(header().string("Content-Disposition", "attachment; filename=\"resume-1.pdf\""));
+    }
+
+    @Test
+    @DisplayName("getResume should return 404 when no PDF is stored")
+    void getResume_whenNoPdf_shouldReturn404() throws Exception {
+        var authentication = new UsernamePasswordAuthenticationToken(
+                new User(1L, "test@test.com", "Test", "hash"), null, List.of());
+        SecurityContextHolder.getContext().setAuthentication(authentication);
+
+        when(resumeRetrievalUseCase.downloadResume(1L))
+                .thenThrow(new com.juanperuzzo.job_hunter.domain.exception.ResumeNotFoundException(
+                        "No resume stored for user: 1"));
+
+        mockMvc.perform(get("/api/profile/resume"))
+                .andExpect(status().isNotFound());
     }
 }

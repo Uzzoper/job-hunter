@@ -2,6 +2,7 @@ package com.juanperuzzo.job_hunter.application.service;
 
 import com.juanperuzzo.job_hunter.application.dto.ResumeExtractionResponse;
 import com.juanperuzzo.job_hunter.application.port.out.AiPort;
+import com.juanperuzzo.job_hunter.application.port.out.ResumeStorage;
 import com.juanperuzzo.job_hunter.application.port.out.UserProfileRepository;
 import com.juanperuzzo.job_hunter.domain.exception.AiException;
 import com.juanperuzzo.job_hunter.domain.model.CompanyTone;
@@ -17,8 +18,6 @@ import org.slf4j.LoggerFactory;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Pattern;
@@ -53,25 +52,26 @@ public class ResumeUploadService {
     private final UserProfileService userProfileService;
     private final UserProfileRepository userProfileRepository;
     private final ObjectMapper objectMapper;
-    private final Path uploadDir;
+    private final ResumeStorage resumeStorage;
     private final int maxAiChars;
 
     /**
      * @param aiPort               port for AI completions
      * @param userProfileService   service for profile persistence (includes validation)
      * @param userProfileRepository repository for reading existing profile tone
-     * @param uploadDir            filesystem path for uploaded PDF storage
+     * @param resumeStorage        storage port owning the `{uploadDir}/{userId}/resume.pdf`
+     *                             path convention (issue #92 slice a)
      * @param maxAiChars           maximum character count of resume text sent to the AI prompt
      */
     public ResumeUploadService(AiPort aiPort, UserProfileService userProfileService,
                                UserProfileRepository userProfileRepository,
-                               String uploadDir,
+                               ResumeStorage resumeStorage,
                                int maxAiChars) {
         this.aiPort = aiPort;
         this.userProfileService = userProfileService;
         this.userProfileRepository = userProfileRepository;
         this.objectMapper = new ObjectMapper();
-        this.uploadDir = Path.of(uploadDir);
+        this.resumeStorage = resumeStorage;
         this.maxAiChars = maxAiChars;
     }
 
@@ -410,11 +410,7 @@ Resume text:
 
     private void savePdfToDisk(Long userId, MultipartFile file) {
         try {
-            Path userDir = uploadDir.resolve(String.valueOf(userId));
-            Files.createDirectories(userDir);
-            Path target = userDir.resolve("resume.pdf");
-            file.transferTo(target);
-            log.info("Saved uploaded resume to {}", target);
+            resumeStorage.write(userId, file.getBytes());
         } catch (IOException e) {
             throw new RuntimeException("Failed to save uploaded file", e);
         }

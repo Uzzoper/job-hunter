@@ -1,9 +1,12 @@
 package com.juanperuzzo.job_hunter.web.controller;
 
 import com.juanperuzzo.job_hunter.application.port.in.CurrentUserProvider;
+import com.juanperuzzo.job_hunter.application.port.in.ResumeRetrievalUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.UserProfileUseCase;
 import com.juanperuzzo.job_hunter.application.service.ResumeUploadService;
 import com.juanperuzzo.job_hunter.domain.model.Project;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import com.juanperuzzo.job_hunter.domain.model.UserPreferences;
 import com.juanperuzzo.job_hunter.domain.model.UserProfile;
 import com.juanperuzzo.job_hunter.domain.model.WorkPreference;
@@ -27,12 +30,15 @@ public class ProfileController {
     private final UserProfileUseCase userProfileService;
     private final CurrentUserProvider currentUserService;
     private final ResumeUploadService resumeUploadService;
+    private final ResumeRetrievalUseCase resumeRetrievalUseCase;
 
     public ProfileController(UserProfileUseCase userProfileService, CurrentUserProvider currentUserService,
-                             ResumeUploadService resumeUploadService) {
+                             ResumeUploadService resumeUploadService,
+                             ResumeRetrievalUseCase resumeRetrievalUseCase) {
         this.userProfileService = userProfileService;
         this.currentUserService = currentUserService;
         this.resumeUploadService = resumeUploadService;
+        this.resumeRetrievalUseCase = resumeRetrievalUseCase;
     }
 
     @GetMapping
@@ -66,6 +72,23 @@ public class ProfileController {
         var profile = resumeUploadService.uploadResume(userId, file);
         var response = toResponse(profile);
         return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Serves the stored original resume PDF (issue #92 slice a). Works for
+     * every authenticated principal (bot via X-Bot-Token or user via JWT),
+     * always scoped to the principal's own file. {@code 404} when nothing is
+     * stored yet.
+     */
+    @GetMapping("/resume")
+    public ResponseEntity<byte[]> getResume() {
+        Long userId = currentUserService.getCurrentUserId();
+        var pdf = resumeRetrievalUseCase.downloadResume(userId);
+        return ResponseEntity.ok()
+                .contentType(MediaType.APPLICATION_PDF)
+                .header(HttpHeaders.CONTENT_DISPOSITION,
+                        "attachment; filename=\"resume-" + userId + ".pdf\"")
+                .body(pdf);
     }
 
     private ProfileResponse toResponse(com.juanperuzzo.job_hunter.domain.model.UserProfile profile) {

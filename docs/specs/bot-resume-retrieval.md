@@ -48,11 +48,12 @@ slice (c) (apply skill consumes the backend profile).
 ## Design
 
 - New out-port `ResumeStorage` (infrastructure-owned path convention):
-  `byte[] read(Long userId)` and `void write(Long userId, byte[] pdf)`.
-  The adapter resolves `{upload-dir}/{userId}/resume.pdf` — the single
-  owner of that convention. `ResumeUploadService` switches its direct
-  `Files`/`transferTo` write (its lines 411-421) to the port, so file
-  access stops living in the application layer.
+  `Optional<byte[]> read(Long userId)` and `void write(Long userId, byte[]
+  pdf)`. The adapter resolves `{upload-dir}/{userId}/resume.pdf` — the
+  single owner of that convention. `ResumeUploadService` switched its
+  direct `Files`/`transferTo` write to the port, so file access stops
+  living in the application layer (absence is `Optional.empty()`, an
+  expected state — not an error).
 - New port-in `ResumeRetrievalUseCase` with
   `byte[] downloadResume(Long userId)` throwing `ResumeNotFoundException`
   when absent — fine-grained interface, house style.

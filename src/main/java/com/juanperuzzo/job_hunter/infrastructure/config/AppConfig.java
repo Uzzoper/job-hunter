@@ -45,10 +45,13 @@ import com.juanperuzzo.job_hunter.application.service.AutoSendEligibilityService
 import com.juanperuzzo.job_hunter.application.service.BackfillContactEmailsService;
 import com.juanperuzzo.job_hunter.application.service.IngestLinkedInPostService;
 import com.juanperuzzo.job_hunter.application.service.BackfillCompanyWebsitesService;
+import com.juanperuzzo.job_hunter.application.port.out.ResumeStorage;
+import com.juanperuzzo.job_hunter.application.service.ResumeRetrievalService;
 import com.juanperuzzo.job_hunter.application.service.ResumeUploadService;
 import com.juanperuzzo.job_hunter.application.service.TemplateEmailService;
 import com.juanperuzzo.job_hunter.application.service.UserProfileService;
 import com.juanperuzzo.job_hunter.infrastructure.security.JwtTokenService;
+import com.juanperuzzo.job_hunter.infrastructure.storage.ResumeStorageAdapter;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.retry.ExponentialBackoffRetry;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.ratelimit.RateLimiter;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.ratelimit.TokenBucketRateLimiter;
@@ -667,12 +670,27 @@ public class AppConfig {
         return new UserProfileService(userRepository, userProfileRepository);
     }
 
+    /**
+     * Single owner of the `{uploadDir}/{userId}/resume.pdf` path convention —
+     * both the upload write and the retrieval read resolve through it
+     * (issue #92 slice a).
+     */
+    @Bean
+    public ResumeStorage resumeStorage(@Value("${app.upload-dir}") String uploadDir) {
+        return new ResumeStorageAdapter(uploadDir);
+    }
+
+    @Bean
+    public ResumeRetrievalService resumeRetrievalService(ResumeStorage resumeStorage) {
+        return new ResumeRetrievalService(resumeStorage);
+    }
+
     @Bean
     public ResumeUploadService resumeUploadService(AiPort aiPort, UserProfileService userProfileService,
                                                    UserProfileRepository userProfileRepository,
-                                                   @Value("${app.upload-dir}") String uploadDir,
+                                                   ResumeStorage resumeStorage,
                                                    @Value("${ai.resume-extraction.max-chars:8000}") int maxAiChars) {
-        return new ResumeUploadService(aiPort, userProfileService, userProfileRepository, uploadDir, maxAiChars);
+        return new ResumeUploadService(aiPort, userProfileService, userProfileRepository, resumeStorage, maxAiChars);
     }
 
     @Bean

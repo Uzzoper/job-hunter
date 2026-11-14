@@ -3,6 +3,7 @@ package com.juanperuzzo.job_hunter.unit.application;
 import com.juanperuzzo.job_hunter.application.port.out.AiPort;
 import com.juanperuzzo.job_hunter.application.port.out.UserProfileRepository;
 import com.juanperuzzo.job_hunter.application.service.ResumeUploadService;
+import com.juanperuzzo.job_hunter.infrastructure.storage.ResumeStorageAdapter;
 import com.juanperuzzo.job_hunter.application.service.UserProfileService;
 import com.juanperuzzo.job_hunter.domain.exception.AiException;
 import com.juanperuzzo.job_hunter.domain.exception.InvalidResumeTextException;
@@ -69,7 +70,8 @@ class ResumeUploadServiceTest {
     @BeforeEach
     void setUp() throws Exception {
         tempDir = Files.createTempDirectory("resume-upload-test-");
-        service = new ResumeUploadService(aiPort, userProfileService, userProfileRepository, tempDir.toString(), 8000);
+        service = new ResumeUploadService(aiPort, userProfileService, userProfileRepository,
+                new ResumeStorageAdapter(tempDir.toString()), 8000);
     }
 
     @AfterEach
@@ -692,6 +694,9 @@ class ResumeUploadServiceTest {
         when(file.getContentType()).thenReturn("application/pdf");
         when(file.getOriginalFilename()).thenReturn("resume.pdf");
         when(file.getInputStream()).thenReturn(new ByteArrayInputStream(pdfBytes));
+        // Lenient: not every upload path reaches savePdfToDisk (invalid files
+        // fail earlier), so a strict stub would raise UnnecessaryStubbing.
+        lenient().when(file.getBytes()).thenReturn(pdfBytes);
         return file;
     }
 
