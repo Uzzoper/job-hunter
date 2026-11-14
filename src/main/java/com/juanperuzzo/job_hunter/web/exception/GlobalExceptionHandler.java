@@ -5,6 +5,7 @@ import com.juanperuzzo.job_hunter.domain.exception.JobNotFoundException;
 import com.juanperuzzo.job_hunter.domain.exception.ScraperException;
 import com.juanperuzzo.job_hunter.domain.exception.InvalidCredentialsException;
 import com.juanperuzzo.job_hunter.domain.exception.EmailAlreadyExistsException;
+import com.juanperuzzo.job_hunter.domain.exception.ResumeNotFoundException;
 import com.juanperuzzo.job_hunter.domain.exception.UserNotFoundException;
 import com.juanperuzzo.job_hunter.domain.exception.ProfileNotConfiguredException;
 import com.juanperuzzo.job_hunter.domain.exception.ProfileNotFoundException;
@@ -92,6 +93,11 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(ProfileNotFoundException.class)
     public ResponseEntity<Map<String, Object>> handleProfileNotFound(ProfileNotFoundException ex) {
         return buildResponse(HttpStatus.BAD_REQUEST, ex.getMessage());
+    }
+
+    @ExceptionHandler(ResumeNotFoundException.class)
+    public ResponseEntity<Map<String, Object>> handleResumeNotFound(ResumeNotFoundException ex) {
+        return buildResponse(HttpStatus.NOT_FOUND, ex.getMessage());
     }
 
     @ExceptionHandler(AnalysisNotFoundException.class)

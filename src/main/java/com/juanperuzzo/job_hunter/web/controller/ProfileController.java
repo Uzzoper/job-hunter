@@ -1,6 +1,8 @@
 package com.juanperuzzo.job_hunter.web.controller;
 
+import com.juanperuzzo.job_hunter.application.port.in.AccountIdentity;
 import com.juanperuzzo.job_hunter.application.port.in.CurrentUserProvider;
+import com.juanperuzzo.job_hunter.application.port.in.ResumeRetrievalUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.UserProfileUseCase;
 import com.juanperuzzo.job_hunter.application.service.ResumeUploadService;
 import com.juanperuzzo.job_hunter.domain.model.Project;
@@ -13,6 +15,8 @@ import com.juanperuzzo.job_hunter.web.dto.PreferencesResponse;
 import com.juanperuzzo.job_hunter.web.dto.ProjectResponse;
 import com.juanperuzzo.job_hunter.web.dto.WorkPreferenceDto;
 import jakarta.validation.Valid;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
@@ -27,19 +31,23 @@ public class ProfileController {
     private final UserProfileUseCase userProfileService;
     private final CurrentUserProvider currentUserService;
     private final ResumeUploadService resumeUploadService;
+    private final ResumeRetrievalUseCase resumeRetrievalUseCase;
 
     public ProfileController(UserProfileUseCase userProfileService, CurrentUserProvider currentUserService,
-                             ResumeUploadService resumeUploadService) {
+                             ResumeUploadService resumeUploadService,
+                             ResumeRetrievalUseCase resumeRetrievalUseCase) {
         this.userProfileService = userProfileService;
         this.currentUserService = currentUserService;
         this.resumeUploadService = resumeUploadService;
+        this.resumeRetrievalUseCase = resumeRetrievalUseCase;
     }
 
     @GetMapping
     public ResponseEntity<ProfileResponse> getProfile() {
         Long userId = currentUserService.getCurrentUserId();
         var profile = userProfileService.getProfile(userId);
-        var response = toResponse(profile);
+        var identity = userProfileService.getAccountIdentity(userId);
+        var response = toResponse(profile, identity);
         return ResponseEntity.ok(response);
     }
 
@@ -67,7 +75,35 @@ public class ProfileController {
         return ResponseEntity.ok(response);
     }
 
-    private ProfileResponse toResponse(com.juanperuzzo.job_hunter.domain.model.UserProfile profile) {
+    /**
+     * Serves the stored original resume PDF (issue #92 slice a). Works for
+     * every authenticated principal (bot via X-Bot-Token or user via JWT),
+     * always scoped to the principal's own file. {@code 404} when nothing is
+     * stored yet.
+     */
+    @GetMapping("/resume")
+    public ResponseEntity<byte[]> getResume() {
+        Long userId = currentUserService.getCurrentUserId();
+        var pdf = resumeRetrievalUseCase.downloadResume(userId);
+        return ResponseEntity.ok()
+                .contentType(MediaType.APPLICATION_PDF)
+                .header(HttpHeaders.CONTENT_DISPOSITION,
+                        "attachment; filename=\"resume-" + userId + ".pdf\"")
+                .body(pdf);
+    }
+
+    private ProfileResponse toResponse(UserProfile profile) {
+        return toResponse(profile, null);
+    }
+
+    /**
+     * Account identity ({@code name}/{@code email}, issue #92 slice a) is
+     * filled only by the GET route; write routes map through the no-identity
+     * overload above until the slice-(b) preview/commit flow owns them.
+     */
+    private ProfileResponse toResponse(UserProfile profile, AccountIdentity identity) {
+        var accountName = identity == null ? null : identity.name();
+        var accountEmail = identity == null ? null : identity.email();
         var projectResponses = profile.projects().stream()
                 .map(p -> {
                     var techStack = p.techStack().isBlank()
@@ -78,8 +114,8 @@ public class ProfileController {
                 .toList();
         var prefsResponse = toPreferencesResponse(profile.preferences());
         return new ProfileResponse(
-                profile.id(), profile.userId(), profile.resumeText(),
-                profile.skills(), profile.tone(), projectResponses,
+                profile.id(), profile.userId(), accountName, accountEmail,
+                profile.resumeText(), profile.skills(), profile.tone(), projectResponses,
                 profile.phone(), profile.contactEmail(), profile.portfolioUrl(),
                 profile.githubUrl(), profile.linkedinUrl(), prefsResponse);
     }
