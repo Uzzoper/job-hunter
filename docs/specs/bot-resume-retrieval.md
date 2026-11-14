@@ -56,9 +56,16 @@ slice (c) (apply skill consumes the backend profile).
 - New port-in `ResumeRetrievalUseCase` with
   `byte[] downloadResume(Long userId)` throwing `ResumeNotFoundException`
   when absent — fine-grained interface, house style.
-- `UserProfileService.getProfile` gains `UserRepository` (the same port
-  `ResumeTailoringService` already uses) and maps `name`/`email` into
-  `ProfileResponse`.
+- Account identity is resolved by a **separate read method** —
+  `UserProfileUseCase.getAccountIdentity(userId)` returning the
+  `AccountIdentity(name, email)` record (the service already holds
+  `UserRepository`, the same port `ResumeTailoringService` uses). The
+  separate method mirrors the issue requirement that identity is resolved
+  apart from resume contact data, and leaves every existing `getProfile`
+  contract and test untouched. `ProfileResponse` gains the two fields;
+  `GET /api/profile` fills them, while `PUT`/`upload-resume` responses
+  keep the same JSON shape with `null` identity — the preview/commit flow
+  of slice (b) owns write-route identity.
 - No new configuration: reuses `app.upload-dir`
   (`application.yaml:255`, `./uploads/resumes`).
 
@@ -89,14 +96,14 @@ slice (c) (apply skill consumes the backend profile).
 
 ## Testing plan (RED before GREEN)
 
+- `application` (Mockito, new `UserProfileServiceTest`):
+  `getAccountIdentity_whenUserExists_shouldReturnNameAndEmail`,
+  `getAccountIdentity_whenUserMissing_shouldThrowUserNotFound`.
 - `web` (`@WebMvcTest`, allowed by the house test table):
   `getResume_whenPdfStored_shouldReturn200WithPdf`,
   `getResume_whenNoPdf_shouldReturn404`,
-  `getProfile_whenQueried_shouldCarryAccountIdentity`.
-- `application` (Mockito):
-  `getProfile_whenNoProfileRow_shouldStillCarryAccountIdentity`,
-  `downloadResume_whenStored_shouldReturnBytes`,
-  `downloadResume_whenMissing_shouldThrowResumeNotFound`.
+  `getProfile_whenQueried_shouldCarryAccountIdentity` (blank profile row
+  still returns 200; account identity distinct from `contactEmail`).
 - `infrastructure` (plain JUnit, temp dir):
   `ResumeStorageAdapter` read/write round-trip.
 - Existing upload tests must stay green (the write path moves behind the
