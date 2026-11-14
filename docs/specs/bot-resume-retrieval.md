@@ -96,7 +96,8 @@ slice (c) (apply skill consumes the backend profile).
 
 ## Testing plan (RED before GREEN)
 
-- `application` (Mockito, new `UserProfileServiceTest`):
+- `application` (Mockito — identity tests live in the existing
+  `unit/application/UserProfileServiceTest`):
   `getAccountIdentity_whenUserExists_shouldReturnNameAndEmail`,
   `getAccountIdentity_whenUserMissing_shouldThrowUserNotFound`.
 - `web` (`@WebMvcTest`, allowed by the house test table):

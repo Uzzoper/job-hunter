@@ -39,7 +39,8 @@ public class ProfileController {
     public ResponseEntity<ProfileResponse> getProfile() {
         Long userId = currentUserService.getCurrentUserId();
         var profile = userProfileService.getProfile(userId);
-        var response = toResponse(profile);
+        var identity = userProfileService.getAccountIdentity(userId);
+        var response = toResponse(profile, identity.name(), identity.email());
         return ResponseEntity.ok(response);
     }
 
@@ -68,6 +69,16 @@ public class ProfileController {
     }
 
     private ProfileResponse toResponse(com.juanperuzzo.job_hunter.domain.model.UserProfile profile) {
+        return toResponse(profile, null, null);
+    }
+
+    /**
+     * Account identity ({@code name}/{@code email}, issue #92 slice a) is
+     * filled only by the GET route; write routes map through the no-identity
+     * overload above until the slice-(b) preview/commit flow owns them.
+     */
+    private ProfileResponse toResponse(com.juanperuzzo.job_hunter.domain.model.UserProfile profile,
+            String accountName, String accountEmail) {
         var projectResponses = profile.projects().stream()
                 .map(p -> {
                     var techStack = p.techStack().isBlank()
@@ -78,8 +89,8 @@ public class ProfileController {
                 .toList();
         var prefsResponse = toPreferencesResponse(profile.preferences());
         return new ProfileResponse(
-                profile.id(), profile.userId(), profile.resumeText(),
-                profile.skills(), profile.tone(), projectResponses,
+                profile.id(), profile.userId(), accountName, accountEmail,
+                profile.resumeText(), profile.skills(), profile.tone(), projectResponses,
                 profile.phone(), profile.contactEmail(), profile.portfolioUrl(),
                 profile.githubUrl(), profile.linkedinUrl(), prefsResponse);
     }

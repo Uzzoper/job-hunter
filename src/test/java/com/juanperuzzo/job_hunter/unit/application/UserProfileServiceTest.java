@@ -1,5 +1,6 @@
 package com.juanperuzzo.job_hunter.unit.application;
 
+import com.juanperuzzo.job_hunter.application.port.in.AccountIdentity;
 import com.juanperuzzo.job_hunter.application.port.out.UserProfileRepository;
 import com.juanperuzzo.job_hunter.application.port.out.UserRepository;
 import com.juanperuzzo.job_hunter.application.service.UserProfileService;
@@ -115,6 +116,26 @@ class UserProfileServiceTest {
         when(userRepository.findById(99L)).thenReturn(Optional.empty());
 
         assertThrows(UserNotFoundException.class, () -> userProfileService.getProfile(99L));
+    }
+
+    @Test
+    @DisplayName("getAccountIdentity should resolve name and email from the account user row")
+    void getAccountIdentity_whenUserExists_shouldReturnNameAndEmail() {
+        when(userRepository.findById(71L))
+                .thenReturn(Optional.of(new User(71L, "juan@test.com", "Juan Antonio", "hash")));
+
+        var identity = userProfileService.getAccountIdentity(71L);
+
+        assertEquals("Juan Antonio", identity.name());
+        assertEquals("juan@test.com", identity.email());
+    }
+
+    @Test
+    @DisplayName("getAccountIdentity when the user row is missing should throw UserNotFoundException")
+    void getAccountIdentity_whenUserMissing_shouldThrowUserNotFound() {
+        when(userRepository.findById(71L)).thenReturn(Optional.empty());
+
+        assertThrows(UserNotFoundException.class, () -> userProfileService.getAccountIdentity(71L));
     }
 
     @Test

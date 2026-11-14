@@ -1,5 +1,6 @@
 package com.juanperuzzo.job_hunter.unit.web;
 
+import com.juanperuzzo.job_hunter.application.port.in.AccountIdentity;
 import com.juanperuzzo.job_hunter.application.port.in.UserProfileUseCase;
 import com.juanperuzzo.job_hunter.application.service.ResumeUploadService;
 import com.juanperuzzo.job_hunter.application.port.out.TokenProvider;
@@ -81,6 +82,7 @@ class ProfileControllerTest {
         var profile = new UserProfile(1L, 1L, "Experienced dev...", List.of("Java", "Spring Boot"), CompanyTone.FORMAL, List.of(),
                 null, null, null, null, null, null);
         when(userProfileService.getProfile(1L)).thenReturn(profile);
+        when(userProfileService.getAccountIdentity(1L)).thenReturn(new AccountIdentity("Test User", "test@test.com"));
 
         mockMvc.perform(get("/api/profile"))
                 .andExpect(status().isOk())
@@ -214,6 +216,7 @@ class ProfileControllerTest {
         var profile = new UserProfile(2L, 42L, "Dev resume", List.of("Go"), CompanyTone.CASUAL, List.of(),
                 null, null, null, null, null, null);
         when(userProfileService.getProfile(42L)).thenReturn(profile);
+        when(userProfileService.getAccountIdentity(42L)).thenReturn(new AccountIdentity("Test User", "test@test.com"));
 
         mockMvc.perform(get("/api/profile"))
                 .andExpect(status().isOk())
@@ -259,6 +262,7 @@ class ProfileControllerTest {
         var profile = new UserProfile(1L, 1L, "Experienced dev...", List.of("Java"), CompanyTone.FORMAL, List.of(),
                 null, "stored@example.com", "https://stored.dev", null, null, null);
         when(userProfileService.getProfile(1L)).thenReturn(profile);
+        when(userProfileService.getAccountIdentity(1L)).thenReturn(new AccountIdentity("Test User", "test@test.com"));
 
         mockMvc.perform(get("/api/profile"))
                 .andExpect(status().isOk())
@@ -352,6 +356,7 @@ class ProfileControllerTest {
         var profile = new UserProfile(1L, 1L, "Experienced dev...", List.of("Java"), CompanyTone.FORMAL, List.of(),
                 null, null, null, null, null, prefs);
         when(userProfileService.getProfile(1L)).thenReturn(profile);
+        when(userProfileService.getAccountIdentity(1L)).thenReturn(new AccountIdentity("Test User", "test@test.com"));
 
         mockMvc.perform(get("/api/profile"))
                 .andExpect(status().isOk())
@@ -369,6 +374,7 @@ class ProfileControllerTest {
         var profile = new UserProfile(1L, 1L, "Experienced dev...", List.of("Java"), CompanyTone.FORMAL, List.of(),
                 null, null, null, null, null, null);
         when(userProfileService.getProfile(1L)).thenReturn(profile);
+        when(userProfileService.getAccountIdentity(1L)).thenReturn(new AccountIdentity("Test User", "test@test.com"));
 
         mockMvc.perform(get("/api/profile"))
                 .andExpect(status().isOk())
@@ -566,14 +572,14 @@ class ProfileControllerTest {
 
     @Test
     @DisplayName("getProfile should expose keywords when set on preferences")
-    void getProfile_withKeywords_shouldExposeThem() throws Exception {
-        var authentication = new UsernamePasswordAuthenticationToken(new User(1L, "test@test.com", "Test", "hash"), null, List.of());
+    void getProfile_withKeywords_shouldExposeThem() throws Exception {        var authentication = new UsernamePasswordAuthenticationToken(new User(1L, "test@test.com", "Test", "hash"), null, List.of());
         SecurityContextHolder.getContext().setAuthentication(authentication);
 
         var prefs = new UserPreferences(new WorkPreference.Remote(), null, List.of(), List.of("java", "backend"));
         var profile = new UserProfile(1L, 1L, "Experienced dev...", List.of("Java"), CompanyTone.FORMAL, List.of(),
                 null, null, null, null, null, prefs);
         when(userProfileService.getProfile(1L)).thenReturn(profile);
+        when(userProfileService.getAccountIdentity(1L)).thenReturn(new AccountIdentity("Test User", "test@test.com"));
 
         mockMvc.perform(get("/api/profile"))
                 .andExpect(status().isOk())
@@ -621,5 +627,27 @@ class ProfileControllerTest {
                 .andExpect(status().isBadRequest());
 
         verify(userProfileService, never()).saveProfile(any(), any());
+    }
+
+    @Test
+    @DisplayName("getProfile should carry account identity distinct from resume contact email")
+    void getProfile_whenQueried_shouldCarryAccountIdentity() throws Exception {
+        var authentication = new UsernamePasswordAuthenticationToken(
+                new User(1L, "account@test.com", "Juan Antonio", "hash"), null, List.of());
+        SecurityContextHolder.getContext().setAuthentication(authentication);
+
+        // No profile row → blank template; identity must still resolve.
+        var blankProfile = new UserProfile(null, 1L, "", List.of(), CompanyTone.STARTUP, List.of(),
+                null, "stored@example.com", null, null, null, null);
+        when(userProfileService.getProfile(1L)).thenReturn(blankProfile);
+        when(userProfileService.getAccountIdentity(1L))
+                .thenReturn(new AccountIdentity("Juan Antonio", "account@test.com"));
+
+        mockMvc.perform(get("/api/profile"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value("Juan Antonio"))
+                .andExpect(jsonPath("$.email").value("account@test.com"))
+                // contactEmail stays the resume-extracted value — identity is separate
+                .andExpect(jsonPath("$.contactEmail").value("stored@example.com"));
     }
 }
