@@ -170,6 +170,18 @@ interface. Adapters do not retry — transient gateway failures surface as
 All prompts are documented and versioned in `docs/specs/prompts.md`.
 Always read that file before implementing `AiAnalysisService` or `EmailGenerationService`.
 
+## Bot skills — repo is the source of truth
+
+Skills (`skills/`) and the SOUL.md template (`bot-profile/`) are **product**: they are
+edited in the repo and propagated to the bot profile with `scripts/install-bot-skills.sh`.
+
+- **Never hand-edit the installed copy** under `~/.hermes/profiles/jobhunter-bot/` as a
+  source of change — it is runtime state and the next install silently erases it.
+- Memory files, the real resume artifact, `.env` and live SOUL learnings belong to the
+  VM runtime — never commit them to the repo.
+- Reference user-specific paths through the SOUL placeholders (`{{RESUME_FILENAME}}`
+  etc.), not hardcoded owner paths.
+
 ---
 
 ## SDD — Specification-Driven Development
