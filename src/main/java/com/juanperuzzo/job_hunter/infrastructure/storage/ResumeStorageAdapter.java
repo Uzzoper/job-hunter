@@ -28,7 +28,7 @@ public class ResumeStorageAdapter implements ResumeStorage {
 
     @Override
     public Optional<byte[]> read(Long userId) {
-        var file = uploadDir.resolve(String.valueOf(userId)).resolve("resume.pdf");
+        var file = resumePath(userId);
         if (!Files.exists(file)) {
             return Optional.empty();
         }
@@ -42,12 +42,17 @@ public class ResumeStorageAdapter implements ResumeStorage {
     @Override
     public void write(Long userId, byte[] pdf) {
         try {
-            var userDir = uploadDir.resolve(String.valueOf(userId));
-            Files.createDirectories(userDir);
-            Files.write(userDir.resolve("resume.pdf"), pdf);
-            log.info("Stored uploaded resume at {}", userDir.resolve("resume.pdf"));
+            var path = resumePath(userId);
+            Files.createDirectories(path.getParent());
+            Files.write(path, pdf);
+            log.info("Stored uploaded resume at {}", path);
         } catch (IOException e) {
             throw new UncheckedIOException("Failed to store resume for user " + userId, e);
         }
+    }
+
+    /** Single owner of the `{uploadDir}/{userId}/resume.pdf` convention. */
+    private Path resumePath(Long userId) {
+        return uploadDir.resolve(String.valueOf(userId)).resolve("resume.pdf");
     }
 }
