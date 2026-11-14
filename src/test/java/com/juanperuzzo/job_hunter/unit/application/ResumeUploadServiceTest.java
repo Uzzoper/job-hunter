@@ -1,9 +1,9 @@
 package com.juanperuzzo.job_hunter.unit.application;
 
 import com.juanperuzzo.job_hunter.application.port.out.AiPort;
+import com.juanperuzzo.job_hunter.application.port.out.ResumeStorage;
 import com.juanperuzzo.job_hunter.application.port.out.UserProfileRepository;
 import com.juanperuzzo.job_hunter.application.service.ResumeUploadService;
-import com.juanperuzzo.job_hunter.infrastructure.storage.ResumeStorageAdapter;
 import com.juanperuzzo.job_hunter.application.service.UserProfileService;
 import com.juanperuzzo.job_hunter.domain.exception.AiException;
 import com.juanperuzzo.job_hunter.domain.exception.InvalidResumeTextException;
@@ -65,26 +65,16 @@ class ResumeUploadServiceTest {
     private ArgumentCaptor<UserProfile> profileCaptor;
 
     private ResumeUploadService service;
-    private Path tempDir;
+
+    @Mock
+    private ResumeStorage resumeStorage;
 
     @BeforeEach
     void setUp() throws Exception {
-        tempDir = Files.createTempDirectory("resume-upload-test-");
+        // Application-layer test: every output port is a mock (AGENTS.md test
+        // table) — filesystem behavior is covered by ResumeStorageAdapterTest.
         service = new ResumeUploadService(aiPort, userProfileService, userProfileRepository,
-                new ResumeStorageAdapter(tempDir.toString()), 8000);
-    }
-
-    @AfterEach
-    void tearDown() throws Exception {
-        try (var files = Files.walk(tempDir)) {
-            files.sorted(java.util.Comparator.reverseOrder())
-                    .forEach(p -> {
-                        try {
-                            Files.deleteIfExists(p);
-                        } catch (IOException ignored) {
-                        }
-                    });
-        }
+                resumeStorage, 8000);
     }
 
     @Test
