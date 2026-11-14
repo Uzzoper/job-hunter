@@ -58,7 +58,25 @@ impl App {
         config: Config,
         config_path: Option<&Path>,
     ) -> Self {
-        let cache = Arc::new(Mutex::new(CacheManager::new(None, config.cache_ttl_hours).expect("cache init")));
+        Self::with_paths(api_client, config, config_path, None)
+    }
+
+    /// Creates the app with explicit config *and* cache paths; `None` keeps
+    /// the default for each. The explicit cache path is test infrastructure:
+    /// parallel test threads each open their own cache DB instead of
+    /// contending on the shared `~/.config/job-hunter/cache.db` — the
+    /// 2026-11-14 CI run died right at cache init with
+    /// `Cache("database is locked")` while another test held an env-isolated
+    /// default dir (test_support::isolated_app owns the per-call path now).
+    pub fn with_paths(
+        api_client: ApiClient,
+        config: Config,
+        config_path: Option<&Path>,
+        cache_path: Option<PathBuf>,
+    ) -> Self {
+        let cache = Arc::new(Mutex::new(
+            CacheManager::new(cache_path, config.cache_ttl_hours).expect("cache init"),
+        ));
         let api_client_arc = Arc::new(Mutex::new(api_client));
         let cache_arc = cache.clone();
         let config_manager = Arc::new(Mutex::new(
@@ -784,5 +802,47 @@ impl App {
             }
             _ => {}
         }
+    }
+}
+
+#[cfg(test)]
+pub(crate) mod test_support {
+    //! Isolated App construction for tests. The default cache path is
+    //! process-global (`~/.config/job-hunter/cache.db`), so parallel test
+    //! threads that construct `App::new` all contend on one SQLite file —
+    //! and while a config-isolation test has `XDG_CONFIG_HOME` swapped,
+    //! unlocked constructions even land *inside* that test's fresh temp dir
+    //! (the 2026-11-14 CI flake: `Cache("database is locked")` at cache
+    //! init). Explicit per-call cache paths remove the shared resource.
+
+    use super::App;
+    use crate::api::ApiClient;
+    use crate::config::Config;
+    use std::path::{Path, PathBuf};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    static CACHE_COUNTER: AtomicUsize = AtomicUsize::new(0);
+
+    /// Fresh, unique-per-call cache DB path under the system temp dir.
+    pub(crate) fn isolated_cache_path() -> PathBuf {
+        let n = CACHE_COUNTER.fetch_add(1, Ordering::Relaxed);
+        std::env::temp_dir().join(format!("jh-tui-cache-test-{}-{}.db", std::process::id(), n))
+    }
+
+    /// Builds an App with its own cache DB; `config_path` mirrors
+    /// [`App::with_config_path`] for config-path tests (`None` = default).
+    pub(crate) fn isolated_app(
+        api_client: ApiClient,
+        config: Config,
+        config_path: Option<&Path>,
+    ) -> App {
+        App::with_paths(api_client, config, config_path, Some(isolated_cache_path()))
+    }
+
+    #[test]
+    fn isolated_cache_paths_are_unique_per_call() {
+        let a = isolated_cache_path();
+        let b = isolated_cache_path();
+        assert_ne!(a, b, "each App under test must own its cache DB");
     }
 }

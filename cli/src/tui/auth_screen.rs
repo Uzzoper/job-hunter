@@ -822,13 +822,14 @@ mod tests {
 
     use crate::config::Config;
     use crate::tui::app::{App, AppState};
+    use crate::tui::app::test_support::isolated_app;
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
     /// Builds an App in Auth state with an auth screen attached, mirroring the
     /// `app_integration_test.rs` construction pattern.
     fn create_test_app_with_auth_screen() -> App {
         let api_client = ApiClient::new("http://localhost:8080");
-        let mut app = App::new(api_client, Config::default());
+        let mut app = isolated_app(api_client, Config::default(), None);
         app.auth_screen = Some(create_test_screen());
         app
     }

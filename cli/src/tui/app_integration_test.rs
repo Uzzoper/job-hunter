@@ -1,6 +1,7 @@
 use crate::api::ApiClient;
 use crate::config::Config;
-use crate::tui::app::{App, AppState};
+use crate::tui::app::test_support::isolated_app;
+use crate::tui::app::AppState;
 use crate::tui::profile_screen::ProfileScreen;
 use crate::tui::job_detail_screen::{JobDetailScreen, LoadingState};
 use crate::tui::job_list_screen::SearchFocus;
@@ -14,7 +15,7 @@ use tokio::sync::Mutex;
 async fn tui_app_new_creates_app_with_default_state() {
     let config = Config::default();
     let api_client = ApiClient::new("http://localhost:8080");
-    let app = App::new(api_client, config);
+    let app = isolated_app(api_client, config, None);
 
     assert_eq!(app.state, AppState::Auth);
     assert!(!app.should_quit());
@@ -29,7 +30,7 @@ async fn tui_app_new_creates_app_with_default_state() {
 async fn tui_app_should_quit_returns_false_initially() {
     let config = Config::default();
     let api_client = ApiClient::new("http://localhost:8080");
-    let app = App::new(api_client, config);
+    let app = isolated_app(api_client, config, None);
 
     assert!(!app.should_quit());
 }
@@ -38,7 +39,7 @@ async fn tui_app_should_quit_returns_false_initially() {
 async fn tui_app_should_quit_returns_true_when_set() {
     let config = Config::default();
     let api_client = ApiClient::new("http://localhost:8080");
-    let mut app = App::new(api_client, config);
+    let mut app = isolated_app(api_client, config, None);
 
     app.should_quit = true;
     assert!(app.should_quit());
@@ -48,7 +49,7 @@ async fn tui_app_should_quit_returns_true_when_set() {
 async fn tui_app_should_quit_returns_true_when_state_is_quitting() {
     let config = Config::default();
     let api_client = ApiClient::new("http://localhost:8080");
-    let mut app = App::new(api_client, config);
+    let mut app = isolated_app(api_client, config, None);
 
     app.state = AppState::Quitting;
     assert!(app.should_quit());
@@ -58,7 +59,7 @@ async fn tui_app_should_quit_returns_true_when_state_is_quitting() {
 async fn tui_app_transition_to_changes_state() {
     let config = Config::default();
     let api_client = ApiClient::new("http://localhost:8080");
-    let mut app = App::new(api_client, config);
+    let mut app = isolated_app(api_client, config, None);
 
     app.transition_to(AppState::JobDetail);
     assert_eq!(app.state, AppState::JobDetail);
@@ -74,7 +75,7 @@ async fn tui_app_transition_to_changes_state() {
 async fn tui_app_set_error_and_clear_error() {
     let config = Config::default();
     let api_client = ApiClient::new("http://localhost:8080");
-    let mut app = App::new(api_client, config);
+    let mut app = isolated_app(api_client, config, None);
 
     assert!(app.error_message.is_none());
 
@@ -89,7 +90,7 @@ async fn tui_app_set_error_and_clear_error() {
 async fn tui_app_render_does_not_panic() {
     let config = Config::default();
     let api_client = ApiClient::new("http://localhost:8080");
-    let mut app = App::new(api_client, config);
+    let mut app = isolated_app(api_client, config, None);
 
     let backend = TestBackend::new(80, 24);
     let mut terminal = Terminal::new(backend).unwrap();
@@ -101,7 +102,7 @@ async fn tui_app_render_does_not_panic() {
 async fn tui_app_render_and_handle_event_does_not_panic() {
     let config = Config::default();
     let api_client = ApiClient::new("http://localhost:8080");
-    let mut app = App::new(api_client, config);
+    let mut app = isolated_app(api_client, config, None);
 
     let backend = TestBackend::new(80, 24);
     let mut terminal = Terminal::new(backend).unwrap();
@@ -122,7 +123,7 @@ async fn tui_app_render_and_handle_event_does_not_panic() {
 async fn profile_e_toggles_edit_mode() {
     let config = Config::default();
     let api_client = ApiClient::new("http://localhost:8080");
-    let mut app = App::new(api_client, config);
+    let mut app = isolated_app(api_client, config, None);
 
     app.state = AppState::Profile;
     // Initialize profile_screen
@@ -156,7 +157,7 @@ async fn profile_e_toggles_edit_mode() {
 async fn profile_r_triggers_load_profile() {
     let config = Config::default();
     let api_client = ApiClient::new("http://localhost:8080");
-    let mut app = App::new(api_client, config);
+    let mut app = isolated_app(api_client, config, None);
 
     app.state = AppState::Profile;
     let profile_screen = ProfileScreen::new(
@@ -178,7 +179,7 @@ async fn profile_r_triggers_load_profile() {
 async fn profile_b_cancels_edit_then_exits() {
     let config = Config::default();
     let api_client = ApiClient::new("http://localhost:8080");
-    let mut app = App::new(api_client, config);
+    let mut app = isolated_app(api_client, config, None);
 
     app.state = AppState::Profile;
     let profile_screen = ProfileScreen::new(
@@ -208,7 +209,7 @@ async fn profile_b_cancels_edit_then_exits() {
 async fn profile_esc_cancels_edit_then_exits() {
     let config = Config::default();
     let api_client = ApiClient::new("http://localhost:8080");
-    let mut app = App::new(api_client, config);
+    let mut app = isolated_app(api_client, config, None);
 
     app.state = AppState::Profile;
     let profile_screen = ProfileScreen::new(
@@ -240,7 +241,7 @@ async fn profile_esc_cancels_edit_then_exits() {
 async fn job_detail_a_triggers_analyze_job() {
     let config = Config::default();
     let api_client = ApiClient::new("http://localhost:8080");
-    let mut app = App::new(api_client, config);
+    let mut app = isolated_app(api_client, config, None);
 
     app.state = AppState::JobDetail;
     // Initialize job_detail_screen with a job
@@ -275,7 +276,7 @@ async fn job_detail_a_triggers_analyze_job() {
 async fn job_detail_e_triggers_generate_email() {
     let config = Config::default();
     let api_client = ApiClient::new("http://localhost:8080");
-    let mut app = App::new(api_client, config);
+    let mut app = isolated_app(api_client, config, None);
 
     app.state = AppState::JobDetail;
     let job = crate::domain::JobResponse {
@@ -308,7 +309,7 @@ async fn job_detail_e_triggers_generate_email() {
 async fn job_detail_a_ignored_in_non_jobdetail_state() {
     let config = Config::default();
     let api_client = ApiClient::new("http://localhost:8080");
-    let mut app = App::new(api_client, config);
+    let mut app = isolated_app(api_client, config, None);
 
     // Test in JobList state
     app.state = AppState::JobList;
@@ -327,7 +328,7 @@ async fn job_detail_a_ignored_in_non_jobdetail_state() {
 async fn job_detail_e_ignored_in_non_jobdetail_state() {
     let config = Config::default();
     let api_client = ApiClient::new("http://localhost:8080");
-    let mut app = App::new(api_client, config);
+    let mut app = isolated_app(api_client, config, None);
 
     // Test in JobList state
     app.state = AppState::JobList;
@@ -353,7 +354,7 @@ async fn job_detail_e_ignored_in_non_jobdetail_state() {
 async fn job_detail_space_toggles_email_expanded() {
     let config = Config::default();
     let api_client = ApiClient::new("http://localhost:8080");
-    let mut app = App::new(api_client, config);
+    let mut app = isolated_app(api_client, config, None);
 
     app.state = AppState::JobDetail;
     let job = crate::domain::JobResponse {
@@ -400,7 +401,7 @@ async fn job_detail_space_toggles_email_expanded() {
 async fn job_detail_c_copies_email() {
     let config = Config::default();
     let api_client = ApiClient::new("http://localhost:8080");
-    let mut app = App::new(api_client, config);
+    let mut app = isolated_app(api_client, config, None);
 
     app.state = AppState::JobDetail;
     let job = crate::domain::JobResponse {
@@ -443,7 +444,7 @@ async fn job_detail_c_copies_email() {
 async fn job_detail_f_toggles_email_full() {
     let config = Config::default();
     let api_client = ApiClient::new("http://localhost:8080");
-    let mut app = App::new(api_client, config);
+    let mut app = isolated_app(api_client, config, None);
 
     app.state = AppState::JobDetail;
     let job = crate::domain::JobResponse {
@@ -481,7 +482,7 @@ async fn job_detail_f_toggles_email_full() {
 async fn job_list_f_key_starts_fetch() {
     let config = Config::default();
     let api_client = ApiClient::new("http://localhost:8080");
-    let mut app = App::new(api_client, config);
+    let mut app = isolated_app(api_client, config, None);
 
     app.state = AppState::JobList;
     assert!(!app.job_list_screen.as_ref().unwrap().fetch_in_progress);
@@ -496,7 +497,7 @@ async fn job_list_f_key_starts_fetch() {
 async fn job_list_ctrl_f_focuses_search_not_fetch() {
     let config = Config::default();
     let api_client = ApiClient::new("http://localhost:8080");
-    let mut app = App::new(api_client, config);
+    let mut app = isolated_app(api_client, config, None);
 
     app.state = AppState::JobList;
 
@@ -516,7 +517,7 @@ async fn job_list_ctrl_f_focuses_search_not_fetch() {
 async fn profile_render_does_not_panic() {
     let config = Config::default();
     let api_client = ApiClient::new("http://localhost:8080");
-    let mut app = App::new(api_client, config);
+    let mut app = isolated_app(api_client, config, None);
 
     app.state = AppState::Profile;
     let profile_screen = ProfileScreen::new(
@@ -535,7 +536,7 @@ async fn profile_render_does_not_panic() {
 async fn job_detail_render_does_not_panic() {
     let config = Config::default();
     let api_client = ApiClient::new("http://localhost:8080");
-    let mut app = App::new(api_client, config);
+    let mut app = isolated_app(api_client, config, None);
 
     app.state = AppState::JobDetail;
     let job = crate::domain::JobResponse {
@@ -568,7 +569,7 @@ async fn job_detail_render_does_not_panic() {
 async fn handle_enter_selects_highlighted_job_not_first() {
     let config = Config::default();
     let api_client = ApiClient::new("http://localhost:8080");
-    let mut app = App::new(api_client, config);
+    let mut app = isolated_app(api_client, config, None);
 
     app.state = AppState::JobList;
 
@@ -622,7 +623,7 @@ async fn handle_enter_selects_highlighted_job_not_first() {
 async fn handle_enter_on_empty_list_does_not_transition() {
     let config = Config::default();
     let api_client = ApiClient::new("http://localhost:8080");
-    let mut app = App::new(api_client, config);
+    let mut app = isolated_app(api_client, config, None);
 
     app.state = AppState::JobList;
     // app.jobs is empty, and job_list_screen has no jobs set
@@ -638,7 +639,7 @@ async fn handle_enter_on_empty_list_does_not_transition() {
 async fn handle_enter_with_search_focused_blurs_search() {
     let config = Config::default();
     let api_client = ApiClient::new("http://localhost:8080");
-    let mut app = App::new(api_client, config);
+    let mut app = isolated_app(api_client, config, None);
 
     app.state = AppState::JobList;
 
@@ -663,7 +664,7 @@ async fn handle_enter_with_search_focused_blurs_search() {
 async fn handle_enter_after_filtering_selects_filtered_job() {
     let config = Config::default();
     let api_client = ApiClient::new("http://localhost:8080");
-    let mut app = App::new(api_client, config);
+    let mut app = isolated_app(api_client, config, None);
 
     app.state = AppState::JobList;
 
@@ -723,7 +724,7 @@ async fn handle_enter_after_filtering_selects_filtered_job() {
 async fn handle_enter_sets_job_on_detail_screen() {
     let config = Config::default();
     let api_client = ApiClient::new("http://localhost:8080");
-    let mut app = App::new(api_client, config);
+    let mut app = isolated_app(api_client, config, None);
 
     app.state = AppState::JobList;
 
@@ -787,7 +788,7 @@ async fn analyze_job_does_not_hang_when_job_none() {
 async fn profile_cursor_moves_left_and_right() {
     let config = Config::default();
     let api_client = ApiClient::new("http://localhost:8080");
-    let mut app = App::new(api_client, config);
+    let mut app = isolated_app(api_client, config, None);
 
     app.state = AppState::Profile;
     let profile_screen = ProfileScreen::new(
@@ -840,7 +841,7 @@ async fn profile_cursor_moves_left_and_right() {
 async fn profile_cursor_skills_field() {
     let config = Config::default();
     let api_client = ApiClient::new("http://localhost:8080");
-    let mut app = App::new(api_client, config);
+    let mut app = isolated_app(api_client, config, None);
 
     app.state = AppState::Profile;
     let profile_screen = ProfileScreen::new(
@@ -886,7 +887,7 @@ async fn profile_cursor_skills_field() {
 async fn profile_cursor_left_right_ignored_in_view_mode() {
     let config = Config::default();
     let api_client = ApiClient::new("http://localhost:8080");
-    let mut app = App::new(api_client, config);
+    let mut app = isolated_app(api_client, config, None);
 
     app.state = AppState::Profile;
     let profile_screen = ProfileScreen::new(
@@ -933,7 +934,7 @@ async fn tui_startup_valid_token_skips_auth_to_job_list() {
 
     let mut api_client = ApiClient::new(&server.url("/"));
     api_client.set_token("valid-jwt");
-    let mut app = App::new(api_client, Config::default());
+    let mut app = isolated_app(api_client, Config::default(), None);
     assert_eq!(app.state, AppState::Auth);
 
     app.attempt_token_validation().await;
@@ -959,7 +960,7 @@ async fn tui_startup_invalid_token_falls_back_to_auth_screen() {
 
     let mut api_client = ApiClient::new(&server.url("/"));
     api_client.set_token("expired-jwt");
-    let mut app = App::new(api_client, Config::default());
+    let mut app = isolated_app(api_client, Config::default(), None);
 
     app.attempt_token_validation().await;
 
@@ -979,7 +980,7 @@ async fn tui_startup_unreachable_backend_falls_back_to_auth_with_error() {
     // Closed port — same unreachable-backend pattern as error_scenarios tests.
     let mut api_client = ApiClient::new("http://127.0.0.1:1");
     api_client.set_token("some-jwt");
-    let mut app = App::new(api_client, Config::default());
+    let mut app = isolated_app(api_client, Config::default(), None);
 
     app.attempt_token_validation().await;
 
@@ -1066,7 +1067,7 @@ async fn tui_login_persists_token_to_custom_config_path() {
 
     let custom = fresh_custom_config("tui_login_custom_custom");
     let api_client = ApiClient::new(&server.url("/"));
-    let mut app = App::with_config_path(api_client, Config::default(), Some(&custom));
+    let mut app = isolated_app(api_client, Config::default(), Some(&custom));
 
     // Render once so the auth screen is lazily created through the app's
     // config path (auth_screen draw).
@@ -1126,7 +1127,7 @@ async fn tui_profile_save_writes_custom_config_not_default() {
     let custom = fresh_custom_config("tui_profile_save_custom");
     let mut api_client = ApiClient::new(&server.url("/"));
     api_client.set_token("t");
-    let mut app = App::with_config_path(api_client, Config::default(), Some(&custom));
+    let mut app = isolated_app(api_client, Config::default(), Some(&custom));
     app.state = AppState::Profile;
 
     // Fill valid profile fields and drive the save flow

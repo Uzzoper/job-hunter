@@ -2,12 +2,13 @@
 mod tests {
     use crate::api::ApiClient;
     use crate::config::Config;
-    use crate::tui::app::{App, AppState, Screen};
+    use crate::tui::app::test_support::isolated_app;
+use crate::tui::app::{App, AppState, Screen};
 
     fn create_test_app() -> App {
         let config = Config::default();
         let api_client = ApiClient::new("http://localhost:8080");
-        App::new(api_client, config)
+        isolated_app(api_client, config, None)
     }
 
     #[test]
