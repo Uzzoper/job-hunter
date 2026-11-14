@@ -203,10 +203,14 @@ Profile JSON:
   "name": "Juan Antonio Peruzzo",
   "email": "juan@example.com",
   "phone": "+55 42 99999-0000",
-  "cv_path": "/home/juan/cv.pdf",
+  "cv_path": "~/.hermes/profiles/jobhunter-bot/<resume-filename>.pdf",
   "cover_text": "Olá! Gostaria de me candidatar à vaga."
 }
 ```
+
+> `cv_path` is the resume file the rendered SOUL.md names
+> (`{{RESUME_FILENAME}}`); step 0 refreshes it from the backend before any
+> attach. Never an owner-machine path like `/home/<user>/cv.pdf`.
 
 ---
 
