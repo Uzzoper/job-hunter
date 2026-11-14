@@ -18,6 +18,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Pattern;
@@ -99,7 +100,7 @@ public class ResumeUploadService {
 
         var extraction = extractWithAi(rawText);
 
-        savePdfToDisk(userId, file);
+        storeResume(userId, file);
 
         var existingProfile = userProfileRepository.findByUserId(userId);
 
@@ -408,11 +409,18 @@ Resume text:
 """.formatted(textForAi);
     }
 
-    private void savePdfToDisk(Long userId, MultipartFile file) {
+    /**
+     * Stores the original PDF behind the {@link ResumeStorage} port. Storage
+     * failures escape uniformly as {@link UncheckedIOException} (the adapter's
+     * own failure type — issue #125 review, 2026-11-13): the port owns the
+     * failure boundary, so upload callers see one type regardless of whether
+     * the byte read or the disk write failed.
+     */
+    private void storeResume(Long userId, MultipartFile file) {
         try {
             resumeStorage.write(userId, file.getBytes());
         } catch (IOException e) {
-            throw new RuntimeException("Failed to save uploaded file", e);
+            throw new UncheckedIOException("Failed to read uploaded file for storage", e);
         }
     }
 }

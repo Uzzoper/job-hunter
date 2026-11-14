@@ -32,6 +32,7 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -705,5 +706,20 @@ class ResumeUploadServiceTest {
             doc.save(baos);
             return baos.toByteArray();
         }
+    }
+
+    @Test
+    @DisplayName("uploadResume should propagate storage failures uniformly as UncheckedIOException")
+    void uploadResume_whenStorageFails_shouldPropagateUncheckedIOException() throws Exception {
+        var file = validPdfMock("Resume content long enough to pass the profile length validation gate.");
+        when(aiPort.complete(anyString())).thenReturn("{\"skills\": [], \"projects\": []}");
+        // No findByUserId stub: the flow aborts at storeResume (write) before
+        // the profile lookup — the storage failure short-circuits the upload.
+        doThrow(new UncheckedIOException("disk full", new IOException("disk full")))
+                .when(resumeStorage).write(anyLong(), any());
+
+        assertThrows(UncheckedIOException.class, () -> service.uploadResume(1L, file));
+
+        verify(userProfileService, never()).saveProfile(anyLong(), any());
     }
 }

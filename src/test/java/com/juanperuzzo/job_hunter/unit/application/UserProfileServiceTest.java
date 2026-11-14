@@ -120,8 +120,7 @@ class UserProfileServiceTest {
 
     @Test
     @DisplayName("getAccountIdentity should resolve name and email from the account user row")
-    void getAccountIdentity_whenUserExists_shouldReturnNameAndEmail() {
-        when(userRepository.findById(71L))
+    void getAccountIdentity_whenUserExists_shouldReturnNameAndEmail() {        when(userRepository.findById(71L))
                 .thenReturn(Optional.of(new User(71L, "juan@test.com", "Juan Antonio", "hash")));
 
         var identity = userProfileService.getAccountIdentity(71L);
