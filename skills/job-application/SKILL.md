@@ -203,16 +203,20 @@ Profile JSON:
   "name": "Juan Antonio Peruzzo",
   "email": "juan@example.com",
   "phone": "+55 42 99999-0000",
-  "cv_path": "/home/juan/cv.pdf",
+  "cv_path": "~/.hermes/profiles/jobhunter-bot/<resume-filename>.pdf",
   "cover_text": "Olá! Gostaria de me candidatar à vaga."
 }
 ```
+
+> `cv_path` is the resume file the rendered SOUL.md names
+> (`{{RESUME_FILENAME}}`); step 0 refreshes it from the backend before any
+> attach. Never an owner-machine path like `/home/<user>/cv.pdf`.
 
 ---
 
 ## Steps
 
-0. **Refresh the resume — INTERIM, until slice c.** Any action that attaches the resume starts here: pull the canonical copy from `GET /api/profile/resume` and pass the sanity gate (200 / `application/pdf` / `%PDF-` / ~24.8 KB). Any failure aborts the action with the previous file kept. See *Interim: resume refresh before any attachment* below.
+0. **Refresh the resume — INTERIM, until slice c.** Any action that attaches the resume starts here: pull the canonical copy from `GET /api/profile/resume` and pass the sanity gate (200 / `application/pdf` / `%PDF-` / ~24.8 KB). Any failure aborts the action with the previous file kept. See the interim resume-refresh section below.
 1. **Plan** — the bot runs `apply.py` with the job URL (or API flags), profile, and portal:
    ```
    python3 skills/job-application/apply.py \
@@ -507,7 +511,7 @@ be disabled from the CLI; `require_confirmation_before_final_submit` flips to `f
 
 Before emitting the intent (skipped on `--dry-run`), `apply.py` makes sure
 the browser session is alive. The whole flow is stdlib-only (`urllib`,
-`subprocess`, `time`, `os`) and never needs a login secret: Chromium is launched
+`subprocess`, `time`, `os`) and never needs a login credential: Chromium is launched
 with a persistent profile so its session survives restarts.
 
 ### `ensure_browser()` flow
