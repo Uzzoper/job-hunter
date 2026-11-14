@@ -1,12 +1,11 @@
 package com.juanperuzzo.job_hunter.web.controller;
 
+import com.juanperuzzo.job_hunter.application.port.in.AccountIdentity;
 import com.juanperuzzo.job_hunter.application.port.in.CurrentUserProvider;
 import com.juanperuzzo.job_hunter.application.port.in.ResumeRetrievalUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.UserProfileUseCase;
 import com.juanperuzzo.job_hunter.application.service.ResumeUploadService;
 import com.juanperuzzo.job_hunter.domain.model.Project;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.MediaType;
 import com.juanperuzzo.job_hunter.domain.model.UserPreferences;
 import com.juanperuzzo.job_hunter.domain.model.UserProfile;
 import com.juanperuzzo.job_hunter.domain.model.WorkPreference;
@@ -16,6 +15,8 @@ import com.juanperuzzo.job_hunter.web.dto.PreferencesResponse;
 import com.juanperuzzo.job_hunter.web.dto.ProjectResponse;
 import com.juanperuzzo.job_hunter.web.dto.WorkPreferenceDto;
 import jakarta.validation.Valid;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
@@ -46,7 +47,7 @@ public class ProfileController {
         Long userId = currentUserService.getCurrentUserId();
         var profile = userProfileService.getProfile(userId);
         var identity = userProfileService.getAccountIdentity(userId);
-        var response = toResponse(profile, identity.name(), identity.email());
+        var response = toResponse(profile, identity);
         return ResponseEntity.ok(response);
     }
 
@@ -91,8 +92,8 @@ public class ProfileController {
                 .body(pdf);
     }
 
-    private ProfileResponse toResponse(com.juanperuzzo.job_hunter.domain.model.UserProfile profile) {
-        return toResponse(profile, null, null);
+    private ProfileResponse toResponse(UserProfile profile) {
+        return toResponse(profile, null);
     }
 
     /**
@@ -100,8 +101,9 @@ public class ProfileController {
      * filled only by the GET route; write routes map through the no-identity
      * overload above until the slice-(b) preview/commit flow owns them.
      */
-    private ProfileResponse toResponse(com.juanperuzzo.job_hunter.domain.model.UserProfile profile,
-            String accountName, String accountEmail) {
+    private ProfileResponse toResponse(UserProfile profile, AccountIdentity identity) {
+        var accountName = identity == null ? null : identity.name();
+        var accountEmail = identity == null ? null : identity.email();
         var projectResponses = profile.projects().stream()
                 .map(p -> {
                     var techStack = p.techStack().isBlank()
