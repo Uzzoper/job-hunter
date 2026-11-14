@@ -1,6 +1,7 @@
 package com.juanperuzzo.job_hunter.unit.application;
 
 import com.juanperuzzo.job_hunter.application.port.out.AiPort;
+import com.juanperuzzo.job_hunter.application.port.out.ResumeStorage;
 import com.juanperuzzo.job_hunter.application.port.out.UserProfileRepository;
 import com.juanperuzzo.job_hunter.application.service.ResumeUploadService;
 import com.juanperuzzo.job_hunter.application.service.UserProfileService;
@@ -31,6 +32,7 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -64,25 +66,16 @@ class ResumeUploadServiceTest {
     private ArgumentCaptor<UserProfile> profileCaptor;
 
     private ResumeUploadService service;
-    private Path tempDir;
+
+    @Mock
+    private ResumeStorage resumeStorage;
 
     @BeforeEach
     void setUp() throws Exception {
-        tempDir = Files.createTempDirectory("resume-upload-test-");
-        service = new ResumeUploadService(aiPort, userProfileService, userProfileRepository, tempDir.toString(), 8000);
-    }
-
-    @AfterEach
-    void tearDown() throws Exception {
-        try (var files = Files.walk(tempDir)) {
-            files.sorted(java.util.Comparator.reverseOrder())
-                    .forEach(p -> {
-                        try {
-                            Files.deleteIfExists(p);
-                        } catch (IOException ignored) {
-                        }
-                    });
-        }
+        // Application-layer test: every output port is a mock (AGENTS.md test
+        // table) — filesystem behavior is covered by ResumeStorageAdapterTest.
+        service = new ResumeUploadService(aiPort, userProfileService, userProfileRepository,
+                resumeStorage, 8000);
     }
 
     @Test
@@ -692,6 +685,9 @@ class ResumeUploadServiceTest {
         when(file.getContentType()).thenReturn("application/pdf");
         when(file.getOriginalFilename()).thenReturn("resume.pdf");
         when(file.getInputStream()).thenReturn(new ByteArrayInputStream(pdfBytes));
+        // Lenient: not every upload path reaches savePdfToDisk (invalid files
+        // fail earlier), so a strict stub would raise UnnecessaryStubbing.
+        lenient().when(file.getBytes()).thenReturn(pdfBytes);
         return file;
     }
 
@@ -710,5 +706,20 @@ class ResumeUploadServiceTest {
             doc.save(baos);
             return baos.toByteArray();
         }
+    }
+
+    @Test
+    @DisplayName("uploadResume should propagate storage failures uniformly as UncheckedIOException")
+    void uploadResume_whenStorageFails_shouldPropagateUncheckedIOException() throws Exception {
+        var file = validPdfMock("Resume content long enough to pass the profile length validation gate.");
+        when(aiPort.complete(anyString())).thenReturn("{\"skills\": [], \"projects\": []}");
+        // No findByUserId stub: the flow aborts at storeResume (write) before
+        // the profile lookup — the storage failure short-circuits the upload.
+        doThrow(new UncheckedIOException("disk full", new IOException("disk full")))
+                .when(resumeStorage).write(anyLong(), any());
+
+        assertThrows(UncheckedIOException.class, () -> service.uploadResume(1L, file));
+
+        verify(userProfileService, never()).saveProfile(anyLong(), any());
     }
 }

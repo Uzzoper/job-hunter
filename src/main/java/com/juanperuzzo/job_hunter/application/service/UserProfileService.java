@@ -1,5 +1,6 @@
 package com.juanperuzzo.job_hunter.application.service;
 
+import com.juanperuzzo.job_hunter.application.port.in.AccountIdentity;
 import com.juanperuzzo.job_hunter.application.port.in.UserProfileUseCase;
 import com.juanperuzzo.job_hunter.application.port.out.UserProfileRepository;
 import com.juanperuzzo.job_hunter.application.port.out.UserRepository;
@@ -27,6 +28,18 @@ public class UserProfileService implements UserProfileUseCase {
         return userProfileRepository.findByUserId(userId)
                 .orElse(new UserProfile(null, userId, "", List.of(), CompanyTone.STARTUP, List.of(),
                         null, null, null, null, null, null));
+    }
+
+    /**
+     * Resolves the account identity from the {@code users} row (issue #92
+     * slice a) — deliberately separate from {@link #getProfile(Long)}, whose
+     * returned {@link UserProfile} carries only resume-extracted contact data.
+     */
+    @Override
+    public AccountIdentity getAccountIdentity(Long userId) {
+        var user = userRepository.findById(userId)
+                .orElseThrow(() -> new UserNotFoundException("User not found with id: " + userId));
+        return new AccountIdentity(user.name(), user.email());
     }
 
     /**

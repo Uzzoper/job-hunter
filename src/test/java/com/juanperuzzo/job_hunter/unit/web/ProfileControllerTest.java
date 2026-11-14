@@ -1,10 +1,13 @@
 package com.juanperuzzo.job_hunter.unit.web;
 
+import com.juanperuzzo.job_hunter.application.port.in.AccountIdentity;
+import com.juanperuzzo.job_hunter.application.port.in.ResumeRetrievalUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.UserProfileUseCase;
 import com.juanperuzzo.job_hunter.application.service.ResumeUploadService;
 import com.juanperuzzo.job_hunter.application.port.out.TokenProvider;
 import com.juanperuzzo.job_hunter.domain.exception.AiException;
 import com.juanperuzzo.job_hunter.domain.exception.ProfileNotConfiguredException;
+import com.juanperuzzo.job_hunter.domain.exception.ResumeNotFoundException;
 import com.juanperuzzo.job_hunter.domain.exception.UserNotFoundException;
 import com.juanperuzzo.job_hunter.domain.model.CompanyTone;
 import com.juanperuzzo.job_hunter.domain.model.Project;
@@ -67,6 +70,9 @@ class ProfileControllerTest {
     @MockitoBean
     private ResumeUploadService resumeUploadService;
 
+    @MockitoBean
+    private ResumeRetrievalUseCase resumeRetrievalUseCase;
+
     @AfterEach
     void tearDown() {
         SecurityContextHolder.clearContext();
@@ -81,6 +87,7 @@ class ProfileControllerTest {
         var profile = new UserProfile(1L, 1L, "Experienced dev...", List.of("Java", "Spring Boot"), CompanyTone.FORMAL, List.of(),
                 null, null, null, null, null, null);
         when(userProfileService.getProfile(1L)).thenReturn(profile);
+        stubAccountIdentity(1L);
 
         mockMvc.perform(get("/api/profile"))
                 .andExpect(status().isOk())
@@ -124,7 +131,10 @@ class ProfileControllerTest {
                 .andExpect(jsonPath("$.resumeText").value("New resume text that is certainly long enough to pass the minimum length constraint of fifty characters for test"))
                 .andExpect(jsonPath("$.skills[0]").value("Java"))
                 .andExpect(jsonPath("$.skills[1]").value("Python"))
-                .andExpect(jsonPath("$.tone").value("STARTUP"));
+                .andExpect(jsonPath("$.tone").value("STARTUP"))
+                // write routes keep the response shape with null identity (slice (b) owns them)
+                .andExpect(jsonPath("$.name").value(org.hamcrest.Matchers.nullValue()))
+                .andExpect(jsonPath("$.email").value(org.hamcrest.Matchers.nullValue()));
     }
 
     @Test
@@ -214,6 +224,7 @@ class ProfileControllerTest {
         var profile = new UserProfile(2L, 42L, "Dev resume", List.of("Go"), CompanyTone.CASUAL, List.of(),
                 null, null, null, null, null, null);
         when(userProfileService.getProfile(42L)).thenReturn(profile);
+        stubAccountIdentity(42L);
 
         mockMvc.perform(get("/api/profile"))
                 .andExpect(status().isOk())
@@ -259,6 +270,7 @@ class ProfileControllerTest {
         var profile = new UserProfile(1L, 1L, "Experienced dev...", List.of("Java"), CompanyTone.FORMAL, List.of(),
                 null, "stored@example.com", "https://stored.dev", null, null, null);
         when(userProfileService.getProfile(1L)).thenReturn(profile);
+        stubAccountIdentity(1L);
 
         mockMvc.perform(get("/api/profile"))
                 .andExpect(status().isOk())
@@ -288,7 +300,9 @@ class ProfileControllerTest {
                 .andExpect(jsonPath("$.userId").value(1))
                 .andExpect(jsonPath("$.skills[0]").value("Java"))
                 .andExpect(jsonPath("$.skills[1]").value("Spring Boot"))
-                .andExpect(jsonPath("$.tone").value("FORMAL"));
+                .andExpect(jsonPath("$.tone").value("FORMAL"))
+                .andExpect(jsonPath("$.name").value(org.hamcrest.Matchers.nullValue()))
+                .andExpect(jsonPath("$.email").value(org.hamcrest.Matchers.nullValue()));
     }
 
     @Test
@@ -352,6 +366,7 @@ class ProfileControllerTest {
         var profile = new UserProfile(1L, 1L, "Experienced dev...", List.of("Java"), CompanyTone.FORMAL, List.of(),
                 null, null, null, null, null, prefs);
         when(userProfileService.getProfile(1L)).thenReturn(profile);
+        stubAccountIdentity(1L);
 
         mockMvc.perform(get("/api/profile"))
                 .andExpect(status().isOk())
@@ -369,6 +384,7 @@ class ProfileControllerTest {
         var profile = new UserProfile(1L, 1L, "Experienced dev...", List.of("Java"), CompanyTone.FORMAL, List.of(),
                 null, null, null, null, null, null);
         when(userProfileService.getProfile(1L)).thenReturn(profile);
+        stubAccountIdentity(1L);
 
         mockMvc.perform(get("/api/profile"))
                 .andExpect(status().isOk())
@@ -574,6 +590,7 @@ class ProfileControllerTest {
         var profile = new UserProfile(1L, 1L, "Experienced dev...", List.of("Java"), CompanyTone.FORMAL, List.of(),
                 null, null, null, null, null, prefs);
         when(userProfileService.getProfile(1L)).thenReturn(profile);
+        stubAccountIdentity(1L);
 
         mockMvc.perform(get("/api/profile"))
                 .andExpect(status().isOk())
@@ -621,5 +638,64 @@ class ProfileControllerTest {
                 .andExpect(status().isBadRequest());
 
         verify(userProfileService, never()).saveProfile(any(), any());
+    }
+
+    /** Default identity stub for GET tests; specific tests stub their own values. */
+    private void stubAccountIdentity(Long userId) {
+        when(userProfileService.getAccountIdentity(userId))
+                .thenReturn(new AccountIdentity("Test User", "test@test.com"));
+    }
+
+    @Test
+    @DisplayName("getProfile should carry account identity distinct from resume contact email")
+    void getProfile_whenQueried_shouldCarryAccountIdentity() throws Exception {
+        var authentication = new UsernamePasswordAuthenticationToken(
+                new User(1L, "account@test.com", "Juan Antonio", "hash"), null, List.of());
+        SecurityContextHolder.getContext().setAuthentication(authentication);
+
+        // No profile row → blank template; identity must still resolve.
+        var blankProfile = new UserProfile(null, 1L, "", List.of(), CompanyTone.STARTUP, List.of(),
+                null, "stored@example.com", null, null, null, null);
+        when(userProfileService.getProfile(1L)).thenReturn(blankProfile);
+        when(userProfileService.getAccountIdentity(1L))
+                .thenReturn(new AccountIdentity("Juan Antonio", "account@test.com"));
+
+        mockMvc.perform(get("/api/profile"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value("Juan Antonio"))
+                .andExpect(jsonPath("$.email").value("account@test.com"))
+                // contactEmail stays the resume-extracted value — identity is separate
+                .andExpect(jsonPath("$.contactEmail").value("stored@example.com"));
+    }
+
+    @Test
+    @DisplayName("getResume should return the stored PDF bytes as an attachment")
+    void getResume_whenPdfStored_shouldReturn200WithPdf() throws Exception {
+        var authentication = new UsernamePasswordAuthenticationToken(
+                new User(1L, "test@test.com", "Test", "hash"), null, List.of());
+        SecurityContextHolder.getContext().setAuthentication(authentication);
+
+        var pdfBytes = "%PDF-1.4 fake".getBytes();
+        when(resumeRetrievalUseCase.downloadResume(1L)).thenReturn(pdfBytes);
+
+        mockMvc.perform(get("/api/profile/resume"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentType(MediaType.APPLICATION_PDF))
+                .andExpect(content().bytes(pdfBytes))
+                .andExpect(header().string("Content-Disposition", "attachment; filename=\"resume-1.pdf\""));
+    }
+
+    @Test
+    @DisplayName("getResume should return 404 when no PDF is stored")
+    void getResume_whenNoPdf_shouldReturn404() throws Exception {
+        var authentication = new UsernamePasswordAuthenticationToken(
+                new User(1L, "test@test.com", "Test", "hash"), null, List.of());
+        SecurityContextHolder.getContext().setAuthentication(authentication);
+
+        when(resumeRetrievalUseCase.downloadResume(1L))
+                .thenThrow(new ResumeNotFoundException("No resume stored for user: 1"));
+
+        mockMvc.perform(get("/api/profile/resume"))
+                .andExpect(status().isNotFound());
     }
 }
