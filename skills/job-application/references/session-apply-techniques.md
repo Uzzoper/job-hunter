@@ -69,19 +69,27 @@ The full URL is there, just invisible in the terminal output.
 print it to the terminal:
 
 ```bash
-# CORRECT — write to file, then read the file
+# CORRECT — write to a private file, then verify by length (never by
+# printing: the terminal display truncates long URLs — the exact artifact
+# being avoided). Consume the URL from the file (MCP read_file or pass the
+# file to the browser), then delete it.
 sqlite3 -noheader data/jobhunter.db "SELECT url FROM jobs WHERE id=<ID>" > /tmp/url_<ID>.txt
-cat /tmp/url_<ID>.txt
+chmod 600 /tmp/url_<ID>.txt
+wc -c /tmp/url_<ID>.txt
+# consume via read_file('/tmp/url_<ID>.txt') — the full URL is there
+rm -f /tmp/url_<ID>.txt
 ```
 
 ```python
 # CORRECT — Python write to file
-import sqlite3
+import sqlite3, os
 conn = sqlite3.connect('data/jobhunter.db')
 url = conn.execute('SELECT url FROM jobs WHERE id=<ID>').fetchone()[0]
 with open(f'/tmp/url_<ID>.txt', 'w') as f:
     f.write(url)
+os.chmod(f'/tmp/url_<ID>.txt', 0o600)
 # Then read_file('/tmp/url_<ID>.txt') — the full URL is there
+# os.remove(f'/tmp/url_<ID>.txt') after consuming
 ```
 
 ```bash
@@ -146,7 +154,11 @@ python3 apply.py --job-id <ID> --profile ~/gupy_profile.json \
 **Fix** before each session:
 
 ```bash
-pkill -9 chromium 2>/dev/null
+# Kill ONLY the automation chromium — the substring matches the expanded
+# $HOME form AND the literal-tilde argv form (preflight.py documents both),
+# and the [c] bracket prevents the pattern from matching itself. Never
+# kill all chromium processes: that would take down the user's own browser.
+pkill -9 -f "[c]hromium-profile-cdp" 2>/dev/null
 sleep 2
 rm -f ~/.chromium-profile-cdp/SingletonLock \
       ~/.chromium-profile-cdp/SingletonSocket \

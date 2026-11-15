@@ -2,8 +2,9 @@
 
 ## URL Integrity Test (DECISIVE — produções e leituras truncadas)
 
-O terminal e o `read_file` truncam URLs longas com `...` por limite de coluna.
-Isso NÃO significa que a URL está corrompida no banco.
+O terminal pode truncar URLs longas com `...` por limite de coluna (o
+`read_file` do MCP mostra o conteúdo integral do arquivo — por isso a URL vai
+para um arquivo). Isso NÃO significa que a URL está corrompida no banco.
 
 **Teste decisivo:**
 ```sql
