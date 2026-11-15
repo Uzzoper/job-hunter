@@ -26,6 +26,8 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -278,6 +280,65 @@ class UserProfileServiceTest {
         var profile = userProfileService.saveProfile(1L, input);
 
         assertNull(profile.preferences());
+    }
+
+    // =========================================================================
+    // Account identity write route (issue #92 slice b)
+    // =========================================================================
+
+    @Test
+    @DisplayName("updateIdentity should persist the corrected name and email on the users row")
+    void updateIdentity_whenNameAndEmailCorrected_shouldPersistResolvedIdentity() {
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user()));
+
+        var identity = userProfileService.updateIdentity(1L, "Corrected Name", "corrected@example.com");
+
+        assertEquals(new AccountIdentity("Corrected Name", "corrected@example.com"), identity);
+        verify(userRepository).updateIdentity(1L, "Corrected Name", "corrected@example.com");
+    }
+
+    @Test
+    @DisplayName("updateIdentity should keep the stored value for fields without correction")
+    void updateIdentity_whenOnlyNameProvided_shouldKeepStoredEmail() {
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user()));
+
+        var identity = userProfileService.updateIdentity(1L, "Corrected Name", null);
+
+        assertEquals(new AccountIdentity("Corrected Name", "juan@example.com"), identity);
+        verify(userRepository).updateIdentity(1L, "Corrected Name", "juan@example.com");
+    }
+
+    @Test
+    @DisplayName("updateIdentity should reject an invalid email and not persist")
+    void updateIdentity_whenEmailInvalid_shouldThrow_andNotPersist() {
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user()));
+
+        assertThrows(IllegalArgumentException.class,
+                () -> userProfileService.updateIdentity(1L, null, "not-an-email"));
+
+        verify(userRepository, never()).updateIdentity(any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("updateIdentity should reject a blank name and not persist")
+    void updateIdentity_whenNameBlank_shouldThrow_andNotPersist() {
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user()));
+
+        assertThrows(IllegalArgumentException.class,
+                () -> userProfileService.updateIdentity(1L, "   ", null));
+
+        verify(userRepository, never()).updateIdentity(any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("updateIdentity should throw UserNotFoundException when the user row does not exist")
+    void updateIdentity_whenUserMissing_shouldThrowUserNotFound() {
+        when(userRepository.findById(1L)).thenReturn(Optional.empty());
+
+        assertThrows(UserNotFoundException.class,
+                () -> userProfileService.updateIdentity(1L, "Name", "name@example.com"));
+
+        verify(userRepository, never()).updateIdentity(any(), any(), any());
     }
 
     private User user() {

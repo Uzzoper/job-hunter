@@ -39,9 +39,33 @@ public record ProfileRequest(
     String linkedinUrl,
 
     @Valid
-    PreferencesRequest preferences
+    PreferencesRequest preferences,
+
+    /**
+     * Account-identity corrections (issue #92 slice b): the users-row name and
+     * login email — NOT resume-extracted contact data. Optional on PUT; the
+     * stored value is kept when absent.
+     */
+    @Size(max = 255, message = "name must be at most 255 characters")
+    String name,
+
+    @Email(message = "email must be a valid email address")
+    @Size(max = 255, message = "email must be at most 255 characters")
+    String email
 ) {
     public ProfileRequest {
         if (projects == null) projects = List.of();
+    }
+
+    /**
+     * Convenience constructor for pre-slice-(b) callers: requests without
+     * account-identity corrections (name/email absent → stored values kept).
+     */
+    public ProfileRequest(String resumeText, List<String> skills, CompanyTone tone,
+                          List<ProjectRequest> projects, String phone, String contactEmail,
+                          String portfolioUrl, String githubUrl, String linkedinUrl,
+                          PreferencesRequest preferences) {
+        this(resumeText, skills, tone, projects, phone, contactEmail, portfolioUrl,
+                githubUrl, linkedinUrl, preferences, null, null);
     }
 }

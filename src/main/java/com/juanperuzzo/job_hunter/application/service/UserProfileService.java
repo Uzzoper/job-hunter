@@ -42,6 +42,11 @@ public class UserProfileService implements UserProfileUseCase {
         return new AccountIdentity(user.name(), user.email());
     }
 
+    @Override
+    public AccountIdentity updateIdentity(Long userId, String name, String email) {
+        throw new UnsupportedOperationException("slice (b): not implemented");
+    }
+
     /**
      * Saves the profile for the given authenticated user, enforcing the user's
      * existence and the resumeText minimum length. The profile id of an existing

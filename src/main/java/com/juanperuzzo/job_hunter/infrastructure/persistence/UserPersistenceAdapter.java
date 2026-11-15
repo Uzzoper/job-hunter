@@ -50,6 +50,11 @@ public class UserPersistenceAdapter implements UserRepository {
                 .toList();
     }
 
+    @Override
+    public void updateIdentity(Long userId, String name, String email) {
+        throw new UnsupportedOperationException("slice (b): not implemented");
+    }
+
     private UserEntity toEntity(User user) {
         return new UserEntity(user.id(), user.email(), user.name(), user.passwordHash());
     }
