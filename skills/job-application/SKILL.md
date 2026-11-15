@@ -753,3 +753,13 @@ Errors are always JSON: `{"error": <code>, "detail": <message>, "screenshot_path
 - The planner never performs browser actions itself — it relies on the MCP executor loop deriving actions from live AX snapshots and executing them with the browser tool.
 - Recording is evidence-gated: a record is written only after verified success evidence via `verdict.py`; a stalled/incomplete loop ends `INCOMPLETE` without a record.
 - InfoJobs flows are **best-effort** under the shared loop — the markup can vary by region/over time, so the executor should confirm the `sucesso` page before any record is written.
+
+## References index
+
+Deeper procedures and session lessons live under `references/` — consult a
+file by name when its situation matches; none are loaded wholesale.
+
+- **Apply flow & Gupy mechanics**: `gupy-flow.md`, `screening-answers-skip-conditions.md`, `batch-validation-efficiency.md`, `gupy-bot-protection.md`, `gupy-session-validation.md`, `session-apply-techniques.md`
+- **Failure recovery**: `browser-cdp-divergence.md`, `browser-cdp-divergence-recovery.md`, `cdp-react-button-fallback.md`, `url-truncation-repair.md`, `data-repair-and-retriage.md`
+- **Records & resume**: `cross-reference-records.md`, `ats-resume-tailoring.md`, `linkedin-extraction-workflow.md`
+- **Session lessons (2026-09)**: `session-20260917-batch-validation.md`, `session-20260918-batch-validation.md`, `session-20260918-corrections.md`, `session-20260919-api-triage-workflow.md`, `session-20260919-triage-rules.md`, `session-20260920-keyword-optimization.md`, `session-20260920-live-gate-test.md`, `session-20260921-quarantine-divergence.md`, `session-20260922-lessons.md`
