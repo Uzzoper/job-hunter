@@ -333,6 +333,14 @@ keep the previous file, and report which check failed.
   (5.7 KB) while the backend served the Oct-3 canonical one (24.8 KB) — both
   2-page PDFs, different text. Refresh first so applies/email carry the
   current resume.
+- **The gate is point-in-time.** The size/md5 row describes ONE canonical build.
+  When the owner legitimately updates the resume, this gate ABORTS by design and
+  the constant must be re-read from the endpoint and bumped — otherwise every
+  apply batch stalls on a stale hash.
+- **This skill is repo-first**: `skills/job-application/` in the job-hunter repo
+  is the source of truth and the profile copy is an installed mirror. The rules
+  live in the AGENTS.md section "Bot skills — repo is the source of truth" — read
+  it before editing or syncing this skill.
 
 ### Optional pre-batch consistency audit (issue #81)
 
@@ -656,6 +664,12 @@ Records live at:
   backend record API — the executor passes the outcome + evidence to the
   verdict stage (`--confirmed` / `--auto-apply` are verdict-input flags
   conveying that the run is authorized/committed).
+- **Backend marking after SUBMIT_OK** — verified success also marks the backend
+  row so the job stops being re-proposed by the hunt: `POST /api/jobs/{id}/applied`
+  with `{portal, applicationId, stepId}` (application/step ids come from the
+  success page URL) → expect `201 {"jobId":<id>,"status":"SENT"}`. Report the
+  application id. This is the BACKEND row, not the local record — `verdict.py`
+  stays the sole writer of `applications/<job_id>.json`.
 - `--dry-run` never writes records.
 
 ### Quarantine (canonical format — §5)
