@@ -49,8 +49,8 @@ User explicitly corrected: do NOT eliminate score-0 jobs without analysis.
 - 130 remote new (score 0 = not analyzed)
 - 110 analyzed in background with 3 workers
 - 14 elegible (≥70), 6 already SUBMITTED, 8 restantes
-- After eliminatória check: 1 truly elegible (id=609)
-- id=609 had orphaned applied record → quarantined, needs re-apply
+- After eliminatória check: 1 truly elegible (`<id>`)
+- `<id>` had orphaned applied record → quarantined, needs re-apply
 
 ### Scripts Used
 
