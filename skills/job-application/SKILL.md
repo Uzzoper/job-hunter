@@ -200,9 +200,9 @@ Profile JSON:
 
 ```json
 {
-  "name": "Juan Antonio Peruzzo",
-  "email": "juan@example.com",
-  "phone": "+55 42 99999-0000",
+  "name": "<user name>",
+  "email": "user@example.com",
+  "phone": "+55 42 90000-0000",
   "cv_path": "~/.hermes/profiles/jobhunter-bot/<resume-filename>.pdf",
   "cover_text": "Olá! Gostaria de me candidatar à vaga."
 }
@@ -312,7 +312,7 @@ backend. **The backend is the source of truth**
 (`uploads/resumes/2/resume.pdf`); the local file is only a working copy.
 
 ```bash
-curl -sS -o ~/.hermes/profiles/jobhunter-bot/Juan-Peruzzo.pdf \
+curl -sS -o ~/.hermes/profiles/jobhunter-bot/<resume-filename>.pdf \
   -H "X-Bot-Token: $BOT_SERVICE_API_KEY" \
   "http://127.0.0.1:8080/api/profile/resume"
 ```
@@ -333,6 +333,14 @@ keep the previous file, and report which check failed.
   (5.7 KB) while the backend served the Oct-3 canonical one (24.8 KB) — both
   2-page PDFs, different text. Refresh first so applies/email carry the
   current resume.
+- **The gate is point-in-time.** The size/md5 row describes ONE canonical build.
+  When the owner legitimately updates the resume, this gate ABORTS by design and
+  the constant must be re-read from the endpoint and bumped — otherwise every
+  apply batch stalls on a stale hash.
+- **This skill is repo-first**: `skills/job-application/` in the job-hunter repo
+  is the source of truth and the profile copy is an installed mirror. The rules
+  live in the AGENTS.md section "Bot skills — repo is the source of truth" — read
+  it before editing or syncing this skill.
 
 ### Optional pre-batch consistency audit (issue #81)
 
@@ -640,7 +648,7 @@ Records live at:
 ```json
 {
   "job_id": "<id-slug>",
-  "contact_email": "juan@example.com",
+  "contact_email": "user@example.com",
   "portal": "gupy",
   "applied_at": "<ISO timestamp>",
   "screenshot_path": "<memory-dir>/screenshots/<id-slug>.png",
@@ -656,6 +664,14 @@ Records live at:
   backend record API — the executor passes the outcome + evidence to the
   verdict stage (`--confirmed` / `--auto-apply` are verdict-input flags
   conveying that the run is authorized/committed).
+- **Backend marking after SUBMIT_OK** — verified success also marks the backend
+  row, which removes it from API-listing proposals and email generation (it does
+  NOT block re-fetch/re-scrape): `POST /api/jobs/{id}/applied` with **no body** —
+  the endpoint takes only the path id; `portal`, `applicationId` and `stepId`
+  are NOT persisted server-side, they live in the local verdict record. Expect
+  `201 {"jobId":<id>,"status":"SENT"}` on first mark, `200` + same body when
+  already marked (including supersede). This is the BACKEND row, not the local
+  record — `verdict.py` stays the sole writer of `applications/<job_id>.json`.
 - `--dry-run` never writes records.
 
 ### Quarantine (canonical format — §5)
@@ -737,3 +753,13 @@ Errors are always JSON: `{"error": <code>, "detail": <message>, "screenshot_path
 - The planner never performs browser actions itself — it relies on the MCP executor loop deriving actions from live AX snapshots and executing them with the browser tool.
 - Recording is evidence-gated: a record is written only after verified success evidence via `verdict.py`; a stalled/incomplete loop ends `INCOMPLETE` without a record.
 - InfoJobs flows are **best-effort** under the shared loop — the markup can vary by region/over time, so the executor should confirm the `sucesso` page before any record is written.
+
+## References index
+
+Deeper procedures and session lessons live under `references/` — consult a
+file by name when its situation matches; none are loaded wholesale.
+
+- **Apply flow & Gupy mechanics**: `gupy-flow.md`, `screening-answers-skip-conditions.md`, `batch-validation-efficiency.md`, `gupy-bot-protection.md`, `gupy-session-validation.md`, `session-apply-techniques.md`
+- **Failure recovery**: `browser-cdp-divergence.md`, `browser-cdp-divergence-recovery.md`, `cdp-react-button-fallback.md`, `url-truncation-repair.md`, `data-repair-and-retriage.md`
+- **Records & resume**: `cross-reference-records.md`, `ats-resume-tailoring.md`, `linkedin-extraction-workflow.md`
+- **Session lessons (2026-09)**: `session-20260917-batch-validation.md`, `session-20260918-batch-validation.md`, `session-20260918-corrections.md`, `session-20260919-api-triage-workflow.md`, `session-20260919-triage-rules.md`, `session-20260920-keyword-optimization.md`, `session-20260920-live-gate-test.md`, `session-20260921-quarantine-divergence.md`, `session-20260922-lessons.md`

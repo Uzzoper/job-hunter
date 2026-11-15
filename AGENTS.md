@@ -181,6 +181,9 @@ edited in the repo and propagated to the bot profile with `scripts/install-bot-s
   VM runtime — never commit them to the repo.
 - Reference user-specific paths through the SOUL placeholders (`{{RESUME_FILENAME}}`
   etc.), not hardcoded owner paths.
+- Skills citing `references/` files must keep those files versioned under
+  `skills/<name>/references/` — the installer copies them; a citation to a file
+  that is not committed is a dangling pointer.
 
 ---
 

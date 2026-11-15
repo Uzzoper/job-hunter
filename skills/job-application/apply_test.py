@@ -57,10 +57,10 @@ def _write_applied_record(apps: Path, key: str, backend_id) -> Path:
     return record
 
 VALID_PROFILE = {
-    "name": "Juan Antonio Peruzzo",
-    "email": "juan@example.com",
-    "phone": "+55 42 99999-0000",
-    "cv_path": "/home/juan/cv.pdf",
+    "name": "Test User",
+    "email": "user@example.com",
+    "phone": "+55 11 90000-0000",
+    "cv_path": "/home/testuser/cv.pdf",
     "cover_text": "Olá! Gostaria de me candidatar à vaga de desenvolvedor.",
 }
 
