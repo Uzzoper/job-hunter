@@ -26,7 +26,7 @@ The `...` is literally in the database string, not a display artifact. This prev
 
 Job 609 had:
 - `applications/609.json`: `status: "applied"`, `applied_at: 2026-09-20`
-- `attempts/609.json`: `outcome: SESSION_EXPIRED`
+- `attempts/<n>.json`: `outcome: SESSION_EXPIRED`
 - `screenshots/609.png`: DID NOT EXIST
 - `GET /api/jobs/609`: `lifecycleState: null`
 
