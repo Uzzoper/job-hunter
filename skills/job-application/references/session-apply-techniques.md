@@ -69,9 +69,10 @@ The full URL is there, just invisible in the terminal output.
 print it to the terminal:
 
 ```bash
-# CORRECT — write to file, then read the file
+# CORRECT — write to file, then verify by length (never by printing: the
+# terminal display truncates long URLs — the exact artifact being avoided)
 sqlite3 -noheader data/jobhunter.db "SELECT url FROM jobs WHERE id=<ID>" > /tmp/url_<ID>.txt
-cat /tmp/url_<ID>.txt
+wc -c /tmp/url_<ID>.txt
 ```
 
 ```python
@@ -146,7 +147,9 @@ python3 apply.py --job-id <ID> --profile ~/gupy_profile.json \
 **Fix** before each session:
 
 ```bash
-pkill -9 chromium 2>/dev/null
+# Kill ONLY the automation chromium (its own profile dir) — never all
+# chromium processes, which would also take down the user's own browser.
+pkill -9 -f "user-data-dir=$HOME/.chromium-profile-cdp" 2>/dev/null
 sleep 2
 rm -f ~/.chromium-profile-cdp/SingletonLock \
       ~/.chromium-profile-cdp/SingletonSocket \

@@ -98,6 +98,10 @@ into a completed degree, and do not delete it unprompted either; it is their CV.
 downstream until it is pushed into the profile, so a corrected email body with an
 uncorrected PDF attached reproduces the exact claim they withdrew.
 
+> ⚠️ The `upload-resume` call below **replaces the active resume** and re-runs
+> extraction over the whole profile — a persistent profile change, not a file
+> delivery. Get an explicit go-ahead from the user in chat before running it.
+
 ```bash
 TOKEN=$(grep BOT_SERVICE_API_KEY <job-hunter-repo>/.env | cut -d= -f2)
 
