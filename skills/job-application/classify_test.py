@@ -67,7 +67,7 @@ class ClassifyPageTests(unittest.TestCase):
     def test_review_page_detected(self):
         ax = [
             node("heading", "Confira seus dados"),  # summary has no inputs
-            node("staticText", "Juan Antonio Peruzzo"),
+            node("staticText", "Test User"),
             node("button", "Enviar candidatura"),
         ]
         result = classify.classify_page(JOB_URL, ax)
@@ -78,7 +78,7 @@ class ClassifyPageTests(unittest.TestCase):
         # (button "Continuar", no inputs) must never be start —
         # start would re-enter the flow and risk a duplicate application.
         ax = [
-            node("heading", "Olá Juan, vamos continuar sua candidatura?"),
+            node("heading", "Olá Test User, vamos continuar sua candidatura?"),
             node("staticText", "Você está se candidatando para a vaga Programador Junior na empresa Benner."),
             node("button", "Continuar"),
             node("link", "Candidatar-se"),  # stray nav link, must not win

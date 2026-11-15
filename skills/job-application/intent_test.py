@@ -29,10 +29,10 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import intent  # noqa: E402  (RED phase: module does not exist yet)
 
 VALID_PROFILE = {
-    "name": "Juan Peruzzo",
-    "email": "juan@example.com",
-    "phone": "+55 11 99999-0000",
-    "cv_path": "/home/juan/cv.pdf",
+    "name": "Test User",
+    "email": "user@example.com",
+    "phone": "+55 11 90000-0000",
+    "cv_path": "/home/testuser/cv.pdf",
     "cover_text": "Olá! Gostaria de me candidatar à vaga.",
 }
 

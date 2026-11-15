@@ -84,10 +84,10 @@ JOB_ID = "dev-backend-jr-8472"
 ATTEMPT_ID = "7c2a1f4e-9b6d-4c3a-8f1e-2d5a9b0c71e3"
 
 PROFILE = {
-    "name": "Juan Peruzzo",
-    "email": "juan@example.com",
-    "phone": "+55 11 99999-0000",
-    "cv_path": "cv-juan.pdf",
+    "name": "Test User",
+    "email": "user@example.com",
+    "phone": "+55 11 90000-0000",
+    "cv_path": "cv-test.pdf",
     "cover_text": "Olá, sou desenvolvedor júnior.",
 }
 
