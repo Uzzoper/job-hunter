@@ -25,7 +25,7 @@ classification = classify_page(url, ax_nodes_from_snapshot)
 | Key | Label | Type | Required |
 |---|---|---|---|
 | `q_alguém que trabalha...` | Alguém que trabalha nesta empresa indicou você para esta vaga? | radio | True |
-| `q_você trabalha na empresa ux group` | Você trabalha na empresa Ux Group? | radio | True |
+| `q_você trabalha na empresa <company>` | Você trabalha na empresa `<company>`? | radio | True |
 | `q_onde você encontrou essa vaga opcional` | Onde você encontrou essa vaga? (Opcional) | combobox | False |
 
 ## Negative test — gate blocks submit
@@ -40,7 +40,7 @@ submittable: False
 detail:      2 required question(s) need human input
 blockers (2):
   - [MANUAL] "Alguém que trabalha nesta empresa indicou você para esta vaga?" (kind=plain)
-  - [MANUAL] "Você trabalha na empresa Ux Group?" (kind=plain)
+  - [MANUAL] "Você trabalha na empresa `<company>`?" (kind=plain)
 canonical_block_reason = 'MANUAL'
 ```
 
@@ -51,7 +51,7 @@ canonical_block_reason = 'MANUAL'
 ```python
 human_answers = {
     "q_alguém que trabalha...": "Não",
-    "q_você trabalha na empresa ux group": "Não",
+    "q_você trabalha na empresa <company>": "Não",
 }
 gate = answer.review_gate(questions, profile, memory_entries=None, human_answers=human_answers)
 ```

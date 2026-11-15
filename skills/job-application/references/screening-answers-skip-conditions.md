@@ -36,7 +36,7 @@ not invent:
 - Nome do pai
 - Naturalidade (cidade/estado de nascimento)
 
-Example: PagBank screening (9 questions including all of the above).
+Example: a `<company>` screening (9 questions including all of the above).
 
 Mark `DADOS_PESSOAIS` and skip. Do not ask the user for these — just move on.
 

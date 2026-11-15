@@ -22,7 +22,7 @@ corruption.
 - Evidence: screenshot `421.png`, `evidence.url` pointed to construmarket
 - Repair: copy to quarantine, rewrite `job_id` to `"421"`, rename to `421.json`
 
-### Job 609 (Mendelics)
+### Job `<id>` (`<company>`)
 
 - Record: `applications/quarantine/609.json` (already quarantined)
 - Reason: applied locally but backend `lifecycleState=null`, screenshot missing, attempts show `SESSION_EXPIRED`
