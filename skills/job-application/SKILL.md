@@ -666,10 +666,11 @@ Records live at:
   conveying that the run is authorized/committed).
 - **Backend marking after SUBMIT_OK** — verified success also marks the backend
   row so the job stops being re-proposed by the hunt: `POST /api/jobs/{id}/applied`
-  with `{portal, applicationId, stepId}` (application/step ids come from the
-  success page URL) → expect `201 {"jobId":<id>,"status":"SENT"}`. Report the
-  application id. This is the BACKEND row, not the local record — `verdict.py`
-  stays the sole writer of `applications/<job_id>.json`.
+  with **no body** — the endpoint takes only the path id; `portal`,
+  `applicationId` and `stepId` are NOT persisted server-side, they live in the
+  local verdict record. Expect `201 {"jobId":<id>,"status":"SENT"}` on first
+  mark, `200` + same body when already marked. This is the BACKEND row, not the
+  local record — `verdict.py` stays the sole writer of `applications/<job_id>.json`.
 - `--dry-run` never writes records.
 
 ### Quarantine (canonical format — §5)
