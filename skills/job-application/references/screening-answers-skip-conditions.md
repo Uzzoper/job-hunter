@@ -8,21 +8,19 @@ When the portal asks screening questions, use these declared values:
 
 | Question | Answer |
 |---|---|
-| Angular experience? | **Sim** (2 projetos próprios, aprende rápido — não é stack principal mas tem base prática) |
-| Ensino superior completo? | **Não** (cursando, previsão 2027) |
-| Pretensão salarial | Aberto a negociação, conforme mercado para profissionais júnior |
-| Inglês | C1 intermediário |
+| *(screening question)* | `<declared value from bot memory>` |
 
-These are NOT invented — they come from bot memory (user-corrected during this
-session). Do not improvise other values.
+These are NOT invented — they come from bot memory (`memories/MEMORY.md`,
+user-corrected). Real values are never committed here (public repository).
+Do not improvise other values; ask the user if a value is missing.
 
 ## Skip Conditions (do NOT submit, move on)
 
 ### ELIGIBILITY_BLOCK
 The job requires "superior completo" + "N anos de experience" as KNOCKOUT
-criteria. Juan does not meet these. Examples:
-- Cresol: "Formado em Análise de Sistemas..." + "5+ anos como Desenvolvedor"
-- Shift: "Experiência em desenvolvimento e manutenção de aplicações web" + screening marked superior completo as eliminatório
+criteria. The user does not meet these. Examples:
+- `<company>`: "Formado em Análise de Sistemas..." + "5+ anos como Desenvolvedor"
+- `<company>`: "Experiência em desenvolvimento e manutenção de aplicações web" + screening marked superior completo as eliminatório
 
 Mark `ELIGIBILITY_BLOCK` and skip — the portal would reject at the end and
 send a rejection email anyway.

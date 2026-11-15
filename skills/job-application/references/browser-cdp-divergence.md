@@ -4,7 +4,7 @@
 
 When a local Chromium CDP is running and authenticated (e.g., port 9222), but the Hermes browser tool is NOT connected to it, the bot encounters a critical divergence:
 
-- **CDP browser**: Shows authenticated session (e.g., `carreirasomie.gupy.io/candidates/applications/754177287/steps/...`)
+- **CDP browser**: Shows authenticated session (e.g., `<company>.gupy.io/candidates/applications/<app-id>/steps/...`)
 - **Browser tool** (Browserbase/Browser-Use cloud): Redirects to `/login` or `/candidates/auth`
 
 ## Root Cause

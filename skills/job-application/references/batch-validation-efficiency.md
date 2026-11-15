@@ -45,7 +45,7 @@ Common keywords: `desenvolvedor`, `full stack`, `front`, `back`, `software`, `fu
 
 ## 3. Remote-only filter
 
-Juan's preference: **SÓ REMOTO**. When a job listing shows:
+Standing user preference (from bot memory): **remote-only**. When a job listing shows:
 - `São Paulo - SP` (onsite) → NOT_AVAILABLE
 - `Híbrido` → NOT_AVAILABLE  
 - `Trabalho Remoto` → proceed
@@ -70,10 +70,7 @@ Skip these immediately without clicking.
 
 ## 5. Screening answer defaults
 
-Juan's declared profile values:
-- **Angular:** Sim (2 projetos próprios, aprende rápido)
-- **Superior completo:** Não (cursando, previsão 2027)
-- **Pretensão salarial:** Aberto a negociação, conforme mercado júnior
-- **Inglês:** C1 intermediário
+Declared values live in **bot memory** (`memories/MEMORY.md`) — never in this
+repository (it is public).
 
-Only use declared values. Never invent.
+Only use declared values. Never invent; if a value is not in memory, ask the user.

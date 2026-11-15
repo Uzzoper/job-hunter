@@ -8,7 +8,7 @@ When auditing `applications/` records against the backend, the API may return 40
 |--------|---------|--------|
 | Integer | `1000013442` | Legacy numeric IDs (InfoJobs, old Gupy) |
 | Base64 string | `eyJqb2...sIn0=` | Gupy slug — decode to `{"jobId":N,"source":"gupy_portal"}` |
-| Numeric string | `"755694375"` | Benner-style (string but all digits) |
+| Numeric string | `"<numeric-app-id>"` | string but all digits, seen on some portals |
 
 ## Lookup chain
 
@@ -29,6 +29,6 @@ A record goes to `attempts/quarantine/` when it lacks ALL of:
 
 Exceptions: records where `evidence.page == "sucesso"` (dict format, even without screenshot file) should stay.
 
-## Benner pattern (2026-09-11)
+## Numeric-string pattern (2026-09-11)
 
-A complete application record with `verdict: SUBMIT_OK` and `evidence` dict pointing to `.../applications/755694375/success`, but the screenshot file no longer exists in cache (cleaned up). The record itself is valid proof — do NOT quarantine it.
+A complete application record with `verdict: SUBMIT_OK` and `evidence` dict pointing to `.../applications/<app-id>/success`, but the screenshot file no longer exists in cache (cleaned up). The record itself is valid proof — do NOT quarantine it.

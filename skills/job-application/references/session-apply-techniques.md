@@ -204,16 +204,13 @@ browser:
 
 ## 9. Screening answers — declared values only (from bot memory)
 
-When filling screening questions, use ONLY declared values from bot memory.
-Default values for this profile (confirmed by user):
+When filling screening questions, use ONLY declared values from bot memory
+(`memories/MEMORY.md`). Real values are never committed to this repository
+(it is public); the table documents the format and provenance rule:
 
 | Question | Answer | Source |
 |---|---|---|
-| Angular experience | **Sim** (2 personal projects, learns fast) | User correction 2026-09-17 |
-| Ensino superior completo | **Não** (cursando, previsão 2027) | User profile |
-| Java experience | **Sim** | User profile (Spring Boot) |
-| Pretensão salarial | Aberto a negociação, conforme mercado júnior | Default |
-| Inglês | C1 intermediário | User profile |
+| *(screening question)* | `<declared value>` | `<memory entry / user correction date>` |
 
 **NEVER invent screening answers.** If a question has no declared source,
 ask the human before proceeding.

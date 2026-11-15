@@ -5,11 +5,11 @@ against a real Gupy form. Nothing submitted.
 
 ## Setup
 
-- **Vaga**: Desenvolvedor Júnior — UX Group — `uxgroup.gupy.io/jobs/12031034`
+- **Vaga**: Desenvolvedor Júnior — `<company>` — `<company>.gupy.io/jobs/<job-id>`
 - **Browser**: local Chromium CDP at `127.0.0.1:9222`, dedicated profile
-  `~/.chromium-profile-cdp`, session authenticated (page showed "Olá Juan,
-  vamos continuar sua candidatura?")
-- **Form URL**: `https://uxgroup.gupy.io/candidates/jobs/12031034/apply`
+  `~/.chromium-profile-cdp`, session authenticated (page showed the
+  personalized greeting)
+- **Form URL**: `https://<company>.gupy.io/candidates/jobs/<job-id>/apply`
 
 ## Classify (live)
 

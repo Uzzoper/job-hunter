@@ -30,14 +30,12 @@ For applying to multiple jobs:
 
 ## 3. Screening answers (profile defaults, confirmed)
 
+Values come from bot memory (`memories/MEMORY.md`) and are never committed
+to this public repository:
+
 | Question | Answer |
 |---|---|
-| Angular experience | **Sim** (2 personal projects, fast learner) |
-| Ensino superior | **Não completo** (cursando, 2027) |
-| Java experience | **Sim** |
-| Pretensão salarial | Aberto a negociação, conforme mercado júnior |
-| Testes unitários/automatizados | Sim, com ambos |
-| Suporte/Não superior completo | Não (cursando) |
+| *(screening question)* | `<declared value from memory>` |
 
 **If a question has no declared source, ask the human before submitting.**
 

@@ -8,7 +8,7 @@ run. These override or extend the existing `job-application` guidance.
 ## 1. URL truncation is DISPLAY-ONLY — never hex-decode
 
 **Signal:** The terminal, `read_file`, and `python3 -c "print(x)"` truncate long
-strings with a literal `...` (e.g. `https://fcamara.gupy.io/job/eyJqb2...sIn0=...`).
+strings with a literal `...` (e.g. `https://<company>.gupy.io/job/eyJqb2...sIn0=...`).
 The database stores the URL **intact**.
 
 **Test decisivo (ONE query, then stop):**

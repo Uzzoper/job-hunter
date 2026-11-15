@@ -29,11 +29,8 @@ Quando um email chega dizendo que a candidatura não foi finalizada:
 
 ## Screening Answers Padrão (via bot memory)
 
-Sempre consultar `memories/MEMORY.md` para screening answers. Padrão atual:
-- Angular: Sim (2 projetos próprios, aprende rápido)
-- Superior completo: Não (cursando, 2027)
-- Pretensão: Aberta a negociação, conforme mercado júnior
-- Inglês: C1 intermediário
-- Java/SQL/Testes/APIs REST: Sim
+Sempre consultar `memories/MEMORY.md` para screening answers — os valores
+declarados vivem na memória do bot (runtime da VM) e nunca são commitados
+neste repositório (público).
 
 Se um valor não está na memória, perguntar ao usuário — nunca inventar.

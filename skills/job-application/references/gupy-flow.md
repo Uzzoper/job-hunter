@@ -62,8 +62,9 @@ max 1.500 chars) plus a picker of up to 3 skills from the registered resume.
   varies per posting. The common trio is último salário / pretensão salarial /
   parente, but a job may ask a single question (e.g. "Informe uma faixa salarial
   que considere atrativa para posição") or a different set entirely. Values
-  come from the stored profile / bot memory (pretensão `R$ 3.500,00` and
-  "parente: Não" are standing user preferences) — never invent one.
+  come from the stored profile / bot memory (salary expectation, "parente"
+  and similar answers are standing user preferences — real values live in
+  bot memory, not in this public repository) — never invent one.
 - Every other required question resolves from the profile or memory; an
   ungrounded required answer blocks the submit (see the answer policy in
   SKILL.md).
