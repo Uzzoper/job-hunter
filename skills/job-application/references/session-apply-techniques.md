@@ -217,8 +217,9 @@ browser:
 ## 9. Screening answers — declared values only (from bot memory)
 
 When filling screening questions, use ONLY declared values from bot memory
-(`memories/MEMORY.md`). Real values are never committed to this repository
-(it is public); the table documents the format and provenance rule:
+(`memories/MEMORY.md` — the agent's memory file under the bot profile on the
+VM). Real values are never committed to this repository (it is public); the
+table documents the format and provenance rule:
 
 | Question | Answer | Source |
 |---|---|---|

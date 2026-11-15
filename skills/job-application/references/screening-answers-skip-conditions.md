@@ -4,14 +4,16 @@ User-corrected on 2026-09-18 and validated across a 30+ job batch.
 
 ## Standard Screening Answers
 
-When the portal asks screening questions, use these declared values:
+When the portal asks screening questions, use the declared value for that
+question (from bot memory — format below; if missing, ask the user):
 
 | Question | Answer |
 |---|---|
 | *(screening question)* | `<declared value from bot memory>` |
 
-These are NOT invented — they come from bot memory (`memories/MEMORY.md`,
-user-corrected). Real values are never committed here (public repository).
+These are NOT invented — they come from bot memory (`memories/MEMORY.md`, the
+agent's memory file under the bot profile on the VM — user-corrected). Real
+values are never committed here (public repository).
 Do not improvise other values; ask the user if a value is missing.
 
 ## Skip Conditions (do NOT submit, move on)

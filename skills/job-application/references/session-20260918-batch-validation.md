@@ -30,8 +30,9 @@ For applying to multiple jobs:
 
 ## 3. Screening answers (profile defaults, confirmed)
 
-Values come from bot memory (`memories/MEMORY.md`) and are never committed
-to this public repository:
+Values come from bot memory (`memories/MEMORY.md` — the agent's memory file
+under the bot profile on the VM) and are never committed to this public
+repository:
 
 | Question | Answer |
 |---|---|

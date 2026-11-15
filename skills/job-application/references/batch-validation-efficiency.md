@@ -70,7 +70,8 @@ Skip these immediately without clicking.
 
 ## 5. Screening answer defaults
 
-Declared values live in **bot memory** (`memories/MEMORY.md`) — never in this
-repository (it is public).
+Declared values live in **bot memory** (`memories/MEMORY.md`, the agent's
+memory file under the bot profile on the VM) — never in this repository
+(it is public).
 
 Only use declared values. Never invent; if a value is not in memory, ask the user.

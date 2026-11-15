@@ -30,8 +30,8 @@ Quando um email chega dizendo que a candidatura não foi finalizada:
 
 ## Screening Answers Padrão (via bot memory)
 
-Sempre consultar `memories/MEMORY.md` para screening answers — os valores
-declarados vivem na memória do bot (runtime da VM) e nunca são commitados
-neste repositório (público).
+Sempre consultar a memória do bot — `memories/MEMORY.md` no perfil do bot
+(runtime da VM) — para screening answers; os valores declarados nunca são
+commitados neste repositório (público).
 
 Se um valor não está na memória, perguntar ao usuário — nunca inventar.
