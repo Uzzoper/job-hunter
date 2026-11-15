@@ -31,10 +31,10 @@ APPLY_PATH = Path(__file__).resolve().parent / "apply.py"
 GUPY_URL = "https://jobs.gupy.io/jobs/12345-desenvolvedor-java"
 
 VALID_PROFILE = {
-    "name": "Juan Antonio Peruzzo",
-    "email": "juan@example.com",
-    "phone": "+55 42 99999-0000",
-    "cv_path": "/home/juan/cv.pdf",
+    "name": "Test User",
+    "email": "user@example.com",
+    "phone": "+55 11 90000-0000",
+    "cv_path": "/home/testuser/cv.pdf",
     "cover_text": "Olá! Gostaria de me candidatar à vaga de desenvolvedor.",
 }
 
@@ -102,7 +102,7 @@ class FindInAxTreeTests(unittest.TestCase):
             _ax_node("1", "button", name="Enviar candidatura"),
             _ax_node("2", "button", name="Salvar rascunho"),
             _ax_node("3", "textbox", name="nome completo"),
-            _ax_node("4", "textbox", name="email", value="JUAN@example.com"),
+            _ax_node("4", "textbox", name="email", value="FULANO@example.com"),
         ]})
 
     def test_matches_by_name_substring(self):
@@ -114,8 +114,8 @@ class FindInAxTreeTests(unittest.TestCase):
     def test_matches_case_insensitive(self):
         result = ax_tree.find_in_ax_tree(self.nodes, "ENVIAR")
         self.assertEqual(len(result), 1)
-        # "juan" matches only the textbox value "JUAN@example.com" (case-insensitive).
-        result = ax_tree.find_in_ax_tree(self.nodes, "juan")
+        # "fulano" matches only the textbox value "FULANO@example.com" (case-insensitive).
+        result = ax_tree.find_in_ax_tree(self.nodes, "fulano")
         self.assertEqual(len(result), 1)
         result = ax_tree.find_in_ax_tree(self.nodes, "NOME COMPLETO")
         self.assertEqual(len(result), 1)

@@ -26,10 +26,10 @@ GUPY_URL = "https://jobs.gupy.io/jobs/12345-desenvolvedor-java"
 JOB_ID = "12345-desenvolvedor-java"
 
 VALID_PROFILE = {
-    "name": "Juan Antonio Peruzzo",
-    "email": "juan@example.com",
-    "phone": "+55 42 99999-0000",
-    "cv_path": "/home/juan/cv.pdf",
+    "name": "Test User",
+    "email": "user@example.com",
+    "phone": "+55 11 90000-0000",
+    "cv_path": "/home/testuser/cv.pdf",
     "cover_text": "Olá! Gostaria de me candidatar à vaga de desenvolvedor.",
 }
 
