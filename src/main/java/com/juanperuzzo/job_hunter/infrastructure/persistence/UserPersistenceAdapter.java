@@ -1,6 +1,7 @@
 package com.juanperuzzo.job_hunter.infrastructure.persistence;
 
 import com.juanperuzzo.job_hunter.application.port.out.UserRepository;
+import com.juanperuzzo.job_hunter.domain.exception.UserNotFoundException;
 import com.juanperuzzo.job_hunter.domain.model.User;
 import org.springframework.stereotype.Repository;
 
@@ -52,7 +53,11 @@ public class UserPersistenceAdapter implements UserRepository {
 
     @Override
     public void updateIdentity(Long userId, String name, String email) {
-        throw new UnsupportedOperationException("slice (b): not implemented");
+        var entity = jpaRepository.findById(userId)
+                .orElseThrow(() -> new UserNotFoundException("User not found with id: " + userId));
+        entity.setName(name);
+        entity.setEmail(email);
+        jpaRepository.save(entity);
     }
 
     private UserEntity toEntity(User user) {

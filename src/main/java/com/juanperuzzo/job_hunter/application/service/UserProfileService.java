@@ -44,7 +44,31 @@ public class UserProfileService implements UserProfileUseCase {
 
     @Override
     public AccountIdentity updateIdentity(Long userId, String name, String email) {
-        throw new UnsupportedOperationException("slice (b): not implemented");
+        var user = userRepository.findById(userId)
+                .orElseThrow(() -> new UserNotFoundException("User not found with id: " + userId));
+
+        // Null = no correction for this field → stored value kept; a blank string
+        // is an explicit correction that cannot be applied (reject, never guess).
+        String newName = user.name();
+        if (name != null) {
+            var candidate = name.trim();
+            if (candidate.isBlank() || candidate.length() > 255) { // mirrors @Size on ProfileRequest.name
+                throw new IllegalArgumentException("name must be non-blank and at most 255 characters");
+            }
+            newName = candidate;
+        }
+        String newEmail = user.email();
+        if (email != null) {
+            var candidate = email.trim();
+            if (candidate.isBlank() || candidate.length() > 255
+                    || !ResumeExtractionPipeline.EMAIL_PATTERN.matcher(candidate).matches()) {
+                throw new IllegalArgumentException("email must be a valid, non-blank address of at most 255 characters");
+            }
+            newEmail = candidate;
+        }
+
+        userRepository.updateIdentity(userId, newName, newEmail);
+        return new AccountIdentity(newName, newEmail);
     }
 
     /**

@@ -35,6 +35,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -208,7 +209,9 @@ class ResumeCommitServiceTest {
         when(file.isEmpty()).thenReturn(false);
         when(file.getContentType()).thenReturn("application/pdf");
         when(file.getOriginalFilename()).thenReturn("resume.pdf");
-        when(file.getInputStream()).thenReturn(new ByteArrayInputStream(pdfBytes));
+        // Lenient: aborting flows (digest mismatch, invalid correction) never
+        // consume every stub — same approach as ResumeUploadServiceTest.
+        lenient().when(file.getInputStream()).thenReturn(new ByteArrayInputStream(pdfBytes));
         when(file.getBytes()).thenReturn(pdfBytes);
         return file;
     }

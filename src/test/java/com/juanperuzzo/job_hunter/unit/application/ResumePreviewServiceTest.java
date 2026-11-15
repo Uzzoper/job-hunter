@@ -35,6 +35,7 @@ import java.util.Optional;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -63,7 +64,10 @@ class ResumePreviewServiceTest {
     @Test
     @DisplayName("preview should return the merged preview and persist nothing")
     void preview_whenValidPdf_shouldReturnPreviewWithoutSaving() throws Exception {
-        var file = validPdfMock("Resume text for the stateless preview flow.");
+        // one byte instance for the whole test: PDFBox embeds a creation
+        // timestamp, so two pdfBytes() calls would yield different digests
+        var bytes = pdfBytes();
+        var file = pdfMock(bytes);
         var aiJson = """
                 {"skills": ["Java", "Spring Boot"],
                  "projects": [{"name": "ProjectX", "description": "A project", "techStack": ["Java", "Maven"]}],
@@ -94,12 +98,14 @@ class ResumePreviewServiceTest {
                 preview.projects().get(0));
         // stored tone is what commit would keep
         assertEquals(CompanyTone.CASUAL, preview.tone());
-        // digest = md5 of the uploaded bytes (the echo the commit verifies)
-        assertEquals(md5Hex(pdfBytes()), preview.digest());
+        // digest = md5 of the uploaded bytes (the echo the commit verifies);
+        // the SAME byte instance the mock serves — PDFBox embeds a creation
+        // timestamp, so two pdfBytes() calls would produce different digests
+        assertEquals(md5Hex(bytes), preview.digest());
         // nothing is missing after the merge preview
         assertEquals(List.of(), preview.missingFields());
         // resumeTextChars mirrors the extracted text length
-        assertEquals(pdfTextLength(pdfBytes()), preview.resumeTextChars());
+        assertEquals(pdfTextLength(bytes), preview.resumeTextChars());
 
         // stateless: nothing is written anywhere (the preview service has no
         // ResumeStorage dependency at all — the guarantee is structural)
@@ -168,12 +174,18 @@ class ResumePreviewServiceTest {
     // =========================================================================
 
     private MultipartFile validPdfMock(String text) throws Exception {
+        return pdfMock(pdfBytes());
+    }
+
+    private MultipartFile pdfMock(byte[] bytes) throws IOException {
         var file = mock(MultipartFile.class);
         when(file.isEmpty()).thenReturn(false);
         when(file.getContentType()).thenReturn("application/pdf");
         when(file.getOriginalFilename()).thenReturn("resume.pdf");
-        when(file.getInputStream()).thenReturn(new ByteArrayInputStream(pdfBytes()));
-        when(file.getBytes()).thenReturn(pdfBytes());
+        // Lenient: aborting flows (AI failure, invalid file) never consume
+        // every stub — same approach as ResumeUploadServiceTest.validPdfMock.
+        lenient().when(file.getInputStream()).thenReturn(new ByteArrayInputStream(bytes));
+        lenient().when(file.getBytes()).thenReturn(bytes);
         return file;
     }
 

@@ -1,6 +1,5 @@
 package com.juanperuzzo.job_hunter.application.service;
 
-import com.juanperuzzo.job_hunter.application.dto.ResumeExtractionResponse;
 import com.juanperuzzo.job_hunter.application.port.out.AiPort;
 import com.juanperuzzo.job_hunter.application.port.out.ResumeStorage;
 import com.juanperuzzo.job_hunter.application.port.out.UserProfileRepository;
