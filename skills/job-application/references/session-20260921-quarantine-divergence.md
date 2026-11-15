@@ -16,8 +16,8 @@ Session where a full triage + apply batch on Gupy remote jobs revealed several b
 
 URLs stored in DB are literally truncated:
 ```
-id=609 | https://mendelics.gupy.io/job/eyJqb2...sIn0=?jobBoardSource=gupy_portal
-id=21  | https://<company>.gupy.io/job/eyJqb2...sIn0=?jobBoardSource=gupy_portal
+id=<n> | https://<company>.gupy.io/job/eyJqb2...sIn0=?jobBoardSource=gupy_portal
+id=<n> | https://<company>.gupy.io/job/eyJqb2...sIn0=?jobBoardSource=gupy_portal
 ```
 
 The `...` is literally in the database string, not a display artifact. This prevents navigation.

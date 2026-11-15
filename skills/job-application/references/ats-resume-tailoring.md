@@ -83,13 +83,15 @@ Two edits worth making once at the source rather than per application:
 - **De-duplicate the skills list.** The same tool repeated under two headings
   (`Git, Linux, Postman…` under both *Ferramentas* and *Conceitos*) burns the
   densest lines of a two-page document. Merge them once.
-- **Put the location in the header line.** `Ponta Grossa/PR` belongs next to the
-  phone: location is a field ATS extracts, and the header line is the only part
-  every parser reads before it decides where to look.
+- **Put the location in the header line.** The user's location (declared value
+  in bot memory) belongs next to the phone: location is a field ATS extracts,
+  and the header line is the only part every parser reads before it decides
+  where to look.
 
-**Leave the factual claims alone unless the user corrects them.** A degree listed
-as `trancado (6/10 semestres cursados)` is already honest — do not "clean it up"
-into a completed degree, and do not delete it unprompted either; it is their CV.
+**Leave the factual claims alone unless the user corrects them.** A degree
+listed with its declared in-progress status (from bot memory) is already
+honest — do not "clean it up" into a completed degree, and do not delete it
+unprompted either; it is their CV.
 
 ## Keep the profile honest — it is the source every AI feature reads
 

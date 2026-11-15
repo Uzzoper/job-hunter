@@ -11,7 +11,7 @@ Before emitting an intent or driving the browser, run these gates IN ORDER:
 5. **Eligibility screening (pre-apply)** — read the job description. If ANY hard requirement (not "desejável") is unmet by the profile, mark `ELIGIBILITY_BLOCK` and DO NOT apply:
    - "Formado em..." / "Ensino superior completo" → BLOCK (check declared education status in bot memory)
    - "X+ anos de experiência" where X > 0 → BLOCK (junior, 0 years formal)
-   - Stack explicitly lacking (e.g., PHP + Angular + CodeIgniter) → BLOCK (but Angular is now "Sim")
+   - Stack explicitly lacking (e.g., PHP + Angular + CodeIgniter) → BLOCK (check declared stack answers in bot memory first — they evolve)
    - Methods user cannot honestly claim → BLOCK
 
 ## Screening answer defaults (from bot memory)
@@ -27,7 +27,7 @@ public repository. Format:
 ## Status taxonomy for batch runs
 
 - `applied` — submitted + success evidence
-- `rejected` — submitted + eliminatory failure from portal (e.g., superior incompleto)
+- `rejected` — submitted + eliminatory failure from portal (e.g., a knockout requirement the user lacks)
 - `NOT_AVAILABLE` — job vanished from public listing (404)
 - `ELIGIBILITY_BLOCK` — pre-apply hard requirement unmet (never submitted)
 - `already_applied` — backend says SUBMITTED
@@ -36,9 +36,9 @@ public repository. Format:
 
 | Job | Score | Status | Reason |
 |---|---|---|---|
-| `<id>` | 82 | applied | 12:40h |
+| `<id>` | 82 | applied | `<time>` |
 | `<id>` | 78 | rejected | `<eliminatory stack>` eliminatory |
-| `<id>` | 80 | rejected | Superior incompleto eliminatory |
+| `<id>` | 80 | rejected | `<knockout requirement>` eliminatory |
 | `<id>` | 78 | NOT_AVAILABLE | `<company>` 404 |
 | `<id>` | 78 | NOT_AVAILABLE | `<company>` redirected to listing |
 | `<id>` | 75 | ELIGIBILITY_BLOCK | "Formado em..." + "5+ anos" |

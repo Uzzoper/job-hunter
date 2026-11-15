@@ -29,10 +29,10 @@ corruption.
 
 ### Attempts NOT_AVAILABLE with truncated URLs
 
-- `attempts/171.json` (BYD Brasil) — URL: `https://bydbrasil.gupy.io/job/eyJqb2...sIn0=`
-- `attempts/172.json` (Porto) — URL: `https://porto.gupy.io/job/eyJqb2...FsIn`
-- `attempts/1463.json` (Werecruiter) — URL: `https://werecruiter.gupy.io/job/eyJqb2...sIn0=?jobBoardSource=gupy_portal`
-- `attempts/201.json` (Leve Saúde) — URL: `https://levesaude.gupy.io/job/eyJqb2...sIn0=`
+- `attempts/<n>.json` (`<company>`) — URL: `https://<company>.gupy.io/job/eyJqb2...sIn0=`
+- `attempts/<n>.json` (`<company>`) — URL: `https://<company>.gupy.io/job/eyJqb2...FsIn`
+- `attempts/<n>.json` (`<company>`) — URL: `https://<company>.gupy.io/job/eyJqb2...sIn0=?jobBoardSource=gupy_portal`
+- `attempts/<n>.json` (`<company>`) — URL: `https://<company>.gupy.io/job/eyJqb2...sIn0=`
 
 All four are `NOT_AVAILABLE` outcomes — the bot navigated to a non-existent URL and the job wasn't found.
 
@@ -47,4 +47,4 @@ All four are `NOT_AVAILABLE` outcomes — the bot navigated to a non-existent UR
 
 - **NEVER type URLs by hand.** Always use `--job-id <id>` or `--from-api`.
 - The planner fetches the URL from the API, so truncation only happens when the backend has a stale truncated URL (scraper bug).
-- Formado and RG are ALWAYS eliminatory — no exceptions (user is a 2027 graduate).
+- Formado and RG are ALWAYS eliminatory — no exceptions (check declared education status in bot memory).

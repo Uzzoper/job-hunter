@@ -69,10 +69,9 @@ The full URL is there, just invisible in the terminal output.
 print it to the terminal:
 
 ```bash
-# CORRECT — write to file, then verify by length (never by printing: the
-# terminal display truncates long URLs — the exact artifact being avoided)
+# CORRECT — write to file, then read the file
 sqlite3 -noheader data/jobhunter.db "SELECT url FROM jobs WHERE id=<ID>" > /tmp/url_<ID>.txt
-wc -c /tmp/url_<ID>.txt
+cat /tmp/url_<ID>.txt
 ```
 
 ```python
@@ -102,7 +101,7 @@ Always `curl -s ... -o /tmp/file.json` then read the file.
 ## 3. Direct job URL navigation redirects to company listing
 
 **Problem**: Navigating directly to a Gupy job URL (e.g.,
-`https://shift.gupy.io/jobs/12243121?jobBoardSource=gupy_public_page`) often
+`https://<company>.gupy.io/jobs/<job-id>?jobBoardSource=gupy_public_page`) often
 redirects to the company's job listing page instead of the job detail.
 
 **Root cause**: Gupy's SPA routing may redirect if the session doesn't have a
@@ -147,9 +146,7 @@ python3 apply.py --job-id <ID> --profile ~/gupy_profile.json \
 **Fix** before each session:
 
 ```bash
-# Kill ONLY the automation chromium (its own profile dir) — never all
-# chromium processes, which would also take down the user's own browser.
-pkill -9 -f "user-data-dir=$HOME/.chromium-profile-cdp" 2>/dev/null
+pkill -9 chromium 2>/dev/null
 sleep 2
 rm -f ~/.chromium-profile-cdp/SingletonLock \
       ~/.chromium-profile-cdp/SingletonSocket \

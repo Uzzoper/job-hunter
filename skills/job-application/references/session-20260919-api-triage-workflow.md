@@ -30,7 +30,7 @@ GET /api/jobs/{id}
 ```python
 # Check description for:
 # - Remote indicators: "Remoto", "Home Office", "Trabalho Remoto", "HOME OFFICE"
-# - Eliminatory: "Superior completo" (user is cursing), 5+ years experience, stack mismatch
+# - Eliminatory: "Superior completo" (check declared education status in bot memory), 5+ years experience, stack mismatch
 # - DADOS_PESSOAIS: RG, órgão emissor, nome da mãe/pai, naturalidade
 ```
 
@@ -75,12 +75,12 @@ Before applying, check if another job has the same URL base:
 
 ```json
 {
-  "job_id": "622",
-  "job_company": "PagBank",
+  "job_id": "<numeric-id>",
+  "job_company": "<company>",
   "job_title": "Engenheiro de Software Pl. (Front-end)",
   "outcome": "MANUAL",
   "barrier": "DADOS_PESSOAIS (RG, órgão/estado emissor, nome da mãe, nome do pai, naturalidade)",
-  "url": "https://pagseguro.gupy.io/jobs/11510384",
+  "url": "https://<company>.gupy.io/jobs/<gupy-job-id>",
   "match_score": 67,
   "recorded_at": "2026-09-18T20:15:00-03:00"
 }
@@ -88,17 +88,18 @@ Before applying, check if another job has the same URL base:
 
 ## Eliminatory Requirements (from memory)
 
-- **Superior completo**: User is cursing (previsão 2027) → eliminatory if required
-- **5+ years experience**: User has ~2 years → eliminatory
-- **PHP/Angular/CodeIgniter**: User doesn't know → eliminatory
-- **Stack mismatch**: If job requires stack user doesn't have → eliminatory
+- **Superior completo**: if required and not declared complete in bot memory → eliminatory
+- **5+ years experience**: check declared experience in bot memory → eliminatory if unmet
+- **Stack mismatch**: if the job requires a stack not declared in bot memory → eliminatory
+- **DADOS_PESSOAIS-style barriers** (RG, naturalidade, parent names): treated per session policy
 
 ## Remote-Only Filter
 
-User is ONLY remote (Ponta Grossa/PR, no relocation). Discard:
+The user is remote-only (declared in bot memory — check current city and
+relocation preferences there). Discard:
 - Presencial (any city)
-- Híbrido SP/RJ/other cities (unless user explicitly approves)
-- Híbrido Curitiba/Floripa (only with explicit user approval)
+- Híbrido in cities the user has NOT explicitly approved — only hybrid cities
+  listed as approved in bot memory pass, and even then confirm in chat
 
 ## Calibration Sample Format (#78)
 
