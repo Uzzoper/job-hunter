@@ -200,9 +200,9 @@ Profile JSON:
 
 ```json
 {
-  "name": "Juan Antonio Peruzzo",
-  "email": "juan@example.com",
-  "phone": "+55 42 99999-0000",
+  "name": "<user name>",
+  "email": "user@example.com",
+  "phone": "+55 42 90000-0000",
   "cv_path": "~/.hermes/profiles/jobhunter-bot/<resume-filename>.pdf",
   "cover_text": "Olá! Gostaria de me candidatar à vaga."
 }
@@ -312,7 +312,7 @@ backend. **The backend is the source of truth**
 (`uploads/resumes/2/resume.pdf`); the local file is only a working copy.
 
 ```bash
-curl -sS -o ~/.hermes/profiles/jobhunter-bot/Juan-Peruzzo.pdf \
+curl -sS -o ~/.hermes/profiles/jobhunter-bot/<resume-filename>.pdf \
   -H "X-Bot-Token: $BOT_SERVICE_API_KEY" \
   "http://127.0.0.1:8080/api/profile/resume"
 ```
@@ -648,7 +648,7 @@ Records live at:
 ```json
 {
   "job_id": "<id-slug>",
-  "contact_email": "juan@example.com",
+  "contact_email": "user@example.com",
   "portal": "gupy",
   "applied_at": "<ISO timestamp>",
   "screenshot_path": "<memory-dir>/screenshots/<id-slug>.png",

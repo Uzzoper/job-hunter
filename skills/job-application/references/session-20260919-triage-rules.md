@@ -9,7 +9,7 @@ These rules apply from the start of every new cycle — no exceptions:
 3. **Exclude processed + MANUAL queue** — check both `applications/*.json` and `attempts/*.json` before navigating.
 4. **postedAt mais recente primeiro** — sort by posted date descending.
 5. **DADOS_PESSOAIS → MANUAL** — if form asks for RG, órgão emissor, nome da mãe/pai, naturalidade: record attempt with `outcome: "MANUAL"` and move on. Do NOT ask the human.
-6. **Eliminatória → pula com motivo** — if the job description requires something Juan doesn't have (superior completo, years of experience, specific tech stack), skip and record the reason.
+6. **Eliminatória → pula com motivo** — if the job description requires something the user doesn't have (declared values in bot memory: superior completo, years of experience, specific tech stack), skip and record the reason.
 
 ## Workflow: Batch-First Triage
 
