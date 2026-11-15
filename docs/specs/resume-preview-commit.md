@@ -1,5 +1,9 @@
 # Resume preview/commit flow (issue #92, slice b)
 
+> **Status:** implemented (backend). Bot-side rollout — the onboarding
+> section in the `job-application` skill — is the repo-first follow-up after
+> this lands (repo → install).
+
 > Backend slice of #92: extract-without-committing, explicit confirmation
 > before anything replaces the active resume/profile, and an account-identity
 > correction route. Foundation: `bot-resume-retrieval.md` (slice a). Apply-skill

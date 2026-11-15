@@ -1,5 +1,10 @@
 # Bot resume retrieval + profile account identity (issue #92, slice a)
 
+> **Status:** implemented (slice a); the write-route identity thread it left
+> open is closed by slice (b) — `resume-preview-commit.md` landed the
+> `updateIdentity` route, and every profile response (GET / PUT /
+> upload-resume / commit) now carries non-null users-row identity.
+
 Small backend slice: the bot can retrieve the stored resume PDF through the
 authenticated API, and the profile response carries the account identity.
 It is the foundation for slice (b) (preview/commit upload contract) and

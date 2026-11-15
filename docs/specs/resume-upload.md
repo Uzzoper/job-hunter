@@ -1,6 +1,10 @@
 # Spec: Resume Upload (PDF → AI Profile Extraction)
 
 > **Layer:** `web` | `application` | `infrastructure`
+> **Status:** implemented; amended by slice (b) — upload endpoint unchanged,
+> the bot chat flow uses preview/commit (`resume-preview-commit.md`) and the
+> extraction internals are now shared via `ResumeExtractionPipeline` (see the
+> amendment note at the end).
 > **Implementation files:**
 > - `com.juanperuzzo.job_hunter.web.controller.ProfileController`
 > - `com.juanperuzzo.job_hunter.application.service.ResumeUploadService`
@@ -189,4 +193,18 @@ Output:
 ## Config storage
 
 The uploaded PDF file path is not stored in the database at this stage (the file lives at `{upload-dir}/{userId}/resume.pdf` and can be derived from the user id).
+
+## Amendment — issue #92 slice (b): commit flow is the chat-confirmed path
+
+This endpoint is unchanged — extraction → immediate save remains the TUI/CLI
+path. For the bot chat flow, slice (b) added the confirmed path:
+`POST /api/profile/resume/preview` (stateless, persists nothing) → chat
+confirmation → `POST /api/profile/resume/commit` (digest echo guard, merge
+order chat correction > stored value > AI extraction) — see
+`resume-preview-commit.md`.
+
+The extraction internals (file validation, PDFBox text, Prompt 3 + strict AI
+response validation, fill-if-empty contact merge) now live in the shared
+`ResumeExtractionPipeline`, reused by the upload, preview and commit services
+— every rule in this spec applies to all three routes.
 
