@@ -44,7 +44,7 @@ only on the missing import and nothing else is ambiguous):
        → "unknown" (fixed priority, marker-based, deterministic).
     resolve_profile_source(question, profile) -> Optional[Tuple[str, Any]]
        (profile field, value) when the question key/label maps to a non-blank
-       profile field (name/email/phone/cv_path/cover_text).
+       profile field (name/email/phone/cover_text).
     resolve_question(question, profile, memory_entries=None,
                      human_answers=None) -> dict
        {"key","label","kind","field_type","verdict","source","value","reason",
@@ -84,10 +84,10 @@ JOB_ID = "dev-backend-jr-8472"
 ATTEMPT_ID = "7c2a1f4e-9b6d-4c3a-8f1e-2d5a9b0c71e3"
 
 PROFILE = {
+    # Slice (c): the backend profile carries exactly 4 fields — no cv_path.
     "name": "Test User",
     "email": "user@example.com",
     "phone": "+55 11 90000-0000",
-    "cv_path": "cv-test.pdf",
     "cover_text": "Olá, sou desenvolvedor júnior.",
 }
 
@@ -129,6 +129,15 @@ class ReviewTaxonomyTests(unittest.TestCase):
         self.assertEqual(result["verdict"], answer.ANSWER)
         self.assertEqual(result["source"], "profile.email")
         self.assertEqual(result["value"], PROFILE["email"])
+
+    def test_resolveProfileSource_whenCurriculoMentioned_shouldNotResolveCvAliases(self):
+        # Slice (c): the "cv/currículo" chat aliases are retired with the
+        # cv_path field — a resume mention never grounds a question from the
+        # profile (resume data flows through the onboarding preview/commit
+        # flow instead). A legacy profile cv_path key stays unresolvable.
+        question = make_question(key="curriculo", label="Anexar currículo")
+        legacy_profile = dict(PROFILE, cv_path="cv-test.pdf")
+        self.assertIsNone(answer.resolve_profile_source(question, legacy_profile))
 
     def test_resolveQuestion_whenOpenTextWithoutSource_shouldAskManual(self):
         question = make_question(
@@ -233,6 +242,15 @@ class ReviewGateTests(unittest.TestCase):
         self.assertTrue(gate["submittable"])
         self.assertEqual(gate["blockers"], [])
         self.assertEqual(len(gate["questions"]), 2)
+
+    def test_reviewGate_whenOnlyRequiredFileInput_shouldBeSubmittable(self):
+        # Slice (c): a form whose only required control is the resume file
+        # input stays submittable — the executor attaches the resume
+        # out-of-band (fresh download gate), it is never a gated question.
+        nodes = [ax_node("fileinput", "Anexar currículo *", backendNodeId=99)]
+        gate = self._gate(answer.extract_questions(nodes))
+        self.assertTrue(gate["submittable"])
+        self.assertEqual(gate["blockers"], [])
 
     def test_reviewGate_whenOneAsk_shouldBlockSubmit(self):
         questions = [
@@ -406,6 +424,14 @@ class QuestionExtractionTests(unittest.TestCase):
         self.assertEqual(len(questions), 1)
         self.assertTrue(questions[0]["required"])
         self.assertEqual(questions[0]["field_type"], "textbox")
+
+    def test_extractQuestions_whenFileInput_shouldNotEmitQuestion(self):
+        # Slice (c): the resume file input is an executor ATTACH action
+        # (fresh download → temp → upload → delete), never a question — no
+        # profile field grounds it anymore, so emitting it would make the
+        # review gate block every form with a required resume upload.
+        nodes = [ax_node("fileinput", "Anexar currículo *", backendNodeId=99)]
+        self.assertEqual(answer.extract_questions(nodes), [])
 
     def test_extractQuestions_whenOptionalMarker_shouldBeOptional(self):
         nodes = [ax_node("textbox", "LinkedIn (opcional)", backendNodeId=12)]

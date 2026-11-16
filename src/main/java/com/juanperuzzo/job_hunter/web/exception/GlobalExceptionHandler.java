@@ -6,6 +6,7 @@ import com.juanperuzzo.job_hunter.domain.exception.ScraperException;
 import com.juanperuzzo.job_hunter.domain.exception.InvalidCredentialsException;
 import com.juanperuzzo.job_hunter.domain.exception.EmailAlreadyExistsException;
 import com.juanperuzzo.job_hunter.domain.exception.ResumeNotFoundException;
+import com.juanperuzzo.job_hunter.domain.exception.ResumeDigestMismatchException;
 import com.juanperuzzo.job_hunter.domain.exception.UserNotFoundException;
 import com.juanperuzzo.job_hunter.domain.exception.ProfileNotConfiguredException;
 import com.juanperuzzo.job_hunter.domain.exception.ProfileNotFoundException;
@@ -98,6 +99,16 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(ResumeNotFoundException.class)
     public ResponseEntity<Map<String, Object>> handleResumeNotFound(ResumeNotFoundException ex) {
         return buildResponse(HttpStatus.NOT_FOUND, ex.getMessage());
+    }
+
+    /**
+     * The digest echoed at commit does not match the uploaded artifact
+     * (issue #92 slice b): the confirmed file is not the previewed one —
+     * conflict, nothing written.
+     */
+    @ExceptionHandler(ResumeDigestMismatchException.class)
+    public ResponseEntity<Map<String, Object>> handleResumeDigestMismatch(ResumeDigestMismatchException ex) {
+        return buildResponse(HttpStatus.CONFLICT, ex.getMessage());
     }
 
     @ExceptionHandler(AnalysisNotFoundException.class)
