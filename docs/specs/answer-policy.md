@@ -1,9 +1,10 @@
 # Answer Policy (issue #73)
 
-> **Status:** implemented. Slice (c) (`apply-backend-profile.md`) retired the
-> `cv_path` profile field and its "currículo" chat aliases — the profile
-> resolve set is `name`/`email`/`phone`/`cover_text`; resume mentions route
-> to the onboarding preview/commit flow instead of a profile answer.
+> **Status:** implemented. Slice (c) (`apply-backend-profile.md`) retired
+> the `cv_path` profile field and its "currículo" chat aliases — the
+> profile resolve set is `name`/`email`/`phone`/`cover_text`; resume
+> mentions route to the onboarding preview/commit flow instead of a
+> profile answer.
 
 Spec for the per-question review gate. Companion to
 `deterministic-apply-runbook.md` (§3.2 plugs the review gate: "all required

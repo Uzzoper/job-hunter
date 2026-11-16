@@ -129,8 +129,9 @@ resume/profile.
 - `job-application` skill gains the onboarding section (repo → install):
   attach → preview → summarize facts → confirm/correct in chat → commit.
   The bot never fabricates values; missing fields are asked in chat.
-- The INTERIM resume-refresh section survives until slice (c) — (b) does not
-  change the apply flow.
+- The INTERIM resume-refresh section survived until slice (c) landed — (b)
+  did not change the apply flow; slice (c) then removed the section and the
+  local-copy rule.
 
 ## Non-goals (slice b)
 

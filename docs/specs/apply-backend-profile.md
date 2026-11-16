@@ -1,6 +1,6 @@
 # Apply & email flows consume the backend profile (issue #92, slice c)
 
-> **Status:** proposed (awaiting approval — no code without it).
+> **Status:** implemented (slice (c), PR #140; spec approved via #139).
 > Foundation: `bot-resume-retrieval.md` (slice a, read side) and
 > `resume-preview-commit.md` (slice b, write side). This slice closes #92:
 > the apply skill consumes the backend profile/PDF and the hand-maintained
@@ -93,8 +93,10 @@ curl -sS -o "$tmp" -H "X-Bot-Token: $BOT_SERVICE_API_KEY" \
 - `bot-resume-retrieval.md` / `resume-preview-commit.md`: status notes point
   here (the write-route thread and the staleness digest-echo half are closed
   by (b); the local-copy drift kill is this slice).
-- `references/`: verified no `cv_path`/`resume_path` citations exist — no
-  reference files need edits.
+- `references/`: no `cv_path`/`resume_path` citations exist. One reference
+  file did cite the retired `{{RESUME_FILENAME}}` placeholder and is updated
+  with this slice (`ats-resume-tailoring.md` — resume text is downloaded
+  fresh from the backend before reading).
 
 ## Design decisions
 
@@ -120,8 +122,9 @@ curl -sS -o "$tmp" -H "X-Bot-Token: $BOT_SERVICE_API_KEY" \
   contains no `resume_path`; profile mapping no longer reads `cv_path`.
 - `answer_test.py`: the "currículo" chat aliases no longer map to a profile
   field (retired with `cv_path`).
-- `navigation_test.py` / `ax_tree_test.py`: upload-step expectations updated
-  to the executor-side temp path.
+- `navigation_test.py` / `ax_tree_test.py`: profile fixtures updated to the
+  4-field shape (no upload-step tests exist in these files; the executor's
+  temp-path attach flow is documented in `SKILL.md` and the SOUL template).
 - Skill suite green (426+ tests) in the bot venv before install.
 
 ## Rollout
