@@ -131,7 +131,7 @@ class ProfileControllerTest {
         SecurityContextHolder.getContext().setAuthentication(authentication);
 
         var request = new ProfileRequest("New resume text that is certainly long enough to pass the minimum length constraint of fifty characters for test", List.of("Java", "Python"), CompanyTone.STARTUP, List.of(),
-                null, null, null, null, null, null);
+                null, null, null, null, null, null, null, null);
         var profile = new UserProfile(1L, 1L, "New resume text that is certainly long enough to pass the minimum length constraint of fifty characters for test", List.of("Java", "Python"), CompanyTone.STARTUP, List.of(),
                 null, null, null, null, null, null);
 
@@ -159,7 +159,7 @@ class ProfileControllerTest {
         SecurityContextHolder.getContext().setAuthentication(authentication);
 
         var request = new ProfileRequest(null, List.of("Java"), CompanyTone.STARTUP, List.of(),
-                null, null, null, null, null, null);
+                null, null, null, null, null, null, null, null);
 
         mockMvc.perform(put("/api/profile")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -174,7 +174,7 @@ class ProfileControllerTest {
         SecurityContextHolder.getContext().setAuthentication(authentication);
 
         var request = new ProfileRequest("short", List.of("Java"), CompanyTone.STARTUP, List.of(),
-                null, null, null, null, null, null);
+                null, null, null, null, null, null, null, null);
 
         mockMvc.perform(put("/api/profile")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -189,7 +189,7 @@ class ProfileControllerTest {
         SecurityContextHolder.getContext().setAuthentication(authentication);
 
         var request = new ProfileRequest("A very long resume text that is certainly more than fifty characters long to pass validation", List.of(), CompanyTone.STARTUP, List.of(),
-                null, null, null, null, null, null);
+                null, null, null, null, null, null, null, null);
 
         mockMvc.perform(put("/api/profile")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -204,7 +204,7 @@ class ProfileControllerTest {
         SecurityContextHolder.getContext().setAuthentication(authentication);
 
         var request = new ProfileRequest("A very long resume text that is certainly more than fifty characters long to pass validation", List.of("Java"), null, List.of(),
-                null, null, null, null, null, null);
+                null, null, null, null, null, null, null, null);
 
         mockMvc.perform(put("/api/profile")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -219,7 +219,7 @@ class ProfileControllerTest {
         SecurityContextHolder.getContext().setAuthentication(authentication);
 
         var request = new ProfileRequest("New resume text that is certainly long enough to pass the minimum length constraint of fifty characters for test", List.of("Java"), CompanyTone.FORMAL, List.of(),
-                null, null, null, null, null, null);
+                null, null, null, null, null, null, null, null);
 
         when(userProfileService.saveProfile(eq(1L), any(UserProfile.class)))
                 .thenThrow(new IllegalArgumentException("Invalid input"));
@@ -258,7 +258,7 @@ class ProfileControllerTest {
         var resume = "New resume text that is certainly long enough to pass the minimum length constraint of fifty characters for test";
         var request = new ProfileRequest(resume, List.of("Java"), CompanyTone.FORMAL, List.of(),
                 "(42) 99999-0000", "me@example.com", "https://me.dev",
-                "https://github.com/me", "https://linkedin.com/in/me", null);
+                "https://github.com/me", "https://linkedin.com/in/me", null, null, null);
         var profile = new UserProfile(1L, 1L, resume, List.of("Java"), CompanyTone.FORMAL, List.of(),
                 "(42) 99999-0000", "me@example.com", "https://me.dev",
                 "https://github.com/me", "https://linkedin.com/in/me", null);
@@ -416,7 +416,7 @@ class ProfileControllerTest {
 
         var resume = "New resume text that is certainly long enough to pass the minimum length constraint of fifty characters for test";
         var request = new ProfileRequest(resume, List.of("Java"), CompanyTone.STARTUP, List.of(),
-                null, null, null, null, null, null);
+                null, null, null, null, null, null, null, null);
         var prefs = new UserPreferences(new WorkPreference.Hybrid(List.of("Curitiba")), 3000, List.of());
         var profile = new UserProfile(1L, 1L, resume, List.of("Java"), CompanyTone.STARTUP, List.of(),
                 null, null, null, null, null, prefs);
@@ -442,7 +442,7 @@ class ProfileControllerTest {
         var resume = "New resume text that is certainly long enough to pass the minimum length constraint of fifty characters for test";
         var requestPrefs = new PreferencesRequest(new WorkPreferenceDto.Hybrid(List.of("São Paulo")), 6000, List.of(), List.of());
         var request = new ProfileRequest(resume, List.of("Java"), CompanyTone.STARTUP, List.of(),
-                null, null, null, null, null, requestPrefs);
+                null, null, null, null, null, requestPrefs, null, null);
         var prefs = new UserPreferences(new WorkPreference.Hybrid(List.of("São Paulo")), 6000, List.of());
         var profile = new UserProfile(1L, 1L, resume, List.of("Java"), CompanyTone.STARTUP, List.of(),
                 null, null, null, null, null, prefs);
@@ -582,7 +582,7 @@ class ProfileControllerTest {
         var resume = "New resume text that is certainly long enough to pass the minimum length constraint of fifty characters for test";
         var requestPrefs = new PreferencesRequest(new WorkPreferenceDto.Remote(), 5000, List.of(), List.of("java", "backend"));
         var request = new ProfileRequest(resume, List.of("Java"), CompanyTone.STARTUP, List.of(),
-                null, null, null, null, null, requestPrefs);
+                null, null, null, null, null, requestPrefs, null, null);
         var prefs = new UserPreferences(new WorkPreference.Remote(), 5000, List.of(), List.of("java", "backend"));
         var profile = new UserProfile(1L, 1L, resume, List.of("Java"), CompanyTone.STARTUP, List.of(),
                 null, null, null, null, null, prefs);
@@ -627,7 +627,7 @@ class ProfileControllerTest {
         var request = new ProfileRequest(
                 "New resume text that is certainly long enough to pass the minimum length constraint of fifty characters for test",
                 List.of("Java"), CompanyTone.STARTUP, List.of(),
-                null, null, null, null, null, requestPrefs);
+                null, null, null, null, null, requestPrefs, null, null);
 
         mockMvc.perform(put("/api/profile")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -647,7 +647,7 @@ class ProfileControllerTest {
         var request = new ProfileRequest(
                 "New resume text that is certainly long enough to pass the minimum length constraint of fifty characters for test",
                 List.of("Java"), CompanyTone.STARTUP, List.of(),
-                null, null, null, null, null, requestPrefs);
+                null, null, null, null, null, requestPrefs, null, null);
 
         mockMvc.perform(put("/api/profile")
                         .contentType(MediaType.APPLICATION_JSON)

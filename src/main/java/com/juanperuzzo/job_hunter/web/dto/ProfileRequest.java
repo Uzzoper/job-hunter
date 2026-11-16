@@ -56,16 +56,4 @@ public record ProfileRequest(
     public ProfileRequest {
         if (projects == null) projects = List.of();
     }
-
-    /**
-     * Convenience constructor for pre-slice-(b) callers: requests without
-     * account-identity corrections (name/email absent → stored values kept).
-     */
-    public ProfileRequest(String resumeText, List<String> skills, CompanyTone tone,
-                          List<ProjectRequest> projects, String phone, String contactEmail,
-                          String portfolioUrl, String githubUrl, String linkedinUrl,
-                          PreferencesRequest preferences) {
-        this(resumeText, skills, tone, projects, phone, contactEmail, portfolioUrl,
-                githubUrl, linkedinUrl, preferences, null, null);
-    }
 }
