@@ -5,6 +5,7 @@ import com.juanperuzzo.job_hunter.application.dto.ResumePreview;
 import com.juanperuzzo.job_hunter.application.port.in.AccountIdentity;
 import com.juanperuzzo.job_hunter.application.port.out.AiPort;
 import com.juanperuzzo.job_hunter.application.port.out.UserProfileRepository;
+import com.juanperuzzo.job_hunter.domain.exception.InvalidResumeTextException;
 import com.juanperuzzo.job_hunter.domain.model.CompanyTone;
 import com.juanperuzzo.job_hunter.domain.model.UserProfile;
 import org.slf4j.Logger;
@@ -53,6 +54,9 @@ public class ResumePreviewService {
      *                                  contains no extractable text
      * @throws com.juanperuzzo.job_hunter.domain.exception.AiException
      *                                  if the AI call fails or returns unparseable JSON
+     * @throws com.juanperuzzo.job_hunter.domain.exception.InvalidResumeTextException
+     *                                  if the extracted text is shorter than the
+     *                                  {@link UserProfileService#RESUME_TEXT_MIN_LENGTH} gate
      * @throws com.juanperuzzo.job_hunter.domain.exception.UserNotFoundException
      *                                  if the user does not exist
      */
@@ -63,13 +67,20 @@ public class ResumePreviewService {
         if (rawText.isBlank()) {
             throw new IllegalArgumentException("PDF file contains no extractable text");
         }
+        // Same validity domain as saveProfile — the preview never shows a
+        // result the commit would reject (review 2026-11-15).
+        if (rawText.length() < UserProfileService.RESUME_TEXT_MIN_LENGTH) {
+            throw new InvalidResumeTextException("Resume text must be at least "
+                    + UserProfileService.RESUME_TEXT_MIN_LENGTH + " characters");
+        }
 
-        var extraction = ResumeExtractionPipeline.extractWithAi(rawText, aiPort, maxAiChars);
-
+        // Cheap reads before the AI call: an unknown user fails without
+        // spending a completion (review 2026-11-15).
         // accountIdentity = users row (slice (a) source of truth)
         AccountIdentity identity = userProfileService.getAccountIdentity(userId);
-
         var stored = userProfileRepository.findByUserId(userId).orElse(null);
+
+        var extraction = ResumeExtractionPipeline.extractWithAi(rawText, aiPort, maxAiChars);
         var contact = extraction.contact();
 
         // Fill-if-empty merge preview — same rules the commit applies; nothing saved.

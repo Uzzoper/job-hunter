@@ -4,6 +4,7 @@ import com.juanperuzzo.job_hunter.application.dto.ResumeCorrections;
 import com.juanperuzzo.job_hunter.application.port.out.AiPort;
 import com.juanperuzzo.job_hunter.application.port.out.ResumeStorage;
 import com.juanperuzzo.job_hunter.application.port.out.UserProfileRepository;
+import com.juanperuzzo.job_hunter.domain.exception.InvalidResumeTextException;
 import com.juanperuzzo.job_hunter.domain.exception.ResumeDigestMismatchException;
 import com.juanperuzzo.job_hunter.domain.model.CompanyTone;
 import com.juanperuzzo.job_hunter.domain.model.Project;
@@ -69,11 +70,12 @@ public class ResumeCommitService {
         byte[] bytes = readBytes(file);
 
         // Digest guard first: fail fast on an artifact that was never previewed,
-        // before spending an extraction or touching any state.
+        // before spending an extraction or touching any state. Case-insensitive
+        // on purpose — a hex digest echo may arrive uppercased (review 2026-11-15).
         if (corrections != null && hasText(corrections.digest())) {
             var actual = ResumeExtractionPipeline.md5Hex(bytes);
             var echoed = corrections.digest().trim();
-            if (!actual.equals(echoed)) {
+            if (!actual.equalsIgnoreCase(echoed)) {
                 throw new ResumeDigestMismatchException(
                         "Resume digest mismatch: the confirmed artifact is not the previewed one (echoed "
                                 + echoed + ", uploaded " + actual + ")");
@@ -87,6 +89,12 @@ public class ResumeCommitService {
         String rawText = ResumeExtractionPipeline.extractPdfText(file);
         if (rawText.isBlank()) {
             throw new IllegalArgumentException("PDF file contains no extractable text");
+        }
+        // Same validity domain as saveProfile — a resume the commit would reject
+        // must fail BEFORE the PDF is stored, never replace it (review 2026-11-15).
+        if (rawText.length() < UserProfileService.RESUME_TEXT_MIN_LENGTH) {
+            throw new InvalidResumeTextException("Resume text must be at least "
+                    + UserProfileService.RESUME_TEXT_MIN_LENGTH + " characters");
         }
 
         var extraction = ResumeExtractionPipeline.extractWithAi(rawText, aiPort, maxAiChars);
@@ -138,7 +146,11 @@ public class ResumeCommitService {
         var saved = userProfileService.saveProfile(userId, profile);
 
         if (corrections != null && (hasText(corrections.name()) || hasText(corrections.email()))) {
-            userProfileService.updateIdentity(userId, corrections.name(), corrections.email());
+            // blank = "no correction" — normalized here too, so the service's
+            // blank-rejection can never fire after the writes (review 2026-11-15)
+            userProfileService.updateIdentity(userId,
+                    hasText(corrections.name()) ? corrections.name().trim() : null,
+                    hasText(corrections.email()) ? corrections.email().trim() : null);
         }
 
         log.info("Resume committed for user {} (profile id {}, identity corrected: {})",
@@ -167,6 +179,11 @@ public class ResumeCommitService {
         if (corrections == null) {
             return;
         }
+        // Identity corrections ride the same pre-pass: an invalid name/email
+        // must answer 400 before the PDF is stored or the profile replaced,
+        // not from inside updateIdentity after both writes (review 2026-11-15).
+        validateCorrectionValue("name", corrections.name(), 255, false);
+        validateCorrectionValue("email", corrections.email(), 255, true);
         validateCorrectionValue("phone", corrections.phone(), ResumeExtractionPipeline.PHONE_MAX_LENGTH, false);
         validateCorrectionValue("contactEmail", corrections.contactEmail(), ResumeExtractionPipeline.EMAIL_MAX_LENGTH, true);
         validateCorrectionValue("portfolioUrl", corrections.portfolioUrl(), ResumeExtractionPipeline.URL_MAX_LENGTH, false);
