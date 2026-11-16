@@ -74,9 +74,10 @@ def build_intent(*, intent_id: str, job_id: str, job_url: str, portal: str,
         gates enforced by the legacy plan path).
       * ``never_fill_credentials`` / ``stop_on_auth_url`` — hard gates that
         cannot be disabled from the CLI; safe-by-default always.
-      * ``profile.resume_path`` — executor-side key; legacy portals store the
-        CV under ``cv_path``, so map it here (a planner-side ``resume_path`` is
-        preferred when present).
+      * ``profile`` — the 4 backend profile fields (name, email, phone,
+        cover_text). The intent carries NO resume path (slice (c)): the
+        executor fetches the CV fresh from the backend at attach time, so
+        a stale local copy can never be uploaded.
       * ``dry_run`` — deliberately NOT a parameter: it is an execution hint
         placed OUTSIDE this object by the caller (spec l.111).
 
@@ -91,7 +92,6 @@ def build_intent(*, intent_id: str, job_id: str, job_url: str, portal: str,
             "name": profile.get("name"),
             "email": profile.get("email"),
             "phone": profile.get("phone"),
-            "resume_path": profile.get("resume_path") or profile.get("cv_path"),
             "cover_text": profile.get("cover_text"),
         },
         "policy": {
@@ -213,7 +213,6 @@ class ProfileContract(TypedDict):
     name: str
     email: str
     phone: NotRequired[Optional[str]]
-    resume_path: NotRequired[Optional[str]]
     cover_text: NotRequired[Optional[str]]
 
 
@@ -306,7 +305,7 @@ def validate_intent_contract(intent_obj: Any) -> Dict[str, Any]:
         for key in ("name", "email"):
             _require_str(profile, "profile", key, problems)
         # Optional profile payload keys — only the TYPE is enforced when present.
-        for key in ("phone", "resume_path", "cover_text"):
+        for key in ("phone", "cover_text"):
             value = profile.get(key)
             if value is not None and not isinstance(value, str):
                 problems.append(f"profile.{key}.not_a_string")

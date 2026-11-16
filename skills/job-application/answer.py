@@ -113,8 +113,9 @@ _KEY_TO_FIELD = {
     "full_name": "name", "fullname": "name",
     "email": "email", "e-mail": "email",
     "phone": "phone", "telefone": "phone", "celular": "phone", "mobile": "phone",
-    "cv": "cv_path", "curriculo": "cv_path", "currículo": "cv_path",
-    "curriculum": "cv_path", "resume": "cv_path",
+    # Slice (c): "cv"/"currículo" chat aliases are retired with the cv_path
+    # field — resume mentions never ground a question from the profile; they
+    # route to the onboarding preview/commit flow instead.
     "cover_letter": "cover_text", "carta": "cover_text",
     "carta_de_apresentacao": "cover_text", "apresentacao": "cover_text",
 }
@@ -124,8 +125,6 @@ _LABEL_MARKERS = {
     "name": ("nome completo", "full name"),
     "email": ("e-mail", "correio eletrônico"),
     "phone": ("telefone", "celular", "phone", "mobile"),
-    "cv_path": ("currículo", "curriculo", "curriculum", "anexar currículo",
-                "anexar curriculo", "resume", "curriculum vitae"),
     "cover_text": ("carta de apresentação", "carta de apresentacao",
                    "cover letter"),
 }
