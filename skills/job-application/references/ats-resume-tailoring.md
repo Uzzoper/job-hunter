@@ -130,7 +130,8 @@ profile edit.
 
 The candidate's real data is the canonical PDF the backend serves at
 `GET http://127.0.0.1:8080/api/profile/resume` (download it to a temp file
-before reading — slice (c): no standing local copy), plus a maintained LaTeX
+before reading — spec: apply-backend-profile.md, no standing local copy),
+plus a maintained LaTeX
 source at `<resume-dir>/<resume-filename>-ATS.tex` (compile with `tectonic`;
 that build is the validated ATS artifact). Read one with `read_file` (it
 auto-extracts the text layer) to know what is true before you write about it.

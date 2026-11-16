@@ -212,7 +212,8 @@ Profile JSON:
 }
 ```
 
-> The profile carries **no resume path** (slice (c)): the bot composes it from
+> The profile carries **no resume path** (spec: apply-backend-profile.md):
+> the bot composes it from
 > `GET /api/profile` at plan time (plus the per-application `cover_text`), and
 > the resume PDF is downloaded fresh from `GET /api/profile/resume` to a temp
 > file when an action attaches it — upload → delete. Never a stored or
@@ -394,12 +395,12 @@ The executor runs **observe → classify → act → verify** against each **liv
 3. **Act** — mapped by page kind: `start` → enter the flow; `form` → fill; `triagem` →
    select answers; `review` → confirm checkpoint (unless `--confirmed`/`--auto-apply`
    flipped the policy) then apply-final; `sucesso` → post-submit screenshot → verdict.
-   - **Resume attach (slice c):** every action that uploads the resume downloads it
+   - **Resume attach:** every action that uploads the resume downloads it
      fresh from `GET /api/profile/resume` into a temp file right before the upload
      step, sanity-gates it (HTTP 200 / `application/pdf` / `%PDF-` magic bytes), and
      deletes the temp file when the action completes. Gate failure aborts the action
      before any upload; never upload a stored or owner-machine path — the intent
-     carries no resume path.
+     carries no resume path (spec: apply-backend-profile.md).
 4. **Verify** — re-classify: `sucesso` evidence is collected by verdict.py; any other page
    counts as a stall against the `max_steps` budget → end `INCOMPLETE` and hand off.
 5. **Record (strictly via verdict.py)** — an application is marked `applied` ONLY by

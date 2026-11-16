@@ -75,7 +75,8 @@ def build_intent(*, intent_id: str, job_id: str, job_url: str, portal: str,
       * ``never_fill_credentials`` / ``stop_on_auth_url`` — hard gates that
         cannot be disabled from the CLI; safe-by-default always.
       * ``profile`` — the 4 backend profile fields (name, email, phone,
-        cover_text). The intent carries NO resume path (slice (c)): the
+        cover_text). The intent carries NO resume path
+        (spec: apply-backend-profile.md): the
         executor fetches the CV fresh from the backend at attach time, so
         a stale local copy can never be uploaded.
       * ``dry_run`` — deliberately NOT a parameter: it is an execution hint
@@ -204,7 +205,8 @@ def validate_intent(intent: Any) -> List[str]:
 # are explicit isinstance/type tests so the validator also catches JSON
 # round-trip corruption (e.g. an int arriving as a string from a manual edit).
 
-# The 4 backend profile fields (slice (c)) — the canonical contract shape
+# The 4 backend profile fields (spec: apply-backend-profile.md) — the
+# canonical contract shape
 # that build_intent, the validator and apply.py's REQUIRED_PROFILE_FIELDS
 # derive from. Two static restatements are unavoidable: the TypedDict below
 # (static syntax by nature) and the OPTIONAL subset (a literal — name/email

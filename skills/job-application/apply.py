@@ -27,7 +27,8 @@ Pre-flight gates, enforced before any intent is emitted:
   * portal allow-list — intent.is_supported_portal (gupy, infojobs, case-
     sensitive lowercase on purpose; LinkedIn is explicitly OUT of scope);
   * profile validation — required fields: name, email, phone,
-    cover_text (slice (c): cv_path retired — the executor fetches the
+    cover_text (spec: apply-backend-profile.md; cv_path retired — the
+    executor fetches the
     resume fresh at attach time, the profile no longer names a local file);
   * refusal block (#28) — profile marked NO_APPLY / cover refuses;
   * session expiry check (#41) — an expired session stops with the
@@ -266,7 +267,7 @@ def load_profile(path: str) -> Tuple[Optional[Dict[str, Any]], Optional[Dict[str
     return data, None
 
 
-# Required profile fields (slice (c), apply-backend-profile spec): the
+# Required profile fields (spec: apply-backend-profile.md): the
 # backend profile carries exactly these 4 fields — cv_path is retired. A
 # legacy cv_path key in an old profile file is tolerated but ignored; the
 # executor fetches the resume fresh from the backend at attach time.

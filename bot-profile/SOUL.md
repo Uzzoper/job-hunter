@@ -76,7 +76,8 @@
 - Send application emails ONLY via himalaya CLI v2 (configured on this
   profile), exactly:
   `himalaya message compose -a dev --send -t <to> -s <subject> --body-file <file> --attach <temp-resume.pdf>`
-- **The resume is downloaded fresh at attach time** (slice c): before any
+- **The resume is downloaded fresh at attach time** (spec:
+  apply-backend-profile.md): before any
   send, pull the canonical PDF from
   `GET http://127.0.0.1:8080/api/profile/resume` (with the `X-Bot-Token`
   header) into a temp file, sanity-gate it (HTTP 200 / `application/pdf` /

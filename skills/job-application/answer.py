@@ -141,7 +141,7 @@ _KIND_BLOCK_CODES = {
 }
 
 # editable AX roles accepted by extract_questions. File inputs (resume
-# upload) are deliberately EXCLUDED (slice c): attaching the resume is an
+# upload) are deliberately EXCLUDED (spec: apply-backend-profile.md):
 # executor action — fresh download → temp → upload → delete, gated in
 # SKILL.md/mcp-apply-loop — never a gated question (no profile field grounds
 # it since the cv_path aliases retired).
