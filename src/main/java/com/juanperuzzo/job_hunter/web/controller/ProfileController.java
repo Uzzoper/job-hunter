@@ -66,6 +66,18 @@ public class ProfileController {
     @PutMapping
     public ResponseEntity<ProfileResponse> saveProfile(@Valid @RequestBody ProfileRequest request) {
         Long userId = currentUserService.getCurrentUserId();
+        // Identity corrections are validated and applied BEFORE the profile
+        // write: an invalid identity answers 400 with nothing written
+        // (review 2026-11-15: partial-write finding — the @Email bean rule is
+        // lenient, the service rule is not, so the service must run first).
+        // Blank = "no correction", the same rule the commit route applies.
+        boolean hasName = hasText(request.name());
+        boolean hasEmail = hasText(request.email());
+        AccountIdentity identity = (hasName || hasEmail)
+                ? userProfileService.updateIdentity(userId,
+                        hasName ? request.name().trim() : null,
+                        hasEmail ? request.email().trim() : null)
+                : userProfileService.getAccountIdentity(userId);
         List<Project> projects = request.projects().stream()
                 .map(p -> new Project(p.name(), p.description(), String.join(", ", p.techStack())))
                 .toList();
@@ -75,11 +87,6 @@ public class ProfileController {
                 request.portfolioUrl(), request.githubUrl(), request.linkedinUrl(),
                 prefs);
         var saved = userProfileService.saveProfile(userId, profile);
-        // slice (b): account-identity correction without re-uploading — the
-        // users row stays the identity source of truth for every response.
-        AccountIdentity identity = (request.name() != null || request.email() != null)
-                ? userProfileService.updateIdentity(userId, request.name(), request.email())
-                : userProfileService.getAccountIdentity(userId);
         var response = toResponse(saved, identity);
         return ResponseEntity.ok(response);
     }
@@ -163,6 +170,11 @@ public class ProfileController {
                 profile.resumeText(), profile.skills(), profile.tone(), projectResponses,
                 profile.phone(), profile.contactEmail(), profile.portfolioUrl(),
                 profile.githubUrl(), profile.linkedinUrl(), prefsResponse);
+    }
+
+    /** True when {@code value} carries a non-blank correction. */
+    private static boolean hasText(String value) {
+        return value != null && !value.isBlank();
     }
 
     /** Maps the stateless preview (application) into its API response shape. */

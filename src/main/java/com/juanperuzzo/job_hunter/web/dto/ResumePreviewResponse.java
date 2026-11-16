@@ -4,7 +4,7 @@ import com.juanperuzzo.job_hunter.domain.model.CompanyTone;
 import java.util.List;
 
 /**
- * Stateles resume preview response (issue #92 slice b): what a commit would
+ * Stateless resume preview response (issue #92 slice b): what a commit would
  * write, computed against the stored profile — nothing was persisted by the
  * call that produced it.
  */
