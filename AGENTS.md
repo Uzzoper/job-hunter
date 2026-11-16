@@ -178,7 +178,7 @@ edited in the repo and propagated to the bot profile with `scripts/install-bot-s
 - **Never hand-edit the installed copy** under `~/.hermes/profiles/jobhunter-bot/` as a
   source of change — it is runtime state and the next install silently erases it.
 - Memory files, the real resume artifact, `.env` and live SOUL learnings belong to the
-  VM runtime — never commit them to the repo.
+  bot runtime — never commit them to the repo.
 - Reference user-specific paths through the SOUL placeholders (`{{USER_NAME}}`
   etc.), not hardcoded owner paths. The resume PDF has NO path placeholder:
   it is downloaded fresh from the backend at attach time (spec
@@ -277,6 +277,14 @@ Tests follow the same package structure under `src/test/java/.../`. Check the di
 - [x] `hasEmail` filter on `GET /api/jobs?hasEmail=true`
 - [x] Review-gate bug fix: prevent draft regeneration before send
 - [x] `TemplateEmailService` as stateless builder for high-score jobs
+
+---
+
+## Branches & promotion flow
+
+- Feature work: feature branch → PR → **`dev`** → owner merge. CI runs on `dev`.
+- Promotion: PR `dev` → **`main`** (owner merge) when a batch of features is validated — same pattern as #107…#136, #141. CI runs on `main` too.
+- The bot installs from **`origin/main` by default**; `origin/dev` only on explicit owner request (pre-promotion feature testing). Where the bot runs is owner deployment choice — not a repo standard.
 
 ---
 
