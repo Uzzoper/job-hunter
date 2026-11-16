@@ -1,6 +1,8 @@
 # Resume preview/commit flow (issue #92, slice b)
 
-> **Status:** implemented (backend). Bot-side rollout — the onboarding
+> **Status:** implemented (backend). Amended after the two-agent review of
+> 2026-11-15 (fail-fast gates, blank semantics, unique-email pre-check, digest
+> case-insensitivity, `techStack` as list). Bot-side rollout — the onboarding
 > section in the `job-application` skill — is the repo-first follow-up after
 > this lands (repo → install).
 
@@ -39,7 +41,7 @@ JWT self), scoped to the principal — same model as slice (a).
     "accountIdentity": { "name": "...", "email": "..." },
     "contact": { "phone": "...", "contactEmail": "...", "portfolioUrl": "..." },
     "skills": ["..."],
-    "projects": [{ "name": "...", "description": "...", "techStack": "..." }],
+    "projects": [{ "name": "...", "description": "...", "techStack": ["..."] }],
     "tone": "FORMAL",
     "resumeTextChars": 2412,
     "digest": "97e25856…",
@@ -52,8 +54,15 @@ JWT self), scoped to the principal — same model as slice (a).
   stored profile (stored value wins over extraction — unchanged rules from
   `profile-autofill-from-resume.md`); fields still empty after the merge land
   in `missingFields` for the bot to ask in chat.
+- `techStack` is a **list** (as `ResumeExtractionResponse.ExtractedProject` and
+  `ProjectResponse.techStack` on the web shape), not a comma-joined string.
+- Text shorter than the `saveProfile` minimum (50 chars) → `400`
+  (`InvalidResumeTextException`) BEFORE any AI call — the preview never shows
+  a result the commit would reject (review 2026-11-15: the two flows share one
+  validity domain).
 - `digest` = md5 of the uploaded bytes; the bot echoes it at commit so the
-  confirmed artifact is provably the previewed one.
+  confirmed artifact is provably the previewed one (echo is compared
+  case-insensitively).
 - Errors: invalid PDF / extraction failure → `400` envelope; AI failure →
   existing `AiException` mapping. The active profile and resume are untouched
   in every error path — abandoned previews cost one extraction and nothing else.
@@ -64,7 +73,15 @@ JWT self), scoped to the principal — same model as slice (a).
 resume/profile.
 
 - `corrections` (all optional): `{name, email, phone, contactEmail, portfolioUrl}`.
-  - Validated with the existing rules (email format, length caps).
+  - Validated with the existing rules (email format, length caps) **before any
+    write** — name/email included, so an invalid identity correction answers
+    `400` with the PDF and profile untouched (review 2026-11-15).
+  - Blank = "no correction" on every route (PUT included) — a blank string is
+    never an attempted update.
+  - Identity corrections validate against the users columns: a login email
+    already used by another account is rejected with `EmailAlreadyExistsException`
+    BEFORE any write (the `users.email` column is `UNIQUE`; re-submitting the
+    user's own email is a no-op, not a conflict).
   - Merge order: **chat correction > stored value > AI extraction** — a chat
     correction is an explicit user instruction and overrides; extraction keeps
     losing to stored values (fill-if-empty preserved).
@@ -79,7 +96,11 @@ resume/profile.
 ### `PUT /api/profile` (amended) — optional `name` / `email`
 
 - Account-identity correction **without re-uploading** (chat: "the name is
-  wrong, fix it"). Same validation.
+  wrong, fix it"). Same validation. The identity correction is validated and
+  applied **before** the profile write — an invalid identity answers `400`
+  with nothing saved (review 2026-11-15; the bean `@Email` is lenient, the
+  service `EMAIL_PATTERN` is not, so the service rule must run first).
+- Blank = "no correction" (the commit route's rule).
 - **Closes slice (a)'s write-route identity thread**: from this slice on, every
   profile response (GET / PUT / commit) carries non-null `name`/`email` from
   the users row. The existing "null identity on write routes" assertions flip.
