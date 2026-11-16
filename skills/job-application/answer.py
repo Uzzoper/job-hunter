@@ -140,15 +140,18 @@ _KIND_BLOCK_CODES = {
     KIND_UNKNOWN: "DOUBT",
 }
 
-# editable AX roles accepted by extract_questions.
+# editable AX roles accepted by extract_questions. File inputs (resume
+# upload) are deliberately EXCLUDED (slice c): attaching the resume is an
+# executor action — fresh download → temp → upload → delete, gated in
+# SKILL.md/mcp-apply-loop — never a gated question (no profile field grounds
+# it since the cv_path aliases retired).
 _INPUT_ROLES = frozenset({
     "textbox", "textarea", "combobox", "searchbox",
-    "checkbox", "radio", "switch", "fileinput", "file",
+    "checkbox", "radio", "switch",
 })
 # text-like roles default to required (conservative: never silently skip).
 _TEXT_ROLES = frozenset({
     "textbox", "textarea", "combobox", "searchbox",
-    "fileinput", "file",
 })
 _OPTIONAL_MARKERS = ("opcional", "optional")
 _REQUIRED_MARKERS = ("*", "obrigatório", "obrigatorio", "required")

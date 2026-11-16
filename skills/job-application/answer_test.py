@@ -243,6 +243,15 @@ class ReviewGateTests(unittest.TestCase):
         self.assertEqual(gate["blockers"], [])
         self.assertEqual(len(gate["questions"]), 2)
 
+    def test_reviewGate_whenOnlyRequiredFileInput_shouldBeSubmittable(self):
+        # Slice (c): a form whose only required control is the resume file
+        # input stays submittable — the executor attaches the resume
+        # out-of-band (fresh download gate), it is never a gated question.
+        nodes = [ax_node("fileinput", "Anexar currículo *", backendNodeId=99)]
+        gate = self._gate(answer.extract_questions(nodes))
+        self.assertTrue(gate["submittable"])
+        self.assertEqual(gate["blockers"], [])
+
     def test_reviewGate_whenOneAsk_shouldBlockSubmit(self):
         questions = [
             make_question(key="q_name", label="Nome completo"),
@@ -415,6 +424,14 @@ class QuestionExtractionTests(unittest.TestCase):
         self.assertEqual(len(questions), 1)
         self.assertTrue(questions[0]["required"])
         self.assertEqual(questions[0]["field_type"], "textbox")
+
+    def test_extractQuestions_whenFileInput_shouldNotEmitQuestion(self):
+        # Slice (c): the resume file input is an executor ATTACH action
+        # (fresh download → temp → upload → delete), never a question — no
+        # profile field grounds it anymore, so emitting it would make the
+        # review gate block every form with a required resume upload.
+        nodes = [ax_node("fileinput", "Anexar currículo *", backendNodeId=99)]
+        self.assertEqual(answer.extract_questions(nodes), [])
 
     def test_extractQuestions_whenOptionalMarker_shouldBeOptional(self):
         nodes = [ax_node("textbox", "LinkedIn (opcional)", backendNodeId=12)]
