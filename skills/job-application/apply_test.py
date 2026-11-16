@@ -60,6 +60,8 @@ VALID_PROFILE = {
     "name": "Test User",
     "email": "user@example.com",
     "phone": "+55 11 90000-0000",
+    # Slice (c): cv_path is retired from the required set — kept here ONLY as
+    # a legacy key to pin the "tolerated and ignored" validation behavior.
     "cv_path": "/home/testuser/cv.pdf",
     "cover_text": "Olá! Gostaria de me candidatar à vaga de desenvolvedor.",
 }
@@ -180,6 +182,17 @@ class ProfileValidationTests(unittest.TestCase):
         self.assertEqual(result.code, 1)
         self.assertEqual(result.data["error"], "invalid_profile")
         self.assertIn("cover_text", result.data["detail"])
+
+    def test_validateProfile_whenFourFieldProfile_shouldReportNoMissing(self):
+        # Slice (c): the backend profile carries exactly 4 fields — a missing
+        # cv_path is no longer a validation failure.
+        profile = {k: v for k, v in VALID_PROFILE.items() if k != "cv_path"}
+        self.assertEqual(apply.validate_profile(profile), [])
+
+    def test_validateProfile_whenLegacyCvPathPresent_shouldTolerateIt(self):
+        # A profile still carrying the legacy cv_path key validates unchanged:
+        # tolerated and ignored (never propagated into the intent).
+        self.assertEqual(apply.validate_profile(dict(VALID_PROFILE)), [])
 
     def test_profile_file_not_found(self):
         missing = Path(self.mem) / "does-not-exist.json"
@@ -1377,10 +1390,13 @@ class IntentEmissionTests(unittest.TestCase):
         self.assertEqual(intent_obj["job_id"], JOB_ID)
         self.assertEqual(intent_obj["job_url"], GUPY_URL)
         self.assertEqual(intent_obj["portal"], "gupy")
-        # Profile carries the applicant data with the intent's resume_path key.
+        # Slice (c): the emitted profile is exactly the 4 backend fields —
+        # no resume_path in the contract, and the legacy cv_path key in the
+        # stored profile is ignored (never propagated).
         self.assertEqual(set(intent_obj["profile"].keys()),
-                         {"name", "email", "phone", "resume_path", "cover_text"})
-        self.assertEqual(intent_obj["profile"]["resume_path"], VALID_PROFILE["cv_path"])
+                         {"name", "email", "phone", "cover_text"})
+        self.assertNotIn("resume_path", intent_obj["profile"])
+        self.assertNotIn("cv_path", intent_obj["profile"])
         # Policy block, never individual intent->selector fields.
         self.assertEqual(intent_obj["policy"],
                          {"require_confirmation_before_final_submit": True,

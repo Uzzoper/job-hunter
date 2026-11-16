@@ -34,7 +34,7 @@ VALID_PROFILE = {
     "name": "Test User",
     "email": "user@example.com",
     "phone": "+55 11 90000-0000",
-    "cv_path": "/home/testuser/cv.pdf",
+    # Slice (c): backend profile — cv_path retired from the required set.
     "cover_text": "Olá! Gostaria de me candidatar à vaga de desenvolvedor.",
 }
 
