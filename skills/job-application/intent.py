@@ -74,9 +74,11 @@ def build_intent(*, intent_id: str, job_id: str, job_url: str, portal: str,
         gates enforced by the legacy plan path).
       * ``never_fill_credentials`` / ``stop_on_auth_url`` — hard gates that
         cannot be disabled from the CLI; safe-by-default always.
-      * ``profile.resume_path`` — executor-side key; legacy portals store the
-        CV under ``cv_path``, so map it here (a planner-side ``resume_path`` is
-        preferred when present).
+      * ``profile`` — the 4 backend profile fields (name, email, phone,
+        cover_text). The intent carries NO resume path
+        (spec: apply-backend-profile.md): the
+        executor fetches the CV fresh from the backend at attach time, so
+        a stale local copy can never be uploaded.
       * ``dry_run`` — deliberately NOT a parameter: it is an execution hint
         placed OUTSIDE this object by the caller (spec l.111).
 
@@ -87,13 +89,7 @@ def build_intent(*, intent_id: str, job_id: str, job_url: str, portal: str,
         "job_id": job_id,
         "job_url": job_url,
         "portal": portal,
-        "profile": {
-            "name": profile.get("name"),
-            "email": profile.get("email"),
-            "phone": profile.get("phone"),
-            "resume_path": profile.get("resume_path") or profile.get("cv_path"),
-            "cover_text": profile.get("cover_text"),
-        },
+        "profile": {field: profile.get(field) for field in PROFILE_FIELDS},
         "policy": {
             "require_confirmation_before_final_submit": bool(require_confirmation),
             "never_fill_credentials": bool(never_fill_credentials),
@@ -209,11 +205,21 @@ def validate_intent(intent: Any) -> List[str]:
 # are explicit isinstance/type tests so the validator also catches JSON
 # round-trip corruption (e.g. an int arriving as a string from a manual edit).
 
+# The 4 backend profile fields (spec: apply-backend-profile.md) — the
+# canonical contract shape
+# that build_intent, the validator and apply.py's REQUIRED_PROFILE_FIELDS
+# derive from. Two static restatements are unavoidable: the TypedDict below
+# (static syntax by nature) and the OPTIONAL subset (a literal — name/email
+# are hard-required strings).
+PROFILE_FIELDS = ("name", "email", "phone", "cover_text")
+# Type-checked only when present; name/email are hard-required strings.
+OPTIONAL_PROFILE_FIELDS = ("phone", "cover_text")
+
+
 class ProfileContract(TypedDict):
     name: str
     email: str
     phone: NotRequired[Optional[str]]
-    resume_path: NotRequired[Optional[str]]
     cover_text: NotRequired[Optional[str]]
 
 
@@ -306,7 +312,7 @@ def validate_intent_contract(intent_obj: Any) -> Dict[str, Any]:
         for key in ("name", "email"):
             _require_str(profile, "profile", key, problems)
         # Optional profile payload keys — only the TYPE is enforced when present.
-        for key in ("phone", "resume_path", "cover_text"):
+        for key in OPTIONAL_PROFILE_FIELDS:
             value = profile.get(key)
             if value is not None and not isinstance(value, str):
                 problems.append(f"profile.{key}.not_a_string")

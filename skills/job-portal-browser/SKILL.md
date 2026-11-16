@@ -160,12 +160,11 @@ by re-browsing portals within the same flow.
   "name": "<string>",
   "email": "<string>",
   "phone": "<string>",
-  "resume_path": "<string path to resume file>",
   "cover_text": "<string cover letter body>"
 }
 ```
 
-The bot receives this data already structured (from Java DTOs / the app's profile) and must map it onto the portal's form fields by inspecting labels and `name`/`id` attributes.
+The bot receives this data already structured (from the backend profile) and must map it onto the portal's form fields by inspecting labels and `name`/`id` attributes. The resume PDF is not part of this payload — it is downloaded fresh from the Job Hunter backend when an action attaches it.
 
 ---
 
@@ -175,7 +174,7 @@ The bot receives this data already structured (from Java DTOs / the app's profil
 
 1. **Open** the application URL in the browser and wait for the form to render (default 15 s; longer if the selector for the first field is not yet present).
 2. **Identify** all required form fields by inspecting labels / `name` / `id` attributes — do not assume a field order.
-3. **Map** `application_data` fields onto the form fields (name, email, phone, resume file input, cover-letter textarea).
+3. **Map** `application_data` fields onto the form fields (name, email, phone, cover-letter textarea). The resume file input is attached out-of-band — download the PDF fresh from the Job Hunter backend (`GET /api/profile/resume`) into a temp file right before the upload step, upload it, then delete the temp file.
 4. **Fill step by step** — fill one field, then the next. After each fill, report to the user what was set.
 5. **Confirm each step** — before moving across *sections* of a multi-page form, confirm with the user. Never proceed to the next page/section without explicit confirmation.
 6. **Final confirmation** — when the form is fully filled but before clicking the **submit** button, present a summary of all entered values and ask for explicit user confirmation.
@@ -223,7 +222,7 @@ All tasks return a JSON object. `ok` is always present; `data` carries task-spec
 {
   "jobId": "<string>",
   "contactEmail": "<string>",
-  "filledFields": ["name", "email", "phone", "resume", "cover_text"],
+  "filledFields": ["name", "email", "phone", "cover_text"],
   "skippedFields": ["<field the bot could not map>"],
   "readyForSubmission": true
 }

@@ -71,7 +71,6 @@ The planner's output is a single intent object. **It must not contain CSS select
 | `job_url` | string | yes | Canonical job URL the executor starts from |
 | `portal` | string | yes | `gupy` (v1). Future: `infojobs` |
 | `profile` | object | yes | Applicant data the executor fills (see example) |
-| `profile.resume_path` | string | no | Absolute path to the résumé/CV file to upload |
 | `policy.require_confirmation_before_final_submit` | boolean | yes | The executor MUST surface a `confirm_checkpoint` before `apply-final` unless `--confirmed`/`--auto-apply` was passed |
 | `policy.never_fill_credentials` | boolean | yes | Hard gate: email/password/login fields are NEVER filled, even if visible. Cannot be overridden |
 | `policy.stop_on_auth_url` | boolean | yes | Hard gate: if the current URL is an auth page (`navigation.is_auth_url`), STOP with `auth_required` |
@@ -90,7 +89,6 @@ The planner's output is a single intent object. **It must not contain CSS select
     "name": "Juan Peruzzo",
     "email": "juan@example.com",
     "phone": "+55 11 99999-0000",
-    "resume_path": "/home/juan/.hermes/profiles/jobhunter-bot/resume.pdf",
     "cover_text": "Sou desenvolvedor back-end júnior..."
   },
   "policy": {
@@ -159,7 +157,7 @@ if page == "sucesso":
 | Page | Observable signals (AX snapshot + URL) | Executor action | Allowed next |
 |---|---|---|---|
 | `start` | Job detail page; button/heading with "Candidatar-se" / "Candidatar" / "Apply" | `next` (enter the application flow) | `form`, `triagem`, `review`, `auth`, `erro` |
-| `form` | Editable fields (textbox, combobox, file input) + a submit/continue button, **no login fields dominating** | `fill` profile fields + `upload` (resume) → `next` | `triagem`, `review`, `form` (re-fill), `auth`, `erro` |
+| `form` | Editable fields (textbox, combobox, file input) + a submit/continue button, **no login fields dominating** | `fill` profile fields + `upload` (resume — downloaded fresh to a temp file right before the step, sanity-gated, deleted after; gate failure aborts the action) → `next` | `triagem`, `review`, `form` (re-fill), `auth`, `erro` |
 | `triagem` | Screening questions: radio sets, checkboxes, selects (e.g. "Qual sua pretensão salarial?") | `fill` (selection) → `next` ("Enviar" / "Próximo" / "Continuar") | `review`, `triagem`, `form`, `auth`, `erro` |
 | `review` | Summary of applicant data + a final apply button ("Enviar candidatura" / "Candidatar") | `confirm_checkpoint` (unless confirmed) → `apply-final` | `sucesso`, `review`, `auth`, `erro` |
 | `sucesso` | Success text ("Inscrição realizada", "Candidatura enviada", "Você se candidatou") or success URL | `observe` + post-submit screenshot → verdict `SUBMIT_OK` | **terminal** |

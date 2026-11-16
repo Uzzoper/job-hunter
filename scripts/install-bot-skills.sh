@@ -15,7 +15,7 @@
 # containing a SKILL.md is installed under its own name.
 #
 # Optional env vars for SOUL.md rendering (default: placeholder stays visible):
-#   SOUL_USER_NAME / SOUL_USER_EMAIL / SOUL_RESUME_FILENAME
+#   SOUL_USER_NAME / SOUL_USER_EMAIL
 
 set -euo pipefail
 
@@ -180,15 +180,12 @@ else
     # (${VAR:-{{X}}} appends "}}"), so placeholders are passed via variables.
     SOUL_PH_NAME="{{USER_NAME}}"
     SOUL_PH_EMAIL="{{USER_EMAIL}}"
-    SOUL_PH_RESUME="{{RESUME_FILENAME}}"
     SOUL_USER_NAME="${SOUL_USER_NAME:-${SOUL_PH_NAME}}"
     SOUL_USER_EMAIL="${SOUL_USER_EMAIL:-${SOUL_PH_EMAIL}}"
-    SOUL_RESUME_FILENAME="${SOUL_RESUME_FILENAME:-${SOUL_PH_RESUME}}"
     # Escape '&' for sed replacement and use '|' as the delimiter (paths/emails
     # contain '/'; '&' would otherwise be re-expanded by sed).
     sed -e "s|{{USER_NAME}}|${SOUL_USER_NAME//&/\\&}|g" \
         -e "s|{{USER_EMAIL}}|${SOUL_USER_EMAIL//&/\\&}|g" \
-        -e "s|{{RESUME_FILENAME}}|${SOUL_RESUME_FILENAME//&/\\&}|g" \
         "${SOUL_SRC}" > "${SOUL_DEST}"
     echo "RENDERED: ${SOUL_DEST} (from ${SOUL_SRC})"
 fi
@@ -200,7 +197,7 @@ if [ -f "${SOUL_DEST}" ]; then
     echo "OK: SOUL.md present at ${SOUL_DEST}"
     unresolved="$(grep -o '{{[A-Z_]*}}' "${SOUL_DEST}" || true)"
     if [ -n "${unresolved}" ]; then
-        echo "WARNING: FILL-ME — unsubstituted placeholders remain (set SOUL_USER_NAME, SOUL_USER_EMAIL, SOUL_RESUME_FILENAME and re-run, or edit by hand):"
+        echo "WARNING: FILL-ME — unsubstituted placeholders remain (set SOUL_USER_NAME, SOUL_USER_EMAIL and re-run, or edit by hand):"
         printf '  %s\n' ${unresolved} | sort -u
     else
         echo "OK: no unsubstituted placeholders"

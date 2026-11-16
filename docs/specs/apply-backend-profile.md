@@ -1,6 +1,6 @@
 # Apply & email flows consume the backend profile (issue #92, slice c)
 
-> **Status:** proposed (awaiting approval — no code without it).
+> **Status:** implemented (slice (c), PR #140; spec approved via #139).
 > Foundation: `bot-resume-retrieval.md` (slice a, read side) and
 > `resume-preview-commit.md` (slice b, write side). This slice closes #92:
 > the apply skill consumes the backend profile/PDF and the hand-maintained
@@ -39,7 +39,9 @@ Slice (a) delivered the read side and slice (b) the write side; nothing new:
 
 ### Planner (`apply.py`) — profile loses `cv_path`
 
-- `REQUIRED_PROFILE_FIELDS` becomes `("name", "email", "phone", "cover_text")`.
+- `REQUIRED_PROFILE_FIELDS` becomes the 4-field set — derived from
+  `intent.PROFILE_FIELDS` (the implementation extracted a single contract
+  constant; this line described the literal).
 - The bot composes the profile at plan time: `name`/`email`/`phone` from
   `GET /api/profile`, `cover_text` stays bot-side (apply-specific text, not
   backend data). `apply.py` stays HTTP-free — the bot fetches and passes the
@@ -47,8 +49,8 @@ Slice (a) delivered the read side and slice (b) the write side; nothing new:
 - A `cv_path` key in an old profile file is tolerated but ignored
   (back-compat; never required again).
 - The emitted intent **no longer carries `profile.resume_path`**
-  (`intent.py` drops the field and its NotRequired entry; the copy/normalize
-  loop at `:309` drops the key).
+  (`intent.py` drops the field, its `NotRequired` entry and the validator's
+  optional-key entry).
 
 ### Executor (MCP loop) — attach-time download, no persistent copy
 
@@ -93,8 +95,10 @@ curl -sS -o "$tmp" -H "X-Bot-Token: $BOT_SERVICE_API_KEY" \
 - `bot-resume-retrieval.md` / `resume-preview-commit.md`: status notes point
   here (the write-route thread and the staleness digest-echo half are closed
   by (b); the local-copy drift kill is this slice).
-- `references/`: verified no `cv_path`/`resume_path` citations exist — no
-  reference files need edits.
+- `references/`: no `cv_path`/`resume_path` citations exist. One reference
+  file did cite the retired `{{RESUME_FILENAME}}` placeholder and is updated
+  with this slice (`ats-resume-tailoring.md` — resume text is downloaded
+  fresh from the backend before reading).
 
 ## Design decisions
 
@@ -116,17 +120,22 @@ curl -sS -o "$tmp" -H "X-Bot-Token: $BOT_SERVICE_API_KEY" \
 - `apply_test.py`: `validate_profile` requires exactly the 4 fields
   (missing `cv_path` → no longer reported); a profile carrying a legacy
   `cv_path` validates without error.
-- `intent_test.py` (7 current `cv_path`/`resume_path` references): intent
-  contains no `resume_path`; profile mapping no longer reads `cv_path`.
+- `intent_test.py` (7 `cv_path`/`resume_path` references at spec time — 10
+  after the contract pins were added): intent contains no `resume_path`;
+  profile mapping no longer reads `cv_path`.
 - `answer_test.py`: the "currículo" chat aliases no longer map to a profile
   field (retired with `cv_path`).
-- `navigation_test.py` / `ax_tree_test.py`: upload-step expectations updated
-  to the executor-side temp path.
+- `navigation_test.py` / `ax_tree_test.py`: profile fixtures updated to the
+  4-field shape (no upload-step tests exist in these files; the executor's
+  temp-path attach flow is documented in `SKILL.md` and the SOUL template).
 - Skill suite green (426+ tests) in the bot venv before install.
 
 ## Rollout
 
 1. Spec approved → TDD on this branch (RED → GREEN per file above).
 2. Repo-first PR → owner merge → `scripts/install-bot-skills.sh` on the VM
-   (propagates skill + SOUL template; SOUL placeholder refresh happens there).
+   (propagates the skill + renders the SOUL template). Note: the installer
+   leaves an EXISTING SOUL.md untouched (it may hold live learned content) —
+   this slice's template changes (`{{RESUME_FILENAME}}` retirement,
+   himalaya download-to-temp) need a manual diff-and-merge on the VM.
 3. INTERIM section deletion lands with the install; step-0 rule ceases.

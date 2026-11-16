@@ -32,6 +32,8 @@ VALID_PROFILE = {
     "name": "Test User",
     "email": "user@example.com",
     "phone": "+55 11 90000-0000",
+    # Slice (c): cv_path is retired from the contract — kept here ONLY as a
+    # legacy key to pin the "tolerated and ignored" propagation behavior.
     "cv_path": "/home/testuser/cv.pdf",
     "cover_text": "Olá! Gostaria de me candidatar à vaga.",
 }
@@ -80,7 +82,7 @@ class BuildIntentTests(unittest.TestCase):
         self.assertEqual(intent_obj["job_url"], JOB_URL)
         self.assertEqual(intent_obj["portal"], "gupy")
         self.assertEqual(set(intent_obj["profile"].keys()),
-                         {"name", "email", "phone", "resume_path", "cover_text"})
+                         {"name", "email", "phone", "cover_text"})
         self.assertEqual(set(intent_obj["policy"].keys()),
                          {"require_confirmation_before_final_submit",
                           "never_fill_credentials", "stop_on_auth_url",
@@ -88,14 +90,27 @@ class BuildIntentTests(unittest.TestCase):
         self.assertEqual(intent_obj["metadata"]["job_title"], "Back-end Developer Jr")
         self.assertEqual(intent_obj["metadata"]["api_base_url"], "http://localhost:8080")
 
-    def test_resume_path_maps_from_cv_path(self):
+    def test_intent_whenLegacyCvPathPresent_shouldNotCarryResumePath(self):
+        # Slice (c): the intent contract has no resume_path — a legacy
+        # planner-side cv_path is tolerated in the profile file but never
+        # propagated (the executor fetches the PDF fresh at attach time).
         intent_obj = build()
-        self.assertEqual(intent_obj["profile"]["resume_path"], VALID_PROFILE["cv_path"])
+        self.assertNotIn("resume_path", intent_obj["profile"])
+        self.assertNotIn("cv_path", intent_obj["profile"])
 
-    def test_resume_path_prefers_explicit_key(self):
+    def test_intent_whenProfileHasExplicitResumePath_shouldIgnoreIt(self):
+        # An explicit planner-side resume_path key is ignored too: the backend
+        # profile is the only resume source the apply flow knows.
         profile = dict(VALID_PROFILE, resume_path="/explicit.pdf")
         intent_obj = build(profile=profile)
-        self.assertEqual(intent_obj["profile"]["resume_path"], "/explicit.pdf")
+        self.assertNotIn("resume_path", intent_obj["profile"])
+
+    def test_intent_whenFourFieldProfile_shouldCarryExactlyFourFields(self):
+        profile = {k: v for k, v in VALID_PROFILE.items() if k != "cv_path"}
+        intent_obj = build(profile=profile)
+        self.assertEqual(intent_obj["profile"],
+                         {k: profile[k] for k in
+                          ("name", "email", "phone", "cover_text")})
 
     def test_build_intent_has_no_selector_fields(self):
         text = json.dumps(build()).lower()

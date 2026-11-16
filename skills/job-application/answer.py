@@ -113,8 +113,10 @@ _KEY_TO_FIELD = {
     "full_name": "name", "fullname": "name",
     "email": "email", "e-mail": "email",
     "phone": "phone", "telefone": "phone", "celular": "phone", "mobile": "phone",
-    "cv": "cv_path", "curriculo": "cv_path", "currículo": "cv_path",
-    "curriculum": "cv_path", "resume": "cv_path",
+    # Slice (c): "cv"/"currículo" chat aliases are retired with the cv_path
+    # field — a resume mention grounds no profile answer, so the question
+    # falls through to memory/human dictation or ASK. Resume updates live in
+    # the onboarding preview/commit flow, not in this resolver.
     "cover_letter": "cover_text", "carta": "cover_text",
     "carta_de_apresentacao": "cover_text", "apresentacao": "cover_text",
 }
@@ -124,8 +126,6 @@ _LABEL_MARKERS = {
     "name": ("nome completo", "full name"),
     "email": ("e-mail", "correio eletrônico"),
     "phone": ("telefone", "celular", "phone", "mobile"),
-    "cv_path": ("currículo", "curriculo", "curriculum", "anexar currículo",
-                "anexar curriculo", "resume", "curriculum vitae"),
     "cover_text": ("carta de apresentação", "carta de apresentacao",
                    "cover letter"),
 }
@@ -140,15 +140,18 @@ _KIND_BLOCK_CODES = {
     KIND_UNKNOWN: "DOUBT",
 }
 
-# editable AX roles accepted by extract_questions.
+# editable AX roles accepted by extract_questions. File inputs (resume
+# upload) are deliberately EXCLUDED (spec: apply-backend-profile.md):
+# executor action — fresh download → temp → upload → delete, gated in
+# SKILL.md/mcp-apply-loop — never a gated question (no profile field grounds
+# it since the cv_path aliases retired).
 _INPUT_ROLES = frozenset({
     "textbox", "textarea", "combobox", "searchbox",
-    "checkbox", "radio", "switch", "fileinput", "file",
+    "checkbox", "radio", "switch",
 })
 # text-like roles default to required (conservative: never silently skip).
 _TEXT_ROLES = frozenset({
     "textbox", "textarea", "combobox", "searchbox",
-    "fileinput", "file",
 })
 _OPTIONAL_MARKERS = ("opcional", "optional")
 _REQUIRED_MARKERS = ("*", "obrigatório", "obrigatorio", "required")

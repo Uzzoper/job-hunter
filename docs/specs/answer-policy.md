@@ -1,5 +1,13 @@
 # Answer Policy (issue #73)
 
+> **Status:** implemented. Slice (c) (`apply-backend-profile.md`) retired
+> the `cv_path` profile field and its "currículo" chat aliases — the
+> profile resolve set is `name`/`email`/`phone`/`cover_text`; chat resume
+> mentions route to the onboarding preview/commit flow instead of a
+> profile answer. Form file inputs are NOT questions: the executor
+> attaches the resume out-of-band (fresh-download gate), so
+> `extract_questions` ignores `fileinput`/`file` roles.
+
 Spec for the per-question review gate. Companion to
 `deterministic-apply-runbook.md` (§3.2 plugs the review gate: "all required
 answers grounded (see #73 for the answer policy), explicit user confirmation
@@ -79,7 +87,7 @@ AX snapshot, or supplied directly by a caller):
 Strict, deterministic, first match wins — no LLM, no re-deciding:
 
 1. **Profile source** — the question key/label maps to a profile field
-   (`name`, `email`, `phone`, `cv_path`, `cover_text`); the profile value is
+   (`name`, `email`, `phone`, `cover_text`; `cv_path` retired by slice (c)); the profile value is
    non-blank → `ANSWER`, `source="profile.<field>"`.
 2. **Memory reuse** — a stored answer exists for the question key in
    `<memory-dir>/answers/<job_id>.json` with `verdict: ANSWER` and a value →

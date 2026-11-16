@@ -7,6 +7,11 @@ description: Apply to jobs via a structured, planner-driven workflow.
 
 > Hermes Agent skill for applying to job listings via a structured, planner-driven workflow.
 > Designed for the `jobhunter-bot` profile. v2 supports Gupy + InfoJobs (issue #45).
+>
+> This skill is **repo-first**: `skills/job-application/` in the job-hunter repo
+> is the source of truth; the installed profile copy is a mirror. The rules live
+> in the AGENTS.md section "Bot skills — repo is the source of truth" — read it
+> before editing or syncing this skill.
 
 ---
 
@@ -160,7 +165,7 @@ New flags (all optional): `--job-id`, `--from-api`, `--api-base-url` (default
 ## When to use
 
 - The portal is **Gupy** or **InfoJobs** and the job URL follows the portal's pattern (`https://<portal>.gupy.io/jobs/<id-slug>` or `https://www.infojobs.com.br/vaga/<id-slug>`).
-- The bot has structured application data (name, email, phone, resume path, cover text) from the app profile.
+- The bot composes the profile at plan time: `name`/`email`/`phone` from the backend profile plus a **bot-side cover text** (per-application, not backend data); the resume PDF itself is fetched fresh from the backend at attach time — the profile carries no resume path.
 - The user explicitly asked the bot to apply, and the confirmation protocol below can be honored.
 - The job to apply to was picked from the **Job Hunter API** (issue #46) via `--from-api` or `--job-id`.
 
@@ -185,7 +190,7 @@ New flags (all optional): `--job-id`, `--from-api`, `--api-base-url` (default
 | API source | `--from-api` / `--job-id <id>` | flag / int | no | Issue #46: pick the top-scored job from the Job Hunter API, or a specific job detail (`GET /api/jobs/{id}` — prefills `job_url` + `job_title`/`job_company`/`backend_job_id` metadata) |
 | API config | `--api-base-url` / `--api-token` / `--profile-dir` | string | no | Issue #46: backend base URL (default `http://localhost:8080`), token flag, and bot profile dir holding `api-token.txt` (default `~/.hermes/profiles/jobhunter-bot`) |
 | API filters | `--min-score` / `--fetch-if-empty` | int / flag | no | Issue #46: `minScore` query filter; trigger a fetch (default gupy) when the list is empty — `--no-fetch-if-empty` disables it |
-| profile | `--profile` | JSON file path | yes | `{name, email, phone, cv_path, cover_text}` (+ optional `no_apply: true`) |
+| profile | `--profile` | JSON file path | yes | `{name, email, phone, cover_text}` (+ optional `no_apply: true`) |
 | portal | `--portal` | string | no (default `gupy`) | `gupy` \| `infojobs` (allow-list in `intent.py`; unknown values error cleanly — **`linkedin` is NOT supported, by design**) |
 | memory dir | `--memory-dir` | dir path | no | Base for idempotency records; default `~/.hermes/profiles/jobhunter-bot/memails` |
 | affinity flags | `--confirmed`, `--auto-apply`, `--dry-run` | flags | no | See Confirmation protocol + Recording below |
@@ -203,27 +208,29 @@ Profile JSON:
   "name": "<user name>",
   "email": "user@example.com",
   "phone": "+55 42 90000-0000",
-  "cv_path": "~/.hermes/profiles/jobhunter-bot/<resume-filename>.pdf",
   "cover_text": "Olá! Gostaria de me candidatar à vaga."
 }
 ```
 
-> `cv_path` is the resume file the rendered SOUL.md names
-> (`{{RESUME_FILENAME}}`); step 0 refreshes it from the backend before any
-> attach. Never an owner-machine path like `/home/<user>/cv.pdf`.
+> The profile carries **no resume path** (spec: apply-backend-profile.md):
+> the bot composes it from
+> `GET /api/profile` at plan time (plus the per-application `cover_text`), and
+> the resume PDF is downloaded fresh from `GET /api/profile/resume` to a temp
+> file when an action attaches it — upload → delete. Never a stored or
+> owner-machine path. A legacy `cv_path` key in an old profile file is
+> tolerated but ignored.
 
 ---
 
 ## Steps
 
-0. **Refresh the resume — INTERIM, until slice c.** Any action that attaches the resume starts here: pull the canonical copy from `GET /api/profile/resume` and pass the sanity gate (200 / `application/pdf` / `%PDF-` / ~24.8 KB). Any failure aborts the action with the previous file kept. See the interim resume-refresh section below.
 1. **Plan** — the bot runs `apply.py` with the job URL (or API flags), profile, and portal:
    ```
    python3 skills/job-application/apply.py \
      --job-url "https://jobs.gupy.io/jobs/<id-slug>" \
      --profile profile.json --portal gupy --memory-dir <memails-dir>
    ```
-2. **Validate** — apply.py runs the pre-flight gates (order below): portal allow-list → profile validation (`name`, `email`, `phone`, `cv_path`, `cover_text`) → refusal #28 → API resolution → browser recovery #39 (skipped on `--dry-run`) → session expiry #41 → idempotency #27 → preflight #72 (default-on: real runs use `<memory-dir>/preflight-config.json`). Any failure returns a JSON error.
+2. **Validate** — apply.py runs the pre-flight gates (order below): portal allow-list → profile validation (`name`, `email`, `phone`, `cover_text`) → refusal #28 → API resolution → browser recovery #39 (skipped on `--dry-run`) → session expiry #41 → idempotency #27 → preflight #72 (default-on: real runs use `<memory-dir>/preflight-config.json`). Any failure returns a JSON error.
 3. **Receive the intent envelope** — `{"intent": {...}, "dry_run": true}` (the `--dry-run` hint lives OUTSIDE the intent object, spec l.111). The intent carries `{intent_id, job_id, job_url, portal, profile, policy, metadata?}` — no steps, no selectors.
 4. **Execute the MCP loop** — snapshot-driven against live AX trees (see "MCP executor apply loop" below).
 
@@ -300,48 +307,6 @@ Config schema (`cdp_url` / `user_data_dir` optional — defaults apply;
   (verbatim payload), `2` = usage/config error. The standard `{error, detail,
   screenshot_path}` envelope is used only for apply.py's own gate failures.
 
-### Interim: resume refresh before any attachment (until slice c)
-
-> **INTERIM — delete this whole section when slice (c) ships.** Slice (c)
-> makes the apply flow consume the backend profile through the API, and the
-> local resume file ceases to exist. Until then this rule is ACTIVE.
-
-Every action that **attaches** the resume — a portal apply batch, an email send
-with the attachment — must START by refreshing the local copy from the
-backend. **The backend is the source of truth**
-(`uploads/resumes/2/resume.pdf`); the local file is only a working copy.
-
-```bash
-curl -sS -o ~/.hermes/profiles/jobhunter-bot/<resume-filename>.pdf \
-  -H "X-Bot-Token: $BOT_SERVICE_API_KEY" \
-  "http://127.0.0.1:8080/api/profile/resume"
-```
-
-**Sanity gate BEFORE proceeding** — if ANY check fails: **ABORT** the action,
-keep the previous file, and report which check failed.
-
-| check | expected |
-|---|---|
-| `http=` | `200` |
-| `content_type` | `application/pdf` |
-| magic bytes | `%PDF-` |
-| size | ~24.8 KB (md5 `97e25856…` — current canonical build) |
-
-- **Never upload or hand-edit the local file** — refresh-only. The endpoint is
-  the read side of the source of truth.
-- The stale-file trap is real: on 14/11 the local copy was a Sep-16 build
-  (5.7 KB) while the backend served the Oct-3 canonical one (24.8 KB) — both
-  2-page PDFs, different text. Refresh first so applies/email carry the
-  current resume.
-- **The gate is point-in-time.** The size/md5 row describes ONE canonical build.
-  When the owner legitimately updates the resume, this gate ABORTS by design and
-  the constant must be re-read from the endpoint and bumped — otherwise every
-  apply batch stalls on a stale hash.
-- **This skill is repo-first**: `skills/job-application/` in the job-hunter repo
-  is the source of truth and the profile copy is an installed mirror. The rules
-  live in the AGENTS.md section "Bot skills — repo is the source of truth" — read
-  it before editing or syncing this skill.
-
 ### Optional pre-batch consistency audit (issue #81)
 
 `audit.py` is a **read-only** cross-check of applied-job state before a batch:
@@ -402,7 +367,7 @@ package 3:
     "job_id": "<id-slug>",
     "job_url": "https://jobs.gupy.io/jobs/<id-slug>",
     "portal": "gupy",
-    "profile": {"name": "...", "email": "...", "phone": "...", "resume_path": "...", "cover_text": "..."},
+    "profile": {"name": "...", "email": "...", "phone": "...", "cover_text": "..."},
     "policy": {
       "require_confirmation_before_final_submit": true,
       "never_fill_credentials": true,
@@ -430,6 +395,12 @@ The executor runs **observe → classify → act → verify** against each **liv
 3. **Act** — mapped by page kind: `start` → enter the flow; `form` → fill; `triagem` →
    select answers; `review` → confirm checkpoint (unless `--confirmed`/`--auto-apply`
    flipped the policy) then apply-final; `sucesso` → post-submit screenshot → verdict.
+   - **Resume attach:** every action that uploads the resume downloads it
+     fresh from `GET /api/profile/resume` into a temp file right before the upload
+     step, sanity-gates it (HTTP 200 / `application/pdf` / `%PDF-` magic bytes), and
+     deletes the temp file when the action completes. Gate failure aborts the action
+     before any upload; never upload a stored or owner-machine path — the intent
+     carries no resume path (spec: apply-backend-profile.md).
 4. **Verify** — re-classify: `sucesso` evidence is collected by verdict.py; any other page
    counts as a stall against the `max_steps` budget → end `INCOMPLETE` and hand off.
 5. **Record (strictly via verdict.py)** — an application is marked `applied` ONLY by
@@ -672,9 +643,10 @@ curl -sS -H "X-Bot-Token: $BOT_SERVICE_API_KEY" \
    - Identity-only fixes ("my name is wrong") need no resume: `PUT /api/profile`
      accepts `name`/`email` corrections directly (blank = "no correction").
 
-> **INTERIM note:** onboarding updates the backend profile; the step-0 refresh
-> rule stays ACTIVE until slice (c) — applies and email sends keep refreshing
-> the local copy from `GET /api/profile/resume` before any attach.
+> **Slice (c):** onboarding updates the backend profile directly — applies and
+> email sends no longer keep a local resume copy; the resume is downloaded
+> fresh from `GET /api/profile/resume` to a temp file only when an action
+> attaches it.
 
 ---
 
@@ -762,7 +734,7 @@ human-review flow.
 |---|---|---|
 | `usage` | Missing/invalid CLI arguments | Fix invocation |
 | `unknown_portal` | Portal not in the allow-list (v2: gupy + infojobs; `linkedin` NOT supported by design) | Do not plan |
-| `invalid_profile` | Profile file missing / bad JSON / missing required fields (`name`, `email`, `phone`, `cv_path`, `cover_text`) | Show detail; fix profile |
+| `invalid_profile` | Profile file missing / bad JSON / missing required fields (`name`, `email`, `phone`, `cover_text`) | Show detail; fix profile |
 | `refusal_draft_blocked` | Profile marks `no_apply` or cover text carries `NO_APPLY` (guardrail #28) | Stop — never send a refusal as an application |
 | `invalid_job_url` | No `/jobs/<slug>` segment derivable | Show detail |
 | `corrupt_gupy_slug` | Derived job id — or a resolved Gupy url's last slug, which `derive_job_id` may not surface as the id — contains a `.` (i.e. a `...` elision), impossible in a genuine urlsafe-base64 Gupy publicId: the URL was truncated or hand-typed (issue #82) | Stop, exit 1; re-fetch the URL from the API (`--from-api` / `--job-id`) instead of typing it |

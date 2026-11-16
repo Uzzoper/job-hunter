@@ -179,8 +179,10 @@ edited in the repo and propagated to the bot profile with `scripts/install-bot-s
   source of change — it is runtime state and the next install silently erases it.
 - Memory files, the real resume artifact, `.env` and live SOUL learnings belong to the
   VM runtime — never commit them to the repo.
-- Reference user-specific paths through the SOUL placeholders (`{{RESUME_FILENAME}}`
-  etc.), not hardcoded owner paths.
+- Reference user-specific paths through the SOUL placeholders (`{{USER_NAME}}`
+  etc.), not hardcoded owner paths. The resume PDF has NO path placeholder:
+  it is downloaded fresh from the backend at attach time (spec
+  `apply-backend-profile.md`) — never a stored or owner-machine path.
 - Skills citing `references/` files must keep those files versioned under
   `skills/<name>/references/` — the installer copies them; a citation to a file
   that is not committed is a dangling pointer.
