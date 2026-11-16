@@ -618,6 +618,66 @@ detector. `--skip-session-check` / `--dry-run` skip the planner-side check only.
 
 ---
 
+## Resume onboarding in chat (issue #92 slice b)
+
+When the owner attaches a resume PDF in chat, do **not** call the
+immediate-save upload. The confirmed path is preview → summarize →
+confirm/correct → commit — **nothing replaces the active profile until the
+owner explicitly confirms** (backend spec: `docs/specs/resume-preview-commit.md`).
+
+1. **Preview** — send the attached PDF, persist nothing:
+
+```bash
+curl -sS -H "X-Bot-Token: $BOT_SERVICE_API_KEY" \
+  -F "file=@<attached-pdf>" \
+  "http://127.0.0.1:8080/api/profile/resume/preview"
+```
+
+   The response is a read-only projection of what commit would write:
+   `accountIdentity` (users row), `contact` (fill-if-empty merge preview —
+   stored values win over extraction), `skills`, `projects`, `tone`,
+   `resumeTextChars`, `digest` (echo it back at commit) and `missingFields`
+   (contact fields still empty after the merge). Nothing is persisted; an
+   abandoned preview costs one extraction and nothing else.
+
+2. **Summarize in chat — never fabricate.** Report the extracted facts and the
+   merge preview verbatim. For each `missingFields` entry, ASK the owner in
+   chat; never invent a value. Corrections the owner dictates now are chat
+   corrections, applied at commit (merge order: chat correction > stored
+   value > AI extraction).
+
+3. **Confirm/correct in chat.** A correction is NOT a preview retry — it rides
+   the commit call as the `corrections` JSON part.
+
+4. **Commit** — the explicit confirmation, one call:
+
+```bash
+curl -sS -H "X-Bot-Token: $BOT_SERVICE_API_KEY" \
+  -F "file=@<attached-pdf>" \
+  -F 'corrections={"phone": "+55 42 90000-0000", "digest": "<preview.digest>"};type=application/json' \
+  "http://127.0.0.1:8080/api/profile/resume/commit"
+```
+
+   - The `file` MUST be the same artifact that was previewed: a different file
+     between preview and commit makes the digest echo mismatch → backend
+     answers `409` → restart from the preview step with the new file (digest
+     compare is case-insensitive).
+   - Fail-fast errors leave the active profile untouched: invalid correction →
+     `400`; resume text under 50 chars → `400` before the stored PDF is
+     touched; login email already used by another account → `409`
+     (`EmailAlreadyExistsException`). Report the error envelope in chat and
+     keep the previous state.
+   - The 200 response carries the updated profile with non-null identity —
+     report the new facts back.
+   - Identity-only fixes ("my name is wrong") need no resume: `PUT /api/profile`
+     accepts `name`/`email` corrections directly (blank = "no correction").
+
+> **INTERIM note:** onboarding updates the backend profile; the step-0 refresh
+> rule stays ACTIVE until slice (c) — applies and email sends keep refreshing
+> the local copy from `GET /api/profile/resume` before any attach.
+
+---
+
 ## Confirmation protocol
 
 - **The apply-final action is never taken without `--confirmed` or `--auto-apply`.**
