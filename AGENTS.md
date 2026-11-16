@@ -280,6 +280,14 @@ Tests follow the same package structure under `src/test/java/.../`. Check the di
 
 ---
 
+## Branches & promotion flow
+
+- Feature work: feature branch → PR → **`dev`** → owner merge. CI runs on `dev`.
+- Promotion: PR `dev` → **`main`** (owner merge) when a batch of features is validated — same pattern as #107…#136, #141. CI runs on `main` too.
+- The VM bot installs from **`origin/main` by default**; `origin/dev` only on explicit owner request (pre-promotion feature testing). VM repo path: `/home/juan/projects/job-hunter`.
+
+---
+
 ## Commit convention
 
 All commits must follow the **Conventional Commits** standard.
