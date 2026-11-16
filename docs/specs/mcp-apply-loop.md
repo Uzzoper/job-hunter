@@ -157,7 +157,7 @@ if page == "sucesso":
 | Page | Observable signals (AX snapshot + URL) | Executor action | Allowed next |
 |---|---|---|---|
 | `start` | Job detail page; button/heading with "Candidatar-se" / "Candidatar" / "Apply" | `next` (enter the application flow) | `form`, `triagem`, `review`, `auth`, `erro` |
-| `form` | Editable fields (textbox, combobox, file input) + a submit/continue button, **no login fields dominating** | `fill` profile fields + `upload` (resume) → `next` | `triagem`, `review`, `form` (re-fill), `auth`, `erro` |
+| `form` | Editable fields (textbox, combobox, file input) + a submit/continue button, **no login fields dominating** | `fill` profile fields + `upload` (resume — downloaded fresh to a temp file right before the step, sanity-gated, deleted after; gate failure aborts the action) → `next` | `triagem`, `review`, `form` (re-fill), `auth`, `erro` |
 | `triagem` | Screening questions: radio sets, checkboxes, selects (e.g. "Qual sua pretensão salarial?") | `fill` (selection) → `next` ("Enviar" / "Próximo" / "Continuar") | `review`, `triagem`, `form`, `auth`, `erro` |
 | `review` | Summary of applicant data + a final apply button ("Enviar candidatura" / "Candidatar") | `confirm_checkpoint` (unless confirmed) → `apply-final` | `sucesso`, `review`, `auth`, `erro` |
 | `sucesso` | Success text ("Inscrição realizada", "Candidatura enviada", "Você se candidatou") or success URL | `observe` + post-submit screenshot → verdict `SUBMIT_OK` | **terminal** |

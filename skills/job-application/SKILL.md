@@ -394,6 +394,12 @@ The executor runs **observe → classify → act → verify** against each **liv
 3. **Act** — mapped by page kind: `start` → enter the flow; `form` → fill; `triagem` →
    select answers; `review` → confirm checkpoint (unless `--confirmed`/`--auto-apply`
    flipped the policy) then apply-final; `sucesso` → post-submit screenshot → verdict.
+   - **Resume attach (slice c):** every action that uploads the resume downloads it
+     fresh from `GET /api/profile/resume` into a temp file right before the upload
+     step, sanity-gates it (HTTP 200 / `application/pdf` / `%PDF-` magic bytes), and
+     deletes the temp file when the action completes. Gate failure aborts the action
+     before any upload; never upload a stored or owner-machine path — the intent
+     carries no resume path.
 4. **Verify** — re-classify: `sucesso` evidence is collected by verdict.py; any other page
    counts as a stall against the `max_steps` budget → end `INCOMPLETE` and hand off.
 5. **Record (strictly via verdict.py)** — an application is marked `applied` ONLY by

@@ -114,8 +114,9 @@ _KEY_TO_FIELD = {
     "email": "email", "e-mail": "email",
     "phone": "phone", "telefone": "phone", "celular": "phone", "mobile": "phone",
     # Slice (c): "cv"/"currículo" chat aliases are retired with the cv_path
-    # field — resume mentions never ground a question from the profile; they
-    # route to the onboarding preview/commit flow instead.
+    # field — a resume mention grounds no profile answer, so the question
+    # falls through to memory/human dictation or ASK. Resume updates live in
+    # the onboarding preview/commit flow, not in this resolver.
     "cover_letter": "cover_text", "carta": "cover_text",
     "carta_de_apresentacao": "cover_text", "apresentacao": "cover_text",
 }
