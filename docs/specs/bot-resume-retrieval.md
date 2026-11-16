@@ -3,7 +3,11 @@
 > **Status:** implemented (slice a); the write-route identity thread it left
 > open is closed by slice (b) — `resume-preview-commit.md` landed the
 > `updateIdentity` route, and every profile response (GET / PUT /
-> upload-resume / commit) now carries non-null users-row identity.
+> upload-resume / commit) now carries non-null users-row identity. Slice (c)
+> (`apply-backend-profile.md`) closed the read-side debt that motivated this
+> slice: the apply skill no longer keeps a local resume copy — the PDF is
+> downloaded fresh from `GET /api/profile/resume` into a temp file only when
+> an action attaches it.
 
 Small backend slice: the bot can retrieve the stored resume PDF through the
 authenticated API, and the profile response carries the account identity.
@@ -97,8 +101,8 @@ slice (c) (apply skill consumes the backend profile).
   fields and preferences exist since profile-autofill); full refresh of
   that spec is tracked separately — this slice only adds the identity
   delta.
-- `mcp-apply-loop.md` `resume_path` (bot-host local file) remains until
-  slice (c); the two-artifact problem is documented there.
+- `mcp-apply-loop.md` `resume_path` (bot-host local file) was removed by
+  slice (c) — the two-artifact problem it documented is closed.
 
 ## Testing plan (RED before GREEN)
 

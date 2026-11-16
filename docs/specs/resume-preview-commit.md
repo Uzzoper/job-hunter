@@ -2,9 +2,10 @@
 
 > **Status:** implemented (backend). Amended after the two-agent review of
 > 2026-11-15 (fail-fast gates, blank semantics, unique-email pre-check, digest
-> case-insensitivity, `techStack` as list). Bot-side rollout — the onboarding
-> section in the `job-application` skill — is the repo-first follow-up after
-> this lands (repo → install).
+> case-insensitivity, `techStack` as list). Bot-side rollout shipped: the
+> onboarding section lives in the `job-application` skill (repo-first, issue
+> #92), and slice (c) (`apply-backend-profile.md`) made the apply flow consume
+> the backend profile directly — no local resume copy.
 
 > Backend slice of #92: extract-without-committing, explicit confirmation
 > before anything replaces the active resume/profile, and an account-identity

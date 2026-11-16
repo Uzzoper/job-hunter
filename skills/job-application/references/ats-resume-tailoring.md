@@ -128,9 +128,9 @@ profile edit.
 
 ## Start from the stored resume, not from questions
 
-The candidate's real data is already on disk at
-`~/.hermes/profiles/jobhunter-bot/<resume-filename>.pdf` (the SOUL
-`{{RESUME_FILENAME}}` placeholder), with a maintained LaTeX
+The candidate's real data is the canonical PDF the backend serves at
+`GET http://127.0.0.1:8080/api/profile/resume` (download it to a temp file
+before reading — slice (c): no standing local copy), plus a maintained LaTeX
 source at `<resume-dir>/<resume-filename>-ATS.tex` (compile with `tectonic`;
 that build is the validated ATS artifact). Read one with `read_file` (it
 auto-extracts the text layer) to know what is true before you write about it.

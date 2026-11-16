@@ -160,12 +160,11 @@ by re-browsing portals within the same flow.
   "name": "<string>",
   "email": "<string>",
   "phone": "<string>",
-  "resume_path": "<string path to resume file>",
   "cover_text": "<string cover letter body>"
 }
 ```
 
-The bot receives this data already structured (from Java DTOs / the app's profile) and must map it onto the portal's form fields by inspecting labels and `name`/`id` attributes.
+The bot receives this data already structured (from the backend profile) and must map it onto the portal's form fields by inspecting labels and `name`/`id` attributes. The resume PDF is not part of this payload — it is downloaded fresh from the Job Hunter backend when an action attaches it.
 
 ---
 
