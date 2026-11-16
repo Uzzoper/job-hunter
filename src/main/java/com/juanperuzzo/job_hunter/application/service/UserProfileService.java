@@ -4,6 +4,7 @@ import com.juanperuzzo.job_hunter.application.port.in.AccountIdentity;
 import com.juanperuzzo.job_hunter.application.port.in.UserProfileUseCase;
 import com.juanperuzzo.job_hunter.application.port.out.UserProfileRepository;
 import com.juanperuzzo.job_hunter.application.port.out.UserRepository;
+import com.juanperuzzo.job_hunter.domain.exception.EmailAlreadyExistsException;
 import com.juanperuzzo.job_hunter.domain.exception.InvalidResumeTextException;
 import com.juanperuzzo.job_hunter.domain.exception.UserNotFoundException;
 import com.juanperuzzo.job_hunter.domain.model.CompanyTone;
@@ -12,6 +13,13 @@ import com.juanperuzzo.job_hunter.domain.model.UserProfile;
 import java.util.List;
 
 public class UserProfileService implements UserProfileUseCase {
+
+    /**
+     * Minimum accepted resume-text length — the single source the preview and
+     * commit gates mirror (review 2026-11-15); the web bean validation on
+     * {@code ProfileRequest.resumeText} carries the same number.
+     */
+    static final int RESUME_TEXT_MIN_LENGTH = 50;
 
     private final UserRepository userRepository;
     private final UserProfileRepository userProfileRepository;
@@ -42,6 +50,41 @@ public class UserProfileService implements UserProfileUseCase {
         return new AccountIdentity(user.name(), user.email());
     }
 
+    @Override
+    public AccountIdentity updateIdentity(Long userId, String name, String email) {
+        var user = userRepository.findById(userId)
+                .orElseThrow(() -> new UserNotFoundException("User not found with id: " + userId));
+
+        // Null = no correction for this field → stored value kept; a blank string
+        // is an explicit correction that cannot be applied (reject, never guess).
+        String newName = user.name();
+        if (name != null) {
+            var candidate = name.trim();
+            if (candidate.isBlank() || candidate.length() > 255) { // mirrors @Size on ProfileRequest.name
+                throw new IllegalArgumentException("name must be non-blank and at most 255 characters");
+            }
+            newName = candidate;
+        }
+        String newEmail = user.email();
+        if (email != null) {
+            var candidate = email.trim();
+            if (candidate.isBlank() || candidate.length() > 255
+                    || !ResumeExtractionPipeline.EMAIL_PATTERN.matcher(candidate).matches()) {
+                throw new IllegalArgumentException("email must be a valid, non-blank address of at most 255 characters");
+            }
+            // the users.email column is UNIQUE — a colliding correction must be
+            // rejected here, BEFORE any caller-side write has happened, instead
+            // of surfacing as a constraint violation afterwards (review 2026-11-15)
+            if (!candidate.equals(user.email()) && userRepository.existsByEmail(candidate)) {
+                throw new EmailAlreadyExistsException("Email already in use: " + candidate);
+            }
+            newEmail = candidate;
+        }
+
+        userRepository.updateIdentity(userId, newName, newEmail);
+        return new AccountIdentity(newName, newEmail);
+    }
+
     /**
      * Saves the profile for the given authenticated user, enforcing the user's
      * existence and the resumeText minimum length. The profile id of an existing
@@ -56,8 +99,9 @@ public class UserProfileService implements UserProfileUseCase {
         userRepository.findById(userId)
                 .orElseThrow(() -> new UserNotFoundException("User not found with id: " + userId));
 
-        if (profile.resumeText() == null || profile.resumeText().length() < 50) {
-            throw new InvalidResumeTextException("Resume text must not be null and must be at least 50 characters");
+        if (profile.resumeText() == null || profile.resumeText().length() < RESUME_TEXT_MIN_LENGTH) {
+            throw new InvalidResumeTextException("Resume text must not be null and must be at least "
+                    + RESUME_TEXT_MIN_LENGTH + " characters");
         }
 
         var existing = userProfileRepository.findByUserId(userId);

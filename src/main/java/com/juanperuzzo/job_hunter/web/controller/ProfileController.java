@@ -1,9 +1,13 @@
 package com.juanperuzzo.job_hunter.web.controller;
 
+import com.juanperuzzo.job_hunter.application.dto.ResumeCorrections;
+import com.juanperuzzo.job_hunter.application.dto.ResumePreview;
 import com.juanperuzzo.job_hunter.application.port.in.AccountIdentity;
 import com.juanperuzzo.job_hunter.application.port.in.CurrentUserProvider;
 import com.juanperuzzo.job_hunter.application.port.in.ResumeRetrievalUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.UserProfileUseCase;
+import com.juanperuzzo.job_hunter.application.service.ResumeCommitService;
+import com.juanperuzzo.job_hunter.application.service.ResumePreviewService;
 import com.juanperuzzo.job_hunter.application.service.ResumeUploadService;
 import com.juanperuzzo.job_hunter.domain.model.Project;
 import com.juanperuzzo.job_hunter.domain.model.UserPreferences;
@@ -13,6 +17,8 @@ import com.juanperuzzo.job_hunter.web.dto.ProfileRequest;
 import com.juanperuzzo.job_hunter.web.dto.ProfileResponse;
 import com.juanperuzzo.job_hunter.web.dto.PreferencesResponse;
 import com.juanperuzzo.job_hunter.web.dto.ProjectResponse;
+import com.juanperuzzo.job_hunter.web.dto.ResumeCorrectionsRequest;
+import com.juanperuzzo.job_hunter.web.dto.ResumePreviewResponse;
 import com.juanperuzzo.job_hunter.web.dto.WorkPreferenceDto;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpHeaders;
@@ -32,14 +38,20 @@ public class ProfileController {
     private final CurrentUserProvider currentUserService;
     private final ResumeUploadService resumeUploadService;
     private final ResumeRetrievalUseCase resumeRetrievalUseCase;
+    private final ResumePreviewService resumePreviewService;
+    private final ResumeCommitService resumeCommitService;
 
     public ProfileController(UserProfileUseCase userProfileService, CurrentUserProvider currentUserService,
                              ResumeUploadService resumeUploadService,
-                             ResumeRetrievalUseCase resumeRetrievalUseCase) {
+                             ResumeRetrievalUseCase resumeRetrievalUseCase,
+                             ResumePreviewService resumePreviewService,
+                             ResumeCommitService resumeCommitService) {
         this.userProfileService = userProfileService;
         this.currentUserService = currentUserService;
         this.resumeUploadService = resumeUploadService;
         this.resumeRetrievalUseCase = resumeRetrievalUseCase;
+        this.resumePreviewService = resumePreviewService;
+        this.resumeCommitService = resumeCommitService;
     }
 
     @GetMapping
@@ -54,6 +66,18 @@ public class ProfileController {
     @PutMapping
     public ResponseEntity<ProfileResponse> saveProfile(@Valid @RequestBody ProfileRequest request) {
         Long userId = currentUserService.getCurrentUserId();
+        // Identity corrections are validated and applied BEFORE the profile
+        // write: an invalid identity answers 400 with nothing written
+        // (review 2026-11-15: partial-write finding — the @Email bean rule is
+        // lenient, the service rule is not, so the service must run first).
+        // Blank = "no correction", the same rule the commit route applies.
+        boolean hasName = hasText(request.name());
+        boolean hasEmail = hasText(request.email());
+        AccountIdentity identity = (hasName || hasEmail)
+                ? userProfileService.updateIdentity(userId,
+                        hasName ? request.name().trim() : null,
+                        hasEmail ? request.email().trim() : null)
+                : userProfileService.getAccountIdentity(userId);
         List<Project> projects = request.projects().stream()
                 .map(p -> new Project(p.name(), p.description(), String.join(", ", p.techStack())))
                 .toList();
@@ -63,7 +87,7 @@ public class ProfileController {
                 request.portfolioUrl(), request.githubUrl(), request.linkedinUrl(),
                 prefs);
         var saved = userProfileService.saveProfile(userId, profile);
-        var response = toResponse(saved);
+        var response = toResponse(saved, identity);
         return ResponseEntity.ok(response);
     }
 
@@ -71,7 +95,38 @@ public class ProfileController {
     public ResponseEntity<ProfileResponse> uploadResume(@RequestParam("file") MultipartFile file) {
         Long userId = currentUserService.getCurrentUserId();
         var profile = resumeUploadService.uploadResume(userId, file);
-        var response = toResponse(profile);
+        var response = toResponse(profile, userProfileService.getAccountIdentity(userId));
+        return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Stateless resume preview (issue #92 slice b): extracts and returns what a
+     * commit would write against the stored profile — persists nothing, so the
+     * bot can summarize the facts in chat and wait for explicit confirmation.
+     */
+    @PostMapping("/resume/preview")
+    public ResponseEntity<ResumePreviewResponse> previewResume(@RequestParam("file") MultipartFile file) {
+        Long userId = currentUserService.getCurrentUserId();
+        var preview = resumePreviewService.preview(userId, file);
+        return ResponseEntity.ok(toResponse(preview));
+    }
+
+    /**
+     * Confirmed resume commit (issue #92 slice b): this call IS the explicit
+     * confirmation — only it replaces the active resume/profile. Optional
+     * {@code corrections} JSON part carries chat corrections (merge order:
+     * chat correction &gt; stored value &gt; AI extraction) and the digest echo.
+     */
+    @PostMapping("/resume/commit")
+    public ResponseEntity<ProfileResponse> commitResume(
+            @RequestParam("file") MultipartFile file,
+            @RequestPart(value = "corrections", required = false) @Valid ResumeCorrectionsRequest corrections) {
+        Long userId = currentUserService.getCurrentUserId();
+        var appCorrections = corrections == null ? null : new ResumeCorrections(
+                corrections.name(), corrections.email(), corrections.phone(),
+                corrections.contactEmail(), corrections.portfolioUrl(), corrections.digest());
+        var profile = resumeCommitService.commit(userId, file, appCorrections);
+        var response = toResponse(profile, userProfileService.getAccountIdentity(userId));
         return ResponseEntity.ok(response);
     }
 
@@ -92,14 +147,11 @@ public class ProfileController {
                 .body(pdf);
     }
 
-    private ProfileResponse toResponse(UserProfile profile) {
-        return toResponse(profile, null);
-    }
-
     /**
-     * Account identity ({@code name}/{@code email}, issue #92 slice a) is
-     * filled only by the GET route; write routes map through the no-identity
-     * overload above until the slice-(b) preview/commit flow owns them.
+     * Account identity ({@code name}/{@code email}, issue #92 slices a–b) is
+     * carried by every profile response from the users row — GET, PUT,
+     * upload-resume and commit alike; the resume-extracted contact fields
+     * remain a separate concern.
      */
     private ProfileResponse toResponse(UserProfile profile, AccountIdentity identity) {
         var accountName = identity == null ? null : identity.name();
@@ -118,6 +170,25 @@ public class ProfileController {
                 profile.resumeText(), profile.skills(), profile.tone(), projectResponses,
                 profile.phone(), profile.contactEmail(), profile.portfolioUrl(),
                 profile.githubUrl(), profile.linkedinUrl(), prefsResponse);
+    }
+
+    /** True when {@code value} carries a non-blank correction. */
+    private static boolean hasText(String value) {
+        return value != null && !value.isBlank();
+    }
+
+    /** Maps the stateless preview (application) into its API response shape. */
+    private ResumePreviewResponse toResponse(ResumePreview preview) {
+        var identity = new ResumePreviewResponse.IdentityResponse(
+                preview.accountIdentity().name(), preview.accountIdentity().email());
+        var contact = new ResumePreviewResponse.ContactResponse(
+                preview.contact().phone(), preview.contact().contactEmail(), preview.contact().portfolioUrl());
+        var projects = preview.projects().stream()
+                .map(p -> new ResumePreviewResponse.ProjectPreviewResponse(
+                        p.name(), p.description(), p.techStack()))
+                .toList();
+        return new ResumePreviewResponse(identity, contact, preview.skills(), projects,
+                preview.tone(), preview.resumeTextChars(), preview.digest(), preview.missingFields());
     }
 
     /**

@@ -46,6 +46,8 @@ import com.juanperuzzo.job_hunter.application.service.BackfillContactEmailsServi
 import com.juanperuzzo.job_hunter.application.service.IngestLinkedInPostService;
 import com.juanperuzzo.job_hunter.application.service.BackfillCompanyWebsitesService;
 import com.juanperuzzo.job_hunter.application.port.out.ResumeStorage;
+import com.juanperuzzo.job_hunter.application.service.ResumeCommitService;
+import com.juanperuzzo.job_hunter.application.service.ResumePreviewService;
 import com.juanperuzzo.job_hunter.application.service.ResumeRetrievalService;
 import com.juanperuzzo.job_hunter.application.service.ResumeUploadService;
 import com.juanperuzzo.job_hunter.application.service.TemplateEmailService;
@@ -691,6 +693,29 @@ public class AppConfig {
                                                    ResumeStorage resumeStorage,
                                                    @Value("${ai.resume-extraction.max-chars:8000}") int maxAiChars) {
         return new ResumeUploadService(aiPort, userProfileService, userProfileRepository, resumeStorage, maxAiChars);
+    }
+
+    /**
+     * Stateless resume preview (issue #92 slice b): same extraction rules as
+     * the upload flow, but no storage or profile-writing dependency at all.
+     */
+    @Bean
+    public ResumePreviewService resumePreviewService(AiPort aiPort, UserProfileService userProfileService,
+                                                     UserProfileRepository userProfileRepository,
+                                                     @Value("${ai.resume-extraction.max-chars:8000}") int maxAiChars) {
+        return new ResumePreviewService(aiPort, userProfileService, userProfileRepository, maxAiChars);
+    }
+
+    /**
+     * Confirmed resume commit (issue #92 slice b): the only route that replaces
+     * the active resume/profile; re-runs the extraction (documented trade-off).
+     */
+    @Bean
+    public ResumeCommitService resumeCommitService(AiPort aiPort, UserProfileService userProfileService,
+                                                   UserProfileRepository userProfileRepository,
+                                                   ResumeStorage resumeStorage,
+                                                   @Value("${ai.resume-extraction.max-chars:8000}") int maxAiChars) {
+        return new ResumeCommitService(aiPort, userProfileService, userProfileRepository, resumeStorage, maxAiChars);
     }
 
     @Bean

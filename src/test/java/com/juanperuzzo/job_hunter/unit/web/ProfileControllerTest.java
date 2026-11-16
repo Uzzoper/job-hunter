@@ -1,12 +1,17 @@
 package com.juanperuzzo.job_hunter.unit.web;
 
+import com.juanperuzzo.job_hunter.application.dto.ResumeCorrections;
 import com.juanperuzzo.job_hunter.application.port.in.AccountIdentity;
 import com.juanperuzzo.job_hunter.application.port.in.ResumeRetrievalUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.UserProfileUseCase;
+import com.juanperuzzo.job_hunter.application.dto.ResumePreview;
+import com.juanperuzzo.job_hunter.application.service.ResumeCommitService;
+import com.juanperuzzo.job_hunter.application.service.ResumePreviewService;
 import com.juanperuzzo.job_hunter.application.service.ResumeUploadService;
 import com.juanperuzzo.job_hunter.application.port.out.TokenProvider;
 import com.juanperuzzo.job_hunter.domain.exception.AiException;
 import com.juanperuzzo.job_hunter.domain.exception.ProfileNotConfiguredException;
+import com.juanperuzzo.job_hunter.domain.exception.ResumeDigestMismatchException;
 import com.juanperuzzo.job_hunter.domain.exception.ResumeNotFoundException;
 import com.juanperuzzo.job_hunter.domain.exception.UserNotFoundException;
 import com.juanperuzzo.job_hunter.domain.model.CompanyTone;
@@ -26,6 +31,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.security.autoconfigure.SecurityAutoConfiguration;
@@ -40,8 +46,10 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -72,6 +80,12 @@ class ProfileControllerTest {
 
     @MockitoBean
     private ResumeRetrievalUseCase resumeRetrievalUseCase;
+
+    @MockitoBean
+    private ResumePreviewService resumePreviewService;
+
+    @MockitoBean
+    private ResumeCommitService resumeCommitService;
 
     @AfterEach
     void tearDown() {
@@ -117,12 +131,13 @@ class ProfileControllerTest {
         SecurityContextHolder.getContext().setAuthentication(authentication);
 
         var request = new ProfileRequest("New resume text that is certainly long enough to pass the minimum length constraint of fifty characters for test", List.of("Java", "Python"), CompanyTone.STARTUP, List.of(),
-                null, null, null, null, null, null);
+                null, null, null, null, null, null, null, null);
         var profile = new UserProfile(1L, 1L, "New resume text that is certainly long enough to pass the minimum length constraint of fifty characters for test", List.of("Java", "Python"), CompanyTone.STARTUP, List.of(),
                 null, null, null, null, null, null);
 
         when(userProfileService.saveProfile(eq(1L), any(UserProfile.class)))
                 .thenReturn(profile);
+        stubAccountIdentity(1L);
 
         mockMvc.perform(put("/api/profile")
                 .contentType(MediaType.APPLICATION_JSON)
@@ -132,9 +147,9 @@ class ProfileControllerTest {
                 .andExpect(jsonPath("$.skills[0]").value("Java"))
                 .andExpect(jsonPath("$.skills[1]").value("Python"))
                 .andExpect(jsonPath("$.tone").value("STARTUP"))
-                // write routes keep the response shape with null identity (slice (b) owns them)
-                .andExpect(jsonPath("$.name").value(org.hamcrest.Matchers.nullValue()))
-                .andExpect(jsonPath("$.email").value(org.hamcrest.Matchers.nullValue()));
+                // slice (b): write routes carry the users-row identity
+                .andExpect(jsonPath("$.name").value("Test User"))
+                .andExpect(jsonPath("$.email").value("test@test.com"));
     }
 
     @Test
@@ -144,7 +159,7 @@ class ProfileControllerTest {
         SecurityContextHolder.getContext().setAuthentication(authentication);
 
         var request = new ProfileRequest(null, List.of("Java"), CompanyTone.STARTUP, List.of(),
-                null, null, null, null, null, null);
+                null, null, null, null, null, null, null, null);
 
         mockMvc.perform(put("/api/profile")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -159,7 +174,7 @@ class ProfileControllerTest {
         SecurityContextHolder.getContext().setAuthentication(authentication);
 
         var request = new ProfileRequest("short", List.of("Java"), CompanyTone.STARTUP, List.of(),
-                null, null, null, null, null, null);
+                null, null, null, null, null, null, null, null);
 
         mockMvc.perform(put("/api/profile")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -174,7 +189,7 @@ class ProfileControllerTest {
         SecurityContextHolder.getContext().setAuthentication(authentication);
 
         var request = new ProfileRequest("A very long resume text that is certainly more than fifty characters long to pass validation", List.of(), CompanyTone.STARTUP, List.of(),
-                null, null, null, null, null, null);
+                null, null, null, null, null, null, null, null);
 
         mockMvc.perform(put("/api/profile")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -189,7 +204,7 @@ class ProfileControllerTest {
         SecurityContextHolder.getContext().setAuthentication(authentication);
 
         var request = new ProfileRequest("A very long resume text that is certainly more than fifty characters long to pass validation", List.of("Java"), null, List.of(),
-                null, null, null, null, null, null);
+                null, null, null, null, null, null, null, null);
 
         mockMvc.perform(put("/api/profile")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -204,7 +219,7 @@ class ProfileControllerTest {
         SecurityContextHolder.getContext().setAuthentication(authentication);
 
         var request = new ProfileRequest("New resume text that is certainly long enough to pass the minimum length constraint of fifty characters for test", List.of("Java"), CompanyTone.FORMAL, List.of(),
-                null, null, null, null, null, null);
+                null, null, null, null, null, null, null, null);
 
         when(userProfileService.saveProfile(eq(1L), any(UserProfile.class)))
                 .thenThrow(new IllegalArgumentException("Invalid input"));
@@ -243,7 +258,7 @@ class ProfileControllerTest {
         var resume = "New resume text that is certainly long enough to pass the minimum length constraint of fifty characters for test";
         var request = new ProfileRequest(resume, List.of("Java"), CompanyTone.FORMAL, List.of(),
                 "(42) 99999-0000", "me@example.com", "https://me.dev",
-                "https://github.com/me", "https://linkedin.com/in/me", null);
+                "https://github.com/me", "https://linkedin.com/in/me", null, null, null);
         var profile = new UserProfile(1L, 1L, resume, List.of("Java"), CompanyTone.FORMAL, List.of(),
                 "(42) 99999-0000", "me@example.com", "https://me.dev",
                 "https://github.com/me", "https://linkedin.com/in/me", null);
@@ -293,6 +308,7 @@ class ProfileControllerTest {
         var multipartFile = new MockMultipartFile("file", "resume.pdf", "application/pdf", pdfBytes);
 
         when(resumeUploadService.uploadResume(eq(1L), any())).thenReturn(profile);
+        stubAccountIdentity(1L);
 
         mockMvc.perform(multipart("/api/profile/upload-resume")
                         .file(multipartFile))
@@ -301,8 +317,9 @@ class ProfileControllerTest {
                 .andExpect(jsonPath("$.skills[0]").value("Java"))
                 .andExpect(jsonPath("$.skills[1]").value("Spring Boot"))
                 .andExpect(jsonPath("$.tone").value("FORMAL"))
-                .andExpect(jsonPath("$.name").value(org.hamcrest.Matchers.nullValue()))
-                .andExpect(jsonPath("$.email").value(org.hamcrest.Matchers.nullValue()));
+                // slice (b): write routes carry the users-row identity
+                .andExpect(jsonPath("$.name").value("Test User"))
+                .andExpect(jsonPath("$.email").value("test@test.com"));
     }
 
     @Test
@@ -399,7 +416,7 @@ class ProfileControllerTest {
 
         var resume = "New resume text that is certainly long enough to pass the minimum length constraint of fifty characters for test";
         var request = new ProfileRequest(resume, List.of("Java"), CompanyTone.STARTUP, List.of(),
-                null, null, null, null, null, null);
+                null, null, null, null, null, null, null, null);
         var prefs = new UserPreferences(new WorkPreference.Hybrid(List.of("Curitiba")), 3000, List.of());
         var profile = new UserProfile(1L, 1L, resume, List.of("Java"), CompanyTone.STARTUP, List.of(),
                 null, null, null, null, null, prefs);
@@ -425,7 +442,7 @@ class ProfileControllerTest {
         var resume = "New resume text that is certainly long enough to pass the minimum length constraint of fifty characters for test";
         var requestPrefs = new PreferencesRequest(new WorkPreferenceDto.Hybrid(List.of("São Paulo")), 6000, List.of(), List.of());
         var request = new ProfileRequest(resume, List.of("Java"), CompanyTone.STARTUP, List.of(),
-                null, null, null, null, null, requestPrefs);
+                null, null, null, null, null, requestPrefs, null, null);
         var prefs = new UserPreferences(new WorkPreference.Hybrid(List.of("São Paulo")), 6000, List.of());
         var profile = new UserProfile(1L, 1L, resume, List.of("Java"), CompanyTone.STARTUP, List.of(),
                 null, null, null, null, null, prefs);
@@ -565,7 +582,7 @@ class ProfileControllerTest {
         var resume = "New resume text that is certainly long enough to pass the minimum length constraint of fifty characters for test";
         var requestPrefs = new PreferencesRequest(new WorkPreferenceDto.Remote(), 5000, List.of(), List.of("java", "backend"));
         var request = new ProfileRequest(resume, List.of("Java"), CompanyTone.STARTUP, List.of(),
-                null, null, null, null, null, requestPrefs);
+                null, null, null, null, null, requestPrefs, null, null);
         var prefs = new UserPreferences(new WorkPreference.Remote(), 5000, List.of(), List.of("java", "backend"));
         var profile = new UserProfile(1L, 1L, resume, List.of("Java"), CompanyTone.STARTUP, List.of(),
                 null, null, null, null, null, prefs);
@@ -610,7 +627,7 @@ class ProfileControllerTest {
         var request = new ProfileRequest(
                 "New resume text that is certainly long enough to pass the minimum length constraint of fifty characters for test",
                 List.of("Java"), CompanyTone.STARTUP, List.of(),
-                null, null, null, null, null, requestPrefs);
+                null, null, null, null, null, requestPrefs, null, null);
 
         mockMvc.perform(put("/api/profile")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -630,7 +647,7 @@ class ProfileControllerTest {
         var request = new ProfileRequest(
                 "New resume text that is certainly long enough to pass the minimum length constraint of fifty characters for test",
                 List.of("Java"), CompanyTone.STARTUP, List.of(),
-                null, null, null, null, null, requestPrefs);
+                null, null, null, null, null, requestPrefs, null, null);
 
         mockMvc.perform(put("/api/profile")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -638,6 +655,204 @@ class ProfileControllerTest {
                 .andExpect(status().isBadRequest());
 
         verify(userProfileService, never()).saveProfile(any(), any());
+    }
+
+    // =========================================================================
+    // Resume preview/commit flow (issue #92 slice b)
+    // =========================================================================
+
+    @Test
+    @DisplayName("previewResume should return 200 with the stateless preview")
+    void preview_whenValidPdf_shouldReturn200WithPreview() throws Exception {
+        var authentication = new UsernamePasswordAuthenticationToken(
+                new User(1L, "test@test.com", "Test", "hash"), null, List.of());
+        SecurityContextHolder.getContext().setAuthentication(authentication);
+
+        var preview = new ResumePreview(
+                new AccountIdentity("Test User", "account@test.com"),
+                new ResumePreview.ContactPreview("+55 11 90000-0000", "ai@example.com", null),
+                List.of("Java"),
+                List.of(new com.juanperuzzo.job_hunter.application.dto.ResumePreview.ProjectPreview(
+                        "ProjectX", "A project", List.of("Java"))),
+                CompanyTone.FORMAL,
+                1234,
+                "d41d8cd98f00b204e9800998ecf8427e",
+                List.of("portfolioUrl"));
+        var multipartFile = new MockMultipartFile("file", "resume.pdf", "application/pdf", "pdf".getBytes());
+
+        when(resumePreviewService.preview(eq(1L), any())).thenReturn(preview);
+
+        mockMvc.perform(multipart("/api/profile/resume/preview")
+                        .file(multipartFile))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.accountIdentity.name").value("Test User"))
+                .andExpect(jsonPath("$.accountIdentity.email").value("account@test.com"))
+                .andExpect(jsonPath("$.contact.phone").value("+55 11 90000-0000"))
+                .andExpect(jsonPath("$.contact.contactEmail").value("ai@example.com"))
+                .andExpect(jsonPath("$.contact.portfolioUrl").value(org.hamcrest.Matchers.nullValue()))
+                .andExpect(jsonPath("$.skills[0]").value("Java"))
+                .andExpect(jsonPath("$.projects[0].name").value("ProjectX"))
+                .andExpect(jsonPath("$.tone").value("FORMAL"))
+                .andExpect(jsonPath("$.resumeTextChars").value(1234))
+                .andExpect(jsonPath("$.digest").value("d41d8cd98f00b204e9800998ecf8427e"))
+                .andExpect(jsonPath("$.missingFields[0]").value("portfolioUrl"));
+    }
+
+    @Test
+    @DisplayName("previewResume should return 401 when unauthenticated")
+    void preview_whenUnauthenticated_shouldReturn401() throws Exception {
+        var multipartFile = new MockMultipartFile("file", "resume.pdf", "application/pdf", "pdf".getBytes());
+
+        // no SecurityContext authentication → CurrentUserService throws IllegalStateException → 401
+        mockMvc.perform(multipart("/api/profile/resume/preview")
+                        .file(multipartFile))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @DisplayName("commitResume should return 200 with non-null identity when confirmed")
+    void commit_whenConfirmed_shouldReturn200WithNonNullIdentity() throws Exception {
+        var authentication = new UsernamePasswordAuthenticationToken(
+                new User(1L, "test@test.com", "Test", "hash"), null, List.of());
+        SecurityContextHolder.getContext().setAuthentication(authentication);
+
+        var profile = new UserProfile(1L, 1L, "Committed resume text long enough to pass the validation gates.",
+                List.of("Java"), CompanyTone.FORMAL, List.of(),
+                "+55 11 96666-0000", "corrected@example.com", null, null, null, null);
+        var multipartFile = new MockMultipartFile("file", "resume.pdf", "application/pdf", "pdf".getBytes());
+        var correctionsPart = new MockMultipartFile("corrections", "", "application/json",
+                "{\"name\": \"Corrected\", \"email\": \"corrected@example.com\"}".getBytes());
+
+        when(resumeCommitService.commit(eq(1L), any(), any())).thenReturn(profile);
+        stubAccountIdentity(1L);
+
+        mockMvc.perform(multipart("/api/profile/resume/commit")
+                        .file(multipartFile)
+                        .file(correctionsPart))
+                .andExpect(status().isOk())
+                // slice (b): the commit response carries non-null users-row identity
+                .andExpect(jsonPath("$.name").value("Test User"))
+                .andExpect(jsonPath("$.email").value("test@test.com"))
+                .andExpect(jsonPath("$.phone").value("+55 11 96666-0000"))
+                .andExpect(jsonPath("$.contactEmail").value("corrected@example.com"));
+
+        // the corrections JSON part must reach the service field-mapped
+        // (review 2026-11-15: the any() stub left this mapping unverified)
+        var correctionsCaptor = ArgumentCaptor.forClass(ResumeCorrections.class);
+        verify(resumeCommitService).commit(eq(1L), any(), correctionsCaptor.capture());
+        assertEquals("Corrected", correctionsCaptor.getValue().name());
+        assertEquals("corrected@example.com", correctionsCaptor.getValue().email());
+    }
+
+    @Test
+    @DisplayName("commitResume should return 409 when the echoed digest does not match")
+    void commit_whenDigestMismatch_shouldReturn409() throws Exception {
+        var authentication = new UsernamePasswordAuthenticationToken(
+                new User(1L, "test@test.com", "Test", "hash"), null, List.of());
+        SecurityContextHolder.getContext().setAuthentication(authentication);
+
+        var multipartFile = new MockMultipartFile("file", "resume.pdf", "application/pdf", "pdf".getBytes());
+        var correctionsPart = new MockMultipartFile("corrections", "", "application/json",
+                "{\"digest\": \"deadbeefdeadbeef\"}".getBytes());
+
+        when(resumeCommitService.commit(eq(1L), any(), any()))
+                .thenThrow(new ResumeDigestMismatchException(
+                        "Digest mismatch: the confirmed artifact is not the previewed one"));
+
+        mockMvc.perform(multipart("/api/profile/resume/commit")
+                        .file(multipartFile)
+                        .file(correctionsPart))
+                .andExpect(status().isConflict());
+    }
+
+    @Test
+    @DisplayName("putProfile should accept identity corrections and return non-null identity")
+    void putProfile_whenIdentityCorrected_shouldReturn200WithNonNullIdentity() throws Exception {
+        var authentication = new UsernamePasswordAuthenticationToken(
+                new User(1L, "test@test.com", "Test", "hash"), null, List.of());
+        SecurityContextHolder.getContext().setAuthentication(authentication);
+
+        var resume = "New resume text that is certainly long enough to pass the minimum length constraint of fifty characters for test";
+        // 12-arg form: identity corrections ride the request (slice b)
+        var request = new ProfileRequest(resume, List.of("Java"), CompanyTone.STARTUP, List.of(),
+                null, null, null, null, null, null,
+                "Corrected Name", "corrected@example.com");
+        var profile = new UserProfile(1L, 1L, resume, List.of("Java"), CompanyTone.STARTUP, List.of(),
+                null, null, null, null, null, null);
+
+        when(userProfileService.saveProfile(eq(1L), any(UserProfile.class))).thenReturn(profile);
+        when(userProfileService.updateIdentity(1L, "Corrected Name", "corrected@example.com"))
+                .thenReturn(new AccountIdentity("Corrected Name", "corrected@example.com"));
+
+        mockMvc.perform(put("/api/profile")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value("Corrected Name"))
+                .andExpect(jsonPath("$.email").value("corrected@example.com"));
+
+        verify(userProfileService).updateIdentity(1L, "Corrected Name", "corrected@example.com");
+    }
+
+    @Test
+    @DisplayName("putProfile should reject an invalid identity correction before saving the profile")
+    void putProfile_whenIdentityInvalid_shouldReturn400_andNotSaveProfile() throws Exception {
+        var authentication = new UsernamePasswordAuthenticationToken(
+                new User(1L, "test@test.com", "Test", "hash"), null, List.of());
+        SecurityContextHolder.getContext().setAuthentication(authentication);
+
+        var resume = "New resume text that is certainly long enough to pass the minimum length constraint of fifty characters for test";
+        // "a@b" passes the bean @Email (Jakarta is lenient) but fails the house
+        // EMAIL_PATTERN — the service rule must fire BEFORE the profile write
+        // (review 2026-11-15: partial-write finding on PUT)
+        var request = new ProfileRequest(resume, List.of("Java"), CompanyTone.STARTUP, List.of(),
+                null, null, null, null, null, null, null, "a@b");
+
+        lenient().when(userProfileService.saveProfile(eq(1L), any(UserProfile.class)))
+                .thenReturn(new UserProfile(1L, 1L, resume, List.of("Java"), CompanyTone.STARTUP,
+                        List.of(), null, null, null, null, null, null));
+        when(userProfileService.updateIdentity(1L, null, "a@b"))
+                .thenThrow(new IllegalArgumentException(
+                        "email must be a valid, non-blank address of at most 255 characters"));
+
+        mockMvc.perform(put("/api/profile")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest());
+
+        verify(userProfileService, never()).saveProfile(any(), any());
+    }
+
+    @Test
+    @DisplayName("putProfile should treat a blank identity correction as absent")
+    void putProfile_whenBlankIdentityCorrection_shouldIgnoreIt() throws Exception {
+        var authentication = new UsernamePasswordAuthenticationToken(
+                new User(1L, "test@test.com", "Test", "hash"), null, List.of());
+        SecurityContextHolder.getContext().setAuthentication(authentication);
+
+        var resume = "New resume text that is certainly long enough to pass the minimum length constraint of fifty characters for test";
+        // blank = "no correction" everywhere (the commit route's rule) — a
+        // blank name must not attempt an update and 400 after the profile write
+        var request = new ProfileRequest(resume, List.of("Java"), CompanyTone.STARTUP, List.of(),
+                null, null, null, null, null, null, "   ", null);
+
+        var profile = new UserProfile(1L, 1L, resume, List.of("Java"), CompanyTone.STARTUP,
+                List.of(), null, null, null, null, null, null);
+
+        lenient().when(userProfileService.updateIdentity(any(), any(), any()))
+                .thenReturn(new AccountIdentity("Test User", "test@test.com"));
+        lenient().when(userProfileService.getAccountIdentity(1L))
+                .thenReturn(new AccountIdentity("Test User", "test@test.com"));
+        when(userProfileService.saveProfile(eq(1L), any(UserProfile.class))).thenReturn(profile);
+
+        mockMvc.perform(put("/api/profile")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value("Test User"))
+                .andExpect(jsonPath("$.email").value("test@test.com"));
+
+        verify(userProfileService, never()).updateIdentity(any(), any(), any());
     }
 
     /** Default identity stub for GET tests; specific tests stub their own values. */
