@@ -204,10 +204,11 @@ def validate_intent(intent: Any) -> List[str]:
 # are explicit isinstance/type tests so the validator also catches JSON
 # round-trip corruption (e.g. an int arriving as a string from a manual edit).
 
-# The 4 backend profile fields (slice (c)) — the single source of truth for
-# the contract shape. apply.py's REQUIRED_PROFILE_FIELDS is this same set;
-# the TypedDict below restates it statically because TypedDict syntax is
-# static by nature.
+# The 4 backend profile fields (slice (c)) — the canonical contract shape
+# that build_intent, the validator and apply.py's REQUIRED_PROFILE_FIELDS
+# derive from. Two static restatements are unavoidable: the TypedDict below
+# (static syntax by nature) and the OPTIONAL subset (a literal — name/email
+# are hard-required strings).
 PROFILE_FIELDS = ("name", "email", "phone", "cover_text")
 # Type-checked only when present; name/email are hard-required strings.
 OPTIONAL_PROFILE_FIELDS = ("phone", "cover_text")

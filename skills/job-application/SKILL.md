@@ -165,7 +165,7 @@ New flags (all optional): `--job-id`, `--from-api`, `--api-base-url` (default
 ## When to use
 
 - The portal is **Gupy** or **InfoJobs** and the job URL follows the portal's pattern (`https://<portal>.gupy.io/jobs/<id-slug>` or `https://www.infojobs.com.br/vaga/<id-slug>`).
-- The bot has structured application data (name, email, phone, cover text) from the backend profile; the resume PDF itself is fetched fresh from the backend at attach time — the profile carries no resume path.
+- The bot composes the profile at plan time: `name`/`email`/`phone` from the backend profile plus a **bot-side cover text** (per-application, not backend data); the resume PDF itself is fetched fresh from the backend at attach time — the profile carries no resume path.
 - The user explicitly asked the bot to apply, and the confirmation protocol below can be honored.
 - The job to apply to was picked from the **Job Hunter API** (issue #46) via `--from-api` or `--job-id`.
 

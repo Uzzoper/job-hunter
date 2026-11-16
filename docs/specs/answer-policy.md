@@ -2,9 +2,11 @@
 
 > **Status:** implemented. Slice (c) (`apply-backend-profile.md`) retired
 > the `cv_path` profile field and its "currículo" chat aliases — the
-> profile resolve set is `name`/`email`/`phone`/`cover_text`; resume
+> profile resolve set is `name`/`email`/`phone`/`cover_text`; chat resume
 > mentions route to the onboarding preview/commit flow instead of a
-> profile answer.
+> profile answer. Form file inputs are NOT questions: the executor
+> attaches the resume out-of-band (fresh-download gate), so
+> `extract_questions` ignores `fileinput`/`file` roles.
 
 Spec for the per-question review gate. Companion to
 `deterministic-apply-runbook.md` (§3.2 plugs the review gate: "all required
