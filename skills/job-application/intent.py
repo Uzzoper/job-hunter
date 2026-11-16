@@ -88,12 +88,7 @@ def build_intent(*, intent_id: str, job_id: str, job_url: str, portal: str,
         "job_id": job_id,
         "job_url": job_url,
         "portal": portal,
-        "profile": {
-            "name": profile.get("name"),
-            "email": profile.get("email"),
-            "phone": profile.get("phone"),
-            "cover_text": profile.get("cover_text"),
-        },
+        "profile": {field: profile.get(field) for field in PROFILE_FIELDS},
         "policy": {
             "require_confirmation_before_final_submit": bool(require_confirmation),
             "never_fill_credentials": bool(never_fill_credentials),
@@ -209,6 +204,15 @@ def validate_intent(intent: Any) -> List[str]:
 # are explicit isinstance/type tests so the validator also catches JSON
 # round-trip corruption (e.g. an int arriving as a string from a manual edit).
 
+# The 4 backend profile fields (slice (c)) — the single source of truth for
+# the contract shape. apply.py's REQUIRED_PROFILE_FIELDS is this same set;
+# the TypedDict below restates it statically because TypedDict syntax is
+# static by nature.
+PROFILE_FIELDS = ("name", "email", "phone", "cover_text")
+# Type-checked only when present; name/email are hard-required strings.
+OPTIONAL_PROFILE_FIELDS = ("phone", "cover_text")
+
+
 class ProfileContract(TypedDict):
     name: str
     email: str
@@ -305,7 +309,7 @@ def validate_intent_contract(intent_obj: Any) -> Dict[str, Any]:
         for key in ("name", "email"):
             _require_str(profile, "profile", key, problems)
         # Optional profile payload keys — only the TYPE is enforced when present.
-        for key in ("phone", "cover_text"):
+        for key in OPTIONAL_PROFILE_FIELDS:
             value = profile.get(key)
             if value is not None and not isinstance(value, str):
                 problems.append(f"profile.{key}.not_a_string")

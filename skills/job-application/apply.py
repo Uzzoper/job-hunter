@@ -270,7 +270,7 @@ def load_profile(path: str) -> Tuple[Optional[Dict[str, Any]], Optional[Dict[str
 # backend profile carries exactly these 4 fields — cv_path is retired. A
 # legacy cv_path key in an old profile file is tolerated but ignored; the
 # executor fetches the resume fresh from the backend at attach time.
-REQUIRED_PROFILE_FIELDS = ("name", "email", "phone", "cover_text")
+REQUIRED_PROFILE_FIELDS = intent.PROFILE_FIELDS
 
 
 def validate_profile(profile: Dict[str, Any]) -> List[str]:
