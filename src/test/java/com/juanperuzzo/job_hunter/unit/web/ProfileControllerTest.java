@@ -1,5 +1,6 @@
 package com.juanperuzzo.job_hunter.unit.web;
 
+import com.juanperuzzo.job_hunter.application.dto.ResumeCorrections;
 import com.juanperuzzo.job_hunter.application.port.in.AccountIdentity;
 import com.juanperuzzo.job_hunter.application.port.in.ResumeRetrievalUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.UserProfileUseCase;
@@ -30,6 +31,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.security.autoconfigure.SecurityAutoConfiguration;
@@ -44,8 +46,10 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -731,6 +735,13 @@ class ProfileControllerTest {
                 .andExpect(jsonPath("$.email").value("test@test.com"))
                 .andExpect(jsonPath("$.phone").value("+55 11 96666-0000"))
                 .andExpect(jsonPath("$.contactEmail").value("corrected@example.com"));
+
+        // the corrections JSON part must reach the service field-mapped
+        // (review 2026-11-15: the any() stub left this mapping unverified)
+        var correctionsCaptor = ArgumentCaptor.forClass(ResumeCorrections.class);
+        verify(resumeCommitService).commit(eq(1L), any(), correctionsCaptor.capture());
+        assertEquals("Corrected", correctionsCaptor.getValue().name());
+        assertEquals("corrected@example.com", correctionsCaptor.getValue().email());
     }
 
     @Test
@@ -781,6 +792,67 @@ class ProfileControllerTest {
                 .andExpect(jsonPath("$.email").value("corrected@example.com"));
 
         verify(userProfileService).updateIdentity(1L, "Corrected Name", "corrected@example.com");
+    }
+
+    @Test
+    @DisplayName("putProfile should reject an invalid identity correction before saving the profile")
+    void putProfile_whenIdentityInvalid_shouldReturn400_andNotSaveProfile() throws Exception {
+        var authentication = new UsernamePasswordAuthenticationToken(
+                new User(1L, "test@test.com", "Test", "hash"), null, List.of());
+        SecurityContextHolder.getContext().setAuthentication(authentication);
+
+        var resume = "New resume text that is certainly long enough to pass the minimum length constraint of fifty characters for test";
+        // "a@b" passes the bean @Email (Jakarta is lenient) but fails the house
+        // EMAIL_PATTERN — the service rule must fire BEFORE the profile write
+        // (review 2026-11-15: partial-write finding on PUT)
+        var request = new ProfileRequest(resume, List.of("Java"), CompanyTone.STARTUP, List.of(),
+                null, null, null, null, null, null, null, "a@b");
+
+        lenient().when(userProfileService.saveProfile(eq(1L), any(UserProfile.class)))
+                .thenReturn(new UserProfile(1L, 1L, resume, List.of("Java"), CompanyTone.STARTUP,
+                        List.of(), null, null, null, null, null, null));
+        when(userProfileService.updateIdentity(1L, null, "a@b"))
+                .thenThrow(new IllegalArgumentException(
+                        "email must be a valid, non-blank address of at most 255 characters"));
+
+        mockMvc.perform(put("/api/profile")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest());
+
+        verify(userProfileService, never()).saveProfile(any(), any());
+    }
+
+    @Test
+    @DisplayName("putProfile should treat a blank identity correction as absent")
+    void putProfile_whenBlankIdentityCorrection_shouldIgnoreIt() throws Exception {
+        var authentication = new UsernamePasswordAuthenticationToken(
+                new User(1L, "test@test.com", "Test", "hash"), null, List.of());
+        SecurityContextHolder.getContext().setAuthentication(authentication);
+
+        var resume = "New resume text that is certainly long enough to pass the minimum length constraint of fifty characters for test";
+        // blank = "no correction" everywhere (the commit route's rule) — a
+        // blank name must not attempt an update and 400 after the profile write
+        var request = new ProfileRequest(resume, List.of("Java"), CompanyTone.STARTUP, List.of(),
+                null, null, null, null, null, null, "   ", null);
+
+        var profile = new UserProfile(1L, 1L, resume, List.of("Java"), CompanyTone.STARTUP,
+                List.of(), null, null, null, null, null, null);
+
+        lenient().when(userProfileService.updateIdentity(any(), any(), any()))
+                .thenReturn(new AccountIdentity("Test User", "test@test.com"));
+        lenient().when(userProfileService.getAccountIdentity(1L))
+                .thenReturn(new AccountIdentity("Test User", "test@test.com"));
+        when(userProfileService.saveProfile(eq(1L), any(UserProfile.class))).thenReturn(profile);
+
+        mockMvc.perform(put("/api/profile")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value("Test User"))
+                .andExpect(jsonPath("$.email").value("test@test.com"));
+
+        verify(userProfileService, never()).updateIdentity(any(), any(), any());
     }
 
     /** Default identity stub for GET tests; specific tests stub their own values. */

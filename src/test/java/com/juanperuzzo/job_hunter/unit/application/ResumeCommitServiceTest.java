@@ -6,6 +6,7 @@ import com.juanperuzzo.job_hunter.application.port.out.ResumeStorage;
 import com.juanperuzzo.job_hunter.application.port.out.UserProfileRepository;
 import com.juanperuzzo.job_hunter.application.service.ResumeCommitService;
 import com.juanperuzzo.job_hunter.application.service.UserProfileService;
+import com.juanperuzzo.job_hunter.domain.exception.InvalidResumeTextException;
 import com.juanperuzzo.job_hunter.domain.exception.ResumeDigestMismatchException;
 import com.juanperuzzo.job_hunter.domain.model.CompanyTone;
 import com.juanperuzzo.job_hunter.domain.model.UserProfile;
@@ -27,6 +28,8 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.security.MessageDigest;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Optional;
 
@@ -200,6 +203,85 @@ class ResumeCommitServiceTest {
     }
 
     // =========================================================================
+    // Fail-fast gates (review 2026-11-15)
+    // =========================================================================
+
+    @Test
+    @DisplayName("commit with an invalid identity correction should throw before any write")
+    void commit_whenIdentityCorrectionInvalid_shouldThrow_andWriteNothing() throws Exception {
+        var file = validPdfMock("Commit flow resume test with an invalid identity correction.");
+
+        // a name correction over the users-row cap (255) must be rejected in the
+        // pre-validation pass — not after the PDF is stored and the profile
+        // replaced (review 2026-11-15: partial-write finding)
+        var corrections = new ResumeCorrections("x".repeat(256), null, null, null, null, null);
+
+        // unused once the gate exists — lenient (same approach as the digest-mismatch test)
+        lenient().when(aiPort.complete(anyString())).thenReturn(
+                "{\"skills\": [\"Java\"], \"projects\": [], \"contact\": null}");
+        lenient().when(userProfileRepository.findByUserId(1L)).thenReturn(Optional.of(new UserProfile(5L, 1L,
+                "Old resume text that is long enough to pass.", List.of("Java"), CompanyTone.CASUAL,
+                List.of(), null, null, null, null, null, null)));
+        lenient().when(userProfileService.saveProfile(eq(1L), any(UserProfile.class)))
+                .thenReturn(new UserProfile(5L, 1L, "Commit flow resume test with an invalid identity correction.",
+                        List.of("Java"), CompanyTone.CASUAL, List.of(), null, null, null, null, null, null));
+
+        assertThrows(IllegalArgumentException.class, () -> service.commit(1L, file, corrections));
+
+        verify(resumeStorage, never()).write(anyLong(), any());
+        verify(userProfileService, never()).saveProfile(anyLong(), any());
+        verify(userProfileService, never()).updateIdentity(anyLong(), any(), any());
+    }
+
+    @Test
+    @DisplayName("commit should accept a digest echo in any case")
+    void commit_whenUppercaseDigestEcho_shouldStillMatch() throws Exception {
+        var bytes = createPdfBytes("Commit flow resume test with an uppercase digest echo.");
+        var file = pdfMock(bytes);
+
+        when(aiPort.complete(anyString())).thenReturn(
+                "{\"skills\": [\"Java\"], \"projects\": [], \"contact\": null}");
+        when(userProfileRepository.findByUserId(1L)).thenReturn(Optional.of(new UserProfile(5L, 1L,
+                "Old resume text that is long enough to pass.", List.of("Java"), CompanyTone.CASUAL,
+                List.of(), null, null, null, null, null, null)));
+        when(userProfileService.saveProfile(eq(1L), any(UserProfile.class))).thenReturn(new UserProfile(5L, 1L,
+                "Commit flow resume test with an uppercase digest echo.", List.of("Java"), CompanyTone.CASUAL,
+                List.of(), null, null, null, null, null, null));
+
+        // uppercase echo of the real digest must not false-409 (review 2026-11-15)
+        var corrections = new ResumeCorrections(null, null, null, null, null, md5Hex(bytes).toUpperCase());
+
+        var result = service.commit(1L, file, corrections);
+
+        assertEquals(5L, result.id());
+        verify(resumeStorage).write(eq(1L), any());
+    }
+
+    @Test
+    @DisplayName("commit with a too-short resume should throw before storing the PDF")
+    void commit_whenResumeTextTooShort_shouldThrowInvalidResumeText_andNotStorePdf() throws Exception {
+        var bytes = createPdfBytes("Too short.");
+        var file = pdfMock(bytes);
+
+        // the length gate must fire before storage: a rejected resume must not
+        // silently replace the stored PDF (review 2026-11-15: validity-domain
+        // divergence — preview accepted what commit rejects)
+        lenient().when(aiPort.complete(anyString())).thenReturn(
+                "{\"skills\": [\"Java\"], \"projects\": [], \"contact\": null}");
+        lenient().when(userProfileRepository.findByUserId(1L)).thenReturn(Optional.of(new UserProfile(5L, 1L,
+                "Old resume text that is long enough to pass.", List.of("Java"), CompanyTone.CASUAL,
+                List.of(), null, null, null, null, null, null)));
+        lenient().when(userProfileService.saveProfile(eq(1L), any(UserProfile.class)))
+                .thenReturn(new UserProfile(5L, 1L, "Too short.", List.of("Java"), CompanyTone.CASUAL,
+                        List.of(), null, null, null, null, null, null));
+
+        assertThrows(InvalidResumeTextException.class, () -> service.commit(1L, file, null));
+
+        verify(resumeStorage, never()).write(anyLong(), any());
+        verify(userProfileService, never()).updateIdentity(anyLong(), any(), any());
+    }
+
+    // =========================================================================
     // Helpers
     // =========================================================================
 
@@ -214,6 +296,23 @@ class ResumeCommitServiceTest {
         lenient().when(file.getInputStream()).thenReturn(new ByteArrayInputStream(pdfBytes));
         when(file.getBytes()).thenReturn(pdfBytes);
         return file;
+    }
+
+    /** Mock over a caller-owned byte instance — the digest tests need the SAME bytes. */
+    private MultipartFile pdfMock(byte[] bytes) throws IOException {
+        var file = mock(MultipartFile.class);
+        when(file.isEmpty()).thenReturn(false);
+        when(file.getContentType()).thenReturn("application/pdf");
+        when(file.getOriginalFilename()).thenReturn("resume.pdf");
+        lenient().when(file.getInputStream()).thenReturn(new ByteArrayInputStream(bytes));
+        when(file.getBytes()).thenReturn(bytes);
+        return file;
+    }
+
+    /** Test-side md5, independent from the pipeline helper under test. */
+    private static String md5Hex(byte[] bytes) throws Exception {
+        var digest = MessageDigest.getInstance("MD5");
+        return HexFormat.of().formatHex(digest.digest(bytes));
     }
 
     private static byte[] createPdfBytes(String text) throws IOException {

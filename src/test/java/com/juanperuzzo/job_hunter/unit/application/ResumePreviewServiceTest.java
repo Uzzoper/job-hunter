@@ -7,6 +7,7 @@ import com.juanperuzzo.job_hunter.application.port.out.UserProfileRepository;
 import com.juanperuzzo.job_hunter.application.service.ResumePreviewService;
 import com.juanperuzzo.job_hunter.application.service.UserProfileService;
 import com.juanperuzzo.job_hunter.domain.exception.AiException;
+import com.juanperuzzo.job_hunter.domain.exception.InvalidResumeTextException;
 import com.juanperuzzo.job_hunter.domain.model.CompanyTone;
 import com.juanperuzzo.job_hunter.domain.model.UserProfile;
 import org.apache.pdfbox.Loader;
@@ -56,6 +57,14 @@ class ResumePreviewServiceTest {
 
     private ResumePreviewService service;
 
+    /** Resume fixtures ≥ the 50-char gate (review 2026-11-15). */
+    private static final String FULL_TEXT =
+            "Resume text for the stateless preview flow, long enough to pass the minimum length gate.";
+    private static final String PARTIAL_TEXT =
+            "Resume text with partially known contact data, long enough to pass the minimum length gate.";
+    private static final String AI_FAIL_TEXT =
+            "Resume text whose AI extraction will fail, long enough to pass the minimum length gate.";
+
     @BeforeEach
     void setUp() {
         service = new ResumePreviewService(aiPort, userProfileService, userProfileRepository, 8000);
@@ -66,7 +75,7 @@ class ResumePreviewServiceTest {
     void preview_whenValidPdf_shouldReturnPreviewWithoutSaving() throws Exception {
         // one byte instance for the whole test: PDFBox embeds a creation
         // timestamp, so two pdfBytes() calls would yield different digests
-        var bytes = pdfBytes();
+        var bytes = pdfBytes(FULL_TEXT);
         var file = pdfMock(bytes);
         var aiJson = """
                 {"skills": ["Java", "Spring Boot"],
@@ -116,7 +125,7 @@ class ResumePreviewServiceTest {
     @Test
     @DisplayName("preview should list contact fields still empty after the merge preview")
     void preview_whenMissingFields_shouldListThemAfterMergePreview() throws Exception {
-        var file = validPdfMock("Resume text with partially known contact data.");
+        var file = validPdfMock(PARTIAL_TEXT);
         // extraction only knows the email; phone stays on the stored profile; portfolio absent everywhere
         var aiJson = """
                 {"skills": ["Java"], "projects": [],
@@ -158,15 +167,38 @@ class ResumePreviewServiceTest {
     @Test
     @DisplayName("preview should surface AiException and leave the profile intact")
     void preview_whenAiFails_shouldSurfaceAiException_andLeaveProfileIntact() throws Exception {
-        var file = validPdfMock("Resume text whose AI extraction will fail.");
+        var file = validPdfMock(AI_FAIL_TEXT);
 
         when(aiPort.complete(anyString())).thenThrow(new RuntimeException("AI timeout"));
+        // identity is read BEFORE the AI call: an unknown user 404s without
+        // spending a completion (review 2026-11-15)
+        lenient().when(userProfileService.getAccountIdentity(1L))
+                .thenReturn(new AccountIdentity("Test User", "account@example.com"));
+        lenient().when(userProfileRepository.findByUserId(1L)).thenReturn(Optional.empty());
 
         var ex = assertThrows(AiException.class, () -> service.preview(1L, file));
         assertTrue(ex.getMessage().contains("AI extraction failed"), ex.getMessage());
 
+        verify(userProfileService).getAccountIdentity(1L);
         verify(userProfileRepository, never()).save(any(UserProfile.class));
         verify(userProfileService, never()).saveProfile(any(), any());
+    }
+
+    @Test
+    @DisplayName("preview with a too-short resume should reject before any AI call")
+    void preview_whenResumeTextTooShort_shouldThrowInvalidResumeText() throws Exception {
+        var bytes = pdfBytes("Too short.");
+        var file = pdfMock(bytes);
+
+        // the length gate runs before identity reads and the AI call — none of
+        // these stubs are consumed once the gate exists (review 2026-11-15)
+        lenient().when(aiPort.complete(anyString())).thenReturn(
+                "{\"skills\": [\"Java\"], \"projects\": [], \"contact\": null}");
+        lenient().when(userProfileService.getAccountIdentity(1L))
+                .thenReturn(new AccountIdentity("Test User", "account@example.com"));
+        lenient().when(userProfileRepository.findByUserId(1L)).thenReturn(Optional.empty());
+
+        assertThrows(InvalidResumeTextException.class, () -> service.preview(1L, file));
     }
 
     // =========================================================================
@@ -174,7 +206,7 @@ class ResumePreviewServiceTest {
     // =========================================================================
 
     private MultipartFile validPdfMock(String text) throws Exception {
-        return pdfMock(pdfBytes());
+        return pdfMock(pdfBytes(text));
     }
 
     private MultipartFile pdfMock(byte[] bytes) throws IOException {
@@ -189,7 +221,7 @@ class ResumePreviewServiceTest {
         return file;
     }
 
-    private static byte[] pdfBytes() throws IOException {
+    private static byte[] pdfBytes(String text) throws IOException {
         try (var doc = new PDDocument()) {
             var page = new PDPage();
             doc.addPage(page);
@@ -197,7 +229,7 @@ class ResumePreviewServiceTest {
                 cs.setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA), 12);
                 cs.beginText();
                 cs.newLineAtOffset(100, 700);
-                cs.showText("Resume text for the stateless preview flow.");
+                cs.showText(text);
                 cs.endText();
             }
             var baos = new ByteArrayOutputStream();
