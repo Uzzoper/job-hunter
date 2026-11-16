@@ -21,9 +21,9 @@
   backend profile and PDF.
 - The intent contract still carries `resume_path` (`intent.py:94` maps it from
   `cv_path`), pointing the executor at the local copy.
-- `mcp-apply-loop.md:93` shows an owner-specific absolute path (`/home/juan/…`)
-  as the example `resume_path` — violates the repo rule that user-specific
-  paths go through placeholders.
+- `mcp-apply-loop.md:93` shows an owner-specific absolute path as the example
+  `resume_path` (full `/home/<user>/…` form) — violates the repo rule that
+  user-specific paths go through placeholders.
 
 ## Contract
 
