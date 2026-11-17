@@ -649,6 +649,19 @@ class JobIdHardeningTests(unittest.TestCase):
             apply.derive_job_id("https://jobs.gupy.io/jobs/planilha-2026.xls"),
             "planilha-2026.xls")
 
+    def test_aspx_suffix_stripped_once_case_insensitive(self):
+        # Current InfoJobs detail shape (/vaga-de-...-__<id>.aspx): strip ONE
+        # trailing .aspx (case-insensitive) so a legitimately scraped URL
+        # derives a dotless id — otherwise the #82 corruption guard rejects
+        # every contemporary InfoJobs job before planning.
+        for ext in (".aspx", ".ASPX", ".Aspx"):
+            self.assertEqual(
+                apply.derive_job_id(
+                    "https://www.infojobs.com.br/vaga-de-desenvolvedor-"
+                    "software-junior-em-__12187189" + ext),
+                "vaga-de-desenvolvedor-software-junior-em-__12187189",
+            )
+
     def test_query_and_fragment_strip_to_same_slug(self):
         bare = "https://jobs.gupy.io/jobs/789-x"
         self.assertEqual(apply.derive_job_id(bare + "?ref=share"), "789-x")
@@ -770,6 +783,35 @@ class CorruptGupySlugTests(unittest.TestCase):
         )
         self.assertEqual(result.code, 0)
         self.assertEqual(result.data["intent"]["job_id"], "755694375")
+
+    def test_infojobs_aspx_slug_unaffected(self):
+        # Item E (contemporary shape): the current InfoJobs detail URL ends in
+        # .aspx — derivation strips it, so a legitimately scraped URL keeps
+        # planning instead of tripping the #82 corruption guard.
+        url = ("https://www.infojobs.com.br/"
+               "vaga-de-desenvolvedor-software-junior-em-__12187189.aspx")
+        result = run_cli(
+            self.mem, self.profile_path, "--dry-run", portal="infojobs",
+            url=url,
+        )
+        self.assertEqual(result.code, 0)
+        self.assertEqual(
+            result.data["intent"]["job_id"],
+            "vaga-de-desenvolvedor-software-junior-em-__12187189",
+        )
+
+    def test_infojobs_truncated_url_still_rejected(self):
+        # Regression pin: the extension strip never legitimizes an interior
+        # dot — a hand-typed or display-elided InfoJobs URL ('...') still
+        # trips the corruption guard exactly like a truncated Gupy URL.
+        result = run_cli(
+            self.mem, self.profile_path, "--dry-run", portal="infojobs",
+            url=("https://www.infojobs.com.br/"
+                 "vaga-de-desenvolvedor-...-__12187189.aspx"),
+        )
+        self.assertEqual(result.code, 1)
+        self.assertEqual(result.data["error"], "corrupt_gupy_slug")
+        self.assertNotIn("intent", result.data)
 
     def test_plain_kebab_slug_unaffected(self):
         # Item E: normal human-readable slugs keep working.
