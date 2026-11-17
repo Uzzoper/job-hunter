@@ -134,15 +134,22 @@ def _is_application_flow_path(segments: List[str]) -> bool:
     return False
 
 
-def _strip_json_suffix(slug: str) -> str:
-    """Drop one trailing ``.json`` (case-insensitive) from a derived slug.
+def _strip_listing_suffix(slug: str) -> str:
+    """Drop one trailing listing extension (``.json``/``.aspx``) from a slug.
 
-    The idempotency writer/reader both append ``.json`` to the derived id;
-    without this strip, the legacy InfoJobs format (``.../vaga/755694375.json``)
-    would produce a doubled ``755694375.json.json`` record name.
+    Case-insensitive; at most one trailing extension is stripped. The
+    idempotency writer/reader both append ``.json`` to the derived id, so the
+    legacy InfoJobs format (``.../vaga/755694375.json``) must lose that
+    extension or the record name would double it (``755694375.json.json``).
+    The current InfoJobs detail shape ends in ``.aspx``
+    (``/vaga-de-...-__<id>.aspx``); keeping it would leave a literal ``.``
+    in the derived id and trip the issue #82 corruption guard on every
+    legitimately scraped InfoJobs URL.
     """
-    if slug.lower().endswith(".json"):
-        return slug[:-len(".json")]
+    lowered = slug.lower()
+    for ext in (".json", ".aspx"):
+        if lowered.endswith(ext):
+            return slug[:-len(ext)]
     return slug
 
 
@@ -303,9 +310,10 @@ def derive_job_id(url: str) -> Optional[str]:
 
     The primary shape is ``/jobs/<slug>`` (Gupy, including the new base64url
     slugs), matched verbatim. The trailing-segment fallback covers layouts that
-    put the job id at the last path segment (e.g. InfoJobs ``/vaga/755694375.json``
-    — the legacy numeric slug; one trailing ``.json`` is stripped, so the record
-    key is 755694375, never the doubled ``.json.json``). Query and fragment
+    put the job id at the last path segment (e.g. InfoJobs: the legacy numeric
+    slug ``/vaga/755694375.json`` and the current detail shape
+    ``/vaga-de-...-__<id>.aspx``; one trailing ``.json``/``.aspx`` is stripped,
+    so the record key is dotless). Query and fragment
     parts are always stripped, so tracking URLs resolve to the same key as the
     bare detail URL.
 
@@ -322,7 +330,7 @@ def derive_job_id(url: str) -> Optional[str]:
         return None
     match = JOB_SLUG_RE.search(url)
     if match:
-        return _strip_json_suffix(match.group(1))
+        return _strip_listing_suffix(match.group(1))
     try:
         path = urllib.parse.urlparse(url).path
     except Exception:
@@ -338,7 +346,7 @@ def derive_job_id(url: str) -> Optional[str]:
     slug = segments[-1]
     if slug.lower() == "jobs":  # bare /jobs directory — never a slug
         return None
-    return _strip_json_suffix(slug)
+    return _strip_listing_suffix(slug)
 
 
 def is_corrupt_gupy_slug(job_id: Optional[str]) -> bool:
@@ -347,9 +355,9 @@ def is_corrupt_gupy_slug(job_id: Optional[str]) -> bool:
     Gupy publicIds are urlsafe-base64 — the only legal characters are
     ``A-Za-z0-9_-`` plus a trailing ``=`` padding — so a literal ``.`` (and
     therefore a ``...`` elision) is impossible in a genuine slug. No legal
-    derivation in this system produces a dotted id either (the single legit
-    dot source, a trailing ``.json`` extension, is stripped by
-    ``_strip_json_suffix``), so a dot means the URL was truncated or
+    derivation in this system produces a dotted id either (the only legit dot
+    sources, trailing ``.json``/``.aspx`` listing extensions, are stripped by
+    ``_strip_listing_suffix``), so a dot means the URL was truncated or
     hand-typed before derivation (#82 root cause). Callers refuse to plan and
     the record writers refuse to persist any job_id this function flags.
     """
@@ -725,17 +733,19 @@ def run(argv: Optional[List[str]] = None) -> int:
         return 1
 
     # Issue #82 — URL and job_id integrity validation, BEFORE any other gate
-    # and before intent emission: a '.' (hence '...') is impossible in a
-    # genuine Gupy slug (urlsafe base64), so its presence proves the URL was
-    # truncated or hand-typed by the LLM. Hard-fail with clean JSON (exit 1,
-    # same failure mode as invalid_job_url) — never navigate a corrupt URL and
-    # never mint a corrupt idempotency key on disk.
+    # and before intent emission: no legal derivation in this system produces
+    # a dotted id (Gupy publicIds are urlsafe base64; InfoJobs listing
+    # extensions are stripped by _strip_listing_suffix), so a '.' (hence a
+    # '...' elision) proves the URL was truncated or hand-typed by the LLM.
+    # Hard-fail with clean JSON (exit 1, same failure mode as invalid_job_url)
+    # — never navigate a corrupt URL and never mint a corrupt idempotency key
+    # on disk.
     if is_corrupt_gupy_slug(job_id):
         print(json.dumps(build_error(
             "corrupt_gupy_slug",
             f"job id '{job_id}' contains a '.' (e.g. a '...' elision) which no "
-            f"genuine Gupy publicId can contain: the URL was truncated or "
-            f"hand-typed (issue #82). Re-fetch the URL from --from-api or "
+            f"legal derivation in this system produces: the URL was truncated "
+            f"or hand-typed (issue #82). Re-fetch the URL from --from-api or "
             f"--job-id instead of typing it",
             memory_dir=memory_dir,
             job_id=job_id,
