@@ -25,27 +25,31 @@ phrases, PT-BR, year-only dates.
   Stack Junior" → subject `Dev Full Stack Junior`).
 - Keep the subject OUT of the body.
 
-## Worked example (Desenvolvedor Full Stack Júnior, R$ 3.500, React/TS/Supabase)
+## Worked example (fictional persona — Desenvolvedor Full Stack Júnior, React/TS/Supabase)
+
+> Illustrative only: the candidate, the project and every contact value below
+> are fictional. Identity fields are filled at draft time from the bot's own
+> profile/memory; the narrative beats and the step order are the real ones.
 
 ```
 Assunto: Dev Full Stack Junior
 
 Olá,
 
-Meu nome é {{USER_NAME}}, sou desenvolvedor full stack júnior e fundador do LovLink, um SaaS próprio em produção desde julho de 2025. A vaga chamou atenção porque é o tipo de produto que construo no dia a dia: SaaS com front e back integrados.
+Meu nome é Ana Souza, sou desenvolvedora full stack júnior e construo o painel de controle da Atesta, uma startup de logística. A vaga chamou atenção porque é o tipo de produto que desenvolvo no dia a dia: SaaS com front e back integrados.
 
-No LovLink, atuo como desenvolvedor único — do front em React/Next.js ao back em Node.js, com APIs REST, autenticação, webhooks e integrações com APIs de IA. É também onde sustento PostgreSQL e Prisma em produção. Foi aí que desenvolvi a parte que a vaga mais pede: organização para evoluir código existente sem quebrar o que já funciona.
+Na Atesta, atuo como desenvolvedora única — do front em React/Next.js ao back em Node.js, com APIs REST, autenticação, webhooks e integrações com APIs de IA. É também onde sustento PostgreSQL e Prisma em produção. Foi aí que desenvolvi a parte que a vaga mais pede: organização para evoluir código existente sem quebrar o que já funciona.
 
-Sou honesto sobre onde estou: sou júnior. Minha base sólida é PostgreSQL e SQL — que se transfere direto para o Supabase, já que é o mesmo Postgres por baixo. Em Tailwind, Supabase e em Prisma em profundidade minha experiência é mais rasa: uso Prisma no LovLink em escala menor do que um SaaS grande, e Tailwind/Supabase foram em projetos pontuais. Subo rápido em stack nova — com n8n, que ainda não usei, já estudei e automatizei fluxos por conta própria.
+Sou honesta sobre onde estou: sou júnior. Minha base sólida é PostgreSQL e SQL — que se transfere direto para o Supabase, já que é o mesmo Postgres por baixo. Em Tailwind, Supabase e em Prisma em profundidade minha experiência é mais rasa: uso Prisma em um SaaS menor do que o de vocês, e Tailwind/Supabase foram em projetos pontuais. Subo rápido em stack nova — com n8n, que ainda não usei, já estudei e automatizei fluxos por conta própria.
 
 Meu inglês é C1, o que facilita documentação e as APIs de IA que vocês usam.
 
-Podem me conhecer melhor em {{PERSONAL_SITE}} e {{GITHUB_URL}}.
+Podem me conhecer melhor em anasouza.dev e github.com/anasouza-dev.
 
 Atenciosamente,
-{{USER_NAME}}
-{{EMAIL}}
-{{PHONE}}
+Ana Souza
+ana.souza.dev@gmail.com
+(11) 90000-0000
 ```
 
 ## Send + record

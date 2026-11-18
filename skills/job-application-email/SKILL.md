@@ -66,10 +66,16 @@ never trigger a send; the send happens only on an explicit send instruction.
 3. **Gaps** — name the shallow skills honestly; pair each with the
    transferable base + ramp-up speed. Never inflate seniority.
 4. **Logistics** — English level, remote, portfolio/GitHub.
-5. **Sign-off** — name, email, phone.
+5. **Sign-off** — name, e-mail, phone.
 
 Standing style rules: gender-neutral (no `(a)` markers), no redundant phrases,
 PT-BR, year-only dates.
+
+**Identity fields come from the bot's profile/memory, not from a template.**
+Name, e-mail, phone and links are read at draft time from the bot's own
+profile/memory (the same source the SOUL placeholders resolve from); a skill
+document must not carry a placeholder token for them. Omit any field the
+profile does not hold — never invent or hardcode a value.
 
 ## Send command
 
@@ -98,11 +104,12 @@ rm -f /tmp/resume_send.pdf
 
 ## Pitfalls
 
-- **Never attach a standing local resume copy.** The backend profile is the
-  source of truth and no permanent local resume file is kept; a hardcoded
-  `<bot-profile-dir>/{{RESUME_FILENAME}}` path attaches nothing (or a stale build).
-  Download to a temp file, gate it (HTTP 200 / `application/pdf` / `%PDF-`),
-  attach the temp path, and delete it right after the send.
+- **Never attach a standing local resume copy.** The resume has **no path
+  placeholder** — it is downloaded fresh from the backend profile at attach
+  time (the single source of truth), so no permanent local resume file exists
+  and none is ever assumed. Download to a temp file, gate it (HTTP 200 /
+  `application/pdf` / `%PDF-`), attach the temp path, and delete it right after
+  the send.
 - **Placeholder emails are not a channel** — `accommodations@`, `candidate_accessibility@`, `more@` are HR-system aliases, not recruiting inboxes; skip them and say so.
 - **Personal Gmail as "contact"** — a recruiter's personal address (e.g. `…rh@gmail.com`) is a real channel but flag it as suspect.
 - **Below-threshold scores** — a job under the profile's `min-match-score` is not a good email target; say so instead of sending a weak draft.
