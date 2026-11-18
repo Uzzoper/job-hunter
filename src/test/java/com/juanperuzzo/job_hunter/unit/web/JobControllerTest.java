@@ -678,7 +678,7 @@ class JobControllerTest {
     void enrichEmails_whenSuccessful_shouldReturn200() throws Exception {
         authenticateAs(1L);
 
-        var result = new EnrichmentResult(10, 8, 1, 1);
+        var result = new EnrichmentResult(10, 8, 1, 1, 2);
         when(companyEnrichmentUseCase.enrichMissingEmails(50)).thenReturn(result);
 
         mockMvc.perform(post("/api/jobs/enrich-emails").param("limit", "50"))
@@ -686,7 +686,8 @@ class JobControllerTest {
                 .andExpect(jsonPath("$.checked").value(10))
                 .andExpect(jsonPath("$.enriched").value(8))
                 .andExpect(jsonPath("$.skippedPortal").value(1))
-                .andExpect(jsonPath("$.failed").value(1));
+                .andExpect(jsonPath("$.failed").value(1))
+                .andExpect(jsonPath("$.domainsSkippedBudget").value(2));
 
         verify(companyEnrichmentUseCase).enrichMissingEmails(50);
     }

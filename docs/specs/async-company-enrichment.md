@@ -142,6 +142,78 @@ Reuse existing `scraper.enricher.*` (timeout, concurrency, cache-ttl, contact-pa
 
 ---
 
+## Phase 2 — Batch time budget (issue #117)
+
+### Context (measured, 2026-11-17 census)
+
+- Eligible population (local DB): 34 jobs / 22 distinct domains — 1.5% of jobs carry `company_website` (detail-fetch coverage artifact; population expansion is a separate spec).
+- The real enricher over a cold cache yielded **5/22 domains (23%)**; **6/22 (27%)** blocked by robots `Disallow: /`; 4/22 unreachable (TLS/301/bot interstitial).
+- The batch loop is **sequential**; the shared scraper retry (3 attempts × 10s timeout + backoff) makes one dead/slow host cost up to ~33s. Observed slow crawls: 13–21s per domain. A batch of 50 cannot complete inside a 120s window — even the tiny eligible set gets partial coverage.
+- Cold outreach is a product goal (owner decision 2026-11-17): every scheduled domain must get a fair attempt regardless of individual host health.
+
+### Goals
+
+- No single host can starve the batch (per-domain wall budget).
+- Domains are processed concurrently **across domains**; per-host pacing (≤1 req/s, spec Scenario 14) is unchanged.
+- Global batch budget retained; partial runs reported honestly.
+- No changes to robots policy, per-host rate limiting, or hit-rate behavior.
+
+### Business rules
+
+1. Each domain crawl runs as a bounded task with budget
+   `scraper.enricher.batch-domain-budget-seconds` (default **15**). Timeout → that
+   domain's jobs count as `failed`, batch continues.
+2. Domain-level concurrency: `scraper.enricher.batch-domain-concurrency` (default
+   **4**) tasks in flight. Cross-domain parallelism never raises per-host rate.
+3. Global wall budget: `scraper.enricher.batch-budget-seconds` (default **120**).
+   When reached, no new domain is scheduled; in-flight tasks finish or hit their
+   own budget.
+4. Domains never attempted because of the global budget are reported via a new
+   `EnrichmentResult` field `domainsSkippedBudget` (additive JSON field; record
+   shape otherwise unchanged — response consumers keep working).
+5. Failure semantics otherwise unchanged: a domain crawled within budget that
+   yields no email is **not** failed.
+6. Domain visit order: first-seen order preserved (LinkedHashMap grouping unchanged).
+
+### Scenarios
+
+| Scenario | Input | Expected |
+|---|---|---|
+| Slow domain exceeds budget | domain A sleeps > budget, domain B fast email | B enriched, A failed, batch returns well under A's sleep |
+| Dead host | connection failures until budget | `failed = count(jobs of A)`, batch continues |
+| Concurrency | 4 slow domains, concurrency 4 | wall ≈ slowest domain, not the sum |
+| Global budget hit | many slow domains, tiny global budget | no exception; enriched-so-far returned; `domainsSkippedBudget > 0` |
+| Fair attempt | batch completes normally | every scheduled domain attempted exactly once |
+
+### Configuration (all reversible, yaml)
+
+```yaml
+scraper.enricher:
+  batch-domain-concurrency: 4      # domains crawled in parallel
+  batch-domain-budget-seconds: 15  # per-domain wall budget
+  batch-budget-seconds: 120        # global batch wall budget
+```
+
+### Test plan (TDD — RED → GREEN)
+
+Unit: `CompanyEnrichmentServiceTest` (extend; Mockito only, no Spring context;
+tiny budgets — ms-scale sleeps — so the suite stays fast):
+
+- `enrich_whenSlowDomainExceedsBudget_shouldCountFailedAndContinue()`
+- `enrich_whenDeadHost_shouldBoundAtBudgetAndContinue()`
+- `enrich_whenConcurrentDomains_shouldFinishInWallTimeOfSlowest()`
+- `enrich_whenGlobalBudgetExhausted_shouldStopSchedulingAndReportPartial()`
+
+Existing 5 cases keep passing (behavior superset).
+
+### Out of scope (phase 2)
+
+- Enricher-internal changes (robots, contact paths, `max-pages`) — census shows no evidence emails live deeper in this sample.
+- Population expansion (detail-fetch coverage / cap raise) — separate spec against `gupy-detail-domains.md`.
+- robots escalation — ToS-respecting read-only only (issue #117 non-goal).
+
+---
+
 ## Out of scope
 
 - Auto-trigger (`@Async`/`@Scheduled`) after fetch — explicit endpoint only in v1.

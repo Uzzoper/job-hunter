@@ -585,8 +585,17 @@ public class AppConfig {
     public CompanyEnrichmentService companyEnrichmentService(
             JobRepository jobRepository,
             CompanySiteEnricher companySiteEnricher,
-            @Value("${scraper.enricher.batch-max-limit:200}") int maxLimit) {
-        return new CompanyEnrichmentService(jobRepository, companySiteEnricher, maxLimit);
+            @Value("${scraper.enricher.batch-max-limit:200}") int maxLimit,
+            @Value("${scraper.enricher.batch-domain-concurrency:4}") int domainConcurrency,
+            @Value("${scraper.enricher.batch-domain-budget-seconds:15}") long domainBudgetSeconds,
+            @Value("${scraper.enricher.batch-budget-seconds:120}") long batchBudgetSeconds) {
+        return new CompanyEnrichmentService(
+                jobRepository,
+                companySiteEnricher,
+                maxLimit,
+                domainConcurrency,
+                Duration.ofSeconds(domainBudgetSeconds),
+                Duration.ofSeconds(batchBudgetSeconds));
     }
 
     @Bean
