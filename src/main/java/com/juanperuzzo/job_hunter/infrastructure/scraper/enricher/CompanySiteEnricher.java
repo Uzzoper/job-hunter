@@ -81,8 +81,9 @@ public class CompanySiteEnricher implements CompanySiteEnrichmentPort {
     }
 
     /**
-     * Enrich a job with a company-site contact email. Never throws; returns the original
-     * {@code job} reference when no enrichment is possible or applicable.
+     * Enrich a job with a company-site contact email. Returns the original {@code job}
+     * reference when no enrichment is possible or applicable. Throws when all eligible
+     * pages fail so the batch use case can report the domain as failed.
      */
     @Override
     public Job enrich(Job job) {
@@ -115,15 +116,27 @@ public class CompanySiteEnricher implements CompanySiteEnrichmentPort {
             if (cached != null && !isExpired(cached.fetchedAt())) {
                 log.debug("company site cache hit for domain {}", domain);
                 if (cached.email() == null) {
+                    log.info("company-site enrichment domain={} outcome=no-email source=cache", domain);
                     return job;
                 }
                 // Guard cached entries too: an owner email must never be attached, even
                 // if a pre-fix cache entry holds one.
                 var guarded = ownerEmailGuard.discardIfOwnerEmail(cached.email(), job.url());
-                return guarded == null ? job : withEmail(job, guarded);
+                if (guarded == null) {
+                    log.info("company-site enrichment domain={} outcome=no-email source=cache", domain);
+                    return job;
+                }
+                log.info("company-site enrichment domain={} outcome=email-found source=cache", domain);
+                return withEmail(job, guarded);
             }
 
-            var email = crawl(domain, origin, job.companyWebsite());
+            var crawlResult = crawl(domain, origin, job.companyWebsite());
+            if (crawlResult.robotsBlocked()) {
+                cache.put(domain, new CachedContact(null, Instant.now()));
+                log.info("company-site enrichment domain={} outcome=robots-disallowed", domain);
+                throw new IllegalStateException("robots.txt disallows all eligible company pages");
+            }
+            var email = crawlResult.email();
             if (email != null) {
                 // Owner self-match guard (shared with JobNormalizer): an owner email is
                 // discarded BEFORE it can enter the per-domain cache.
@@ -132,7 +145,7 @@ public class CompanySiteEnricher implements CompanySiteEnrichmentPort {
             cache.put(domain, new CachedContact(email, Instant.now()));
 
             if (email == null) {
-                log.debug("no contact email found on company site {}", domain);
+                log.info("company-site enrichment domain={} outcome=no-email source=crawl", domain);
                 return job;
             }
             log.info("enriched job {} with contact email {} from company site {}", job.url(), email, domain);
@@ -153,36 +166,50 @@ public class CompanySiteEnricher implements CompanySiteEnrichmentPort {
      * companyWebsite URL — otherwise a site hosted under a sub-path (e.g.
      * {@code example.com/careers}) would fetch {@code example.com/careers/contato}.
      */
-    private String crawl(String domain, String origin, String baseUrl) throws InterruptedException {
+    private CrawlResult crawl(String domain, String origin, String baseUrl) throws InterruptedException {
         var robots = withRateLimit(domain, () -> fetchRobots(origin));
         var pagesFetched = 0;
 
         var paths = new ArrayList<String>();
         paths.add("");
         paths.addAll(contactPaths);
+        var pagesAllowed = 0;
+        var pagesFetchedSuccessfully = 0;
+        Exception lastFetchFailure = null;
 
         for (var path : paths) {
             if (pagesFetched >= maxPages) {
                 break;
             }
             if (!isAllowedByRobots(robots, path)) {
-                log.debug("robots.txt disallows {} '{}', skipping", domain, path);
                 continue;
             }
+            pagesAllowed++;
             semaphore.acquire();
             try {
                 rateLimiter.acquire(domain);
                 pagesFetched++;
                 var pageUrl = path.isEmpty() ? origin : origin + path;
-                var email = fetchAndExtract(pageUrl);
-                if (email != null) {
-                    return email;
+                var pageResult = fetchAndExtract(pageUrl);
+                if (pageResult.failure() != null) {
+                    lastFetchFailure = pageResult.failure();
+                    continue;
+                }
+                pagesFetchedSuccessfully++;
+                if (pageResult.email() != null) {
+                    return new CrawlResult(pageResult.email(), false);
                 }
             } finally {
                 semaphore.release();
             }
         }
-        return null;
+        if (pagesAllowed == 0) {
+            return new CrawlResult(null, true);
+        }
+        if (pagesFetchedSuccessfully == 0 && lastFetchFailure != null) {
+            throw new IllegalStateException("All company pages failed to load", lastFetchFailure);
+        }
+        return new CrawlResult(null, false);
     }
 
     /** Fetch {@code {origin}/robots.txt}. Any failure (404/5xx/timeout) yields {@code null} = allow all. */
@@ -196,15 +223,17 @@ public class CompanySiteEnricher implements CompanySiteEnrichmentPort {
         }
     }
 
-    /** Fetch a single page URL and extract an email from its HTML. Never throws. */
-    private String fetchAndExtract(String url) {
+    /** Fetch a single page URL and retain failure details for batch-level reporting. */
+    private PageResult fetchAndExtract(String url) {
         try {
-            return retry.execute(() -> extractFromHtml(fetchBody(url)));
+            return new PageResult(retry.execute(() -> extractFromHtml(fetchBody(url))), null);
         } catch (Exception e) {
             log.warn("company site crawl failed for {}: {}", url, e.getMessage());
-            return null;
+            return new PageResult(null, e);
         }
-    }    private String fetchBody(String url) {
+    }
+
+    private String fetchBody(String url) {
         var body = restClient.get()
                 .uri(url)
                 .header("User-Agent", USER_AGENT)
@@ -302,6 +331,10 @@ public class CompanySiteEnricher implements CompanySiteEnrichmentPort {
             return null;
         }
     }
+
+    private record CrawlResult(String email, boolean robotsBlocked) {}
+
+    private record PageResult(String email, Exception failure) {}
 
     /** Run a rate-limited, semaphore-bounded supplier (used for the robots.txt check). */
     private <T> T withRateLimit(String domain, Supplier<T> supplier) throws InterruptedException {

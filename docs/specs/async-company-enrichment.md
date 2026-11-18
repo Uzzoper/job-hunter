@@ -63,6 +63,7 @@
    - loads candidates via `JobRepository.findJobsNeedingEnrichment(limit)` (`contactEmail IS NULL AND companyWebsite IS NOT NULL`, ordered by `id ASC`, bounded by `limit`, default 50, max 200).
    - groups by domain (host of `companyWebsite`, lowercase); portal domains counted as `skippedPortal` without crawl.
    - for each remaining domain (in first-seen order): enrich ONE representative job via `CompanySiteEnrichmentPort.enrich()`, then apply the resulting email to ALL jobs of that domain in the batch (single crawl per domain).
+   - log one INFO outcome per domain: `email-found`, `no-email`, `robots-disallowed`, or `no-email source=cache`. A domain where robots disallows every eligible page or every eligible page fails to load is counted as failed; a successful crawl with no email is not.
    - persists updates via `JobRepository.save()` (entity carries `id`, JPA merge updates in place — no duplicate rows).
    - never throws; per-domain try/catch → `failed` count.
 3. **Repository addition** — `JobRepository.findJobsNeedingEnrichment(int limit)` + `JobJpaRepository` query + adapter mapping. No schema change.
@@ -116,7 +117,8 @@ Reuse existing `scraper.enricher.*` (timeout, concurrency, cache-ttl, contact-pa
 |---|---|---|
 | `limit <= 0` or `> max` | none | Clamp to `[1, max]` |
 | No candidates | none | `{0,0,0,0}` |
-| Domain crawl fails / robots-disallow | none | That domain's jobs unchanged, `failed++` |
+| All eligible pages fail / robots-disallow | none at endpoint | That domain's jobs unchanged, `failed++`, other domains continue |
+| Crawl succeeds without an email | none | That domain remains unchanged and is logged as `no-email`; not counted as failed |
 | Save fails for one job | none | Count as `failed`, continue batch |
 
 ---

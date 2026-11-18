@@ -29,6 +29,7 @@ import static com.github.tomakehurst.wiremock.client.WireMock.stubFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
 import static com.github.tomakehurst.wiremock.client.WireMock.verify;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -245,9 +246,7 @@ class CompanySiteEnricherTest {
                     .willReturn(ok("<html><body><a href=\"mailto:rh@techcorp.com.br\">RH</a></body></html>")));
 
             var job = job(null, baseUrl);
-            var enriched = enricher.enrich(job);
-
-            assertNull(enriched.contactEmail());
+            assertThrows(IllegalStateException.class, () -> enricher.enrich(job));
             verify(0, getRequestedFor(urlPathEqualTo("/")));
         }
 
@@ -310,30 +309,25 @@ class CompanySiteEnricherTest {
     class Failures {
 
         @Test
-        @DisplayName("enrich should return the job unchanged and never throw when the crawl fails")
-        void enrich_whenCrawlFails_shouldReturnUnchangedAndNotThrow() {
+        @DisplayName("enrich should propagate failure when every eligible page fails")
+        void enrich_whenAllPagesFail_shouldPropagateFailure() {
             stubFor(get(urlPathEqualTo("/robots.txt")).willReturn(status(404)));
             stubFor(get(urlPathEqualTo("/")).willReturn(status(500)));
             stubFor(get(urlPathEqualTo("/contato")).willReturn(status(500)));
 
             var job = job(null, baseUrl);
-            var enriched = enricher.enrich(job);
-
-            assertSame(job, enriched);
-            assertNull(enriched.contactEmail());
+            var error = assertThrows(IllegalStateException.class, () -> enricher.enrich(job));
+            assertTrue(error.getMessage().contains("All company pages failed to load"));
         }
 
         @Test
-        @DisplayName("enrich should never throw when the site returns a bot-challenge 403")
-        void enrich_whenForbidden_shouldReturnUnchanged() {
+        @DisplayName("enrich should report a bot-challenge when all pages fail")
+        void enrich_whenForbidden_shouldReportFailure() {
             stubFor(get(urlPathEqualTo("/robots.txt")).willReturn(status(403)));
             stubFor(get(urlPathEqualTo("/")).willReturn(status(403)));
 
             var job = job(null, baseUrl);
-            var enriched = enricher.enrich(job);
-
-            assertSame(job, enriched);
-            assertNull(enriched.contactEmail());
+            assertThrows(IllegalStateException.class, () -> enricher.enrich(job));
         }
     }
 
