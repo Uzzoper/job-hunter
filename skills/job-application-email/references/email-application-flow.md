@@ -37,9 +37,9 @@ Assunto: Dev Full Stack Junior
 
 Prezados,
 
-Meu nome é Alex Souza, sou Desenvolvedor Full Stack em Maringá/PR e graduando em Engenharia de Software. Vi a oportunidade de Desenvolvedor Full Stack — Júnior e gostaria de apresentar minha candidatura.
+Meu nome é Alex Souza, sou Desenvolvedor Full Stack em Maringá/PR e graduando em Engenharia de Software. Vi a oportunidade de Desenvolvedor Full Stack com foco em IA generativa — Júnior e gostaria de apresentar minha candidatura.
 
-Tenho experiência prática com desenvolvimento web utilizando TypeScript, React, Node.js, Java/Spring Boot e SQL, e atualmente estou estudando Python e LLMs/APIs de IA de forma autodidata. Já integrei APIs de IA no meu projeto pessoal — o Atesta (painelatesta.com.br), um SaaS próprio em produção desde 2025, com assinaturas pagas e e-mails transacionais. Em profundidade minha experiência é mais rasa em Prisma e Tailwind — foram projetos pontuais; a base sólida é PostgreSQL e SQL, que se transfere direto.
+Tenho experiência prática com desenvolvimento web — TypeScript, React, Node.js e SQL — com base principal em Java/Spring Boot. Em IA generativa, minha vivência ainda é de estudo autodidata com Python e LLMs/APIs de IA: é a área que escolhi para crescer, e já integrei APIs de IA no meu projeto pessoal — o Atesta (painelatesta.com.br), um SaaS próprio em produção desde 2025, com assinaturas pagas e e-mails transacionais.
 
 Na seção de projetos e diferenciais do meu portfólio, deixo meu trabalho com agentes de IA e automação de fluxos: https://alexsouza.is-a.dev — meu currículo também está em anexo para avaliação.
 
