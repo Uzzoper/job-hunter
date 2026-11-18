@@ -101,6 +101,9 @@ scraper:
     # resolution — is the funnel bottleneck. Reversible: lower it back to 50.
     batch-default-limit: 200
     batch-max-limit: 200
+    batch-domain-concurrency: 4
+    batch-domain-budget-seconds: 15
+    batch-budget-seconds: 120
   linkedin:
     # Gates BOTH LinkedIn strategies (fase-a-sourcing-restoration Scenario 8):
     # mode selects *which* (jsoup/service), enabled selects *whether* (default true).

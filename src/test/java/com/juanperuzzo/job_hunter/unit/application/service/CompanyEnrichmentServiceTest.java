@@ -13,9 +13,13 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.LocalDate;
+import java.time.Duration;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -197,6 +201,109 @@ class CompanyEnrichmentServiceTest {
 
             verify(enricher, never()).enrich(any(Job.class));
             verify(jobRepository, never()).save(any(Job.class));
+        }
+    }
+
+    @Nested
+    @DisplayName("Phase 2: batch time budgets and concurrency")
+    class BatchBudgetTests {
+
+        @Test
+        @DisplayName("a slow domain should time out while another domain still enriches")
+        void enrich_whenSlowDomainExceedsBudget_shouldCountFailedAndContinue() {
+            var slow = job(1L, "https://slow.example/");
+            var slowSibling = job(2L, "https://slow.example/contact");
+            var fast = job(3L, "https://fast.example/");
+            when(jobRepository.findJobsNeedingEnrichment(3)).thenReturn(List.of(slow, slowSibling, fast));
+            when(enricher.enrich(any(Job.class))).thenAnswer(invocation -> {
+                var candidate = invocation.getArgument(0, Job.class);
+                if (candidate.companyWebsite().contains("slow.example")) {
+                    Thread.sleep(300);
+                    return candidate;
+                }
+                return candidate.withContactEmail("jobs@fast.example");
+            });
+            service = new CompanyEnrichmentService(jobRepository, enricher, 200, 2,
+                    Duration.ofMillis(40), Duration.ofMillis(500));
+
+            var result = service.enrichMissingEmails(3);
+
+            assertEquals(3, result.checked());
+            assertEquals(1, result.enriched());
+            assertEquals(2, result.failed());
+        }
+
+        @Test
+        @DisplayName("a slow failing domain should be bounded and not block the batch")
+        void enrich_whenDeadHostExceedsBudget_shouldCountFailedAndContinue() {
+            var dead = job(1L, "https://dead.example/");
+            var good = job(2L, "https://good.example/");
+            when(jobRepository.findJobsNeedingEnrichment(2)).thenReturn(List.of(dead, good));
+            when(enricher.enrich(any(Job.class))).thenAnswer(invocation -> {
+                var candidate = invocation.getArgument(0, Job.class);
+                if (candidate.companyWebsite().contains("dead.example")) {
+                    Thread.sleep(300);
+                    throw new IllegalStateException("host unavailable");
+                }
+                return candidate.withContactEmail("jobs@good.example");
+            });
+            service = new CompanyEnrichmentService(jobRepository, enricher, 200, 2,
+                    Duration.ofMillis(40), Duration.ofMillis(500));
+
+            var result = service.enrichMissingEmails(2);
+
+            assertEquals(1, result.enriched());
+            assertEquals(1, result.failed());
+        }
+
+        @Test
+        @DisplayName("domains should run concurrently up to the configured limit")
+        void enrich_whenConcurrentDomains_shouldRunTogether() throws InterruptedException {
+            var jobs = List.of(
+                    job(1L, "https://a.example/"),
+                    job(2L, "https://b.example/"),
+                    job(3L, "https://c.example/"),
+                    job(4L, "https://d.example/"));
+            var allStarted = new CountDownLatch(4);
+            when(jobRepository.findJobsNeedingEnrichment(4)).thenReturn(jobs);
+            when(enricher.enrich(any(Job.class))).thenAnswer(invocation -> {
+                var candidate = invocation.getArgument(0, Job.class);
+                allStarted.countDown();
+                assertTrue(allStarted.await(250, TimeUnit.MILLISECONDS),
+                        "all domain crawls should start before any one finishes");
+                return candidate.withContactEmail("jobs@" + candidate.companyWebsite().substring(8, 9) + ".example");
+            });
+            service = new CompanyEnrichmentService(jobRepository, enricher, 200, 4,
+                    Duration.ofSeconds(1), Duration.ofSeconds(2));
+
+            var result = service.enrichMissingEmails(4);
+
+            assertEquals(4, result.enriched());
+            assertEquals(0, result.failed());
+        }
+
+        @Test
+        @DisplayName("the global budget should stop scheduling and report skipped domains")
+        void enrich_whenGlobalBudgetExhausted_shouldStopSchedulingAndReportPartial() {
+            var first = job(1L, "https://first.example/");
+            var second = job(2L, "https://second.example/");
+            var third = job(3L, "https://third.example/");
+            when(jobRepository.findJobsNeedingEnrichment(3)).thenReturn(List.of(first, second, third));
+            when(enricher.enrich(any(Job.class))).thenAnswer(invocation -> {
+                var candidate = invocation.getArgument(0, Job.class);
+                Thread.sleep(100);
+                return candidate.withContactEmail("jobs@first.example");
+            });
+            service = new CompanyEnrichmentService(jobRepository, enricher, 200, 1,
+                    Duration.ofMillis(300), Duration.ofMillis(30));
+
+            var result = service.enrichMissingEmails(3);
+
+            assertEquals(3, result.checked());
+            assertEquals(1, result.enriched());
+            assertEquals(0, result.failed());
+            assertEquals(2, result.domainsSkippedBudget());
+            verify(enricher, times(1)).enrich(any(Job.class));
         }
     }
 }
