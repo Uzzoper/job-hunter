@@ -147,7 +147,8 @@ public class CompanySiteEnricher implements CompanySiteEnrichmentPort {
                 log.info("company-site enrichment domain={} outcome=no-email source=crawl", domain);
                 return job;
             }
-            log.info("enriched job {} with contact email {} from company site {}", job.url(), email, domain);
+            log.info("company-site enrichment domain={} outcome=email-found source=crawl job={} email={}",
+                    domain, job.url(), email);
             return withEmail(job, email);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();

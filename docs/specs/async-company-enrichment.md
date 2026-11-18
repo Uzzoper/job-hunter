@@ -37,7 +37,7 @@
 - **WHEN** `POST /api/jobs/enrich-emails?limit=50` is called
 - **THEN** the service crawls at most 3 domains (one crawl per domain, cache reused across jobs)
 - **AND** every job whose domain yielded an email is updated in place (`contactEmail` set, same `id`, no duplicate row)
-- **AND** response is `EnrichmentResult{checked, enriched, skippedPortal, failed}`
+- **AND** response is `EnrichmentResult{checked, enriched, skippedPortal, failed, domainsSkippedBudget}`
 
 ### Scenario 3: portal domains skipped without HTTP
 - **GIVEN** jobs with `companyWebsite` on `*.gupy.io` / `*.infojobs.com.br`
@@ -60,14 +60,14 @@
 
 1. **Adapter stops calling enricher** — `ProviderBasedScraperAdapter.fetch()` no longer invokes `CompanySiteEnricher` (constructor overload kept for compat, enricher arg ignored or removed in v1 — prefer removal + AppConfig update). Same for `FetchSourceJobsService` (drop enricher call).
 2. **New application service** `CompanyEnrichmentService.enrichMissingEmails(int limit)`:
-   - loads candidates via `JobRepository.findJobsNeedingEnrichment(limit)` (`contactEmail IS NULL AND companyWebsite IS NOT NULL`, ordered by `id ASC`, bounded by `limit`, default 50, max 200).
+   - loads candidates via `JobRepository.findJobsNeedingEnrichment(limit)` (`contactEmail IS NULL AND companyWebsite IS NOT NULL`, ordered by `id ASC`, bounded by `limit`, default 200, max 200).
    - groups by domain (host of `companyWebsite`, lowercase); portal domains counted as `skippedPortal` without crawl.
    - for each remaining domain (in first-seen order): enrich ONE representative job via `CompanySiteEnrichmentPort.enrich()`, then apply the resulting email to ALL jobs of that domain in the batch (single crawl per domain).
    - log one INFO outcome per domain: `email-found`, `no-email`, `robots-disallowed`, or `no-email source=cache`. A domain where robots disallows every eligible page or every eligible page fails to load is counted as failed; a successful crawl with no email is not. Robots denials are not negatively cached, so later batches continue to report them as failed.
    - persists updates via `JobRepository.save()` (entity carries `id`, JPA merge updates in place — no duplicate rows).
    - never throws; per-domain try/catch → `failed` count.
 3. **Repository addition** — `JobRepository.findJobsNeedingEnrichment(int limit)` + `JobJpaRepository` query + adapter mapping. No schema change.
-4. **Controller** — `POST /api/jobs/enrich-emails?limit=` returns `EnrichmentResult{checked, enriched, skippedPortal, failed}` (200). Auth required like other job endpoints.
+4. **Controller** — `POST /api/jobs/enrich-emails?limit=` returns `EnrichmentResult{checked, enriched, skippedPortal, failed, domainsSkippedBudget}` (200). Auth required like other job endpoints.
 5. **FetchResult semantics unchanged** — `totalWithEmail` in fetch now counts only normalizer/description emails (no company-site contribution). Company-site gains appear after the enrich endpoint runs (visible via `GET /api/jobs?hasEmail=true`).
 
 ---
@@ -76,7 +76,7 @@
 
 ```java
 // application/port/in
-public record EnrichmentResult(int checked, int enriched, int skippedPortal, int failed) {}
+public record EnrichmentResult(int checked, int enriched, int skippedPortal, int failed, int domainsSkippedBudget) {}
 
 public interface CompanyEnrichmentUseCase {
     EnrichmentResult enrichMissingEmails(int limit);
@@ -94,7 +94,7 @@ public class CompanyEnrichmentService implements CompanyEnrichmentUseCase {
 }
 
 // web/dto (new)
-public record EnrichmentResultResponse(int checked, int enriched, int skippedPortal, int failed) {}
+public record EnrichmentResultResponse(int checked, int enriched, int skippedPortal, int failed, int domainsSkippedBudget) {}
 ```
 
 ---
@@ -103,7 +103,7 @@ public record EnrichmentResultResponse(int checked, int enriched, int skippedPor
 
 ```yaml
 enricher:
-  batch-default-limit: 50
+  batch-default-limit: 200
   batch-max-limit: 200
 ```
 

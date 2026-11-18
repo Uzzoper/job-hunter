@@ -13,7 +13,8 @@ public interface CompanySiteEnrichmentPort {
     /**
      * Enrich the given job with a contact email crawled from its company website.
      * Returns the same {@link Job} reference when no enrichment is possible/applicable.
-     * Implementations may throw a runtime exception when every eligible page fails to load.
+     * Implementations may throw a runtime exception when robots.txt disallows every
+     * eligible page or when every eligible page fails to load.
      *
      * @param job the job to enrich (may be null)
      * @return the enriched job, or the original job when nothing to do
