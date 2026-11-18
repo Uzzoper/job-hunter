@@ -63,7 +63,7 @@
    - loads candidates via `JobRepository.findJobsNeedingEnrichment(limit)` (`contactEmail IS NULL AND companyWebsite IS NOT NULL`, ordered by `id ASC`, bounded by `limit`, default 50, max 200).
    - groups by domain (host of `companyWebsite`, lowercase); portal domains counted as `skippedPortal` without crawl.
    - for each remaining domain (in first-seen order): enrich ONE representative job via `CompanySiteEnrichmentPort.enrich()`, then apply the resulting email to ALL jobs of that domain in the batch (single crawl per domain).
-   - log one INFO outcome per domain: `email-found`, `no-email`, `robots-disallowed`, or `no-email source=cache`. A domain where robots disallows every eligible page or every eligible page fails to load is counted as failed; a successful crawl with no email is not.
+   - log one INFO outcome per domain: `email-found`, `no-email`, `robots-disallowed`, or `no-email source=cache`. A domain where robots disallows every eligible page or every eligible page fails to load is counted as failed; a successful crawl with no email is not. Robots denials are not negatively cached, so later batches continue to report them as failed.
    - persists updates via `JobRepository.save()` (entity carries `id`, JPA merge updates in place — no duplicate rows).
    - never throws; per-domain try/catch → `failed` count.
 3. **Repository addition** — `JobRepository.findJobsNeedingEnrichment(int limit)` + `JobJpaRepository` query + adapter mapping. No schema change.

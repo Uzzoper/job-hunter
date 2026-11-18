@@ -132,7 +132,6 @@ public class CompanySiteEnricher implements CompanySiteEnrichmentPort {
 
             var crawlResult = crawl(domain, origin, job.companyWebsite());
             if (crawlResult.robotsBlocked()) {
-                cache.put(domain, new CachedContact(null, Instant.now()));
                 log.info("company-site enrichment domain={} outcome=robots-disallowed", domain);
                 throw new IllegalStateException("robots.txt disallows all eligible company pages");
             }

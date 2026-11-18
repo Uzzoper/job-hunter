@@ -239,14 +239,16 @@ class CompanySiteEnricherTest {
         }
 
         @Test
-        @DisplayName("enrich should skip everything when robots.txt disallows the root")
-        void enrich_whenRobotsDisallowsRoot_shouldSkipHomepage() {
+        @DisplayName("enrich should report robots denial on every attempt without caching it")
+        void enrich_whenRobotsDisallowsRoot_shouldReportFailureWithoutCaching() {
             stubFor(get(urlPathEqualTo("/robots.txt")).willReturn(ok("User-agent: *\nDisallow: /\n")));
             stubFor(get(urlPathEqualTo("/"))
                     .willReturn(ok("<html><body><a href=\"mailto:rh@techcorp.com.br\">RH</a></body></html>")));
 
             var job = job(null, baseUrl);
             assertThrows(IllegalStateException.class, () -> enricher.enrich(job));
+            assertThrows(IllegalStateException.class, () -> enricher.enrich(job));
+            verify(2, getRequestedFor(urlPathEqualTo("/robots.txt")));
             verify(0, getRequestedFor(urlPathEqualTo("/")));
         }
 
