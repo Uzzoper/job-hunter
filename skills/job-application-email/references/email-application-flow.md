@@ -1,23 +1,25 @@
-# Email application flow — template + worked example
+# Email application flow: template and example
 
 ## When this channel applies
 
-- The listing has a real `contactEmail` — a recruiting/company address, not a
+- The listing has a real `contactEmail`: a recruiting or company address, not a
   placeholder like `accommodations@`, `candidate_accessibility@`, `more@`.
 - The job is dev/júnior/remote and matches the target profile.
 - No portal apply flow is available, or the user chose email.
 
 ## Draft structure (PT-BR, concise, non-repetitive)
 
-1. **Opening** — name + role + one line on why THIS role (the product/stack).
-2. **Match** — the concrete overlap (stack, product, what you own end-to-end).
-3. **Gaps** — name the shallow skills honestly; pair each with the
-   transferable base + ramp-up speed. Never inflate seniority.
-4. **Logistics** — English level, remote, portfolio/GitHub.
-5. **Sign-off** — name, email, phone.
+1. **Opening**: name, role, and one sentence about what interests the candidate in this role.
+2. **Match**: concrete overlap in skills, product, or end-to-end ownership.
+3. **Gaps**: state limited experience honestly and connect it to transferable
+   skills and ability to learn. Never inflate seniority.
+4. **Logistics**: English level, remote availability, portfolio, or GitHub.
+5. **Sign-off**: name, email, and phone.
 
-Standing style rules: gender-neutral (no `(a)` markers), no redundant
-phrases, PT-BR, year-only dates.
+Use natural, direct Brazilian Portuguese. Keep the message specific to the role
+and the candidate's experience. Avoid canned openings, repeated claims, inflated
+skills, and em dashes. Use gender-neutral wording without `(a)` markers. Write
+dates with the year only.
 
 ## Subject line
 
@@ -25,30 +27,30 @@ phrases, PT-BR, year-only dates.
   Stack Junior" → subject `Dev Full Stack Junior`).
 - Keep the subject OUT of the body.
 
-## Worked example (fictional persona — junior full stack, preferred real-world format)
+## Example (fictional junior full stack candidate)
 
-> Illustrative only: the candidate, the project and every contact value below
-> are fictional. Identity fields are filled at draft time from the bot's own
-> profile/memory; the FORMAT (greeting, paragraph order, signature block) and
-> the beats are the real ones.
+> The candidate, project, and contact details below are fictional. At draft
+> time, use the identity details from the bot's profile or memory. Follow the
+> example's greeting, paragraph order, and signature format, but write the
+> content for the actual role and candidate.
 
 ```
 Assunto: Dev Full Stack Junior
 
 Prezados,
 
-Meu nome é Alex Souza, sou Desenvolvedor Full Stack em Maringá/PR e graduando em Engenharia de Software. Vi a oportunidade de Desenvolvedor Full Stack com foco em IA generativa — Júnior e gostaria de apresentar minha candidatura.
+Meu nome é Alex Souza. Sou desenvolvedor full stack em Maringá, PR, e graduando em Engenharia de Software. Estou me candidatando à vaga de Desenvolvedor Full Stack Júnior com foco em IA generativa. O produto e a oportunidade de trabalhar com essa tecnologia chamaram minha atenção.
 
-Tenho experiência prática com desenvolvimento web — TypeScript, React, Node.js e SQL — com base principal em Java/Spring Boot. Em IA generativa, minha vivência ainda é de estudo autodidata com Python e LLMs/APIs de IA: é a área que escolhi para crescer, e já integrei APIs de IA no meu projeto pessoal — o Atesta (painelatesta.com.br), um SaaS próprio em produção desde 2025, com assinaturas pagas e e-mails transacionais.
+Tenho experiência prática com TypeScript, React, Node.js e SQL, além de uma base sólida em Java e Spring Boot. Meu contato com IA generativa ainda é principalmente de estudo, com Python, LLMs e APIs. Também integrei APIs de IA ao Atesta (painelatesta.com.br), meu SaaS, que está em produção desde 2025 e tem assinaturas pagas e e-mails transacionais.
 
-Na seção de projetos e diferenciais do meu portfólio, deixo meu trabalho com agentes de IA e automação de fluxos: https://alexsouza.is-a.dev — meu currículo também está em anexo para avaliação.
+Meu portfólio, https://alexsouza.is-a.dev, inclui projetos com agentes de IA e automação. Também envio meu currículo em anexo.
 
-Estou aberto a aprender e crescer em uma área nova como a de IA generativa, e meu perfil combina com a forma autônoma e prática que a vaga descreve. Agradeço pela oportunidade e fico à disposição para conversar.
+Quero aprofundar meus conhecimentos em IA generativa e contribuir com a experiência que já tenho em desenvolvimento. Obrigado por considerar minha candidatura. Fico à disposição para conversar.
 
 Atenciosamente,
 
 Alex Souza
-Desenvolvedor Full Stack — Maringá/PR
+Desenvolvedor Full Stack, Maringá/PR
 (44) 90000-0000
 alex.souza.dev@gmail.com
 
@@ -59,8 +61,8 @@ LinkedIn: linkedin.com/in/alex-souza-dev
 
 ## Send + record
 
-The resume is downloaded fresh at send time (no standing local copy — the
-backend profile is the source of truth):
+Download the resume from the backend profile when sending. Do not keep a local
+copy between applications:
 
 ```bash
 TOKEN=$(cat <bot-profile-dir>/api-token.txt)
