@@ -457,6 +457,17 @@ so the reader can tell which failure modes were actually tested.
 Full procedure, denylist regexes, and the bounded-round recipe in
 `references/link-quality-validation.md`.
 
+**Validating without the live database.** When the request says "local tests and
+isolated data" or "do not run the endpoint against the database", the answer is
+unit tests with fakes plus a throwaway log-capture harness — never pointing the
+real endpoint at the development database. Capture log output with Logback's
+`ListAppender` (redirecting `System.err` captures nothing), assert that the
+appender actually captured events before calling a class silent, and assert each
+outcome class separately: found / no-result / cache-hit / policy-blocked /
+failure. A class whose only trace is `DEBUG` is not observable at the container's
+default level — report it as such. Full recipe, the WireMock per-path stub trap
+and the counter-semantics checklist in `references/enrichment-validation.md`.
+
 ## Known provider quirks
 
 ### InfoJobs
@@ -705,6 +716,7 @@ logs are limited to those.
 - [LinkedIn geoId validation](references/linkedin-geoid-validation.md) — verify LinkedIn returns Brazilian jobs (issue #62 fix)
 - [LinkedIn microservice architecture](references/linkedin-microservice-architecture.md) — anonymous scraping model, the lazy-launch health trap, diagnosing low junior yield, and the verified-facet-code rule
 - [Link-quality validation](references/link-quality-validation.md) — snapshot-diffing a bounded backfill run, the pollution denylist, the str-key diff trap, and polling enrichment to completion
+- [Enrichment validation](references/enrichment-validation.md) — validating a batch fix without the live DB: ListAppender log capture, the silent-outcome gap, WireMock isolation traps, and pinning counter semantics
 - [Job eligibility funnel](references/job-eligibility-funnel.md) — measuring whether a yield gain is real, why text-based remote classification overcounts, and when low yield is a market fact
 - [CDP scraping fallback](references/cdp-scraping-fallback.md) — drive the browser via pychrome when `browser_exec` blocks private CDP URLs
 - [Email rate analysis](references/email-rate-analysis.md) — provider email rates and where to focus effort

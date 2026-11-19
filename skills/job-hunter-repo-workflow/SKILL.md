@@ -25,6 +25,11 @@ metadata:
 - Syncing or editing a bot skill under `skills/` (repo-first mirror rules).
 - Deploying a backend slice and validating a new endpoint contract —
   `references/deploy-and-validate.md`.
+- Opening a feature issue in `job-hunter` (title/label, spec-first body,
+  checkable acceptance criteria).
+- Validating a fix the owner published on a branch with local tests + isolated
+  data, under a no-side-effects bound (no endpoint call, no real crawl, no DB
+  write, no commit/push) — `references/isolated-test-verification.md`.
 - Any `git commit` / `git push` in this repo — identity and signing first.
 
 ## Always-on rules
@@ -76,6 +81,54 @@ metadata:
 6. Report per claim: verified / not verified / contradicted, each with the
    command and its exit code.
 
+## Procedure — validate a published fix in isolation
+
+Use when the owner pushes a fix to a branch and asks for validation with local
+tests and isolated data, under a no-side-effects bound (no endpoint call, no
+real crawl, no DB write, no commit/push). The bound is a hard stop: run the
+tests, report, stop — do not "helpfully" also exercise the runtime.
+
+1. **Confirm the HEAD before running anything.** A branch moves between the
+   owner's message and your run, and a report on the previous commit validates
+   nothing. `git fetch origin`, `git ls-remote origin refs/heads/<branch>`,
+   `git checkout --detach <sha>`, then `git rev-parse HEAD` — and state both
+   SHAs in the report. If the owner names a commit, check out that exact SHA,
+   not the branch tip; local and remote must match before a test result means
+   anything.
+2. Run the owner's exact test command
+   (`./mvnw test -Dtest='A,B' --batch-mode`) and read the per-class breakdown.
+   A green BUILD over a narrowed `-Dtest` list is not the CI result — say which
+   classes actually ran.
+3. Verify each claimed behaviour **in the code and in the tests**, then prove it
+   with an isolated run: read the diff, find the test that pins the behaviour,
+   and add a scratch test reproducing the exact scenario described (real log
+   output, real counting). Techniques for asserting log lines and isolating
+   HTTP: `references/isolated-test-verification.md`.
+4. Report per requirement: the command, the observed value, PASS/FAIL, with
+   the captured evidence inline (the actual log lines, the result record) —
+   not a paraphrase. A requirement you could not verify is stated as
+   unverified, never omitted.
+5. **Clean up scratch tests completely** — delete the source file AND its
+   compiled `.class` under `target/test-classes/` (a stale class keeps running
+   in later suites and fails them), then confirm `git status` shows nothing new.
+
+## Opening a feature issue
+
+- Title in the repo's Conventional Commits shape when it names a code change
+  (`feat(provider): ...`, `fix(application): ...`); label `enhancement` for
+  features, `bug` for defects.
+- Write the body in markdown and pass it with `--body-file <scratch>` — never
+  inline `--body` with nested quotes. Match the repo's working language
+  (specs and docs are English).
+- A feature issue carries the spec-first plan: the `docs/specs/<topic>.md` to be
+  written and agreed BEFORE code, per repo SDD.
+- Acceptance criteria must be checkable and name the exact CI commands that must
+  stay green (`./mvnw test --batch-mode`, `cargo test --manifest-path
+  cli/Cargo.toml`, `cargo clippy --manifest-path cli/Cargo.toml -- -D warnings`);
+  never claim a check you did not run.
+- Same hygiene as commits and PRs: no owner personal data, no owner-machine
+  paths, no credentials — examples use fictional personas.
+
 ## Pitfalls
 
 - **`git pull` with no arguments fails in this repo.** Local branches carry no
@@ -106,6 +159,19 @@ metadata:
   exhausts. Check with `df -h` before building.
 - **Clean up the worktree** (`git worktree remove --force` + `git worktree prune`):
   a detached worktree holds a full `target/` tree.
+- **A failure branch that writes a negative cache entry stops reporting the
+  failure on the next run.** The memoised result makes the second call take the
+  no-op path (`no-email`), so an outcome-counting change can pass a single-call
+  test and silently undercount on every subsequent run. When validating
+  counters, drive **two consecutive calls** and assert both the log line and the
+  count per call, and read whether the failure branch writes the cache before
+  believing it is counted.
+- **A scratch test that fails an assertion is evidence, not a defect to hide.**
+  Report the assertion text and what it proves; delete the file only after the
+  finding is recorded. An assertion that was wrong on your side (a wrong
+  expected value, not a code bug) must be named as yours in the report — a
+  silently corrected number leaves the reader unable to tell which figures to
+  trust.
 
 ## Syncing `skills/` (repo-first)
 
@@ -124,6 +190,19 @@ metadata:
   against `git show origin/<base>:skills/<name>/SKILL.md`, which does not exist
   for it. Hand-editing that live copy is the only way it changes; decide
   deliberately whether it should be versioned into the repo instead.
+- **The live profile can hold a SECOND copy under a category subdir**
+  (`skills/jobhunter/<name>/`). The installer only walks the top level, so a
+  category copy is an orphan by construction: never installed, never updated,
+  and often an older variant of a skill the repo already has. Inventory BOTH
+  locations; a name present in both is ambiguous (which copy does the agent
+  actually load?) and must be resolved, not ignored.
+- **Importing a live-only skill is not automatically the fix.** When the repo
+  already has that skill, diff before copying: if the repo copy is strictly
+  ahead (more functions/sections, tests present, the live file a subset),
+  importing the live copy REGRESSES it. Versioning the live variant is then the
+  wrong move — delete the live orphan and keep the repo as the single source.
+  Prove the direction first (function lists, section counts, file sizes), never
+  assume the live copy is the newer one.
 - When mirroring a skill, copy the **whole skill dir** (`SKILL.md` *and*
   `references/`): a `references/…` citation in `SKILL.md` is dangling after install
   unless that directory is committed too.
@@ -149,13 +228,57 @@ metadata:
   names and confirm the target is present in the repo or the profile before
   committing. A cited skill that exists nowhere is a dangling pointer the next
   reader will trip on.
+- **The installer renders ONLY `{{USER_NAME}}` / `{{USER_EMAIL}}`, and only in
+  `SOUL.md`.** `install-bot-skills.sh` copies `skills/` verbatim — it performs
+  no placeholder substitution on skill files. So a `{{PHONE}}`,
+  `{{PERSONAL_SITE}}`, `{{GITHUB_URL}}`, `{{EMAIL}}`, `{{RESUME_FILENAME}}` or
+  any other token inside a skill is a dead token: it never renders and its
+  meaning is only implied. Skills must get identity fields from the bot's
+  profile/memory at runtime, never from a template token. Also note the
+ spelling: `{{EMAIL}}` is NOT the installer's name (`{{USER_EMAIL}}` is).
+ A dead token is still a leak: an example that keeps the owner's real
+ narrative behind a placeholder has not been de-personalized. Write the
+ example fresh with a fictional persona, then re-grep the PR for the owner's
+ real strings.
+- **The resume has NO path placeholder — ever.** It is downloaded fresh from
+  `GET /api/profile/resume` into a temp file at attach time (spec
+  `apply-backend-profile.md`); `{{RESUME_FILENAME}}` is retired. A skill or doc
+  citing it contradicts the slice — write the attach-time download model.
+- **Never commit runtime material into `skills/`.** A "worked example" that
+  carries the owner's real cover letter, project narrative, salary expectation,
+  site or GitHub handle is runtime/SOUL-learnings material, not product. Write
+  examples with a fictional persona (fictional name, company, e-mail, phone,
+  links) that preserves the step order and structure, and label them as
+  fictional. Then re-grep the PR for the owner's tokens — a placeholder swap
+  that leaves the narrative in place still leaks it.
+- **Reconcile the repo-first install path BEFORE the diff looks final.** The
+  same skill can live twice in the profile: at `skills/<name>/` (top level,
+  what the installer writes) and under `skills/jobhunter/<name>/` (a category
+  subdir the installer never walks — an orphan that stays stale). A skill that
+  is only in the category copy is invisible to the installer and to any drift
+  inventory, so a repo copy can "exist" while the agent keeps loading the
+  older category variant. Inventory both locations before reporting a skill as
+  synced, and after the real install `cmp` both copies against the repo source.
+  A patch that cannot find its anchor means the loaded body was stale (a section
+  the real file has and the view did not) — re-read and re-anchor; never patch
+  from an earlier read of the same file.
+- **Verify the diff against the PR base, not against a stale `HEAD`.** When
+  the head branch is behind a newer `origin/dev`, the two-dot diff
+  (`origin/dev...HEAD`) omits the merge commits and reports only the branch's
+  own commits; `git diff --name-only` (no range) shows only uncommitted work.
+  Name the exact range and read `--stat` before claiming a file is part of the
+  change.
 - **Gate bulk additions.** A `references/` catch-up (or any multi-file
   addition) is its own commit, approved from a report first: per file, name,
   byte size, first lines, a secret grep, **and an owner-path grep**. Skill docs
   must not hardcode an owner-machine path — genericize every `/home/<user>/…`
   hit to a placeholder (`<job-hunter-repo>/.env`, `<resume-dir>/…`,
-  `~/.hermes/profiles/…`) the same way the audit genericized `cv_path`, then
-  re-grep to zero before committing. Commit only the approved files.
+  `~/.hermes/profiles/…`). The same gate covers **personal data**: the owner's
+  name, e-mail, phone, LinkedIn/GitHub/personal site and the resume filename are
+  runtime memory, not skill content. Re-grep the whole PR for each of those
+  tokens to zero before committing — grep the *content*, not the placeholder
+  names: a token replaced by `{{…}}` leaves the narrative intact and still
+  leaks. Commit only the approved files.
 - **Inventory before calling it drift.** Compare each skill against
   `git show origin/<base>:skills/<name>/SKILL.md` (md5), byte-compare the
   non-test `*.py`/`*.sh` helpers, and run `git status --short skills/` — a file
