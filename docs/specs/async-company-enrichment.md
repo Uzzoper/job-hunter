@@ -291,14 +291,15 @@ scraper.enricher:
 
 ### Test plan (TDD — RED → GREEN)
 
-- `CompanyEnrichmentServiceTest`: `enrich_shouldQueryOnlyJobsInsideTheRelevanceWindow`
-  (fixed `Clock`, asserts the exact cutoff); existing cases move to the new port
-  signature.
+- `CompanyEnrichmentServiceTest`: `enrich_shouldPassRecentCutoffToRepository` and
+  `enrich_whenCustomWindow_shouldShiftCutoff` (fixed `Clock`, exact cutoff).
 - `JobPersistenceAdapterTest`: `findJobsNeedingEnrichment_shouldPassCutoffAndPageToQuery`.
-- `EmailExtractorTest`: site scoping (off-site, UI artifact, parent/subdomain,
-  unscoped path), veto list, generic allowed, `mysite.com` placeholder.
-- `CompanySiteEnricherTest`: end-to-end rejection of an off-site address and of
-  a vetoed channel.
+- `EmailExtractorTest`: `extractFromHtml_whenEmailDomainDiffersFromSite_shouldReturnNull`,
+  `extractFromHtml_whenDomainHasUiSuffix_shouldReturnNull`,
+  `extract_whenOnlyVetoedChannels_shouldReturnNull`, plus the same-site and
+  generic-allowed positives.
+- `CompanySiteEnricherTest`: `enrich_whenPageEmailIsOffSite_shouldNotAttachIt`
+  and `enrich_whenPageEmailIsVetoedChannel_shouldNotAttachIt`.
 
 ### Out of scope (phase 3)
 
