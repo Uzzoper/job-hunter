@@ -14,6 +14,13 @@
 # New skills are picked up automatically: every subdirectory of skills/
 # containing a SKILL.md is installed under its own name.
 #
+# Stale duplicates are pruned: Hermes resolves skills by directory name across
+# the whole skills/ tree, so a nested copy of a repo-owned skill (the old
+# live-only layout, e.g. skills/jobhunter/<name>/) makes that name ambiguous and
+# the agent refuses to load it. The repo is the source of truth, so any
+# skills/<category>/<name>/ whose <name> is also a repo skill is removed.
+# Skills that the repo does not own are left untouched.
+#
 # Optional env vars for SOUL.md rendering (default: placeholder stays visible):
 #   SOUL_USER_NAME / SOUL_USER_EMAIL
 
@@ -61,6 +68,36 @@ if [ ! -f "${USER_MD}" ]; then
     echo "  USER.md seeded (empty) at ${USER_MD}"
 else
     echo "  USER.md exists — leaving untouched"
+fi
+echo ""
+
+# ---------------------------------------------------------------------------
+# Prune stale duplicates of repo-owned skills
+# ---------------------------------------------------------------------------
+# Hermes scans skills/ recursively and resolves a skill by directory name, so
+# skills/jobhunter/<name>/ collides with skills/<name>/ and the name becomes
+# ambiguous ("Refusing to guess"). The repo owns those names; the nested copy is
+# stale runtime state. Only depth-2 copies (skills/<category>/<name>/) are
+# removed, and only when <name> is a skill the repo installs.
+
+echo "Pruning stale duplicate skills ..."
+pruned=0
+for skill_dir in "${SKILLS_SRC}"/*/; do
+    [ -d "${skill_dir}" ] || continue
+    skill_name="$(basename "${skill_dir}")"
+    [ -f "${skill_dir}/SKILL.md" ] || continue
+    while IFS= read -r stale; do
+        [ -n "${stale}" ] || continue
+        echo "  removed ${stale#${SKILLS_DEST}/} (duplicate of repo skill ${skill_name})"
+        rm -rf -- "${stale}"
+        rmdir -- "$(dirname "${stale}")" 2>/dev/null || true
+        pruned=$((pruned + 1))
+    done < <(find "${SKILLS_DEST}" -mindepth 2 -maxdepth 2 -type d -name "${skill_name}" 2>/dev/null || true)
+done
+if [ "${pruned}" -eq 0 ]; then
+    echo "  (none)"
+else
+    echo "  ${pruned} stale duplicate(s) removed"
 fi
 echo ""
 
@@ -133,6 +170,17 @@ echo "=== Verification ==="
 echo ""
 echo "Installed skills:"
 ls -la "${SKILLS_DEST}/"
+echo ""
+
+echo "Duplicate name check:"
+dupes="$(find "${SKILLS_DEST}" -type f -name SKILL.md | sed 's|/SKILL.md$||' | awk -F/ '{print $NF}' | sort | uniq -d)"
+if [ -n "${dupes}" ]; then
+    echo "WARNING: duplicate skill names still present (Hermes refuses to load them by name):"
+    # shellcheck disable=SC2086
+    printf '  %s\n' ${dupes}
+else
+    echo "OK: no duplicate skill names"
+fi
 echo ""
 
 # Quick syntax check on any installed Python helpers
