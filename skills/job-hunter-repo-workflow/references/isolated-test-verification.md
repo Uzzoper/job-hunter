@@ -74,10 +74,10 @@ branch.
 ## 6. Clean up
 
 ```bash
-rm -f src/test/java/**/Scratch*.java
-rm -f target/test-classes/**/*Scratch*.class     # a stale class keeps running
-find src/test -iname '*Scratch*'                  # expect empty
-git status --short                              # expect no new entries
+find src/test -name '*Scratch*.java' -delete
+find target/test-classes -name '*Scratch*' -delete   # a stale class keeps running
+find src/test -iname '*Scratch*'                     # expect empty
+git status --short                                   # expect no new entries
 ```
 
 ## 7. Report shape
