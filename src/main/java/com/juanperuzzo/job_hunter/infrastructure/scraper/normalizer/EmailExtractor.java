@@ -17,6 +17,18 @@ import java.util.regex.Pattern;
  * applied in both passes. Behavior mirrors what was previously duplicated in each caller;
  * moving it here guarantees the two extractors stay in lock-step.
  *
+ * <p><strong>Channel vetoes</strong> (async-company-enrichment Phase 3, owner decision
+ * 2026-11-19): local parts starting with {@code dpo}, {@code privacidade}, {@code juridico},
+ * {@code comercial} or {@code vendas} are hard-excluded in both passes — they are LGPD or
+ * sales channels, not application contacts. Generic addresses ({@code contato@},
+ * {@code almap@}) and hiring addresses ({@code vagas@}, {@code rh@}) stay allowed.
+ *
+ * <p><strong>Site scoping</strong>: {@link #extractFromHtml(String, String)} additionally
+ * requires the address to belong to the crawled site (equal, parent or subdomain at a
+ * label boundary). The enricher uses it so a theme placeholder or a UI artifact can never
+ * be attached to a job; the normalizer path ({@link #extract(String, String)}) stays
+ * unscoped.
+ *
  * <p><strong>Preference rule</strong> (email-extractor-recall spec, Phase 2):
  * {@code mailto: pass > regex pass}, then within a pass/scan, hiring-local-part
  * ({@code vagas}, {@code vaga}, {@code rh}, {@code recrutamento}, … see
@@ -39,7 +51,16 @@ public final class EmailExtractor {
 
     private static final List<String> PLACEHOLDER_DOMAINS = List.of(
             "example.com", "exemplo.com", "test.com", "domain.com",
-            "yourdomain.com", "seuemail.com");
+            "yourdomain.com", "seuemail.com", "mysite.com");
+
+    /**
+     * Local-part prefixes that identify a channel which must never receive an
+     * application: data-protection (LGPD), legal, sales and vendor contact
+     * addresses. Checked as a case-insensitive prefix on the ASCII local part,
+     * before ranking — a vetoed address is never a candidate.
+     */
+    private static final List<String> VETOED_LOCAL_PART_PREFIXES = List.of(
+            "dpo", "privacidade", "juridico", "comercial", "vendas");
 
     /**
      * Local-part prefixes that identify a recruiting/company contact address.
@@ -74,20 +95,21 @@ public final class EmailExtractor {
      *   <li>regex over the decoded + parsed text, on a de-obfuscated copy (title before description)</li>
      * </ol>
      * Returns {@code null} if no valid email is found. Existing filters
-     * (noreply/donotreply/no-reply/apply + placeholder domains) still apply.
+     * (noreply/donotreply/no-reply/apply + placeholders + channel vetoes) still apply.
+     * This path is unscoped: it has no crawled host to compare against.
      */
     public static String extract(String title, String description) {
-        var mailto = extractMailto(title);
+        var mailto = extractMailto(title, null);
         if (mailto == null && description != null) {
-            mailto = extractMailto(description);
+            mailto = extractMailto(description, null);
         }
         if (mailto != null) {
             return mailto;
         }
 
-        var candidate = extractFirstEmail(deobfuscate(toPlainText(title)));
+        var candidate = extractFirstEmail(deobfuscate(toPlainText(title)), null);
         if (candidate == null && description != null) {
-            candidate = extractFirstEmail(deobfuscate(toPlainText(description)));
+            candidate = extractFirstEmail(deobfuscate(toPlainText(description)), null);
         }
         return candidate;
     }
@@ -97,23 +119,41 @@ public final class EmailExtractor {
      * as {@link #extract(String, String)} but over one payload. Returns {@code null} if none.
      */
     public static String extractFromHtml(String html) {
+        return extractFromHtml(html, null);
+    }
+
+    /**
+     * Extract a contact email from a single raw HTML document, accepting only addresses
+     * that belong to {@code siteHost} — the host the document was crawled from.
+     *
+     * <p>A candidate belongs to the site when its domain equals the host or is a
+     * label-boundary parent/subdomain of it: {@code contato@grupolevel.com.br} on
+     * {@code www.grupolevel.com.br} passes; {@code contact@mysite.com} and
+     * {@code grupolevel.com.brCopiar} (a UI label/button swallowed into the address)
+     * do not. {@code siteHost == null} or blank disables the scope.
+     *
+     * @param html     raw HTML document
+     * @param siteHost host of the crawled page (e.g. {@code www.empresa.com.br})
+     * @return the best-ranked same-site address, or {@code null}
+     */
+    public static String extractFromHtml(String html, String siteHost) {
         if (html == null || html.isBlank()) {
             return null;
         }
-        var mailto = extractMailto(html);
+        var mailto = extractMailto(html, siteHost);
         if (mailto != null) {
             return mailto;
         }
-        return extractFirstEmail(deobfuscate(toPlainText(html)));
+        return extractFirstEmail(deobfuscate(toPlainText(html)), siteHost);
     }
 
     /**
      * Scan {@code a[href^=mailto:]} anchors in DOM order, collect every recipient that
-     * passes {@link #isContactEmail(String)}, and return the best-ranked one — an empty
-     * candidate list yields {@code null}. Ranking follows the documented preference
+     * passes {@link #isContactEmail(String, String)}, and return the best-ranked one — an
+     * empty candidate list yields {@code null}. Ranking follows the documented preference
      * rule (hiring-local-part beats generic; position breaks ties).
      */
-    private static String extractMailto(String html) {
+    private static String extractMailto(String html, String siteHost) {
         if (html == null || html.isBlank()) {
             return null;
         }
@@ -137,7 +177,7 @@ public final class EmailExtractor {
                 email = email.substring(0, queryIndex).trim();
             }
 
-            if (isContactEmail(email)) {
+            if (isContactEmail(email, siteHost)) {
                 candidates.add(email);
             }
         }
@@ -186,11 +226,11 @@ public final class EmailExtractor {
 
     /**
      * Collect every email the regex finds in scan order that passes
-     * {@link #isContactEmail(String)} and return the best-ranked one — {@code null}
+     * {@link #isContactEmail(String, String)} and return the best-ranked one — {@code null}
      * when none qualify. Ranking follows the documented preference rule
      * (hiring-local-part beats generic; position breaks ties).
      */
-    private static String extractFirstEmail(String text) {
+    private static String extractFirstEmail(String text, String siteHost) {
         if (text == null || text.isBlank()) {
             return null;
         }
@@ -199,7 +239,7 @@ public final class EmailExtractor {
         var matcher = EMAIL_PATTERN.matcher(text);
         while (matcher.find()) {
             var email = matcher.group();
-            if (isContactEmail(email)) {
+            if (isContactEmail(email, siteHost)) {
                 candidates.add(email);
             }
         }
@@ -228,11 +268,47 @@ public final class EmailExtractor {
         return HIRING_LOCAL_PART_PREFIXES.stream().anyMatch(localPart::startsWith);
     }
 
-    private static boolean isContactEmail(String email) {
+    private static boolean isContactEmail(String email, String siteHost) {
+        var at = email.indexOf('@');
+        if (at <= 0 || at == email.length() - 1) {
+            return false;
+        }
+        var localPart = email.substring(0, at).toLowerCase(Locale.ROOT);
+        if (VETOED_LOCAL_PART_PREFIXES.stream().anyMatch(localPart::startsWith)) {
+            return false;
+        }
         if (EXCLUDED_EMAIL_PATTERNS.stream().anyMatch(p -> p.matcher(email).find())) {
             return false;
         }
-        var domain = email.substring(email.indexOf('@') + 1).toLowerCase(Locale.ROOT);
-        return !PLACEHOLDER_DOMAINS.contains(domain);
+        var domain = email.substring(at + 1).toLowerCase(Locale.ROOT);
+        if (PLACEHOLDER_DOMAINS.contains(domain)) {
+            return false;
+        }
+        return belongsToSite(domain, siteHost);
+    }
+
+    /**
+     * True when an address domain and the crawled host belong to the same site:
+     * equal, or one is a label-boundary parent/subdomain of the other. A blank
+     * host disables the scope (normalizer path).
+     *
+     * <p>{@code emailDomain} is expected lowercased; the host is normalized here.
+     * The rule is deliberately conservative: two sibling subdomains do not match
+     * each other — only equal, ancestor or descendant relations pass.
+     */
+    private static boolean belongsToSite(String emailDomain, String siteHost) {
+        if (siteHost == null) {
+            return true;
+        }
+        var host = siteHost.trim().toLowerCase(Locale.ROOT);
+        while (host.endsWith(".")) {
+            host = host.substring(0, host.length() - 1);
+        }
+        if (host.isEmpty()) {
+            return true;
+        }
+        return emailDomain.equals(host)
+                || emailDomain.endsWith("." + host)
+                || host.endsWith("." + emailDomain);
     }
 }

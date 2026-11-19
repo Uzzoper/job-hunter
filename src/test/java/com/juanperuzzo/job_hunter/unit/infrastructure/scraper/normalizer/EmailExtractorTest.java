@@ -160,7 +160,8 @@ class EmailExtractorTest {
                     "contato@test.com",
                     "contato@domain.com",
                     "contato@yourdomain.com",
-                    "contato@seuemail.com")) {
+                    "contato@seuemail.com",
+                    "contato@mysite.com")) {
                 assertNull(EmailExtractor.extract("", text), "text: " + text);
             }
         }
@@ -228,6 +229,90 @@ class EmailExtractorTest {
                 assertNotNull(actual, "text: " + pair[0]);
                 assertTrue(pair[0].contains(actual), "text: " + pair[0] + " does not contain " + actual);
             }
+        }
+    }
+
+    @Nested
+    @DisplayName("site scoping (company-site enricher path)")
+    class SiteScoping {
+
+        @Test
+        @DisplayName("should reject a page address whose domain does not belong to the crawled site")
+        void extractFromHtml_whenEmailDomainDiffersFromSite_shouldReturnNull() {
+            var html = "<html><body><a href=\"mailto:rh@outraempresa.com.br\">Mail</a></body></html>";
+            assertNull(EmailExtractor.extractFromHtml(html, "www.nexdom.tec.br"));
+        }
+
+        @Test
+        @DisplayName("should reject the mysite.com theme placeholder even on its own host")
+        void extractFromHtml_whenThemePlaceholder_shouldReturnNull() {
+            var html = "<html><body><a href=\"mailto:contact@mysite.com\">Mail</a></body></html>";
+            assertNull(EmailExtractor.extractFromHtml(html, "www.mysite.com"));
+        }
+
+        @Test
+        @DisplayName("should reject a UI artifact whose domain gained the copy-button label")
+        void extractFromHtml_whenDomainHasUiSuffix_shouldReturnNull() {
+            var html = "<html><body>E-mailcontato@grupolevel.com.brCopiar</body></html>";
+            assertNull(EmailExtractor.extractFromHtml(html, "www.grupolevel.com.br"));
+        }
+
+        @Test
+        @DisplayName("should accept the same address on the crawled site itself")
+        void extractFromHtml_whenDomainEqualsSite_shouldReturnAddress() {
+            var html = "<html><body>Fale com contato@grupolevel.com.br</body></html>";
+            assertEquals("contato@grupolevel.com.br",
+                    EmailExtractor.extractFromHtml(html, "www.grupolevel.com.br"));
+        }
+
+        @Test
+        @DisplayName("should accept a subdomain of the crawled host")
+        void extractFromHtml_whenDomainIsSubdomainOfSite_shouldReturnAddress() {
+            var html = "<html><body>rh@carreiras.empresa.com.br</body></html>";
+            assertEquals("rh@carreiras.empresa.com.br",
+                    EmailExtractor.extractFromHtml(html, "empresa.com.br"));
+        }
+
+        @Test
+        @DisplayName("should keep the unscoped behavior when no site host is given")
+        void extractFromHtml_whenNoSiteHost_shouldKeepUnscopedExtraction() {
+            assertEquals("rh@other.com.br",
+                    EmailExtractor.extractFromHtml("<html><body>rh@other.com.br</body></html>"));
+        }
+    }
+
+    @Nested
+    @DisplayName("channel vetoes (generic addresses stay allowed)")
+    class ChannelVetoes {
+
+        @Test
+        @DisplayName("should reject dpo/privacidade/juridico/comercial/vendas channels")
+        void extract_whenOnlyVetoedChannels_shouldReturnNull() {
+            for (var text : List.of(
+                    "dpo@empresa.com.br",
+                    "dporaizen@raizen.com",
+                    "privacidade@empresa.com.br",
+                    "juridico@empresa.com.br",
+                    "comercial@empresa.com.br",
+                    "vendas@empresa.com.br")) {
+                assertNull(EmailExtractor.extract("", text), "text: " + text);
+            }
+        }
+
+        @Test
+        @DisplayName("should fall back to a real contact when a vetoed channel is present")
+        void extract_whenVetoedChannelAlongsideRealContact_shouldReturnRealContact() {
+            assertEquals("contato@empresa.com.br",
+                    EmailExtractor.extract("", "vendas@empresa.com.br ou contato@empresa.com.br"));
+            assertEquals("rh@empresa.com.br",
+                    EmailExtractor.extract("", "dpo@empresa.com.br / rh@empresa.com.br"));
+        }
+
+        @Test
+        @DisplayName("should keep allowing generic and personal addresses")
+        void extract_whenGenericOrPersonalAddress_shouldReturnIt() {
+            assertEquals("almap@almapbbdo.com.br", EmailExtractor.extract("", "almap@almapbbdo.com.br"));
+            assertEquals("joao.silva@empresa.com.br", EmailExtractor.extract("", "joao.silva@empresa.com.br"));
         }
     }
 

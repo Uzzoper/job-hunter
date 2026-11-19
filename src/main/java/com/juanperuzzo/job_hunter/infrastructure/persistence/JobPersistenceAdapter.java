@@ -7,6 +7,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Repository;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 
@@ -67,9 +68,9 @@ public class JobPersistenceAdapter implements JobRepository {
     }
 
     @Override
-    public List<Job> findJobsNeedingEnrichment(int limit) {
+    public List<Job> findJobsNeedingEnrichment(int limit, LocalDate postedSince) {
         int size = Math.max(limit, 1);
-        return jpaRepository.findJobsNeedingEnrichment(PageRequest.of(0, size)).stream()
+        return jpaRepository.findJobsNeedingEnrichment(postedSince, PageRequest.of(0, size)).stream()
                 .map(this::toDomain)
                 .toList();
     }

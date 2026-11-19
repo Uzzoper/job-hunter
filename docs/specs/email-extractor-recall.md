@@ -42,6 +42,12 @@ numbers are the baseline and go into §5. This phase changes no production code.
    literal matches only, zero invented addresses (an address persists only
    if its exact characters occur in the text post-deobfuscation).
 
+> **Later extension (not part of this audit):** `async-company-enrichment.md`
+> Phase 3 adds hard channel vetoes (`dpo`/`privacidade`/`juridico`/`comercial`/
+> `vendas`), the `mysite.com` placeholder, and the site-scoped
+> `extractFromHtml(html, siteHost)` used by `CompanySiteEnricher`. The
+> normalizer path (`extract`) stays unscoped.
+
 ## 4. Non-goals
 
 Guessing addresses, external validation (no SMTP checks), new sources,
