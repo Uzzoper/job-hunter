@@ -139,13 +139,13 @@ class CompanySiteEnricherTest {
         void enrich_whenCompanyWebsiteIsCorporateDomain_shouldProceedWithCrawl() {
             stubFor(get(urlPathEqualTo("/robots.txt")).willReturn(status(404)));
             stubFor(get(urlPathEqualTo("/"))
-                    .willReturn(ok("<html><body><a href=\"mailto:rh@techcorp.com.br\">RH</a></body></html>")));
+                    .willReturn(ok("<html><body><a href=\"mailto:rh@techcorp.localhost\">RH</a></body></html>")));
 
             var job = job(null, baseUrl);
 
             var enriched = enricher.enrich(job);
 
-            assertEquals("rh@techcorp.com.br", enriched.contactEmail());
+            assertEquals("rh@techcorp.localhost", enriched.contactEmail());
             verify(1, getRequestedFor(urlPathEqualTo("/")));
         }
     }
@@ -159,11 +159,11 @@ class CompanySiteEnricherTest {
         void enrich_whenNoEmail_shouldCrawlHomepageAndExtractMailto() {
             stubFor(get(urlPathEqualTo("/robots.txt")).willReturn(status(404)));
             stubFor(get(urlPathEqualTo("/"))
-                    .willReturn(ok("<html><body><a href=\"mailto:contato@techcorp.com.br\">Contato</a> | rh@techcorp.com.br</body></html>")));
+                    .willReturn(ok("<html><body><a href=\"mailto:contato@techcorp.localhost\">Contato</a> | rh@techcorp.localhost</body></html>")));
 
             var enriched = enricher.enrich(job(null, baseUrl));
 
-            assertEquals("contato@techcorp.com.br", enriched.contactEmail());
+            assertEquals("contato@techcorp.localhost", enriched.contactEmail());
             verify(1, getRequestedFor(urlPathEqualTo("/")));
         }
 
@@ -173,11 +173,11 @@ class CompanySiteEnricherTest {
             stubFor(get(urlPathEqualTo("/robots.txt")).willReturn(status(404)));
             stubFor(get(urlPathEqualTo("/")).willReturn(ok("<html><body>Sem e-mail aqui</body></html>")));
             stubFor(get(urlPathEqualTo("/contato"))
-                    .willReturn(ok("<html><body>Fale com rh [at] techcorp.com.br</body></html>")));
+                    .willReturn(ok("<html><body>Fale com rh [at] techcorp.localhost</body></html>")));
 
             var enriched = enricher.enrich(job(null, baseUrl));
 
-            assertEquals("rh@techcorp.com.br", enriched.contactEmail());
+            assertEquals("rh@techcorp.localhost", enriched.contactEmail());
             verify(1, getRequestedFor(urlPathEqualTo("/")));
             verify(1, getRequestedFor(urlPathEqualTo("/contato")));
         }
@@ -188,13 +188,13 @@ class CompanySiteEnricherTest {
             stubFor(get(urlPathEqualTo("/robots.txt")).willReturn(status(404)));
             stubFor(get(urlPathEqualTo("/")).willReturn(ok("<html><body>Sem e-mail aqui</body></html>")));
             stubFor(get(urlPathEqualTo("/contato"))
-                    .willReturn(ok("<html><body>rh [at] techcorp.com.br</body></html>")));
+                    .willReturn(ok("<html><body>rh [at] techcorp.localhost</body></html>")));
 
             // companyWebsite has a sub-path (/careers) — the /contato fallback must be
             // fetched from the origin (baseUrl), not baseUrl/careers/contato.
             var enriched = enricher.enrich(job(null, baseUrl + "/careers"));
 
-            assertEquals("rh@techcorp.com.br", enriched.contactEmail());
+            assertEquals("rh@techcorp.localhost", enriched.contactEmail());
             verify(1, getRequestedFor(urlPathEqualTo("/")));
             verify(1, getRequestedFor(urlPathEqualTo("/contato")));
             verify(0, getRequestedFor(urlPathEqualTo("/careers/contato")));
@@ -227,7 +227,7 @@ class CompanySiteEnricherTest {
                     .willReturn(ok("User-agent: *\nDisallow: /contato\n")));
             stubFor(get(urlPathEqualTo("/")).willReturn(ok("<html><body>no route</body></html>")));
             stubFor(get(urlPathEqualTo("/contato"))
-                    .willReturn(ok("<html><body><a href=\"mailto:rh@techcorp.com.br\">RH</a></body></html>")));
+                    .willReturn(ok("<html><body><a href=\"mailto:rh@techcorp.localhost\">RH</a></body></html>")));
             stubFor(get(urlPathEqualTo("/contact")).willReturn(ok("<html><body>no route</body></html>")));
 
             var job = job(null, baseUrl);
@@ -243,7 +243,7 @@ class CompanySiteEnricherTest {
         void enrich_whenRobotsDisallowsRoot_shouldReportFailureWithoutCaching() {
             stubFor(get(urlPathEqualTo("/robots.txt")).willReturn(ok("User-agent: *\nDisallow: /\n")));
             stubFor(get(urlPathEqualTo("/"))
-                    .willReturn(ok("<html><body><a href=\"mailto:rh@techcorp.com.br\">RH</a></body></html>")));
+                    .willReturn(ok("<html><body><a href=\"mailto:rh@techcorp.localhost\">RH</a></body></html>")));
 
             var job = job(null, baseUrl);
             assertThrows(IllegalStateException.class, () -> enricher.enrich(job));
@@ -281,13 +281,13 @@ class CompanySiteEnricherTest {
         void enrich_whenSameDomainTwice_shouldHitCacheOnSecondCall() {
             stubFor(get(urlPathEqualTo("/robots.txt")).willReturn(status(404)));
             stubFor(get(urlPathEqualTo("/"))
-                    .willReturn(ok("<html><body><a href=\"mailto:contato@techcorp.com.br\">C</a></body></html>")));
+                    .willReturn(ok("<html><body><a href=\"mailto:contato@techcorp.localhost\">C</a></body></html>")));
 
             var first = enricher.enrich(job(null, baseUrl));
             var second = enricher.enrich(job(null, baseUrl + "/"));
 
-            assertEquals("contato@techcorp.com.br", first.contactEmail());
-            assertEquals("contato@techcorp.com.br", second.contactEmail());
+            assertEquals("contato@techcorp.localhost", first.contactEmail());
+            assertEquals("contato@techcorp.localhost", second.contactEmail());
             verify(1, getRequestedFor(urlPathEqualTo("/")));
         }
 
@@ -334,6 +334,35 @@ class CompanySiteEnricherTest {
     }
 
     @Nested
+    @DisplayName("Phase 3: accepted emails must belong to the crawled company site")
+    class SiteScopedEmails {
+
+        @Test
+        @DisplayName("enrich should reject an address on a different domain than the crawled site")
+        void enrich_whenPageEmailIsOffSite_shouldNotAttachIt() {
+            stubFor(get(urlPathEqualTo("/robots.txt")).willReturn(status(404)));
+            stubFor(get(urlPathEqualTo("/"))
+                    .willReturn(ok("<html><body><a href=\"mailto:rh@outraempresa.com.br\">RH</a></body></html>")));
+
+            var enriched = enricher.enrich(job(null, baseUrl));
+
+            assertNull(enriched.contactEmail());
+        }
+
+        @Test
+        @DisplayName("enrich should reject a vetoed channel even when the domain matches")
+        void enrich_whenPageEmailIsVetoedChannel_shouldNotAttachIt() {
+            stubFor(get(urlPathEqualTo("/robots.txt")).willReturn(status(404)));
+            stubFor(get(urlPathEqualTo("/"))
+                    .willReturn(ok("<html><body><a href=\"mailto:vendas@techcorp.localhost\">Vendas</a></body></html>")));
+
+            var enriched = enricher.enrich(job(null, baseUrl));
+
+            assertNull(enriched.contactEmail());
+        }
+    }
+
+    @Nested
     @DisplayName("Owner self-match guard on enriched emails")
     class OwnerSelfMatch {
 
@@ -342,9 +371,9 @@ class CompanySiteEnricherTest {
         void enrich_whenCompanySiteHasOwnerEmail_shouldNotAttachIt() {
             stubFor(get(urlPathEqualTo("/robots.txt")).willReturn(status(404)));
             stubFor(get(urlPathEqualTo("/"))
-                    .willReturn(ok("<html><body><a href=\"mailto:user@example.org\">Owner</a></body></html>")));
+                    .willReturn(ok("<html><body><a href=\"mailto:user@techcorp.localhost\">Owner</a></body></html>")));
 
-            var enriched = guardEnricher(List.of("user@example.org")).enrich(job(null, baseUrl));
+            var enriched = guardEnricher(List.of("user@techcorp.localhost")).enrich(job(null, baseUrl));
 
             assertNull(enriched.contactEmail());
         }
@@ -354,9 +383,9 @@ class CompanySiteEnricherTest {
         void enrich_whenCachedEmailIsOwnerEmail_shouldNotAttachItOnCacheHit() {
             stubFor(get(urlPathEqualTo("/robots.txt")).willReturn(status(404)));
             stubFor(get(urlPathEqualTo("/"))
-                    .willReturn(ok("<html><body><a href=\"mailto:user@example.org\">Owner</a></body></html>")));
+                    .willReturn(ok("<html><body><a href=\"mailto:user@techcorp.localhost\">Owner</a></body></html>")));
 
-            var enricherWithOwners = guardEnricher(List.of("user@example.org"));
+            var enricherWithOwners = guardEnricher(List.of("user@techcorp.localhost"));
             var first = enricherWithOwners.enrich(job(null, baseUrl));
             var second = enricherWithOwners.enrich(job(null, baseUrl + "/"));
 
@@ -370,11 +399,11 @@ class CompanySiteEnricherTest {
         void enrich_whenCompanySiteHasDistinctCompanyEmail_shouldAttachIt() {
             stubFor(get(urlPathEqualTo("/robots.txt")).willReturn(status(404)));
             stubFor(get(urlPathEqualTo("/"))
-                    .willReturn(ok("<html><body><a href=\"mailto:rh@techcorp.com.br\">RH</a></body></html>")));
+                    .willReturn(ok("<html><body><a href=\"mailto:rh@techcorp.localhost\">RH</a></body></html>")));
 
-            var enriched = guardEnricher(List.of("user@example.org")).enrich(job(null, baseUrl));
+            var enriched = guardEnricher(List.of("user@techcorp.localhost")).enrich(job(null, baseUrl));
 
-            assertEquals("rh@techcorp.com.br", enriched.contactEmail());
+            assertEquals("rh@techcorp.localhost", enriched.contactEmail());
         }
 
         private CompanySiteEnricher guardEnricher(List<String> ownerEmails) {
@@ -385,6 +414,12 @@ class CompanySiteEnricherTest {
         }
     }
 
+    /**
+     * WireMock serves the crawled site on {@code localhost}, and Phase 3 accepts only
+     * addresses that belong to the crawled host — fixture emails therefore live under
+     * {@code *.localhost} ({@code techcorp.localhost} is a label-boundary subdomain of
+     * {@code localhost}).
+     */
     private Job job(String contactEmail, String companyWebsite) {
         return new Job(null, "Desenvolvedor Junior", "TechCorp", "https://jobs.example.com/1",
                 "descricao", LocalDate.now(), "gupy", contactEmail, companyWebsite);

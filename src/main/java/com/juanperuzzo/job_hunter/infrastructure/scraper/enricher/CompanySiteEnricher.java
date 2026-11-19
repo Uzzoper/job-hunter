@@ -35,8 +35,11 @@ import java.util.function.Supplier;
  * via a {@link Semaphore}. Results are cached per domain for 24h
  * (positive and negative entries). Failures are non-fatal: the job is returned unchanged.
  * <p>
- * Email extraction is delegated to the shared {@link EmailExtractor}; host/origin logic
- * matches the shared {@link PortalDomains} and {@link UrlNormalizer} constants.
+ * Email extraction is delegated to the shared {@link EmailExtractor}, scoped to the
+ * crawled host (async-company-enrichment Phase 3): an address on another domain — a
+ * theme placeholder, a UI artifact, an unrelated footer — is never attached.
+ * Host/origin logic matches the shared {@link PortalDomains} and {@link UrlNormalizer}
+ * constants.
  * <p>
  * Owner self-match guard: an extracted email that matches a registered user's email is
  * never attached (shared {@link OwnerEmailGuard}, same guard as {@code JobNormalizer}) —
@@ -190,7 +193,7 @@ public class CompanySiteEnricher implements CompanySiteEnrichmentPort {
                 rateLimiter.acquire(domain);
                 pagesFetched++;
                 var pageUrl = path.isEmpty() ? origin : origin + path;
-                var pageResult = fetchAndExtract(pageUrl);
+                var pageResult = fetchAndExtract(pageUrl, domain);
                 if (pageResult.failure() != null) {
                     lastFetchFailure = pageResult.failure();
                     continue;
@@ -224,9 +227,9 @@ public class CompanySiteEnricher implements CompanySiteEnrichmentPort {
     }
 
     /** Fetch a single page URL and retain failure details for batch-level reporting. */
-    private PageResult fetchAndExtract(String url) {
+    private PageResult fetchAndExtract(String url, String siteHost) {
         try {
-            return new PageResult(retry.execute(() -> extractFromHtml(fetchBody(url))), null);
+            return new PageResult(retry.execute(() -> extractFromHtml(fetchBody(url), siteHost)), null);
         } catch (Exception e) {
             log.warn("company site crawl failed for {}: {}", url, e.getMessage());
             return new PageResult(null, e);
@@ -291,11 +294,11 @@ public class CompanySiteEnricher implements CompanySiteEnrichmentPort {
 
     /**
      * Extract a contact email from raw HTML using the shared {@link EmailExtractor}
-     * priority: {@code a[href^=mailto:]} first, then a regex over the de-obfuscated
-     * plain text, with the same filters (noreply/apply + placeholder domains).
+     * priority — {@code a[href^=mailto:]} first, then a regex over the de-obfuscated
+     * plain text — scoped to the crawled host so an off-site address is never attached.
      */
-    private String extractFromHtml(String html) {
-        return EmailExtractor.extractFromHtml(html);
+    private String extractFromHtml(String html, String siteHost) {
+        return EmailExtractor.extractFromHtml(html, siteHost);
     }
 
     private Job withEmail(Job job, String email) {

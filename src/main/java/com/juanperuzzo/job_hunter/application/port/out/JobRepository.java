@@ -2,6 +2,7 @@ package com.juanperuzzo.job_hunter.application.port.out;
 
 import com.juanperuzzo.job_hunter.domain.model.Job;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 
@@ -20,14 +21,18 @@ public interface JobRepository {
     Optional<Job> findById(Long id);
 
     /**
-     * Find jobs that still need company-site enrichment: no contact email yet but a
-     * company website is present, ordered by {@code id} ascending and bounded by
-     * {@code limit}. Used by {@code CompanyEnrichmentService}.
+     * Find jobs that still need company-site enrichment: no contact email yet, a
+     * company website present, and posted on or after {@code postedSince}, newest
+     * first ({@code postedAt} desc, {@code id} desc as tiebreak) and bounded by
+     * {@code limit}. The date window keeps the batch on still-applicable rows —
+     * without it the stale tail (98% of the queue in the 2026-11-19 measurement)
+     * consumes the whole budget and starves recent listings.
      *
-     * @param limit maximum number of candidates to return
-     * @return candidate jobs needing enrichment
+     * @param limit       maximum number of candidates to return
+     * @param postedSince inclusive lower bound on {@code postedAt}
+     * @return candidate jobs needing enrichment, newest first
      */
-    List<Job> findJobsNeedingEnrichment(int limit);
+    List<Job> findJobsNeedingEnrichment(int limit, LocalDate postedSince);
 
     /**
      * Find jobs from a source that still have no company website, ordered by
