@@ -234,12 +234,8 @@ tests, report, stop — do not "helpfully" also exercise the runtime.
   `{{PERSONAL_SITE}}`, `{{GITHUB_URL}}`, `{{EMAIL}}`, `{{RESUME_FILENAME}}` or
   any other token inside a skill is a dead token: it never renders and its
   meaning is only implied. Skills must get identity fields from the bot's
-  profile/memory at runtime, never from a template token. Also note the
- spelling: `{{EMAIL}}` is NOT the installer's name (`{{USER_EMAIL}}` is).
- A dead token is still a leak: an example that keeps the owner's real
- narrative behind a placeholder has not been de-personalized. Write the
- example fresh with a fictional persona, then re-grep the PR for the owner's
- real strings.
+  profile/memory at runtime, never from a template token. Note the name:
+  `{{EMAIL}}` is NOT the installer's token (`{{USER_EMAIL}}` is).
 - **The resume has NO path placeholder — ever.** It is downloaded fresh from
   `GET /api/profile/resume` into a temp file at attach time (spec
   `apply-backend-profile.md`); `{{RESUME_FILENAME}}` is retired. A skill or doc
@@ -251,17 +247,12 @@ tests, report, stop — do not "helpfully" also exercise the runtime.
   links) that preserves the step order and structure, and label them as
   fictional. Then re-grep the PR for the owner's tokens — a placeholder swap
   that leaves the narrative in place still leaks it.
-- **Reconcile the repo-first install path BEFORE the diff looks final.** The
-  same skill can live twice in the profile: at `skills/<name>/` (top level,
-  what the installer writes) and under `skills/jobhunter/<name>/` (a category
-  subdir the installer never walks — an orphan that stays stale). A skill that
-  is only in the category copy is invisible to the installer and to any drift
-  inventory, so a repo copy can "exist" while the agent keeps loading the
-  older category variant. Inventory both locations before reporting a skill as
-  synced, and after the real install `cmp` both copies against the repo source.
-  A patch that cannot find its anchor means the loaded body was stale (a section
-  the real file has and the view did not) — re-read and re-anchor; never patch
-  from an earlier read of the same file.
+- **Reconcile the repo-first install path BEFORE the diff looks final.** After
+  the real install, `cmp` both profile locations (top level and
+  `skills/jobhunter/<name>/`) against the repo source before reporting a skill
+  as synced. A patch that cannot find its anchor means the loaded body was
+  stale (a section the real file has and the view did not) — re-read and
+  re-anchor; never patch from an earlier read of the same file.
 - **Verify the diff against the PR base, not against a stale `HEAD`.** When
   the head branch is behind a newer `origin/dev`, the two-dot diff
   (`origin/dev...HEAD`) omits the merge commits and reports only the branch's
