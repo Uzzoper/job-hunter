@@ -54,6 +54,13 @@ Filter in Python:
   numerals `II`/`III`/`IV` (job levels). Match short tokens on word
   boundaries — `principal` also occurs inside `principalmente` and would
   wrongly exclude a genuine júnior role.
+- **The description outranks the title.** A posting whose title says
+  "Junior"/"Estágio" but whose description requires "Pleno", "Sênior" or
+  "X+ anos de experiência" is NOT a junior role — exclude it. Titles are
+  written by recruiters and routinely overstate seniority downward; the
+  description carries the real requirement. Apply the same rule when
+  building a batch: a junior-titled row with a pleno description is dead
+  weight, not a candidate.
 - **Remote/Brazil**: keep only jobs whose title/description contains the
   `remot` stem (matches remoto/remota/remote) or "home office"; then exclude
   jobs mentioning non-Brazil locations (US, UK, Germany, France, Canada,
@@ -152,12 +159,27 @@ Run it as one read-only browser pass over the batch, one page at a time:
 ```js
 // per job page — closed iff the body text matches, open iff it shows a deadline
 t = document.body.innerText.toLowerCase();
-fechado  = /candidaturas encerradas|inscri\u00e7\u00f5es encerradas|vaga encerrada|processo seletivo desta vaga foi encerrado|n\u00e3o recebe mais candidaturas/.test(t);
+fechado  = /candidaturas encerradas|inscri\u00e7\u00f5es encerradas|vaga encerrada|processo seletivo desta vaga foi encerrado|n\u00e3o recebe mais candidaturas|ops! esta vaga n\u00e3o est\u00e1 mais dispon\u00edvel/.test(t);
 aberto   = /inscri\u00e7\u00f5es abertas at\u00e9/.test(t);
 ```
 
 Report `id | fechado | aberto` per item; a job with neither signal gets a
-manual read before it enters a batch.
+manual read before it enters a batch. InfoJobs is the common case: a dead
+posting renders the site's normal chrome with only the `Ops! Esta vaga não
+está mais disponível.` sentence as the closed signal, so that phrase must be
+in the regex or those rows report as neither signal and force a manual read.
+
+**InfoJobs requires a logged-in session.** Clicking `CANDIDATAR-ME` on an
+unauthenticated session redirects to `login.infojobs.com.br/Account/Login`
+and no application can proceed — check the session once for the whole batch
+rather than discovering it per job. Never fill the login form: hand the human
+the login URL and continue after they confirm. The login must be performed in
+the **bot's own Chromium** (the CDP profile the browser tool drives) — portal
+sessions are per-profile, so a login done in the user's daily browser does NOT
+carry over and the bot still sees the login page. After the user says they are
+logged in, verify it from the bot's browser (load the portal homepage, confirm
+the account name renders and the Login control is gone) before re-running the
+batch; a claim of "logged in" is not evidence.
 
 - **Match the regex on the FULL body text; slice only for display.** Truncating
   the text before the test silently drops the signal words — a closed page whose
@@ -172,7 +194,9 @@ manual read before it enters a batch.
    subset. There is no per-day or per-run apply limit; the score floor and the
    two dedupes below are the only filters. Enumerate the whole eligible set
    (score >= 60, not applied, new company, deduped by `jobId`) and let the
-   openness pass drop the dead ones.
+   openness pass drop the dead ones. Eligibility is **júnior/estágio only** —
+   a junior-titled posting whose description asks for pleno/sênior is out,
+   even when its score is high.
 3. **Batch review gate** — print the batch (`id | title | company | score |
    link`) BEFORE any submission and wait for one explicit approval of that
    batch. No standing auto-apply: every batch needs its own approval.
