@@ -104,6 +104,11 @@ scraper:
     batch-domain-concurrency: 4
     batch-domain-budget-seconds: 15
     batch-budget-seconds: 120
+    # async-company-enrichment Phase 3: relevance window. Only jobs posted within
+    # this many days are enrichment candidates (newest first). The stale tail —
+    # 1,208 candidates vs 26 recent on 2026-11-19 — never yields recruiting
+    # contacts and used to consume the whole batch budget.
+    max-job-age-days: 30
   linkedin:
     # Gates BOTH LinkedIn strategies (fase-a-sourcing-restoration Scenario 8):
     # mode selects *which* (jsoup/service), enabled selects *whether* (default true).

@@ -10,7 +10,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.net.URI;
+import java.time.Clock;
 import java.time.Duration;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -27,8 +29,10 @@ import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Enriches jobs with company-site contact emails as an explicit, out-of-band batch.
- * Domains are crawled once each, with bounded concurrency and per-domain and global
- * time budgets. Results are persisted in place so jobs do not get duplicated.
+ * Only jobs posted inside the relevance window are candidates, newest first
+ * (async-company-enrichment Phase 3), so the stale tail cannot starve applicable
+ * listings. Domains are crawled once each, with bounded concurrency and per-domain
+ * and global time budgets. Results are persisted in place so jobs do not get duplicated.
  */
 public class CompanyEnrichmentService implements CompanyEnrichmentUseCase {
 
@@ -38,6 +42,7 @@ public class CompanyEnrichmentService implements CompanyEnrichmentUseCase {
     private static final int DEFAULT_DOMAIN_CONCURRENCY = 4;
     private static final Duration DEFAULT_DOMAIN_BUDGET = Duration.ofSeconds(15);
     private static final Duration DEFAULT_BATCH_BUDGET = Duration.ofSeconds(120);
+    private static final int DEFAULT_MAX_JOB_AGE_DAYS = 30;
 
     private final JobRepository jobRepository;
     private final CompanySiteEnrichmentPort enricher;
@@ -45,6 +50,8 @@ public class CompanyEnrichmentService implements CompanyEnrichmentUseCase {
     private final int domainConcurrency;
     private final Duration domainBudget;
     private final Duration batchBudget;
+    private final int maxJobAgeDays;
+    private final Clock clock;
 
     public CompanyEnrichmentService(JobRepository jobRepository, CompanySiteEnrichmentPort enricher) {
         this(jobRepository, enricher, DEFAULT_MAX_LIMIT, DEFAULT_DOMAIN_CONCURRENCY,
@@ -63,20 +70,37 @@ public class CompanyEnrichmentService implements CompanyEnrichmentUseCase {
             int domainConcurrency,
             Duration domainBudget,
             Duration batchBudget) {
+        this(jobRepository, enricher, maxLimit, domainConcurrency, domainBudget, batchBudget,
+                DEFAULT_MAX_JOB_AGE_DAYS, Clock.systemDefaultZone());
+    }
+
+    public CompanyEnrichmentService(
+            JobRepository jobRepository,
+            CompanySiteEnrichmentPort enricher,
+            int maxLimit,
+            int domainConcurrency,
+            Duration domainBudget,
+            Duration batchBudget,
+            int maxJobAgeDays,
+            Clock clock) {
         this.jobRepository = jobRepository;
         this.enricher = enricher;
         this.maxLimit = maxLimit > 0 ? maxLimit : DEFAULT_MAX_LIMIT;
         this.domainConcurrency = domainConcurrency > 0 ? domainConcurrency : DEFAULT_DOMAIN_CONCURRENCY;
         this.domainBudget = positiveOrDefault(domainBudget, DEFAULT_DOMAIN_BUDGET);
         this.batchBudget = positiveOrDefault(batchBudget, DEFAULT_BATCH_BUDGET);
+        this.maxJobAgeDays = maxJobAgeDays > 0 ? maxJobAgeDays : DEFAULT_MAX_JOB_AGE_DAYS;
+        this.clock = clock != null ? clock : Clock.systemDefaultZone();
     }
 
     @Override
     public EnrichmentResult enrichMissingEmails(int limit) {
         int clamped = Math.max(1, Math.min(limit, maxLimit));
+        var postedSince = LocalDate.now(clock).minusDays(maxJobAgeDays);
+        log.debug("company-site enrichment window: posted since {}", postedSince);
         List<Job> candidates;
         try {
-            candidates = jobRepository.findJobsNeedingEnrichment(clamped);
+            candidates = jobRepository.findJobsNeedingEnrichment(clamped, postedSince);
         } catch (Exception e) {
             log.error("failed to load jobs needing enrichment: {}", e.getMessage());
             return new EnrichmentResult(0, 0, 0, 0, 0);

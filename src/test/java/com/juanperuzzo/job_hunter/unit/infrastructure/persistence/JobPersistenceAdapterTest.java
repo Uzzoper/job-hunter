@@ -12,15 +12,19 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.PageRequest;
 
 import java.time.LocalDate;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -91,5 +95,21 @@ class JobPersistenceAdapterTest {
 
         var thrown = assertThrows(DataIntegrityViolationException.class, () -> adapter.save(job()));
         assertSame(dive, thrown, "non-url integrity violations must surface untouched");
+    }
+
+    @Test
+    @DisplayName("findJobsNeedingEnrichment should pass the recent cutoff and bounded page to the query")
+    void findJobsNeedingEnrichment_shouldPassCutoffAndPageToQuery() {
+        var cutoff = LocalDate.of(2026, 10, 20);
+        var entity = new JobEntity(7L, "Dev Junior", "Acme TI", URL, "text",
+                LocalDate.of(2026, 11, 4), "gupy", null, "https://acme.com");
+        when(jpaRepository.findJobsNeedingEnrichment(eq(cutoff), eq(PageRequest.of(0, 5))))
+                .thenReturn(List.of(entity));
+
+        var jobs = adapter.findJobsNeedingEnrichment(5, cutoff);
+
+        assertEquals(1, jobs.size());
+        assertEquals("https://acme.com", jobs.get(0).companyWebsite());
+        verify(jpaRepository).findJobsNeedingEnrichment(cutoff, PageRequest.of(0, 5));
     }
 }

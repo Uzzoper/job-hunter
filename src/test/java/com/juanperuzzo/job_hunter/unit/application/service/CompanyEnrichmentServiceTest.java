@@ -12,8 +12,11 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.Duration;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -21,6 +24,7 @@ import java.util.concurrent.TimeUnit;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -59,7 +63,7 @@ class CompanyEnrichmentServiceTest {
             var j2 = job(2L, "https://acme.com/careers");
             var j3 = job(3L, "https://acme.com/");
 
-            when(jobRepository.findJobsNeedingEnrichment(50)).thenReturn(List.of(j1, j2, j3));
+            when(jobRepository.findJobsNeedingEnrichment(eq(50), any(LocalDate.class))).thenReturn(List.of(j1, j2, j3));
 
             // Enricher applies the email to the representative job only (single crawl).
             when(enricher.enrich(any(Job.class))).thenAnswer(inv -> {
@@ -90,7 +94,7 @@ class CompanyEnrichmentServiceTest {
         void enrich_whenPortalDomain_shouldSkipWithoutCrawl() {
             var j1 = job(1L, "https://company1.gupy.io/jobs");
 
-            when(jobRepository.findJobsNeedingEnrichment(50)).thenReturn(List.of(j1));
+            when(jobRepository.findJobsNeedingEnrichment(eq(50), any(LocalDate.class))).thenReturn(List.of(j1));
 
             var result = service.enrichMissingEmails(50);
 
@@ -114,7 +118,7 @@ class CompanyEnrichmentServiceTest {
             var jA = job(1L, "https://fail.com/");
             var jB = job(2L, "https://good.com/");
 
-            when(jobRepository.findJobsNeedingEnrichment(50)).thenReturn(List.of(jA, jB));
+            when(jobRepository.findJobsNeedingEnrichment(eq(50), any(LocalDate.class))).thenReturn(List.of(jA, jB));
 
             // Domain A throws (crawl failure), domain B enriches.
             when(enricher.enrich(any(Job.class))).thenAnswer(inv -> {
@@ -139,7 +143,7 @@ class CompanyEnrichmentServiceTest {
             var jA = job(1L, "https://noemail.com/");
             var jB = job(2L, "https://good.com/");
 
-            when(jobRepository.findJobsNeedingEnrichment(50)).thenReturn(List.of(jA, jB));
+            when(jobRepository.findJobsNeedingEnrichment(eq(50), any(LocalDate.class))).thenReturn(List.of(jA, jB));
 
             // Domain A enriches to no email (crawl succeeded but nothing found),
             // domain B enriches.
@@ -174,7 +178,7 @@ class CompanyEnrichmentServiceTest {
                     job(4L, "https://d.com/"),
                     job(5L, "https://e.com/"));
 
-            when(jobRepository.findJobsNeedingEnrichment(2)).thenReturn(jobs.subList(0, 2));
+            when(jobRepository.findJobsNeedingEnrichment(eq(2), any(LocalDate.class))).thenReturn(jobs.subList(0, 2));
 
             var result = service.enrichMissingEmails(2);
 
@@ -190,7 +194,7 @@ class CompanyEnrichmentServiceTest {
         @Test
         @DisplayName("enrichMissingEmails should return zeros when no candidates")
         void enrich_whenNoCandidates_shouldReturnZeros() {
-            when(jobRepository.findJobsNeedingEnrichment(50)).thenReturn(List.of());
+            when(jobRepository.findJobsNeedingEnrichment(eq(50), any(LocalDate.class))).thenReturn(List.of());
 
             var result = service.enrichMissingEmails(50);
 
@@ -214,7 +218,7 @@ class CompanyEnrichmentServiceTest {
             var slow = job(1L, "https://slow.example/");
             var slowSibling = job(2L, "https://slow.example/contact");
             var fast = job(3L, "https://fast.example/");
-            when(jobRepository.findJobsNeedingEnrichment(3)).thenReturn(List.of(slow, slowSibling, fast));
+            when(jobRepository.findJobsNeedingEnrichment(eq(3), any(LocalDate.class))).thenReturn(List.of(slow, slowSibling, fast));
             when(enricher.enrich(any(Job.class))).thenAnswer(invocation -> {
                 var candidate = invocation.getArgument(0, Job.class);
                 if (candidate.companyWebsite().contains("slow.example")) {
@@ -238,7 +242,7 @@ class CompanyEnrichmentServiceTest {
         void enrich_whenDeadHostExceedsBudget_shouldCountFailedAndContinue() {
             var dead = job(1L, "https://dead.example/");
             var good = job(2L, "https://good.example/");
-            when(jobRepository.findJobsNeedingEnrichment(2)).thenReturn(List.of(dead, good));
+            when(jobRepository.findJobsNeedingEnrichment(eq(2), any(LocalDate.class))).thenReturn(List.of(dead, good));
             when(enricher.enrich(any(Job.class))).thenAnswer(invocation -> {
                 var candidate = invocation.getArgument(0, Job.class);
                 if (candidate.companyWebsite().contains("dead.example")) {
@@ -265,7 +269,7 @@ class CompanyEnrichmentServiceTest {
                     job(3L, "https://c.example/"),
                     job(4L, "https://d.example/"));
             var allStarted = new CountDownLatch(4);
-            when(jobRepository.findJobsNeedingEnrichment(4)).thenReturn(jobs);
+            when(jobRepository.findJobsNeedingEnrichment(eq(4), any(LocalDate.class))).thenReturn(jobs);
             when(enricher.enrich(any(Job.class))).thenAnswer(invocation -> {
                 var candidate = invocation.getArgument(0, Job.class);
                 allStarted.countDown();
@@ -288,7 +292,7 @@ class CompanyEnrichmentServiceTest {
             var first = job(1L, "https://first.example/");
             var second = job(2L, "https://second.example/");
             var third = job(3L, "https://third.example/");
-            when(jobRepository.findJobsNeedingEnrichment(3)).thenReturn(List.of(first, second, third));
+            when(jobRepository.findJobsNeedingEnrichment(eq(3), any(LocalDate.class))).thenReturn(List.of(first, second, third));
             when(enricher.enrich(any(Job.class))).thenAnswer(invocation -> {
                 var candidate = invocation.getArgument(0, Job.class);
                 Thread.sleep(100);
@@ -304,6 +308,41 @@ class CompanyEnrichmentServiceTest {
             assertEquals(0, result.failed());
             assertEquals(2, result.domainsSkippedBudget());
             verify(enricher, times(1)).enrich(any(Job.class));
+        }
+    }
+
+    @Nested
+    @DisplayName("Phase 3: relevance window")
+    class RelevanceWindowTests {
+
+        @Test
+        @DisplayName("enrichMissingEmails should query only jobs posted inside the configured window")
+        void enrich_shouldPassRecentCutoffToRepository() {
+            var clock = Clock.fixed(Instant.parse("2026-11-19T12:00:00Z"), ZoneOffset.UTC);
+            service = new CompanyEnrichmentService(jobRepository, enricher, 200, 4,
+                    Duration.ofSeconds(15), Duration.ofSeconds(120), 30, clock);
+            when(jobRepository.findJobsNeedingEnrichment(10, LocalDate.of(2026, 10, 20)))
+                    .thenReturn(List.of());
+
+            var result = service.enrichMissingEmails(10);
+
+            assertEquals(0, result.checked());
+            verify(jobRepository).findJobsNeedingEnrichment(10, LocalDate.of(2026, 10, 20));
+            verify(enricher, never()).enrich(any(Job.class));
+        }
+
+        @Test
+        @DisplayName("enrichMissingEmails should honor a custom window length")
+        void enrich_whenCustomWindow_shouldShiftCutoff() {
+            var clock = Clock.fixed(Instant.parse("2026-11-19T00:30:00Z"), ZoneOffset.UTC);
+            service = new CompanyEnrichmentService(jobRepository, enricher, 200, 4,
+                    Duration.ofSeconds(15), Duration.ofSeconds(120), 7, clock);
+            when(jobRepository.findJobsNeedingEnrichment(20, LocalDate.of(2026, 11, 12)))
+                    .thenReturn(List.of());
+
+            service.enrichMissingEmails(20);
+
+            verify(jobRepository).findJobsNeedingEnrichment(20, LocalDate.of(2026, 11, 12));
         }
     }
 }
