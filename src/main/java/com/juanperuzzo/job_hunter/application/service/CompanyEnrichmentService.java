@@ -10,43 +10,65 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.net.URI;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorCompletionService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * Enriches jobs with company-site contact emails as an explicit, out-of-band batch
- * (async-company-enrichment spec). Runs one crawl per distinct company domain and
- * applies the discovered email to every job of that domain in the batch, persisting
- * each update in place (JPA merge, no duplicate rows).
- * <p>
- * Runs outside the synchronous {@code POST /api/jobs/fetch} hot path and never throws:
- * per-domain failures are counted and the batch continues.
- * <p>
- * The {@code failed} counter tracks only genuine failures — exceptions during crawl,
- * persistence save failures, and robots-denials. A domain that was crawled successfully
- * but yielded no email is {@code not} a failure (it is simply unenriched).
+ * Enriches jobs with company-site contact emails as an explicit, out-of-band batch.
+ * Domains are crawled once each, with bounded concurrency and per-domain and global
+ * time budgets. Results are persisted in place so jobs do not get duplicated.
  */
 public class CompanyEnrichmentService implements CompanyEnrichmentUseCase {
 
     private static final Logger log = LoggerFactory.getLogger(CompanyEnrichmentService.class);
 
     private static final int DEFAULT_MAX_LIMIT = 200;
+    private static final int DEFAULT_DOMAIN_CONCURRENCY = 4;
+    private static final Duration DEFAULT_DOMAIN_BUDGET = Duration.ofSeconds(15);
+    private static final Duration DEFAULT_BATCH_BUDGET = Duration.ofSeconds(120);
 
     private final JobRepository jobRepository;
     private final CompanySiteEnrichmentPort enricher;
     private final int maxLimit;
+    private final int domainConcurrency;
+    private final Duration domainBudget;
+    private final Duration batchBudget;
 
     public CompanyEnrichmentService(JobRepository jobRepository, CompanySiteEnrichmentPort enricher) {
-        this(jobRepository, enricher, DEFAULT_MAX_LIMIT);
+        this(jobRepository, enricher, DEFAULT_MAX_LIMIT, DEFAULT_DOMAIN_CONCURRENCY,
+                DEFAULT_DOMAIN_BUDGET, DEFAULT_BATCH_BUDGET);
     }
 
     public CompanyEnrichmentService(JobRepository jobRepository, CompanySiteEnrichmentPort enricher, int maxLimit) {
+        this(jobRepository, enricher, maxLimit, DEFAULT_DOMAIN_CONCURRENCY,
+                DEFAULT_DOMAIN_BUDGET, DEFAULT_BATCH_BUDGET);
+    }
+
+    public CompanyEnrichmentService(
+            JobRepository jobRepository,
+            CompanySiteEnrichmentPort enricher,
+            int maxLimit,
+            int domainConcurrency,
+            Duration domainBudget,
+            Duration batchBudget) {
         this.jobRepository = jobRepository;
         this.enricher = enricher;
         this.maxLimit = maxLimit > 0 ? maxLimit : DEFAULT_MAX_LIMIT;
+        this.domainConcurrency = domainConcurrency > 0 ? domainConcurrency : DEFAULT_DOMAIN_CONCURRENCY;
+        this.domainBudget = positiveOrDefault(domainBudget, DEFAULT_DOMAIN_BUDGET);
+        this.batchBudget = positiveOrDefault(batchBudget, DEFAULT_BATCH_BUDGET);
     }
 
     @Override
@@ -57,64 +79,169 @@ public class CompanyEnrichmentService implements CompanyEnrichmentUseCase {
             candidates = jobRepository.findJobsNeedingEnrichment(clamped);
         } catch (Exception e) {
             log.error("failed to load jobs needing enrichment: {}", e.getMessage());
-            return new EnrichmentResult(0, 0, 0, 0);
+            return new EnrichmentResult(0, 0, 0, 0, 0);
         }
 
         int checked = candidates.size();
-        int enriched = 0;
         int skippedPortal = 0;
-        int failed = 0;
-
-        // Group jobs by lowercase host of companyWebsite, preserving first-seen order.
-        Map<String, List<Job>> byDomain = new LinkedHashMap<>();
+        var byDomain = new LinkedHashMap<String, List<Job>>();
         for (var job : candidates) {
             var host = host(job.companyWebsite());
             if (host == null) {
-                // No resolvable domain — cannot crawl; not a "failure" in the strict sense.
                 continue;
             }
-            byDomain.computeIfAbsent(host, k -> new ArrayList<>()).add(job);
+            if (PortalDomains.isPortal(host)) {
+                skippedPortal++;
+                continue;
+            }
+            byDomain.computeIfAbsent(host, ignored -> new ArrayList<>()).add(job);
         }
 
-        for (var entry : byDomain.entrySet()) {
-            var domain = entry.getKey();
-            var domainJobs = entry.getValue();
+        if (byDomain.isEmpty()) {
+            return new EnrichmentResult(checked, 0, skippedPortal, 0, 0);
+        }
 
-            if (PortalDomains.isPortal(domain)) {
-                skippedPortal += domainJobs.size();
-                continue;
-            }
+        var domains = byDomain.entrySet().stream()
+                .map(entry -> new DomainGroup(entry.getKey(), entry.getValue()))
+                .toList();
+        var threadNumber = new AtomicInteger();
+        var executor = Executors.newFixedThreadPool(domainConcurrency, task -> {
+            var thread = new Thread(task, "company-enrichment-" + threadNumber.incrementAndGet());
+            thread.setDaemon(true);
+            return thread;
+        });
+        var completion = new ExecutorCompletionService<DomainOutcome>(executor);
+        var active = new LinkedHashMap<Future<DomainOutcome>, PendingDomain>();
+        var batchDeadline = System.nanoTime() + batchBudget.toNanos();
+        int nextDomain = 0;
+        int enriched = 0;
+        int failed = 0;
+        int domainsSkippedBudget = 0;
 
-            try {
-                String email = null;
-                // One crawl: enrich a single representative job, then apply email to all.
-                var representative = domainJobs.get(0);
-                var enrichedJob = enricher.enrich(representative);
-                if (enrichedJob != null && enrichedJob.contactEmail() != null) {
-                    email = enrichedJob.contactEmail();
+        try {
+            while (nextDomain < domains.size() || !active.isEmpty()) {
+                while (nextDomain < domains.size()
+                        && active.size() < domainConcurrency
+                        && System.nanoTime() < batchDeadline) {
+                    var group = domains.get(nextDomain++);
+                    var startedAt = new AtomicLong();
+                    var future = completion.submit(() -> crawl(group, startedAt));
+                    active.put(future, new PendingDomain(group, startedAt));
                 }
 
-                if (email == null) {
-                    // Crawled successfully but no email found — Unenriched, not failed.
+                if (nextDomain < domains.size() && System.nanoTime() >= batchDeadline) {
+                    domainsSkippedBudget = domains.size() - nextDomain;
+                    nextDomain = domains.size();
+                }
+
+                if (active.isEmpty()) {
                     continue;
                 }
 
-                for (var job : domainJobs) {
-                    try {
-                        jobRepository.save(job.withContactEmail(email));
-                        enriched++;
-                    } catch (Exception e) {
-                        log.warn("failed to save enrichment for job {}: {}", job.url(), e.getMessage());
-                        failed++;
+                var completed = completion.poll(waitNanos(active, batchDeadline, nextDomain < domains.size()),
+                        TimeUnit.NANOSECONDS);
+                if (completed != null) {
+                    var pending = active.remove(completed);
+                    if (pending != null) {
+                        try {
+                            var outcome = completed.get();
+                            if (outcome.failure() != null) {
+                                failed += pending.group().jobs().size();
+                                log.warn("company-site enrichment failed for domain {}: {}",
+                                        pending.group().domain(), outcome.failure().getMessage());
+                            } else if (outcome.email() != null) {
+                                for (var job : pending.group().jobs()) {
+                                    try {
+                                        jobRepository.save(job.withContactEmail(outcome.email()));
+                                        enriched++;
+                                    } catch (Exception e) {
+                                        log.warn("failed to save enrichment for job {}: {}", job.url(), e.getMessage());
+                                        failed++;
+                                    }
+                                }
+                            }
+                        } catch (ExecutionException | CancellationException e) {
+                            failed += pending.group().jobs().size();
+                            log.warn("company-site enrichment task failed for domain {}: {}",
+                                    pending.group().domain(), e.getMessage());
+                        }
                     }
                 }
-            } catch (Exception e) {
-                log.warn("company-site enrichment failed for domain {}: {}", domain, e.getMessage());
-                failed += domainJobs.size();
+
+                failed += expireDomains(active);
             }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            failed += cancelActive(active);
+        } catch (Exception e) {
+            log.error("company-site enrichment batch failed: {}", e.getMessage());
+            failed += cancelActive(active);
+        } finally {
+            executor.shutdownNow();
         }
 
-        return new EnrichmentResult(checked, enriched, skippedPortal, failed);
+        return new EnrichmentResult(checked, enriched, skippedPortal, failed, domainsSkippedBudget);
+    }
+
+    private DomainOutcome crawl(DomainGroup group, AtomicLong startedAt) {
+        startedAt.set(System.nanoTime());
+        try {
+            var representative = group.jobs().get(0);
+            var enrichedJob = enricher.enrich(representative);
+            var email = enrichedJob == null ? null : enrichedJob.contactEmail();
+            return new DomainOutcome(email, null);
+        } catch (Exception e) {
+            return new DomainOutcome(null, e);
+        }
+    }
+
+    private int expireDomains(Map<Future<DomainOutcome>, PendingDomain> active) {
+        int failed = 0;
+        var now = System.nanoTime();
+        var iterator = active.entrySet().iterator();
+        while (iterator.hasNext()) {
+            var entry = iterator.next();
+            var startedAt = entry.getValue().startedAt().get();
+            if (entry.getKey().isDone() || startedAt == 0 || now - startedAt < domainBudget.toNanos()) {
+                continue;
+            }
+            entry.getKey().cancel(true);
+            failed += entry.getValue().group().jobs().size();
+            log.warn("company-site enrichment timed out for domain {} after {} ms",
+                    entry.getValue().group().domain(), domainBudget.toMillis());
+            iterator.remove();
+        }
+        return failed;
+    }
+
+    private int cancelActive(Map<Future<DomainOutcome>, PendingDomain> active) {
+        int failed = 0;
+        for (var entry : active.entrySet()) {
+            entry.getKey().cancel(true);
+            failed += entry.getValue().group().jobs().size();
+        }
+        active.clear();
+        return failed;
+    }
+
+    private long waitNanos(
+            Map<Future<DomainOutcome>, PendingDomain> active,
+            long batchDeadline,
+            boolean moreDomainsToSchedule) {
+        var now = System.nanoTime();
+        var waitNanos = moreDomainsToSchedule ? Math.max(1, batchDeadline - now) : Long.MAX_VALUE;
+        for (var pending : active.values()) {
+            var startedAt = pending.startedAt().get();
+            var untilTimeout = startedAt == 0
+                    ? TimeUnit.MILLISECONDS.toNanos(5)
+                    : startedAt + domainBudget.toNanos() - now;
+            waitNanos = Math.min(waitNanos, Math.max(1, untilTimeout));
+        }
+        return waitNanos == Long.MAX_VALUE ? TimeUnit.MILLISECONDS.toNanos(5) : waitNanos;
+    }
+
+    private static Duration positiveOrDefault(Duration value, Duration fallback) {
+        return value == null || value.isZero() || value.isNegative() ? fallback : value;
     }
 
     private static String host(String url) {
@@ -125,4 +252,10 @@ public class CompanyEnrichmentService implements CompanyEnrichmentUseCase {
             return null;
         }
     }
+
+    private record DomainGroup(String domain, List<Job> jobs) {}
+
+    private record DomainOutcome(String email, Exception failure) {}
+
+    private record PendingDomain(DomainGroup group, AtomicLong startedAt) {}
 }
