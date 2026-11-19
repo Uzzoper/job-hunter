@@ -369,6 +369,6 @@ Seams (contracts between the modules):
 | Applied record | `POST /api/jobs/{id}/applied` (idempotent) | bot → backend |
 | Memory sync | `§` sections + JSON records via mounted profile dir | both ways |
 | AI + email | OpenAI-compatible `POST /v1/chat/completions` | backend → gateway → bot |
-| Skills install | `scripts/install-bot-skills.sh` (copy + render-if-absent) | repo → profile |
+| Skills install | `scripts/install-bot-skills.sh` (copy + prune stale duplicates + render-if-absent) | repo → profile |
 | CLI access | REST API + JWT login (`jh-cli`) | CLI → backend |
 | LinkedIn scraping | scraper HTTP API on :3000 (Playwright service, Jsoup fallback) | backend → Node service |
