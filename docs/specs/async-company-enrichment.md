@@ -52,7 +52,7 @@
 ### Scenario 5: limit bounds the batch
 - **GIVEN** 500 jobs needing enrichment
 - **WHEN** `POST /api/jobs/enrich-emails?limit=20` is called
-- **THEN** at most 20 jobs are checked (oldest first by `id`), response reflects the bounded run
+- **THEN** at most 20 jobs are checked (oldest first by `id`; **superseded by Phase 3** — candidates are date-bounded and newest first), response reflects the bounded run
 
 ---
 
@@ -213,6 +213,101 @@ Existing 5 cases keep passing (behavior superset).
 - Enricher-internal changes (robots, contact paths, `max-pages`) — census shows no evidence emails live deeper in this sample.
 - Population expansion (detail-fetch coverage / cap raise) — separate spec against `gupy-detail-domains.md`.
 - robots escalation — ToS-respecting read-only only (issue #117 non-goal).
+
+---
+
+## Phase 3 — Relevance window + extraction quality (2026-11-19)
+
+### Context (measured, local DB + 300s batch run)
+
+- **The queue is 98% stale.** 1,208 jobs have `contact_email IS NULL AND
+  company_website IS NOT NULL`, but only **26** were posted within 30 days. The
+  query has no date window and orders `id ASC`, so every batch spends its budget
+  on dead listings: a 200-row window covered ids 1–349 (128 domains), and not a
+  single recent row was reached.
+- **The yield is noise, not contacts.** Across 124 crawled domains the batch
+  logged 6 `email-found`, persisted 5 — **zero recruiting addresses**. Two were
+  invalid: `contact@mysite.com` (theme placeholder) and
+  `E-mailcontato@grupolevel.com.brCopiar` (an "E-mail" label plus a "Copiar"
+  button swallowed into the address). Two were LGPD/DPO channels
+  (`dpo@bellinatiperez.com.br`, `dporaizen@raizen.com`) and one generic.
+- **`email-found` is not `enriched`.** The per-domain 15s budget can cancel a
+  task after the enricher logs the find and before the service saves it
+  (softexpert, found at ~16.3s). Counting log lines overestimates the result.
+
+### Goals
+
+- Only jobs that are still applicable are enrichment candidates:
+  `posted_at >= today - max-job-age-days` (default **30**), newest first.
+- An address is persisted only when it belongs to the crawled company site — a
+  different domain is a theme placeholder, a UI artifact or an unrelated footer,
+  never a contact for this company.
+- Non-hiring channels are hard-excluded; generic company addresses remain
+  allowed (owner decision 2026-11-19: `contato@`, `almap@`, `vagas@` pass;
+  `dpo/privacidade/juridico/comercial/vendas` do not).
+
+### Business rules
+
+1. **Relevance window.** `CompanyEnrichmentService` computes
+   `postedSince = LocalDate.now(clock).minusDays(maxJobAgeDays)` and calls
+   `JobRepository.findJobsNeedingEnrichment(limit, postedSince)`; the JPA query
+   adds `j.postedAt >= :postedSince` and orders `j.postedAt DESC, j.id DESC`
+   (newest first, deterministic tiebreak). This **supersedes Scenario 5's
+   "oldest first by `id`"**; the boundary is inclusive (`>=`).
+2. **Site-scoped extraction.** `CompanySiteEnricher` extracts with
+   `EmailExtractor.extractFromHtml(html, host)`: a candidate is accepted only
+   when its domain equals the crawled host or is a label-boundary parent or
+   subdomain of it. `contato@grupolevel.com.br` on `www.grupolevel.com.br`
+   passes; `contact@mysite.com` on `www.nexdom.tec.br` and
+   `grupolevel.com.brCopiar` on `www.grupolevel.com.br` fail. The unscoped
+   `extractFromHtml(html)` used by `JobNormalizer` keeps its current behavior.
+3. **Channel vetoes (hard exclusion, both passes).** Local parts starting with
+   `dpo`, `privacidade`, `juridico`, `comercial`, `vendas` never become
+   candidates, alongside the existing noreply/donotreply/no-reply/apply
+   exclusions.
+4. **Placeholder list** gains `mysite.com`.
+5. No other behavior change: budgets, concurrency, cache, robots policy and
+   `EnrichmentResult` shape stay as they are; `checked` now means "candidates
+   inside the window".
+
+### Scenarios
+
+| Scenario | Input | Expected |
+|---|---|---|
+| Stale queue | 1,208 candidates, 26 within 30 days, `limit=200` | query returns the 26, newest first; stale rows are never crawled |
+| Off-site address | page on `www.nexdom.tec.br` contains `contact@mysite.com` | rejected, job unchanged |
+| UI artifact | page on `www.grupolevel.com.br` contains `E-mailcontato@grupolevel.com.brCopiar` | rejected, job unchanged |
+| Same-site parent | page on `www.grupolevel.com.br` contains `contato@grupolevel.com.br` | accepted |
+| Vetoed channel | page contains only `dpo@…` / `vendas@…` | rejected, job unchanged |
+| Generic allowed | page contains `contato@…` | accepted |
+| Cutoff boundary | job posted exactly `today - 30` days | included |
+
+### Configuration
+
+```yaml
+scraper.enricher:
+  max-job-age-days: 30   # relevance window for enrichment candidates
+```
+
+### Test plan (TDD — RED → GREEN)
+
+- `CompanyEnrichmentServiceTest`: `enrich_shouldQueryOnlyJobsInsideTheRelevanceWindow`
+  (fixed `Clock`, asserts the exact cutoff); existing cases move to the new port
+  signature.
+- `JobPersistenceAdapterTest`: `findJobsNeedingEnrichment_shouldPassCutoffAndPageToQuery`.
+- `EmailExtractorTest`: site scoping (off-site, UI artifact, parent/subdomain,
+  unscoped path), veto list, generic allowed, `mysite.com` placeholder.
+- `CompanySiteEnricherTest`: end-to-end rejection of an off-site address and of
+  a vetoed channel.
+
+### Out of scope (phase 3)
+
+- Raising `batch-domain-budget-seconds` (15s): the softexpert loss is real, but
+  the window removes the stale tail that made the batch expensive; revisit after
+  a measured recent-only run.
+- Cleaning the two invalid persisted emails: owner action on the bot database
+  (the next batch only touches `contact_email IS NULL` anyway).
+- Population expansion (`gupy-detail-domains.md`).
 
 ---
 
