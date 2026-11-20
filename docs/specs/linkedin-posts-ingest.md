@@ -203,3 +203,79 @@ behavior): `IngestLinkedInPostUseCase` (port/in),
 - Backend rate limiting of ingest (bot-side LinkedIn rules are trusted;
   revisit only if abuse/accidents appear in evidence).
 - Free-domain list beyond a starter constant in the use case.
+
+## Amendment 2026-11-20 — relevance gate + vacancy-level dedupe
+
+Two defects measured on the live bot DB (11 stored `linkedin-post` rows, 90d):
+
+1. **7 of 11 are non-dev** (administrative assistant, mechanical designer, hotel
+   maintenance, support analyst, SAP consultant, two generic "Vagas de Emprego"
+   posts). The classification prompt asks only `ehVaga`, so every vacancy post
+   carrying an e-mail is saved regardless of role or seniority.
+2. **Two rows are the same vacancy** — ids `6239`/`6240`, identical title
+   (`Desenvolvedor(a) Full Stack Júnior`) and contact (`funilfaixapreta@gmail.com`),
+   distinct permalinks because a different author re-shared the post.
+   `existsByUrl` cannot see this: permalink identity is per-post, not per-vacancy.
+
+### A. Relevance gate (same AI call, no extra cost)
+
+The prompt gains two fields:
+
+| field | values | effect |
+|---|---|---|
+| `roleFit` | `dev` \| `nao_dev` \| `indefinido` | `nao_dev` → reject |
+| `seniority` | `junior` \| `pleno` \| `senior` \| `indefinido` | `pleno`/`senior` → reject |
+
+Rule: save only when `ehVaga = true` **and** `roleFit != nao_dev` **and**
+`seniority ∉ {pleno, senior}`. Otherwise `200 {ignored: "not-relevant"}`.
+
+- `indefinido` **always passes** — short posts rarely state level, and rejecting
+  ambiguity would kill the little volume this channel has.
+- A missing or non-conforming field is treated as `indefinido`, so an older
+  prompt reply still saves (backward compatible, never rejects on absence).
+- The gate runs after the AI call (it needs `roleFit`); it saves rows, not tokens.
+
+### B. Vacancy-level dedupe
+
+After the AI classification and the relevance gate, dedupe on **(normalized
+contact e-mail, normalized title)** within a 30-day window:
+
+- e-mail: trim + lowercase;
+- title: trim + lowercase + accent-stripped + punctuation collapsed to spaces.
+
+Match → `200 {ignored: "duplicate"}`, nothing saved.
+
+- No migration: the port gains `List<Job> findByContactEmail(String email)` and
+  the use case applies the 30-day window and the normalized-title comparison in
+  memory. The window lives in the service, not the query, so the boundary is
+  pinned by a unit test instead of by SQL (volumes are tiny; a normalized column
+  is premature).
+- Accepted trade-off: two genuinely distinct openings with the same title from
+  the same address inside 30 days collapse into one. The same address means the
+  same application target anyway.
+
+### C. Contract changes
+
+- `IngestResult` sealed interface gains `NotRelevant`.
+- `JobIngestController` maps it to `200 {"ignored": "not-relevant"}`, matching
+  the existing ignored reasons.
+
+### D. Tests (RED first, plain JUnit 5 + Mockito)
+
+| test | expectation |
+|---|---|
+| `ingest_whenRoleNotDev_shouldReturnNotRelevantAndSaveNothing` | no save |
+| `ingest_whenSeniorityPleno_shouldReturnNotRelevantAndSaveNothing` | no save |
+| `ingest_whenSenioritySenior_shouldReturnNotRelevantAndSaveNothing` | no save |
+| `ingest_whenRoleIndefinido_shouldSave` | ambiguity passes |
+| `ingest_whenNewFieldsAbsentFromAiReply_shouldSave` | backward compatible |
+| `ingest_whenSameVacancyDifferentPermalink_shouldReturnDuplicateWithoutSaving` | 30d window, same e-mail+title |
+| `ingest_whenSameTitleDifferentEmail_shouldSave` | e-mail is part of the key |
+| `ingest_whenSameVacancyOlderThan30Days_shouldSave` | window boundary is exclusive |
+
+### E. Volume is not addressed here
+
+The channel's supply is the feed, not the classifier: the only recorded pass read
+9 posts, found 0 with an e-mail, and ingested 0. This amendment raises precision
+(11 rows → ~3 dev rows) and removes double-application risk. Growing the channel
+requires bot-side feed coverage and is explicitly out of scope.
