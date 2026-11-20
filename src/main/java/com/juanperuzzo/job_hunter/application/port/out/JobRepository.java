@@ -19,6 +19,15 @@ public interface JobRepository {
     List<Job> findAllByContactEmailIsNull();
 
     /**
+     * Rows of {@code source} whose description is missing or shorter than
+     * {@code maxLength}, ordered by {@code id} ascending, at most {@code limit},
+     * with {@code id > afterId} ({@code docs/specs/infojobs-description-backfill.md}).
+     * Rows with an already-good description are never candidates, so a backfill
+     * cannot overwrite one.
+     */
+    List<Job> findBySourceWithShortDescription(String source, int maxLength, long afterId, int limit);
+
+    /**
      * Rows whose contact e-mail equals {@code contactEmail}, case-insensitively.
      * Used by the LinkedIn-post ingest for vacancy-level dedupe (amendment
      * 2026-11-20): the same opening re-shared by another author gets a new

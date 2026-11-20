@@ -13,6 +13,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 
 import java.time.Duration;
 import java.util.List;
+import java.util.Optional;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.*;
 import static org.junit.jupiter.api.Assertions.*;
@@ -33,7 +34,7 @@ class InfoJobsProviderTest {
         noopRateLimiter = new com.juanperuzzo.job_hunter.infrastructure.scraper.ratelimit.TokenBucketRateLimiter(1000, 100, null);
         var sharedRestClient = org.springframework.web.client.RestClient.builder().baseUrl(baseUrl).build();
         provider = new InfoJobsProvider(baseUrl, 5, List.of("desenvolvedor"), 1, retry,
-                sharedRestClient, noopRateLimiter);
+                org.springframework.web.client.RestClient.builder().baseUrl(baseUrl).build(), noopRateLimiter);
     }
 
     @Nested
@@ -693,6 +694,86 @@ class InfoJobsProviderTest {
                             .filter(j -> !"true".equals(j.metadata().get("detailSkipped")))
                             .allMatch(j -> j.description().startsWith("card")),
                     "in-window known jobs must keep their basic card snippet");
+        }
+    }
+
+    @Nested
+    @DisplayName("Description backfill — fetchDetailDescription")
+    class DescriptionBackfill {
+
+        @Test
+        @DisplayName("should return the selector body when present")
+        void fetchDetailDescription_whenSelectorPresent_shouldReturnBody() {
+            var p = new InfoJobsProvider(baseUrl, 5, List.of("desenvolvedor"), 1, retry,
+                    org.springframework.web.client.RestClient.builder().baseUrl(baseUrl).build(), noopRateLimiter);
+
+            stubFor(get(urlPathEqualTo("/vaga-de-backfill__1.aspx"))
+                    .willReturn(ok("""
+                        <html><body>
+                        <div class="js_vacancyDataPanels">
+                          <p class="mb-16 text-break white-space-pre-line">corpo completo da vaga</p>
+                        </div>
+                        </body></html>""")));
+
+            assertEquals(Optional.of("corpo completo da vaga"),
+                    p.fetchDetailDescription(baseUrl + "/vaga-de-backfill__1.aspx"));
+        }
+
+        @Test
+        @DisplayName("should fall back to JSON-LD when the selector is absent")
+        void fetchDetailDescription_whenSelectorMissing_shouldFallBackToJsonLd() {
+            var p = new InfoJobsProvider(baseUrl, 5, List.of("desenvolvedor"), 1, retry,
+                    org.springframework.web.client.RestClient.builder().baseUrl(baseUrl).build(), noopRateLimiter);
+
+            stubFor(get(urlPathEqualTo("/vaga-de-backfill__2.aspx"))
+                    .willReturn(ok("""
+                        <html><body>
+                        <script type="application/ld+json">
+                        {"@context":"https://schema.org","@type":"JobPosting","description":"texto do json-ld"}
+                        </script>
+                        </body></html>""")));
+
+            assertEquals(Optional.of("texto do json-ld"),
+                    p.fetchDetailDescription(baseUrl + "/vaga-de-backfill__2.aspx"));
+        }
+
+        @Test
+        @DisplayName("should return empty when neither selector nor JSON-LD exists")
+        void fetchDetailDescription_whenNeitherPresent_shouldReturnEmpty() {
+            var p = new InfoJobsProvider(baseUrl, 5, List.of("desenvolvedor"), 1, retry,
+                    org.springframework.web.client.RestClient.builder().baseUrl(baseUrl).build(), noopRateLimiter);
+
+            stubFor(get(urlPathEqualTo("/vaga-de-backfill__3.aspx"))
+                    .willReturn(ok("<html><body><p>sem nada</p></body></html>")));
+
+            assertEquals(Optional.empty(),
+                    p.fetchDetailDescription(baseUrl + "/vaga-de-backfill__3.aspx"));
+        }
+
+        @Test
+        @DisplayName("should return empty on a bot-challenge page")
+        void fetchDetailDescription_whenBotChallenge_shouldReturnEmpty() {
+            var p = new InfoJobsProvider(baseUrl, 5, List.of("desenvolvedor"), 1, retry,
+                    org.springframework.web.client.RestClient.builder().baseUrl(baseUrl).build(), noopRateLimiter);
+
+            stubFor(get(urlPathEqualTo("/vaga-de-backfill__4.aspx"))
+                    .willReturn(ok("<html><body>captcha access denied</body></html>")));
+
+            assertEquals(Optional.empty(),
+                    p.fetchDetailDescription(baseUrl + "/vaga-de-backfill__4.aspx"));
+        }
+
+        @Test
+        @DisplayName("should return empty on HTTP error without throwing")
+        void fetchDetailDescription_whenHttpError_shouldReturnEmpty() {
+            var p = new InfoJobsProvider(baseUrl, 5, List.of("desenvolvedor"), 1, retry,
+                    org.springframework.web.client.RestClient.builder().baseUrl(baseUrl).build(), noopRateLimiter);
+
+            stubFor(get(urlPathEqualTo("/vaga-de-backfill__5.aspx"))
+                    .willReturn(status(500).withBody("boom")));
+
+            assertEquals(Optional.empty(),
+                    p.fetchDetailDescription(baseUrl + "/vaga-de-backfill__5.aspx"));
         }
     }
 }
