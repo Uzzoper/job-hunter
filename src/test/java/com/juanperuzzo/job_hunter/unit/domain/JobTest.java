@@ -131,4 +131,35 @@ class JobTest {
             assertTrue(copy.emailSuspect(), "same contract: preserve all other fields, flag included");
         }
     }
+
+    @Nested
+    @DisplayName("withDescription (description backfill)")
+    class WithDescriptionTests {
+
+        private Job complete() {
+            return new Job(42L, "Dev Java", "Acme TI", "https://www.infojobs.com.br/vaga-de-dev__42.aspx",
+                    "excerpt", LocalDate.of(2026, 11, 1), "infojobs",
+                    "rh@acme.com.br", "https://acme.com.br", true);
+        }
+
+        @Test
+        @DisplayName("withDescription should replace only the description")
+        void withDescription_whenCalled_shouldReplaceOnlyDescription() {
+            var original = complete();
+
+            var copy = original.withDescription("full body");
+
+            assertEquals("full body", copy.description());
+            assertEquals(original.id(), copy.id());
+            assertEquals(original.title(), copy.title());
+            assertEquals(original.company(), copy.company());
+            assertEquals(original.url(), copy.url());
+            assertEquals(original.postedAt(), copy.postedAt());
+            assertEquals(original.source(), copy.source());
+            assertEquals(original.contactEmail(), copy.contactEmail());
+            assertEquals(original.companyWebsite(), copy.companyWebsite());
+            assertEquals(original.emailSuspect(), copy.emailSuspect());
+            assertEquals(original, copy, "URL identity must survive the copy");
+        }
+    }
 }}

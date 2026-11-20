@@ -96,6 +96,14 @@ public class JobPersistenceAdapter implements JobRepository {
                 .toList();
     }
 
+    @Override
+    public List<Job> findBySourceWithShortDescription(String source, int maxLength, long afterId, int limit) {
+        return jpaRepository.findBySourceWithShortDescription(source, maxLength, afterId, PageRequest.of(0, limit))
+                .stream()
+                .map(this::toDomain)
+                .toList();
+    }
+
     private JobEntity toEntity(Job job) {
         return new JobEntity(
                 job.id(),

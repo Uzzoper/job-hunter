@@ -4,6 +4,7 @@ import com.juanperuzzo.job_hunter.application.port.in.AnalyzeJobUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.ApproveDraftUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.BackfillContactEmailsUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.BackfillCompanyWebsitesUseCase;
+import com.juanperuzzo.job_hunter.application.port.in.BackfillJobDescriptionsUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.CompanyEnrichmentUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.FetchJobsUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.FetchLinkedInAsyncUseCase;
@@ -99,6 +100,9 @@ class BotTokenFilterDisabledTest {
 
     @MockitoBean
     private BackfillCompanyWebsitesUseCase backfillCompanyWebsitesUseCase;
+
+    @MockitoBean
+    private BackfillJobDescriptionsUseCase backfillJobDescriptionsUseCase;
 
     @MockitoBean
     private TokenProvider tokenProvider;

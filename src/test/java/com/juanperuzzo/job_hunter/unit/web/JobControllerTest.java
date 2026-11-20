@@ -4,6 +4,7 @@ import com.juanperuzzo.job_hunter.application.port.in.AnalyzeJobUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.ApproveDraftUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.BackfillContactEmailsUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.BackfillCompanyWebsitesUseCase;
+import com.juanperuzzo.job_hunter.application.port.in.BackfillJobDescriptionsUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.CompanyEnrichmentUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.EnrichmentResult;
 import com.juanperuzzo.job_hunter.application.port.in.FetchJobsUseCase;
@@ -127,6 +128,9 @@ class JobControllerTest {
 
     @MockitoBean
     private BackfillCompanyWebsitesUseCase backfillCompanyWebsitesUseCase;
+
+    @MockitoBean
+    private BackfillJobDescriptionsUseCase backfillJobDescriptionsUseCase;
 
     @MockitoBean
     private TokenProvider tokenProvider;
@@ -794,6 +798,45 @@ class JobControllerTest {
                 .andExpect(jsonPath("$.stillNull").value(0));
 
         verify(backfillCompanyWebsitesUseCase).run(false, 50, 100L);
+    }
+
+    @Test
+    @DisplayName("backfillDescriptions should default dryRun to true, limit to 100 and maxDescriptionChars to 300")
+    void backfillDescriptions_whenDefaults_shouldRunDryRunWithDefaults() throws Exception {
+        authenticateAs(1L);
+
+        var result = new BackfillJobDescriptionsUseCase.Result(10, 7, 3, 6291L);
+        when(backfillJobDescriptionsUseCase.run(true, 100, 300, null)).thenReturn(result);
+
+        mockMvc.perform(post("/api/jobs/backfill-descriptions"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.scanned").value(10))
+                .andExpect(jsonPath("$.updated").value(7))
+                .andExpect(jsonPath("$.stillShort").value(3))
+                .andExpect(jsonPath("$.lastId").value(6291));
+
+        verify(backfillJobDescriptionsUseCase).run(true, 100, 300, null);
+    }
+
+    @Test
+    @DisplayName("backfillDescriptions should forward custom params and afterId")
+    void backfillDescriptions_whenCustomParamsAndAfterId_shouldForward() throws Exception {
+        authenticateAs(1L);
+
+        var result = new BackfillJobDescriptionsUseCase.Result(2, 2, 0, 6300L);
+        when(backfillJobDescriptionsUseCase.run(false, 40, 500, 6291L)).thenReturn(result);
+
+        mockMvc.perform(post("/api/jobs/backfill-descriptions")
+                        .param("dryRun", "false")
+                        .param("limit", "40")
+                        .param("maxDescriptionChars", "500")
+                        .param("afterId", "6291"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.scanned").value(2))
+                .andExpect(jsonPath("$.updated").value(2))
+                .andExpect(jsonPath("$.lastId").value(6300));
+
+        verify(backfillJobDescriptionsUseCase).run(false, 40, 500, 6291L);
     }
 
     @Test

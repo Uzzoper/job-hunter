@@ -304,6 +304,25 @@ public class InfoJobsProvider implements ExtractionStrategy {
     }
 
     /**
+     * Full-text body fetched from the source detail page, for the description
+     * backfill ({@code docs/specs/infojobs-description-backfill.md}). Returns
+     * {@link Optional#empty()} when the page has no body, is a bot-challenge
+     * page, or cannot be fetched — never throws.
+     */
+    public Optional<String> fetchDetailDescription(String url) {
+        try {
+            var html = fetchDetailHtml(URI.create(url));
+            if (html == null || html.isBlank()) {
+                return Optional.empty();
+            }
+            return bestDetailText(org.jsoup.Jsoup.parse(html, baseUrl));
+        } catch (Exception e) {
+            log.debug("{}: backfill detail fetch failed for {}: {}", providerId, url, e.getMessage());
+            return Optional.empty();
+        }
+    }
+
+    /**
      * Try HTML selectors for the full description, then JSON-LD, then fall back to
      * the existing card snippet.
      *
@@ -316,28 +335,44 @@ public class InfoJobsProvider implements ExtractionStrategy {
      * {@code .description}, {@code .job-description}) matched nothing.
      * JSON-LD stays as the documented official fallback — a {@code JobPosting} block
      * is always present on the live site.
+     *
+     * <p>Shared by {@link #fetchDetailDescription(String)} so the fetch path and the
+     * backfill cannot drift apart.
      */
     private String extractDetailDescription(Document doc, RawJob job) {
+        var best = bestDetailText(doc);
+        if (best.isPresent() && best.get().length() > job.description().length()) {
+            return best.get();
+        }
+        // No fuller text available — keep the card snippet
+        return job.description();
+    }
+
+    private Optional<String> bestDetailText(Document doc) {
+        if (doc == null) {
+            return Optional.empty();
+        }
+        String best = null;
         for (var selector : List.of("div.js_vacancyDataPanels p.text-break")) {
             var element = first(doc, selector);
             if (element.isPresent()) {
                 var text = clean(element.get().text());
-                if (text.length() > job.description().length()) {
-                    return text;
+                if (!text.isEmpty() && (best == null || text.length() > best.length())) {
+                    best = text;
                 }
             }
         }
-
         var jsonLd = new JsonLdParser().parseFromDocument(doc);
         if (jsonLd.isPresent()) {
             var desc = jsonLd.get().description();
             if (desc != null && !desc.isBlank()) {
-                return clean(desc);
+                var text = clean(desc);
+                if (best == null || text.length() > best.length()) {
+                    best = text;
+                }
             }
         }
-
-        // No fuller text available — keep the card snippet
-        return job.description();
+        return Optional.ofNullable(best);
     }
 
     /**

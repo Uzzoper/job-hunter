@@ -6,6 +6,7 @@ import com.juanperuzzo.job_hunter.application.port.in.SendEmailUseCase;
 import com.juanperuzzo.job_hunter.application.port.out.AiPort;
 import com.juanperuzzo.job_hunter.application.port.out.EmailDraftRepository;
 import com.juanperuzzo.job_hunter.application.port.out.EmailSenderPort;
+import com.juanperuzzo.job_hunter.application.port.out.JobDescriptionSourcePort;
 import com.juanperuzzo.job_hunter.application.port.out.JobRepository;
 import com.juanperuzzo.job_hunter.application.port.out.CompanySiteEnrichmentPort;
 import com.juanperuzzo.job_hunter.application.port.out.CompanyDomainResolverPort;
@@ -45,6 +46,7 @@ import com.juanperuzzo.job_hunter.application.service.AutoSendEligibilityService
 import com.juanperuzzo.job_hunter.application.service.BackfillContactEmailsService;
 import com.juanperuzzo.job_hunter.application.service.IngestLinkedInPostService;
 import com.juanperuzzo.job_hunter.application.service.BackfillCompanyWebsitesService;
+import com.juanperuzzo.job_hunter.application.service.BackfillJobDescriptionsService;
 import com.juanperuzzo.job_hunter.application.port.out.ResumeStorage;
 import com.juanperuzzo.job_hunter.application.service.ResumeCommitService;
 import com.juanperuzzo.job_hunter.application.service.ResumePreviewService;
@@ -360,7 +362,7 @@ public class AppConfig {
     }
 
     @Bean(name = "infojobsProvider")
-    public ExtractionStrategy infojobsProvider(
+    public InfoJobsProvider infojobsProvider(
             @Value("${scraper.infojobs.base-url}") String baseUrl,
             @Value("${scraper.infojobs.timeout-seconds}") int timeoutSeconds,
             @Value("#{'${scraper.infojobs.keywords}'.split(',')}") List<String> keywords,
@@ -660,6 +662,13 @@ public class AppConfig {
             JobRepository jobRepository,
             CompanyDomainResolverPort companyDomainResolverPort) {
         return new BackfillCompanyWebsitesService(jobRepository, companyDomainResolverPort);
+    }
+
+    @Bean
+    public BackfillJobDescriptionsService backfillJobDescriptionsService(
+            JobRepository jobRepository,
+            JobDescriptionSourcePort jobDescriptionSourcePort) {
+        return new BackfillJobDescriptionsService(jobRepository, jobDescriptionSourcePort);
     }
 
     @Bean

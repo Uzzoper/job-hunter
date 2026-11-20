@@ -4,6 +4,7 @@ import com.juanperuzzo.job_hunter.application.port.in.AnalyzeJobUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.ApproveDraftUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.BackfillContactEmailsUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.BackfillCompanyWebsitesUseCase;
+import com.juanperuzzo.job_hunter.application.port.in.BackfillJobDescriptionsUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.CompanyEnrichmentUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.FetchJobsUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.FetchLinkedInAsyncUseCase;
@@ -28,6 +29,7 @@ import com.juanperuzzo.job_hunter.web.dto.FetchResultResponse;
 import com.juanperuzzo.job_hunter.web.dto.FetchRunStatusResponse;
 import com.juanperuzzo.job_hunter.web.dto.FetchStartedResponse;
 import com.juanperuzzo.job_hunter.web.dto.BackfillResultResponse;
+import com.juanperuzzo.job_hunter.web.dto.BackfillDescriptionsResponse;
 import com.juanperuzzo.job_hunter.web.dto.JobResponse;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -58,6 +60,7 @@ public class JobController {
     private final RecordExternalApplyUseCase recordExternalApplyUseCase;
     private final BackfillContactEmailsUseCase backfillContactEmailsUseCase;
     private final BackfillCompanyWebsitesUseCase backfillCompanyWebsitesUseCase;
+    private final BackfillJobDescriptionsUseCase backfillJobDescriptionsUseCase;
     private final CurrentUserProvider currentUserService;
 
     public JobController(
@@ -77,6 +80,7 @@ public class JobController {
             RecordExternalApplyUseCase recordExternalApplyUseCase,
             BackfillContactEmailsUseCase backfillContactEmailsUseCase,
             BackfillCompanyWebsitesUseCase backfillCompanyWebsitesUseCase,
+            BackfillJobDescriptionsUseCase backfillJobDescriptionsUseCase,
             CurrentUserProvider currentUserService) {
         this.fetchJobsUseCase = fetchJobsUseCase;
         this.fetchSourceJobsUseCase = fetchSourceJobsUseCase;
@@ -94,6 +98,7 @@ public class JobController {
         this.recordExternalApplyUseCase = recordExternalApplyUseCase;
         this.backfillContactEmailsUseCase = backfillContactEmailsUseCase;
         this.backfillCompanyWebsitesUseCase = backfillCompanyWebsitesUseCase;
+        this.backfillJobDescriptionsUseCase = backfillJobDescriptionsUseCase;
         this.currentUserService = currentUserService;
     }
 
@@ -237,6 +242,22 @@ public class JobController {
             @RequestParam(required = false) Long afterId) {
         var result = backfillCompanyWebsitesUseCase.run(dryRun, maxHosts, afterId);
         return ResponseEntity.ok(BackfillResultResponse.from(result));
+    }
+
+    /**
+     * Backfill descriptions on stored InfoJobs rows
+     * ({@code docs/specs/infojobs-description-backfill.md}).
+     * Rows whose description is already at least {@code maxDescriptionChars}
+     * characters are never candidates, so nothing can be overwritten.
+     */
+    @PostMapping("/backfill-descriptions")
+    public ResponseEntity<BackfillDescriptionsResponse> backfillDescriptions(
+            @RequestParam(defaultValue = "true") boolean dryRun,
+            @RequestParam(defaultValue = "100") int limit,
+            @RequestParam(defaultValue = "300") int maxDescriptionChars,
+            @RequestParam(required = false) Long afterId) {
+        return ResponseEntity.ok(BackfillDescriptionsResponse.from(
+                backfillJobDescriptionsUseCase.run(dryRun, limit, maxDescriptionChars, afterId)));
     }
 
     @PostMapping("/{id}/email/approve")
