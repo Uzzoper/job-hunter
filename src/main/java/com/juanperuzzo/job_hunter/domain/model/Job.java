@@ -61,4 +61,13 @@ public record Job(
     public Job withCompanyWebsite(String newCompanyWebsite) {
         return new Job(id, title, company, url, description, postedAt, source, contactEmail, newCompanyWebsite, emailSuspect);
     }
+
+    /**
+     * Field-preserving copy with a repaired description
+     * ({@code docs/specs/infojobs-description-backfill.md}). URL identity and every
+     * other field are carried over unchanged.
+     */
+    public Job withDescription(String newDescription) {
+        return new Job(id, title, company, url, newDescription, postedAt, source, contactEmail, companyWebsite, emailSuspect);
+    }
 }

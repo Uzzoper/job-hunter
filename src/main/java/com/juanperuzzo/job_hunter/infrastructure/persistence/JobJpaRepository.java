@@ -25,6 +25,12 @@ public interface JobJpaRepository extends JpaRepository<JobEntity, Long> {
     @Query("SELECT j FROM JobEntity j WHERE j.source = :source AND j.companyWebsite IS NULL AND j.id > :afterId ORDER BY j.id ASC")
     List<JobEntity> findBySourceAndCompanyWebsiteIsNullAfterId(String source, long afterId);
 
+    /** Description backfill scan ({@code infojobs-description-backfill} spec). */
+    @Query("SELECT j FROM JobEntity j WHERE j.source = :source"
+            + " AND (j.description IS NULL OR LENGTH(j.description) < :maxLength)"
+            + " AND j.id > :afterId ORDER BY j.id ASC")
+    List<JobEntity> findBySourceWithShortDescription(String source, int maxLength, long afterId, Pageable pageable);
+
     /** Vacancy-level dedupe for the post ingest (amendment 2026-11-20); case-insensitive e-mail match. */
     @Query("SELECT j FROM JobEntity j WHERE LOWER(j.contactEmail) = LOWER(:contactEmail) ORDER BY j.postedAt DESC, j.id DESC")
     List<JobEntity> findByContactEmail(String contactEmail);
