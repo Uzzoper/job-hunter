@@ -8,6 +8,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.List;
+import java.util.Optional;
 
 /**
  * Repairs stored InfoJobs descriptions from their detail page
@@ -34,7 +35,10 @@ public class BackfillJobDescriptionsService implements BackfillJobDescriptionsUs
 
     @Override
     public Result run(boolean dryRun, int limit, int maxDescriptionChars, Long afterId) {
-        var effectiveLimit = Math.min(Math.max(limit, 1), MAX_LIMIT);
+        if (limit <= 0) {
+            return new Result(0, 0, 0, 0L);
+        }
+        var effectiveLimit = Math.min(limit, MAX_LIMIT);
         var effectiveMinLength = Math.max(maxDescriptionChars, 0);
         var cursor = afterId == null ? 0L : afterId;
 
@@ -50,20 +54,22 @@ public class BackfillJobDescriptionsService implements BackfillJobDescriptionsUs
         long lastId = 0;
         for (var job : candidates) {
             lastId = job.id() == null ? lastId : job.id();
+            Optional<String> fetched;
             try {
-                var fetched = descriptionSource.fetchDescription(job.url());
-                if (fetched.isPresent() && fetched.get().length() > currentLength(job.description())) {
-                    if (!dryRun) {
-                        jobRepository.save(job.withDescription(fetched.get()));
-                    }
-                    updated++;
-                } else {
-                    stillShort++;
-                }
+                fetched = descriptionSource.fetchDescription(job.url());
             } catch (RuntimeException e) {
                 log.debug("backfill-descriptions: source failed for {}: {}", job.url(), e.getMessage());
                 stillShort++;
+                continue;
             }
+            if (fetched.isEmpty() || fetched.get().length() <= currentLength(job.description())) {
+                stillShort++;
+                continue;
+            }
+            if (!dryRun) {
+                jobRepository.save(job.withDescription(fetched.get()));
+            }
+            updated++;
         }
 
         log.info("Description backfill (dryRun={}, limit={}, maxDescriptionChars={}, afterId={}):"

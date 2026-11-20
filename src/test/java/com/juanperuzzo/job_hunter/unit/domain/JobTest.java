@@ -144,7 +144,7 @@ class JobTest {
 
         @Test
         @DisplayName("withDescription should replace only the description")
-        void givenJob_whenWithDescription_thenOnlyDescriptionChanges() {
+        void withDescription_whenCalled_shouldReplaceOnlyDescription() {
             var original = complete();
 
             var copy = original.withDescription("full body");

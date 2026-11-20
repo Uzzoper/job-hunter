@@ -85,7 +85,8 @@ Response `200`:
 ### Candidate query
 
 Rows where `source = 'infojobs'` **and** `LENGTH(description) < maxDescriptionChars`,
-ordered by `id` ascending, at most `limit`, with `id > afterId`.
+ordered by `id` ascending, at most `limit`, with `id > afterId`. A non-positive
+`limit` scans no candidates (returns zeroes).
 
 Existing long descriptions are never candidates, so nothing can overwrite a
 description that is already good. `afterId` exists because a row whose detail
@@ -100,7 +101,8 @@ current description**. `Job` identity stays URL-based; the update is a
 
 A source failure (timeout, HTTP error, bot challenge, unparsable page) leaves the
 row untouched, is logged at DEBUG, and does **not** abort the run: one dead URL
-must not cost the other 99.
+must not cost the other 99. A persistence failure is not a source failure and
+propagates.
 
 ---
 

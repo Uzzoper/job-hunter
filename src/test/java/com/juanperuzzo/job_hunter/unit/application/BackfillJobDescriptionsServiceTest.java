@@ -190,4 +190,16 @@ class BackfillJobDescriptionsServiceTest {
         assertEquals(0L, result.lastId());
         verify(descriptionSource, never()).fetchDescription(anyString());
     }
+
+    @Test
+    @DisplayName("should scan no candidates when limit is zero or negative")
+    void run_whenLimitZero_shouldReturnZeroesWithoutQuerying() {
+        var result = service.run(true, 0, 300, null);
+
+        assertEquals(0, result.scanned());
+        assertEquals(0, result.updated());
+        assertEquals(0, result.stillShort());
+        assertEquals(0L, result.lastId());
+        verify(jobRepository, never()).findBySourceWithShortDescription(anyString(), anyInt(), anyLong(), anyInt());
+    }
 }
