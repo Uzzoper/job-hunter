@@ -125,6 +125,20 @@ class JobIngestControllerTest {
     }
 
     @Test
+    @DisplayName("ingest should return 200 not-relevant when the vacancy is outside the channel target")
+    void ingest_whenNotRelevant_shouldReturn200WithIgnoredBody() throws Exception {
+        authenticateAs(1L);
+        when(ingestLinkedInPostUseCase.ingest(any(IngestPostCommand.class)))
+                .thenReturn(new IngestResult.NotRelevant());
+
+        mockMvc.perform(post("/api/jobs/ingest")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(validBody()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.ignored").value("not-relevant"));
+    }
+
+    @Test
     @DisplayName("ingest should return 502 when the AI gateway fails (existing AiException mapping)")
     void ingest_whenAiUnavailable_shouldReturn502() throws Exception {
         authenticateAs(1L);

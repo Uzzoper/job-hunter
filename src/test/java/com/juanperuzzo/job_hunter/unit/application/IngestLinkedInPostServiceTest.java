@@ -3,6 +3,7 @@ package com.juanperuzzo.job_hunter.unit.application;
 import com.juanperuzzo.job_hunter.application.port.out.AiPort;
 import com.juanperuzzo.job_hunter.application.port.out.ContactEmailExtractorPort;
 import com.juanperuzzo.job_hunter.application.port.out.JobRepository;
+import com.juanperuzzo.job_hunter.application.port.in.IngestResult;
 import com.juanperuzzo.job_hunter.application.service.IngestLinkedInPostService;
 import com.juanperuzzo.job_hunter.domain.exception.AiException;
 import com.juanperuzzo.job_hunter.domain.model.Job;
@@ -17,6 +18,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -608,5 +610,127 @@ class IngestLinkedInPostServiceTest {
         verify(jobRepository).save(captor.capture());
         assertEquals(LocalDate.of(2026, 11, 4), captor.getValue().postedAt(),
                 "fallback = collection date from the injected Clock");
+    }
+
+    // ---------- Amendment 2026-11-20: relevance gate + vacancy-level dedupe ----------
+
+    private void stubUntilClassification(String email, String aiReply) {
+        when(emailExtractorPort.extract(isNull(), anyString())).thenReturn(email);
+        when(jobRepository.existsByUrl(CANONICAL_URL)).thenReturn(false);
+        when(aiPort.complete(anyString())).thenReturn(aiReply);
+    }
+
+    private void stubSaveEcho() {
+        when(jobRepository.save(any(Job.class))).thenAnswer(inv -> inv.getArgument(0));
+    }
+
+    private static Job existingJob(String title, LocalDate postedAt) {
+        return new Job(99L, title, "Acme TI",
+                "https://www.linkedin.com/feed/update/urn:li:activity:7123456789012345670/",
+                "desc", postedAt, "linkedin-post", "rh@acme.com.br", null, false);
+    }
+
+    private static final String DEV_JUNIOR_REPLY = "{\"ehVaga\": true, \"title\": \"Desenvolvedor Júnior\", "
+            + "\"company\": \"Acme TI\", \"roleFit\": \"dev\", \"seniority\": \"junior\"}";
+
+    @Test
+    @DisplayName("ingest should drop a vacancy the AI classifies as non-dev")
+    void ingest_whenRoleFitNotDev_shouldReturnNotRelevantAndSaveNothing() {
+        stubUntilClassification("rh@acme.com.br",
+                "{\"ehVaga\": true, \"title\": \"Assistente Administrativo\", \"company\": \"Acme TI\", "
+                        + "\"roleFit\": \"nao_dev\", \"seniority\": \"indefinido\"}");
+
+        var result = service.ingest(command(LocalDate.of(2026, 11, 5)));
+
+        assertInstanceOf(IngestResult.NotRelevant.class, result);
+        verify(jobRepository, never()).save(any(Job.class));
+    }
+
+    @Test
+    @DisplayName("ingest should drop a pleno vacancy")
+    void ingest_whenSeniorityPleno_shouldReturnNotRelevantAndSaveNothing() {
+        stubUntilClassification("rh@acme.com.br",
+                "{\"ehVaga\": true, \"title\": \"Dev Ruby\", \"company\": \"Acme TI\", "
+                        + "\"roleFit\": \"dev\", \"seniority\": \"pleno\"}");
+
+        var result = service.ingest(command(LocalDate.of(2026, 11, 5)));
+
+        assertInstanceOf(IngestResult.NotRelevant.class, result);
+        verify(jobRepository, never()).save(any(Job.class));
+    }
+
+    @Test
+    @DisplayName("ingest should drop a senior vacancy")
+    void ingest_whenSenioritySenior_shouldReturnNotRelevantAndSaveNothing() {
+        stubUntilClassification("rh@acme.com.br",
+                "{\"ehVaga\": true, \"title\": \"Dev Ruby\", \"company\": \"Acme TI\", "
+                        + "\"roleFit\": \"dev\", \"seniority\": \"senior\"}");
+
+        var result = service.ingest(command(LocalDate.of(2026, 11, 5)));
+
+        assertInstanceOf(IngestResult.NotRelevant.class, result);
+        verify(jobRepository, never()).save(any(Job.class));
+    }
+
+    @Test
+    @DisplayName("ingest should save when role and seniority are both undefined")
+    void ingest_whenRoleAndSeniorityIndefinido_shouldSave() {
+        stubUntilClassification("rh@acme.com.br",
+                "{\"ehVaga\": true, \"title\": \"Dev Ruby\", \"company\": \"Acme TI\", "
+                        + "\"roleFit\": \"indefinido\", \"seniority\": \"indefinido\"}");
+        stubSaveEcho();
+
+        var result = service.ingest(command(LocalDate.of(2026, 11, 5)));
+
+        assertInstanceOf(IngestResult.Saved.class, result);
+    }
+
+    @Test
+    @DisplayName("ingest should save when the AI reply predates the relevance fields")
+    void ingest_whenRelevanceFieldsAbsentFromAiReply_shouldSave() {
+        stubUntilClassification("rh@acme.com.br",
+                "{\"ehVaga\": true, \"title\": \"Dev Ruby\", \"company\": \"Acme TI\"}");
+        stubSaveEcho();
+
+        var result = service.ingest(command(LocalDate.of(2026, 11, 5)));
+
+        assertInstanceOf(IngestResult.Saved.class, result);
+    }
+
+    @Test
+    @DisplayName("ingest should treat the same vacancy under a different permalink as duplicate")
+    void ingest_whenSameVacancyDifferentPermalink_shouldReturnDuplicateWithoutSaving() {
+        stubUntilClassification("rh@acme.com.br", DEV_JUNIOR_REPLY);
+        when(jobRepository.findByContactEmail("rh@acme.com.br"))
+                .thenReturn(List.of(existingJob("desenvolvedor junior", LocalDate.of(2026, 10, 20))));
+
+        var result = service.ingest(command(LocalDate.of(2026, 11, 5)));
+
+        assertInstanceOf(IngestResult.Duplicate.class, result);
+        verify(jobRepository, never()).save(any(Job.class));
+    }
+
+    @Test
+    @DisplayName("ingest should save the same title when the contact e-mail differs")
+    void ingest_whenSameTitleDifferentContactEmail_shouldSave() {
+        stubUntilClassification("outra@acme.com.br", DEV_JUNIOR_REPLY);
+        stubSaveEcho();
+
+        var result = service.ingest(command(LocalDate.of(2026, 11, 5)));
+
+        assertInstanceOf(IngestResult.Saved.class, result);
+    }
+
+    @Test
+    @DisplayName("ingest should save the same vacancy outside the 30-day window")
+    void ingest_whenSameVacancyOlderThan30Days_shouldSave() {
+        stubUntilClassification("rh@acme.com.br", DEV_JUNIOR_REPLY);
+        when(jobRepository.findByContactEmail("rh@acme.com.br"))
+                .thenReturn(List.of(existingJob("desenvolvedor junior", LocalDate.of(2026, 9, 20))));
+        stubSaveEcho();
+
+        var result = service.ingest(command(LocalDate.of(2026, 11, 5)));
+
+        assertInstanceOf(IngestResult.Saved.class, result);
     }
 }
