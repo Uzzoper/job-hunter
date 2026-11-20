@@ -55,6 +55,8 @@ public class JobIngestController {
             case IngestResult.NoContact ignored -> ResponseEntity.ok((Object) Map.of("ignored", "no-contact"));
             case IngestResult.Duplicate ignored -> ResponseEntity.ok((Object) Map.of("ignored", "duplicate"));
             case IngestResult.NotJob ignored -> ResponseEntity.ok((Object) Map.of("ignored", "not-a-job"));
+            case IngestResult.NotRelevant ignored ->
+                    ResponseEntity.ok((Object) Map.of("ignored", "not-relevant"));
             case IngestResult.InvalidExtraction ignored ->
                     ResponseEntity.ok((Object) Map.of("ignored", "invalid-extraction"));
         };

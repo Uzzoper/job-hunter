@@ -10,7 +10,7 @@ import com.juanperuzzo.job_hunter.domain.model.Job;
  */
 public sealed interface IngestResult
         permits IngestResult.NoContact, IngestResult.Duplicate, IngestResult.NotJob,
-        IngestResult.InvalidExtraction, IngestResult.Saved {
+        IngestResult.NotRelevant, IngestResult.InvalidExtraction, IngestResult.Saved {
 
     /** Post text carries no contact e-mail. */
     record NoContact() implements IngestResult {
@@ -22,6 +22,14 @@ public sealed interface IngestResult
 
     /** AI classified the post as not-a-vacancy. */
     record NotJob() implements IngestResult {
+    }
+
+    /**
+     * Vacancy, but outside the channel's target: not a software-development role
+     * or above junior level (amendment 2026-11-20). Ambiguous posts are saved —
+     * only an explicit non-dev role or an explicit pleno/senior level rejects.
+     */
+    record NotRelevant() implements IngestResult {
     }
 
     /** AI output unusable (blank or over-cap title/company). */

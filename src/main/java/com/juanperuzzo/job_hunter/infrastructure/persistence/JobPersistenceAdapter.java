@@ -89,6 +89,13 @@ public class JobPersistenceAdapter implements JobRepository {
                 .toList();
     }
 
+    @Override
+    public List<Job> findByContactEmail(String contactEmail) {
+        return jpaRepository.findByContactEmail(contactEmail).stream()
+                .map(this::toDomain)
+                .toList();
+    }
+
     private JobEntity toEntity(Job job) {
         return new JobEntity(
                 job.id(),

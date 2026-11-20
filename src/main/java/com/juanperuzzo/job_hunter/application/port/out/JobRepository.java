@@ -18,6 +18,15 @@ public interface JobRepository {
 
     List<Job> findAllByContactEmailIsNull();
 
+    /**
+     * Rows whose contact e-mail equals {@code contactEmail}, case-insensitively.
+     * Used by the LinkedIn-post ingest for vacancy-level dedupe (amendment
+     * 2026-11-20): the same opening re-shared by another author gets a new
+     * permalink, so URL identity alone cannot see the duplicate. The 30-day
+     * window is applied by the caller, not here.
+     */
+    List<Job> findByContactEmail(String contactEmail);
+
     Optional<Job> findById(Long id);
 
     /**
