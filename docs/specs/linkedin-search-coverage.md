@@ -112,24 +112,45 @@ preferences are set (`DefaultKeywordResolver` returns the stored list).
 
 Frozen list: _to be captured before the after-run_.
 
-Baseline — 2026-11-22, deployed build, 10 runtime keywords, `max-jobs: 60`,
-`past_week`:
+### 6.1 Dev-only A/B (primary)
 
-| metric | baseline | after |
+Dev is the saturated track: most fetched URLs are already in the database, so
+`totalSaved` is near zero on both sides and cannot measure coverage. The metric
+is `totalFetched` — the client returns every unique job **after the per-keyword
+quota** and before URL dedupe (`isKnownUrl` only skips detail enrichment).
+
+Run the same four dev terms on the old build (baseline, captured before the
+deploy) and on the new build:
+
+| metric | dev-only before | dev-only after |
+|---|---|---|
+| keywords | 4 dev terms (frozen) | same |
+| `totalFetched` (post-quota) | _pending_ | _pending_ |
+| `totalSaved` (new only) | _pending_ | _pending_ |
+| per-keyword runs (status) | _pending_ | _pending_ |
+
+Expected mechanics: 4 keywords × 6 derived quota = 24 max before; 4 × 25 = 100
+max after (bounded by URL overlap and the ~60-card guest page).
+
+### 6.2 Mixed run (data track, secondary)
+
+The 2026-11-22 probe (10 mixed keywords, `max-jobs: 60`, `past_week`) is the
+reference for the data track, not for dev:
+
+| metric | mixed baseline | mixed after |
 |---|---|---|
 | `totalFetched` (post-quota) | 48 | _pending_ |
 | `totalSaved` (new URLs) | 19 | _pending_ |
 | data-track titles in the DB | 9 | _pending_ |
 | data-track junior + remote + BR (page-checked) | 1 (`6828`) | _pending_ |
-| per-keyword run counts (status endpoint) | not recorded | _pending_ |
 
 Protocol after the build is deployed:
 
-1. Set the same runtime keywords (4 dev + 6 data) and run one async LinkedIn
-   fetch; record `totalFetched`, `totalSaved`, per-keyword runs.
+1. Set the frozen mixed keywords and run one async LinkedIn fetch; record
+   `totalFetched`, `totalSaved`, per-keyword runs.
 2. List every new data-track title, page-check remote + Brazil + junior, and
    count the eligible ones.
-3. Diff against the baseline table above and record the result here.
+3. Diff against the table above and record the result here.
 
 Caveats:
 
@@ -138,7 +159,10 @@ Caveats:
   URLs, so judge coverage by `totalFetched` and new titles, not by `saved`.
 - Per-keyword `jobsFound` is the raw batch size, not the kept per-keyword
   limit; the kept count is only observable through `totalFetched`.
+- The dev-only baseline run is itself a LinkedIn fetch: it may save a handful
+  of new dev URLs and slightly reduce the after-run's `saved`. That is why
+  `saved` is not the primary dev metric.
 
 Decision gate: if fetched volume does not grow materially (roughly 2x or more)
-or the extra cards add no junior+remote+BR data supply, revisit the guest
+or the extra cards add no junior+remote+BR supply, revisit the guest
 ceiling assumption before tuning anything else.
