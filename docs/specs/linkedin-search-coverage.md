@@ -96,3 +96,40 @@ runtime preferences still win (`DefaultKeywordResolver`).
 - Changing the microservice pagination (`MAX_PAGINATION_ROUNDS`) or the guest
   visibility ceiling (~60 cards).
 - Keyword mining or automatic term expansion.
+
+## 6. Validation (post-merge, live)
+
+Unit tests prove the cap mechanics; they cannot prove that the supply grows.
+The live comparison must be captured on the deployed build, with the same
+runtime keyword list on both sides.
+
+Baseline — 2026-11-22, deployed build, 10 runtime keywords, `max-jobs: 60`,
+`past_week`:
+
+| metric | baseline | after |
+|---|---|---|
+| `totalFetched` (post-quota) | 48 | _pending_ |
+| `totalSaved` (new URLs) | 19 | _pending_ |
+| data-track titles in the DB | 9 | _pending_ |
+| data-track junior + remote + BR (page-checked) | 1 (`6828`) | _pending_ |
+| per-keyword run counts (status endpoint) | not recorded | _pending_ |
+
+Protocol after the build is deployed:
+
+1. Set the same runtime keywords (4 dev + 6 data) and run one async LinkedIn
+   fetch; record `totalFetched`, `totalSaved`, per-keyword runs.
+2. List every new data-track title, page-check remote + Brazil + junior, and
+   count the eligible ones.
+3. Diff against the baseline table above and record the result here.
+
+Caveats:
+
+- LinkedIn supply drifts daily; the comparison is directional, not controlled.
+- `totalSaved` is biased by URL dedupe — a second run only saves genuinely new
+  URLs, so judge coverage by `totalFetched` and new titles, not by `saved`.
+- Per-keyword `jobsFound` is the raw batch size, not the kept per-keyword
+  limit; the kept count is only observable through `totalFetched`.
+
+Decision gate: if fetched volume does not grow materially (roughly 2x or more)
+or the extra cards add no junior+remote+BR data supply, revisit the guest
+ceiling assumption before tuning anything else.
