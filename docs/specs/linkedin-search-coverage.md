@@ -125,9 +125,15 @@ deploy) and on the new build:
 | metric | dev-only before | dev-only after |
 |---|---|---|
 | keywords | 4 dev terms (frozen) | same |
-| `totalFetched` (post-quota) | _pending_ | _pending_ |
-| `totalSaved` (new only) | _pending_ | _pending_ |
+| `fetched` (post-quota) | _pending_ | _pending_ |
+| `saved` (new only) | _pending_ | _pending_ |
+| `detailSkipped` (already-known overlap) | _pending_ | _pending_ |
 | per-keyword runs (status) | _pending_ | _pending_ |
+
+`detailSkipped` is the status endpoint's own measure of the dedupe overlap: it
+counts fetched cards where detail enrichment was skipped (already-known URL, or
+no `jobId`). On the dev track it is expected to be close to `fetched`; that is
+the evidence that low `saved` means saturation, not missing supply.
 
 Expected mechanics: 4 keywords × 6 derived quota = 24 max before; 4 × 25 = 100
 max after (bounded by URL overlap and the ~60-card guest page).
