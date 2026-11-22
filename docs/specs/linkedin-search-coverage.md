@@ -16,11 +16,13 @@ Measured 2026-11-22, live probe with 10 runtime keywords (4 dev + 6 data) and
 `max-jobs: 60`:
 
 - per-keyword quota = `ceil(60 / 10)` = **6**;
-- LinkedIn's guest search page returns ~25 cards per query, and the scraper
-  service paginates up to 6 rounds (`linkedin-scraper/src/scrapers/search.ts`,
-  `MAX_PAGINATION_ROUNDS`);
-- the run observed **48 fetched / 19 saved**, which matches 10 keywords × ~5–6
-  useful unique cards.
+- the scraper service paginates up to 6 rounds
+  (`linkedin-scraper/src/scrapers/search.ts`, `MAX_PAGINATION_ROUNDS`). Measured
+  on 2026-11-22 (§6.1): it returned **120** cards for `desenvolvedor junior`
+  and **109** for `estagio desenvolvedor`. The earlier "~25 cards per query"
+  figure was an underestimate — the quota discarded even more than assumed;
+- the run observed **48 fetched / 19 saved**, i.e. below the 60 the quota allows,
+  because only part of the 10 terms produced cards.
 
 The fair-share formula fixed a real defect (the first fat keyword starving the
 rest), but it couples the per-keyword budget to the number of keywords: every
@@ -94,7 +96,8 @@ runtime preferences still win (`DefaultKeywordResolver`).
 - Logged-in LinkedIn sessions and native `f_E`/`f_WT` facets — still unverified
   on the guest page; out of scope.
 - Changing the microservice pagination (`MAX_PAGINATION_ROUNDS`) or the guest
-  visibility ceiling (~60 cards).
+  visibility ceiling — measured at least 120 cards per productive search
+  (2026-11-22), higher than the ~60 previously assumed.
 - Keyword mining or automatic term expansion.
 
 ## 6. Validation (post-merge, live)
@@ -104,39 +107,73 @@ The live comparison must be captured on the deployed build, with the same
 runtime keyword list on both sides.
 
 **Frozen keyword list.** The comparison is only valid with identical terms on
-both sides. The baseline run used 10 runtime terms (4 dev + 6 data); the exact
-strings live in the bot profile (`GET /api/profile` →
-`preferences.keywords`) and MUST be recorded here before the after-run.
-`application.yaml`'s default list is NOT what the bot uses while runtime
-preferences are set (`DefaultKeywordResolver` returns the stored list).
+both sides. `application.yaml`'s default list is NOT what the bot uses while
+runtime preferences are set (`DefaultKeywordResolver` returns the stored list),
+so the lists were read from the bot profile on 2026-11-22 and are frozen here:
 
-Frozen list: _to be captured before the after-run_.
+Mixed list, 10 terms (restored state, used by the §6.2 baseline):
+
+```
+desenvolvedor junior, dev junior, programador junior, estagio desenvolvedor,
+analista de dados junior, analista de bi, data analyst, power bi, sql,
+business intelligence
+```
+
+Dev-only list, 4 terms (used by the §6.1 baseline):
+
+```
+desenvolvedor junior, dev junior, programador junior, estagio desenvolvedor
+```
 
 ### 6.1 Dev-only A/B (primary)
 
 Dev is the saturated track: most fetched URLs are already in the database, so
-`totalSaved` is near zero on both sides and cannot measure coverage. The metric
-is `totalFetched` — the client returns every unique job **after the per-keyword
-quota** and before URL dedupe (`isKnownUrl` only skips detail enrichment).
+`saved` is near zero on both sides and cannot measure coverage. The metric is
+`fetched` — the client returns every unique job **after the per-keyword quota**
+and before URL dedupe (`isKnownUrl` only skips detail enrichment) — together
+with the per-keyword `jobsFound` reported by the service.
 
-Run the same four dev terms on the old build (baseline, captured before the
-deploy) and on the new build:
+Baseline captured on the deployed build (`main`, `max-jobs: 60`, `past_week`),
+2026-11-22 22:59:57Z → 23:07:09Z (7m12s):
 
 | metric | dev-only before | dev-only after |
 |---|---|---|
-| keywords | 4 dev terms (frozen) | same |
-| `fetched` (post-quota) | _pending_ | _pending_ |
-| `saved` (new only) | _pending_ | _pending_ |
-| `detailSkipped` (already-known overlap) | _pending_ | _pending_ |
-| per-keyword runs (status) | _pending_ | _pending_ |
+| keywords | 4 (frozen above) | same |
+| raw cards returned by the service | 229 | _pending_ |
+| `fetched` (post-quota) | **30** | _pending_ |
+| `saved` (new only) | **0** | _pending_ |
+| `detailSkipped` | 0 (structural, see below) | — |
 
-`detailSkipped` is the status endpoint's own measure of the dedupe overlap: it
-counts fetched cards where detail enrichment was skipped (already-known URL, or
-no `jobId`). On the dev track it is expected to be close to `fetched`; that is
-the evidence that low `saved` means saturation, not missing supply.
+Per-keyword baseline:
 
-Expected mechanics: 4 keywords × 6 derived quota = 24 max before; 4 × 25 = 100
-max after (bounded by URL overlap and the ~60-card guest page).
+| term | status | `jobsFound` | kept (quota 15) |
+|---|---|---|---|
+| `desenvolvedor junior` | ok | 120 | 15 |
+| `dev junior` | ok | 0 | 0 |
+| `programador junior` | ok | 0 | 0 |
+| `estagio desenvolvedor` | ok | 109 | 15 |
+
+Mechanics: derived quota = `ceil(60 / 4)` = **15** per keyword; only two of the
+four terms produced cards, so `fetched = 15 + 15 = 30`. The service offered
+**229** cards and the client kept **30** — 87% discarded by the quota.
+
+Expected after: two productive terms × `per-keyword-limit: 25` = **50** max, not
+100. The 2× gate was calibrated before this distribution was known; for the
+dev-only A/B the target is approaching 50.
+
+`detailSkipped` is not usable for LinkedIn and the status endpoint always
+reports 0: only `InfoJobsProvider` sets the `detailSkipped` metadata flag;
+`LinkedInScraperClient` skips enrichment for already-known URLs silently
+(line 215 of the client). So `saved: 0` cannot distinguish "all URLs already
+known" from "fetched but rejected downstream". It does not affect the A/B,
+which is measured by `fetched`; closing that instrumentation gap is a separate
+follow-up, not a blocker.
+
+Also measured: `dev junior` and `programador junior` return **0** cards. Two of
+the four frozen terms are dead weight. Do not swap them during the A/B (one
+variable at a time); replacing them with terms that resolve
+(`desenvolvedor backend junior`, `desenvolvedor java junior`) is a follow-up
+after the comparison.
 
 ### 6.2 Mixed run (data track, secondary)
 
@@ -145,15 +182,15 @@ reference for the data track, not for dev:
 
 | metric | mixed baseline | mixed after |
 |---|---|---|
-| `totalFetched` (post-quota) | 48 | _pending_ |
-| `totalSaved` (new URLs) | 19 | _pending_ |
+| `fetched` (post-quota) | 48 | _pending_ |
+| `saved` (new URLs) | 19 | _pending_ |
 | data-track titles in the DB | 9 | _pending_ |
 | data-track junior + remote + BR (page-checked) | 1 (`6828`) | _pending_ |
 
 Protocol after the build is deployed:
 
 1. Set the frozen mixed keywords and run one async LinkedIn fetch; record
-   `totalFetched`, `totalSaved`, per-keyword runs.
+   `fetched`, `saved`, per-keyword runs.
 2. List every new data-track title, page-check remote + Brazil + junior, and
    count the eligible ones.
 3. Diff against the table above and record the result here.
@@ -161,14 +198,22 @@ Protocol after the build is deployed:
 Caveats:
 
 - LinkedIn supply drifts daily; the comparison is directional, not controlled.
-- `totalSaved` is biased by URL dedupe — a second run only saves genuinely new
-  URLs, so judge coverage by `totalFetched` and new titles, not by `saved`.
+- `saved` is biased by URL dedupe — a second run only saves genuinely new
+  URLs, so judge coverage by `fetched` and new titles, not by `saved`.
 - Per-keyword `jobsFound` is the raw batch size, not the kept per-keyword
-  limit; the kept count is only observable through `totalFetched`.
+  limit; the kept count is only observable through `fetched`.
 - The dev-only baseline run is itself a LinkedIn fetch: it may save a handful
   of new dev URLs and slightly reduce the after-run's `saved`. That is why
   `saved` is not the primary dev metric.
 
-Decision gate: if fetched volume does not grow materially (roughly 2x or more)
-or the extra cards add no junior+remote+BR supply, revisit the guest
-ceiling assumption before tuning anything else.
+Decision gate:
+
+- Dev-only A/B: the after-run must approach **50** `fetched` (two productive
+  terms × 25). A value near 30 means the new limit is not reaching the client.
+- Mixed run: with 10 terms and `max-jobs: 150`, the ceiling is 150; a value well
+  below the count of productive terms × 25 means something else is capping.
+- In both cases, if the extra cards add no junior + remote + BR supply, revisit
+  the search-side assumptions before tuning anything else. Raising
+  `per-keyword-limit` above 25 is the obvious next lever (the service returns
+  ~120 cards for a productive term), but only after this A/B — one variable at
+  a time.
