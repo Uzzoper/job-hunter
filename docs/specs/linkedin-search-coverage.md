@@ -1,0 +1,91 @@
+# LinkedIn search coverage — per-keyword budget and 30-day window
+
+Status: **proposed** · Issue: #164 · Branch: `feat/linkedin-search-coverage`
+
+## 1. Context
+
+`LinkedInScraperClient` runs one microservice search per configured keyword and
+merges results by URL up to `scraper.linkedin.max-jobs`. Since the fair-share
+change (P1-4), each keyword is capped at
+
+```
+perKeywordQuota = ceil(max-jobs / keywords.size())
+```
+
+Measured 2026-11-22, live probe with 10 runtime keywords (4 dev + 6 data) and
+`max-jobs: 60`:
+
+- per-keyword quota = `ceil(60 / 10)` = **6**;
+- LinkedIn's guest search page returns ~25 cards per query, and the scraper
+  service paginates up to 6 rounds (`linkedin-scraper/src/scrapers/search.ts`,
+  `MAX_PAGINATION_ROUNDS`);
+- the run observed **48 fetched / 19 saved**, which matches 10 keywords × ~5–6
+  useful unique cards.
+
+The fair-share formula fixed a real defect (the first fat keyword starving the
+rest), but it couples the per-keyword budget to the number of keywords: every
+term added to the profile shrinks every other term's coverage. That is
+backwards for multi-track sourcing (dev + data), where more terms should mean
+more coverage, not less.
+
+Second mismatch: `scraper.linkedin.time-range` is `past_week`, while the funnel
+policy and the normalizer both accept 30 days (`scraper.normalizer.max-age-days:
+90`). LinkedIn's native `f_TPR=r2592000` is a verified code (Amendment A of
+`linkedin-search-facets.md`), so the search is discarding valid 8–30 day
+postings before the funnel ever sees them.
+
+## 2. Problem
+
+Two independent settings make the LinkedIn search shallower than the source
+
+- **Per-keyword quota shrinks with keyword count.** 10 keywords → 6 jobs each,
+  regardless of how many the query returned.
+- **Time window is tighter than the policy.** `past_week` drops listings the
+  funnel would accept.
+
+Facets are not part of the problem: `f_E` (seniority) and `f_WT` (work type) are
+not honored by the guest SSR page and are documented as pass-through. Seniority
+and work model remain downstream filters.
+
+## 3. Proposal
+
+1. **Decouple the per-keyword budget from the keyword count.** Add
+   `scraper.linkedin.per-keyword-limit` (default 25). The loop keeps at most
+   that many unique jobs per keyword. `0` or absent keeps the derived
+   `ceil(max-jobs / keywords.size())` behavior, so existing deployments and
+   tests remain valid.
+2. **Raise the global cap.** `max-jobs: 150`, so 10 keywords × 25 can actually
+   contribute (subject to URL overlap). The global cap and the early stop are
+   unchanged.
+3. **Align the window with the policy.** `time-range: past_month`
+   (`f_TPR=r2592000`), matching the 30-day funnel rule; the normalizer still
+   drops anything older than its own `max-age-days`.
+4. **Keyword guidance (profile, not code).** Data terms should be Portuguese
+   compounds (`analista de dados junior`, `analista de bi junior`) plus
+   `data analyst` / `bi analyst`; bare `sql` is dropped because it matches the
+   description of every dev listing and pollutes the keyword gate.
+
+The documented default keyword list in `application.yaml` mirrors that guidance;
+runtime preferences still win (`DefaultKeywordResolver`).
+
+## 4. Acceptance criteria
+
+- [ ] With 10 keywords, `per-keyword-limit: 25` and `max-jobs: 150`, the first
+      keyword can contribute up to 25 jobs (not `ceil(150/10) = 15`).
+- [ ] The merged total never exceeds `max-jobs`; the loop still stops querying
+      once the cap is reached.
+- [ ] A keyword returning fewer jobs than its limit contributes all of them.
+- [ ] URL dedupe across keywords is unchanged.
+- [ ] `per-keyword-limit` absent or `0` reproduces the derived quota.
+- [ ] `LinkedInScraperClientTest` covers the count-independence case (RED first)
+      and all previous quota scenarios.
+- [ ] `application.yaml` documents the new property, the 30-day window and the
+      updated keyword guidance.
+
+## 5. Non-goals
+
+- Logged-in LinkedIn sessions and native `f_E`/`f_WT` facets — still unverified
+  on the guest page; out of scope.
+- Changing the microservice pagination (`MAX_PAGINATION_ROUNDS`) or the guest
+  visibility ceiling (~60 cards).
+- Keyword mining or automatic term expansion.
