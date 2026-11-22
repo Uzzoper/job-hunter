@@ -1,6 +1,6 @@
 # LinkedIn search coverage — per-keyword budget and 30-day window
 
-Status: **proposed** · Issue: #164 · Branch: `feat/linkedin-search-coverage`
+Status: **in review** · Issue: #165 · PR: #164 · Branch: `feat/linkedin-search-coverage`
 
 ## 1. Context
 
@@ -33,6 +33,13 @@ policy and the normalizer both accept 30 days (`scraper.normalizer.max-age-days:
 90`). LinkedIn's native `f_TPR=r2592000` is a verified code (Amendment A of
 `linkedin-search-facets.md`), so the search is discarding valid 8–30 day
 postings before the funnel ever sees them.
+
+One assumption checked and corrected: the LinkedIn normalizer is built with
+`scraper.linkedin.keywords` as its constructor default, but
+`FetchSourceJobsService` passes the resolved runtime list to
+`JobNormalizer.normalize(raw, keywordOverride)`. The keyword gate therefore
+sees the runtime terms, not the dev-only yaml list — it was not dropping data
+listings. The per-keyword cap was the coverage bottleneck.
 
 ## 2. Problem
 
