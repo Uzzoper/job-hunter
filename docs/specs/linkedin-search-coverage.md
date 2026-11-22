@@ -69,10 +69,18 @@ and work model remain downstream filters.
 3. **Align the window with the policy.** `time-range: past_month`
    (`f_TPR=r2592000`), matching the 30-day funnel rule; the normalizer still
    drops anything older than its own `max-age-days`.
-4. **Keyword guidance (profile, not code).** Data terms should be Portuguese
-   compounds (`analista de dados junior`, `analista de bi junior`) plus
-   `data analyst` / `bi analyst`; bare `sql` is dropped because it matches the
-   description of every dev listing and pollutes the keyword gate.
+4. **Keyword guidance (profile, not code).** Junior floor: internship terms are
+   out (owner does not apply to estágio, except a big-company one, which the
+   search does not target) — `estagio desenvolvedor` was dropped from the
+   default list. Dev terms are verified compounds (`desenvolvedor junior`,
+   `desenvolvedor backend junior`, `desenvolvedor java junior`,
+   `desenvolvedor full stack junior`); dead terms that returned 0 cards
+   (`dev junior`, `programador junior`) were removed. Data terms should be
+   Portuguese compounds (`analista de dados junior`, `analista de bi junior`)
+   plus `data analyst` / `bi analyst`; bare `sql` is dropped because it
+   matches the description of every dev listing and pollutes the keyword gate.
+   The same junior floor was applied to the Gupy and InfoJobs keyword lists
+   (removed `estágio`).
 
 The documented default keyword list in `application.yaml` mirrors that guidance;
 runtime preferences still win (`DefaultKeywordResolver`).
@@ -111,7 +119,8 @@ both sides. `application.yaml`'s default list is NOT what the bot uses while
 runtime preferences are set (`DefaultKeywordResolver` returns the stored list),
 so the lists were read from the bot profile on 2026-11-22 and are frozen here:
 
-Mixed list, 10 terms (restored state, used by the §6.2 baseline):
+Mixed list, 9 terms (restored state, used by the §6.2 baseline — superseded
+as of the junior-floor decision; new list in §6.2):
 
 ```
 desenvolvedor junior, dev junior, programador junior, estagio desenvolvedor,
@@ -119,7 +128,8 @@ analista de dados junior, analista de bi, data analyst, power bi, sql,
 business intelligence
 ```
 
-Dev-only list, 4 terms (used by the §6.1 baseline):
+Dev-only list, 4 terms (used by the §6.1 baseline — superseded; new list in
+§6.1):
 
 ```
 desenvolvedor junior, dev junior, programador junior, estagio desenvolvedor
@@ -127,14 +137,28 @@ desenvolvedor junior, dev junior, programador junior, estagio desenvolvedor
 
 ### 6.1 Dev-only A/B (primary)
 
+**Baseline superseded.** The numbers below were captured with `estagio
+desenvolvedor` in the list, which is out of policy as of the junior-floor
+decision (2026-11-22). Re-capture on `main` with the new 4-term list before
+the deploy:
+
+```
+desenvolvedor junior, desenvolvedor backend junior,
+desenvolvedor java junior, desenvolvedor full stack junior
+```
+
+Until then, the old baseline is kept for reference but is not comparable to the
+after-run.
+
 Dev is the saturated track: most fetched URLs are already in the database, so
 `saved` is near zero on both sides and cannot measure coverage. The metric is
 `fetched` — the client returns every unique job **after the per-keyword quota**
 and before URL dedupe (`isKnownUrl` only skips detail enrichment) — together
 with the per-keyword `jobsFound` reported by the service.
 
-Baseline captured on the deployed build (`main`, `max-jobs: 60`, `past_week`),
-2026-11-22 22:59:57Z → 23:07:09Z (7m12s):
+Historical baseline captured on the deployed build (`main`, `max-jobs: 60`,
+`past_week`), 2026-11-22 22:59:57Z → 23:07:09Z (7m12s) — **superseded list**:
+
 
 | metric | dev-only before | dev-only after |
 |---|---|---|
@@ -177,8 +201,18 @@ after the comparison.
 
 ### 6.2 Mixed run (data track, secondary)
 
-The 2026-11-22 probe (10 mixed keywords, `max-jobs: 60`, `past_week`) is the
-reference for the data track, not for dev:
+**Baseline superseded (junior floor).** The 48/19 numbers below were captured
+with `estagio desenvolvedor` in the list. Re-capture with the new mixed list:
+
+```
+desenvolvedor junior, desenvolvedor backend junior,
+desenvolvedor java junior, desenvolvedor full stack junior,
+analista de dados junior, analista de bi junior,
+data analyst, bi analyst, power bi
+```
+
+The 2026-11-22 probe (10 mixed keywords, `max-jobs: 60`, `past_week`) is kept
+for reference only (previous list):
 
 | metric | mixed baseline | mixed after |
 |---|---|---|
