@@ -148,7 +148,15 @@ public class LinkedInScraperClient implements ExtractionStrategy {
             log.warn("{}: no configured keywords, returning no jobs", PROVIDER_ID);
             return List.of();
         }
-        var perKeywordQuota = (int) Math.ceil((double) properties.maxJobs() / effectiveKeywords.size());
+        var derivedQuota = (int) Math.ceil((double) properties.maxJobs() / effectiveKeywords.size());
+        // Coverage fix (linkedin-search-coverage.md): deriving the quota from the
+        // keyword count made every added term shrink every other term's coverage
+        // (10 keywords x 60 total = 6 each, while the guest page returns ~25 per
+        // query). An explicit per-keyword limit decouples the two; 0 or absent
+        // keeps the derived quota for backwards compatibility.
+        var perKeywordQuota = properties.perKeywordLimit() > 0
+                ? properties.perKeywordLimit()
+                : derivedQuota;
         var uniqueJobs = new LinkedHashMap<String, RawJob>();
         for (var keyword : effectiveKeywords) {
             var startedNanos = System.nanoTime();

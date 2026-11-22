@@ -118,10 +118,14 @@ scraper:
     connect-timeout-seconds: 5
     base-url: https://www.linkedin.com
     # Order matters: the merge loop fills max-jobs in list order, each term
-    # contributing up to its per-keyword quota (ceil(max-jobs / keywords.size())),
-    # so junior compounds come first (P1-3 — a broad "desenvolvedor" first would
-    # spend its quota share on senior-heavy results before junior terms contribute).
-    keywords: "desenvolvedor junior,dev junior,programador junior,estagio desenvolvedor"
+    # contributing up to per-keyword-limit jobs, so junior compounds come first
+    # (P1-3 — a broad "desenvolvedor" first would spend its share on senior-heavy
+    # results before junior terms contribute).
+    # Multi-track guidance (linkedin-search-coverage.md): data terms are PT
+    # compounds + EN analyst role names. Bare "sql" is deliberately absent — it
+    # matches the description of nearly every dev listing and pollutes the gate.
+    # Runtime preferences still override this list (DefaultKeywordResolver).
+    keywords: "desenvolvedor junior,dev junior,programador junior,estagio desenvolvedor,analista de dados junior,analista de dados júnior,analista de bi junior,data analyst,bi analyst,power bi"
     locations: "Brazil,São Paulo,Rio de Janeiro,Curitiba,Remote"
     # Single LinkedIn geo ID (Brazil). Verified live: repeated geoIds return an
     # empty search page, and the other IDs were not Brazil (Peru/UK/invalid).
@@ -134,8 +138,20 @@ scraper:
     # is verified; f_WT/f_E are NOT honored by the guest SSR page and pass through
     # with a log.warn until a logged-in session verifies them).
     work-type: "remote,hybrid"
-    time-range: "past_week"
-    max-jobs: 60
+    # 30 days (f_TPR=r2592000) matches the funnel policy and stays inside the
+    # normalizer window (scraper.normalizer.max-age-days: 90). past_week used to
+    # discard valid 8-30 day postings before the funnel saw them.
+    time-range: "past_month"
+    # Global merge cap. With per-keyword-limit below, 10 keywords can contribute
+    # up to 250; URL overlap and this cap bound the result. The async run has no
+    # adapter deadline, so the larger fan-out is safe (issue #116).
+    max-jobs: 150
+    # Per-keyword budget, independent of the keyword count
+    # (linkedin-search-coverage.md): the old ceil(max-jobs / keywords.size())
+    # shrank every term's coverage as keywords were added (10 terms -> 6 each,
+    # while the guest page returns ~25 per query). 0 or absent keeps the derived
+    # quota for backwards compatibility.
+    per-keyword-limit: 25
     timeout-seconds: 30          # detail/enrichment read timeout (deliberate pacing, unchanged)
     search-timeout-seconds: 240  # heavy paginated /api/jobs search read timeout — in-run searches take 143-180.4s back-to-back (issue #123)
     detail-fetch-delay-millis: 500

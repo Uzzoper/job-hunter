@@ -12,6 +12,17 @@ public record LinkedInScraperProperties(
     int timeoutSeconds,
     int connectTimeoutSeconds,
     int maxJobs,
+    /**
+     * Per-keyword budget for the search loop
+     * ({@code scraper.linkedin.per-keyword-limit}, default 25).
+     *
+     * <p>Decoupled from {@code max-jobs} on purpose: deriving the budget from
+     * {@code ceil(max-jobs / keywords.size())} made every added keyword shrink
+     * every other term's coverage (10 keywords × 60 total = 6 each, while the
+     * guest search page returns ~25 per query). {@code 0} or absent keeps the
+     * derived quota for backwards compatibility.
+     */
+    int perKeywordLimit,
     String baseUrl,
     List<String> keywords,
     String locations,
