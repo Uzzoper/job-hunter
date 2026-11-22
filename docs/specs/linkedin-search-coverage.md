@@ -103,6 +103,15 @@ Unit tests prove the cap mechanics; they cannot prove that the supply grows.
 The live comparison must be captured on the deployed build, with the same
 runtime keyword list on both sides.
 
+**Frozen keyword list.** The comparison is only valid with identical terms on
+both sides. The baseline run used 10 runtime terms (4 dev + 6 data); the exact
+strings live in the bot profile (`GET /api/profile` →
+`preferences.keywords`) and MUST be recorded here before the after-run.
+`application.yaml`'s default list is NOT what the bot uses while runtime
+preferences are set (`DefaultKeywordResolver` returns the stored list).
+
+Frozen list: _to be captured before the after-run_.
+
 Baseline — 2026-11-22, deployed build, 10 runtime keywords, `max-jobs: 60`,
 `past_week`:
 
