@@ -64,9 +64,10 @@ scraper:
     max-age-days: 90
   gupy:
     base-url: https://employability-portal.gupy.io
-    # 9-term include list — the single canonical keyword list for EVERY provider that
+    # 8-term include list (estágio dropped 2026-11-22: owner does not target
+    # internships). Single canonical keyword list for EVERY provider that
     # reads gupy keywords (REST, MCP, normalizers). CSV format (see ats.* binding note).
-    keywords: desenvolvedor,programador,estágio,junior,ti,tecnologia,dev,software,analista
+    keywords: desenvolvedor,programador,junior,ti,tecnologia,dev,software,analista
     limit: 100
     timeout-seconds: 10
     # gupy-detail-domains spec (#74): companyWebsite is resolved from one detail page
@@ -79,7 +80,7 @@ scraper:
     max-detail-domains: 100
   infojobs:
     base-url: https://www.infojobs.com.br
-    keywords: desenvolvedor,programador,estágio,junior,ti,tecnologia,dev,software,analista
+    keywords: desenvolvedor,programador,junior,ti,tecnologia,dev,software,analista
     max-pages: 3
     timeout-seconds: 10
     detail-concurrency: 2
@@ -118,10 +119,19 @@ scraper:
     connect-timeout-seconds: 5
     base-url: https://www.linkedin.com
     # Order matters: the merge loop fills max-jobs in list order, each term
-    # contributing up to its per-keyword quota (ceil(max-jobs / keywords.size())),
-    # so junior compounds come first (P1-3 — a broad "desenvolvedor" first would
-    # spend its quota share on senior-heavy results before junior terms contribute).
-    keywords: "desenvolvedor junior,dev junior,programador junior,estagio desenvolvedor"
+    # contributing up to per-keyword-limit jobs, so junior compounds come first
+    # (P1-3 — a broad "desenvolvedor" first would spend its share on senior-heavy
+    # results before junior terms contribute).
+    # Multi-track guidance (linkedin-search-coverage.md): data terms are PT
+    # compounds + EN analyst role names. Bare "sql" is deliberately absent — it
+    # matches the description of nearly every dev listing and pollutes the gate.
+    # Junior floor: internship terms are out (policy decision 2026-11-22 — owner
+    # does not apply to estágio, except a big-company one, which the search will
+    # not target). Dead terms removed: "dev junior", "programador junior" (0 cards
+    # measured 2026-11-22). Verified live (2026-11-22/23 baseline): desenvolvedor
+    # junior (120), desenvolvedor backend junior (120), desenvolvedor java junior
+    # (100), desenvolvedor full stack junior (0 — supply week-sensitive).
+    keywords: "desenvolvedor junior,desenvolvedor backend junior,desenvolvedor java junior,desenvolvedor full stack junior,analista de dados junior,analista de bi junior,data analyst,bi analyst,power bi"
     locations: "Brazil,São Paulo,Rio de Janeiro,Curitiba,Remote"
     # Single LinkedIn geo ID (Brazil). Verified live: repeated geoIds return an
     # empty search page, and the other IDs were not Brazil (Peru/UK/invalid).
@@ -134,8 +144,20 @@ scraper:
     # is verified; f_WT/f_E are NOT honored by the guest SSR page and pass through
     # with a log.warn until a logged-in session verifies them).
     work-type: "remote,hybrid"
-    time-range: "past_week"
-    max-jobs: 60
+    # 30 days (f_TPR=r2592000) matches the funnel policy and stays inside the
+    # normalizer window (scraper.normalizer.max-age-days: 90). past_week used to
+    # discard valid 8-30 day postings before the funnel saw them.
+    time-range: "past_month"
+    # Global merge cap. With per-keyword-limit below, 9 terms can contribute up to
+    # 225; URL overlap and this cap bound the result. The async run has no
+    # adapter deadline, so the larger fan-out is safe (issue #116).
+    max-jobs: 150
+    # Per-keyword budget, independent of the keyword count
+    # (linkedin-search-coverage.md): the old ceil(max-jobs / keywords.size())
+    # shrank every term's coverage as keywords were added (10 terms -> 6 each,
+    # while the guest search returns ~120 cards per productive term). 0 or absent
+    # keeps the derived quota for backwards compatibility.
+    per-keyword-limit: 25
     timeout-seconds: 30          # detail/enrichment read timeout (deliberate pacing, unchanged)
     search-timeout-seconds: 240  # heavy paginated /api/jobs search read timeout — in-run searches take 143-180.4s back-to-back (issue #123)
     detail-fetch-delay-millis: 500

@@ -133,13 +133,12 @@ public class LinkedInScraperClient implements ExtractionStrategy {
         // keywords are not searched needlessly. This keeps the keyword fan-out
         // inside the 180s adapter timeout budget without bumping the timeout
         // (deliberately unchanged, out of scope).
-        // P1-4 (production validation): with P1-2's cap-stop + max-jobs=60 the
-        // FIRST keyword alone filled the cap and later keywords never
-        // contributed. Each keyword now gets a fair share of maxJobs:
-        //     quota = ceil(maxJobs / keywords.size())
-        // and keeps at most quota jobs, merged in a single ordered pass (yaml
-        // order is junior-first, P1-3). A fat first keyword can no longer starve
-        // later ones, and the cap-stop break still bounds the total by maxJobs.
+        // Fair-share quota (P1-4): each keyword keeps at most perKeywordQuota jobs,
+        // merged in a single ordered pass (yaml order is junior-first, P1-3). The
+        // quota is perKeywordLimit when > 0, otherwise derived as
+        // ceil(maxJobs / keywords.size()) for backwards compatibility. A fat
+        // first keyword can no longer starve later ones, and the cap-stop break
+        // still bounds the total by maxJobs.
         var effectiveKeywords = keywords.stream()
                 .map(String::trim)
                 .filter(keyword -> !keyword.isBlank())
@@ -148,7 +147,15 @@ public class LinkedInScraperClient implements ExtractionStrategy {
             log.warn("{}: no configured keywords, returning no jobs", PROVIDER_ID);
             return List.of();
         }
-        var perKeywordQuota = (int) Math.ceil((double) properties.maxJobs() / effectiveKeywords.size());
+        var derivedQuota = (int) Math.ceil((double) properties.maxJobs() / effectiveKeywords.size());
+        // Coverage fix (linkedin-search-coverage.md): deriving the quota from the
+        // keyword count made every added term shrink every other term's coverage
+        // (10 keywords x 60 total = 6 each, while the guest page returns ~25 per
+        // query). An explicit per-keyword limit decouples the two; 0 or absent
+        // keeps the derived quota for backwards compatibility.
+        var perKeywordQuota = properties.perKeywordLimit() > 0
+                ? properties.perKeywordLimit()
+                : derivedQuota;
         var uniqueJobs = new LinkedHashMap<String, RawJob>();
         for (var keyword : effectiveKeywords) {
             var startedNanos = System.nanoTime();
@@ -192,10 +199,9 @@ public class LinkedInScraperClient implements ExtractionStrategy {
 
         var results = new ArrayList<>(uniqueJobs.values());
         // Limit to maxJobs BEFORE enrichment to avoid wasteful detail calls. The
-        // default maxJobs=60 matches the ~60-card guest-visibility ceiling LinkedIn
-        // shows before a login wall (see linkedin-scraper search.ts pagination
-        // note): this is a deliberate bound, kept until a logged-in session path
-        // is implemented, not a knob to raise blindly.
+        // guest search can return ~120 cards per productive term (measured
+        // 2026-11-22), so maxJobs bounds the merged result; the per-keyword
+        // quota (perKeywordLimit, default derived) is applied earlier in the loop.
         if (results.size() > properties.maxJobs()) {
             results = new ArrayList<>(results.subList(0, properties.maxJobs()));
         }

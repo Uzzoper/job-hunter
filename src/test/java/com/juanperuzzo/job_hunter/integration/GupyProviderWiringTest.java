@@ -35,7 +35,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class GupyProviderWiringTest {
 
     private static final List<String> SCRAPER_GUPY_KEYWORDS = List.of(
-            "desenvolvedor", "programador", "estágio", "junior", "ti", "tecnologia", "dev", "software", "analista");
+            "desenvolvedor", "programador", "junior", "ti", "tecnologia", "dev", "software", "analista");
 
     private ConfigurableApplicationContext context;
 
@@ -114,7 +114,7 @@ class GupyProviderWiringTest {
         var keywords = mcpKeywords((GupyMcpProvider) registryGupy);
 
         assertThat(keywords)
-                .as("the MCP provider must plan queries with the 9-term scraper.gupy.keywords list")
+                .as("the MCP provider must plan queries with the 8-term scraper.gupy.keywords list (estágio dropped per junior-floor policy)")
                 .containsExactlyElementsOf(SCRAPER_GUPY_KEYWORDS);
     }
 
