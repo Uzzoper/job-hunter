@@ -71,15 +71,21 @@ and work model remain downstream filters.
 4. **Keyword guidance (profile, not code).** Junior floor: internship terms are
    out (owner does not apply to estágio, except a big-company one, which the
    search does not target) — `estagio desenvolvedor` was dropped from the
-   default list. Dev terms are verified compounds (`desenvolvedor junior`,
-   `desenvolvedor backend junior`, `desenvolvedor java junior`,
-   `desenvolvedor full stack junior`); dead terms that returned 0 cards
-   (`dev junior`, `programador junior`) were removed. Data terms should be
-   Portuguese compounds (`analista de dados junior`, `analista de bi junior`)
-   plus `data analyst` / `bi analyst`; bare `sql` is dropped because it
-   matches the description of every dev listing and pollutes the keyword gate.
-   The same junior floor was applied to the Gupy and InfoJobs keyword lists
-   (removed `estágio`).
+   default list. Dev terms are verified compounds chosen to **minimise overlap**
+   (`desenvolvedor backend junior`, `desenvolvedor java junior`,
+   `desenvolvedor react junior`, `desenvolvedor mobile junior`); the broad
+   `desenvolvedor junior` is unreliable on `past_month` (0 cards in §6.3) and
+   `full stack junior` overlaps heavily with backend/frontend, so both were
+   dropped. Dead terms that returned 0 cards (`dev junior`, `programador junior`,
+   `desenvolvedor python junior`, `desenvolvedor node junior`) were removed.
+   Data terms should be Portuguese compounds (`analista de dados junior`,
+   `analista de bi junior`) plus `data analyst` / `bi analyst`; bare `sql` is
+   dropped because it matches the description of every dev listing and pollutes
+   the keyword gate. The same junior floor was applied to the Gupy and InfoJobs
+   keyword lists (removed `estágio`).
+   Overlap experiment (§6.3): distinct stack terms raised `fetched` 45 → 60
+   (+33%), confirming overlap was a bottleneck — but `saved` stayed 0, so the
+   dev track is saturated.
 
 The documented default keyword list in `application.yaml` mirrors that guidance;
 runtime preferences still win (`DefaultKeywordResolver`).
@@ -212,10 +218,45 @@ already known" from "fetched but rejected downstream". It does not affect the
 A/B, which is measured by `fetched`; closing that instrumentation gap is a
 separate follow-up, not a blocker.
 
-Historical (superseded) baseline — old list, kept for reference only:
-`desenvolvedor junior` (120), `dev junior` (0), `programador junior` (0),
-`estagio desenvolvedor` (109); fetched 30, saved 0, 2026-11-22 22:59:57Z →
-23:07:09Z. Not comparable to the after-run (different keyword set).
+### 6.3 Overlap experiment (follow-up)
+
+Hypothesis from §6.1: the 4 dev terms return largely the same jobs, so URL
+dedupe collapses raw cards into a small unique pool. Test: swap the
+overlapping set for 4 more distinct stack terms and measure `fetched`.
+
+List A (previous after-run, 2026-11-23 12:41:00Z → 12:50:32Z):
+`desenvolvedor junior` (0), `desenvolvedor backend junior` (110),
+`desenvolvedor java junior` (100), `desenvolvedor full stack junior` (60)
+→ raw 270, **fetched 45**, saved 2.
+
+List B (this run, 2026-11-23 13:38:48Z → 13:48:15Z):
+`desenvolvedor backend junior` (100), `desenvolvedor java junior` (90),
+`desenvolvedor react junior` (120), `desenvolvedor mobile junior` (100)
+→ raw 410, **fetched 60**, saved 0.
+
+| metric | List A | List B |
+|---|---|---|
+| raw cards | 270 | 410 |
+| `fetched` (post-quota) | 45 | **60** (+33%) |
+| `saved` (new only) | 2 | 0 |
+| terms with 0 cards | 1 (`desenvolvedor junior`) | 0 |
+
+**Result.** Distinct stack terms reduce overlap and raise `fetched` by ~33%
+(45 → 60). The hypothesis is confirmed: overlap was a real bottleneck, not
+just the quota. But `saved` stayed at 0 — every one of the 60 unique URLs is
+already in the database. So the dev track is **saturated**: more distinct terms
+improve coverage (`fetched`) but cannot produce new jobs (`saved`).
+
+Revised conclusion:
+- Overlap reduction works and is worth keeping (react + mobile are productive
+  and bring distinct URLs).
+- The dev track cannot yield new jobs regardless of terms — saturation, not
+  coverage, is the limit. More dev terms = more `fetched`, zero `saved`.
+- Value from here is in the **data track** (§6.2: 9 titles, 1 eligible so far)
+  and in **freshness** (30-day window catching new postings).
+- Recommended steady-state keyword list: the 4 distinct stack terms
+  (`backend junior`, `java junior`, `react junior`, `mobile junior`) — they
+  maximise `fetched` and avoid the dead broad term.
 
 ### 6.2 Mixed run (data track, secondary)
 
