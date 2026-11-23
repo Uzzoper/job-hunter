@@ -117,38 +117,36 @@ runtime keyword list on both sides.
 **Frozen keyword list.** The comparison is only valid with identical terms on
 both sides. `application.yaml`'s default list is NOT what the bot uses while
 runtime preferences are set (`DefaultKeywordResolver` returns the stored list),
-so the lists were read from the bot profile on 2026-11-22 and are frozen here:
+so the lists were read from the bot profile on 2026-11-22 and are frozen here.
+The canonical lists for the A/B are the **new** ones (junior floor); the old
+lists are kept below for reference only.
 
-Mixed list, 9 terms (restored state, used by the §6.2 baseline — superseded
-as of the junior-floor decision; new list in §6.2):
-
-```
-desenvolvedor junior, dev junior, programador junior, estagio desenvolvedor,
-analista de dados junior, analista de bi, data analyst, power bi, sql,
-business intelligence
-```
-
-Dev-only list, 4 terms (used by the §6.1 baseline — superseded; new list in
-§6.1):
-
-```
-desenvolvedor junior, dev junior, programador junior, estagio desenvolvedor
-```
-
-### 6.1 Dev-only A/B (primary)
-
-**Baseline superseded.** The numbers below were captured with `estagio
-desenvolvedor` in the list, which is out of policy as of the junior-floor
-decision (2026-11-22). Re-capture on `main` with the new 4-term list before
-the deploy:
+Dev-only list, 4 terms (canonical, used by the §6.1 baseline):
 
 ```
 desenvolvedor junior, desenvolvedor backend junior,
 desenvolvedor java junior, desenvolvedor full stack junior
 ```
 
-Until then, the old baseline is kept for reference but is not comparable to the
-after-run.
+Mixed list, 9 terms (canonical, used by the §6.2 baseline):
+
+```
+desenvolvedor junior, desenvolvedor backend junior,
+desenvolvedor java junior, desenvolvedor full stack junior,
+analista de dados junior, analista de bi junior,
+data analyst, bi analyst, power bi
+```
+
+Historical (superseded, pre-junior-floor):
+
+```
+Mixed: desenvolvedor junior, dev junior, programador junior, estagio desenvolvedor,
+       analista de dados junior, analista de bi, data analyst, power bi, sql,
+       business intelligence
+Dev:   desenvolvedor junior, dev junior, programador junior, estagio desenvolvedor
+```
+
+### 6.1 Dev-only A/B (primary)
 
 Dev is the saturated track: most fetched URLs are already in the database, so
 `saved` is near zero on both sides and cannot measure coverage. The metric is
@@ -156,15 +154,15 @@ Dev is the saturated track: most fetched URLs are already in the database, so
 and before URL dedupe (`isKnownUrl` only skips detail enrichment) — together
 with the per-keyword `jobsFound` reported by the service.
 
-Historical baseline captured on the deployed build (`main`, `max-jobs: 60`,
-`past_week`), 2026-11-22 22:59:57Z → 23:07:09Z (7m12s) — **superseded list**:
-
+**Canonical baseline — new list, captured on the deployed build (`main`,
+`max-jobs: 60`, `past_week`), 2026-11-22 23:57:30Z → 2026-11-23 00:07:23Z
+(9m53s):**
 
 | metric | dev-only before | dev-only after |
 |---|---|---|
-| keywords | 4 (frozen above) | same |
-| raw cards returned by the service | 229 | _pending_ |
-| `fetched` (post-quota) | **30** | _pending_ |
+| keywords | 4 (frozen: desenvolvedor junior, desenvolvedor backend junior, desenvolvedor java junior, desenvolvedor full stack junior) | same |
+| raw cards returned by the service | 340 | _pending_ |
+| `fetched` (post-quota) | **45** | _pending_ |
 | `saved` (new only) | **0** | _pending_ |
 | `detailSkipped` | 0 (structural, see below) | — |
 
@@ -173,17 +171,29 @@ Per-keyword baseline:
 | term | status | `jobsFound` | kept (quota 15) |
 |---|---|---|---|
 | `desenvolvedor junior` | ok | 120 | 15 |
-| `dev junior` | ok | 0 | 0 |
-| `programador junior` | ok | 0 | 0 |
-| `estagio desenvolvedor` | ok | 109 | 15 |
+| `desenvolvedor backend junior` | ok | 120 | 15 |
+| `desenvolvedor java junior` | ok | 100 | 15 |
+| `desenvolvedor full stack junior` | ok | 0 | 0 |
 
-Mechanics: derived quota = `ceil(60 / 4)` = **15** per keyword; only two of the
-four terms produced cards, so `fetched = 15 + 15 = 30`. The service offered
-**229** cards and the client kept **30** — 87% discarded by the quota.
+Mechanics: derived quota = `ceil(60 / 4)` = **15** per keyword; three of the
+four terms produced cards, so `fetched = 15 + 15 + 15 + 0 = 45`. The service
+offered **340** cards and the client kept **45** — 87% discarded by the quota.
+`desenvolvedor full stack junior` returned 0 on `past_week` even though a direct
+probe on `past_month` had returned 60; the term is kept pending one more run
+(supply may be week-sensitive).
 
-Expected after: two productive terms × `per-keyword-limit: 25` = **50** max, not
-100. The 2× gate was calibrated before this distribution was known; for the
-dev-only A/B the target is approaching 50.
+Expected after: three productive terms × `per-keyword-limit: 25` = **75** max,
+plus `desenvolvedor full stack junior` if the wider window recovers it
+(up to 100). The 2× gate was calibrated before this distribution was known; for
+the dev-only A/B the target is approaching 75.
+
+**Single-variable caveat.** The "before" runs on the deployed build
+(`past_week`, `max-jobs: 60`) and the "after" runs on the new build
+(`past_month`, `max-jobs: 150`, `per-keyword-limit: 25`). The comparison
+therefore measures the PR's **net** effect, not the quota change in isolation.
+Isolating the quota would require an intermediate build; not worth it for this
+experiment. If the after-run disappoints, re-run with `past_month` held constant
+on both sides before blaming the quota.
 
 `detailSkipped` is not usable for LinkedIn and the status endpoint always
 reports 0: only `InfoJobsProvider` sets the `detailSkipped` metadata flag;
@@ -193,11 +203,10 @@ known" from "fetched but rejected downstream". It does not affect the A/B,
 which is measured by `fetched`; closing that instrumentation gap is a separate
 follow-up, not a blocker.
 
-Also measured: `dev junior` and `programador junior` return **0** cards. Two of
-the four frozen terms are dead weight. Do not swap them during the A/B (one
-variable at a time); replacing them with terms that resolve
-(`desenvolvedor backend junior`, `desenvolvedor java junior`) is a follow-up
-after the comparison.
+Historical (superseded) baseline — old list, kept for reference only:
+`desenvolvedor junior` (120), `dev junior` (0), `programador junior` (0),
+`estagio desenvolvedor` (109); fetched 30, saved 0, 2026-11-22 22:59:57Z →
+23:07:09Z. Not comparable to the after-run (different keyword set).
 
 ### 6.2 Mixed run (data track, secondary)
 
