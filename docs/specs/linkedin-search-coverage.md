@@ -59,10 +59,9 @@ and work model remain downstream filters.
 ## 3. Proposal
 
 1. **Decouple the per-keyword budget from the keyword count.** Add
-   `scraper.linkedin.per-keyword-limit` (default 25). The loop keeps at most
-   that many unique jobs per keyword. `0` or absent keeps the derived
-   `ceil(max-jobs / keywords.size())` behavior, so existing deployments and
-   tests remain valid.
+   `scraper.linkedin.per-keyword-limit` (shipped as 25 in `application.yaml`;
+   absent or `0` keeps the derived `ceil(max-jobs / keywords.size())` quota).
+   The loop keeps at most that many unique jobs per keyword.
 2. **Raise the global cap.** `max-jobs: 150`, so 10 keywords × 25 can actually
    contribute (subject to URL overlap). The global cap and the early stop are
    unchanged.
@@ -87,16 +86,16 @@ runtime preferences still win (`DefaultKeywordResolver`).
 
 ## 4. Acceptance criteria
 
-- [ ] With 10 keywords, `per-keyword-limit: 25` and `max-jobs: 150`, the first
+- [x] With 10 keywords, `per-keyword-limit: 25` and `max-jobs: 150`, the first
       keyword can contribute up to 25 jobs (not `ceil(150/10) = 15`).
-- [ ] The merged total never exceeds `max-jobs`; the loop still stops querying
+- [x] The merged total never exceeds `max-jobs`; the loop still stops querying
       once the cap is reached.
-- [ ] A keyword returning fewer jobs than its limit contributes all of them.
-- [ ] URL dedupe across keywords is unchanged.
-- [ ] `per-keyword-limit` absent or `0` reproduces the derived quota.
-- [ ] `LinkedInScraperClientTest` covers the count-independence case (RED first)
+- [x] A keyword returning fewer jobs than its limit contributes all of them.
+- [x] URL dedupe across keywords is unchanged.
+- [x] `per-keyword-limit` absent or `0` reproduces the derived quota.
+- [x] `LinkedInScraperClientTest` covers the count-independence case (RED first)
       and all previous quota scenarios.
-- [ ] `application.yaml` documents the new property, the 30-day window and the
+- [x] `application.yaml` documents the new property, the 30-day window and the
       updated keyword guidance.
 
 ## 5. Non-goals
@@ -251,8 +250,8 @@ Caveats:
 
 Decision gate:
 
-- Dev-only A/B: the after-run must approach **50** `fetched` (two productive
-  terms × 25). A value near 30 means the new limit is not reaching the client.
+- Dev-only A/B: the after-run must approach **75** `fetched` (three productive
+  terms × 25). A value near 45 means the new limit is not reaching the client.
 - Mixed run: with 10 terms and `max-jobs: 150`, the ceiling is 150; a value well
   below the count of productive terms × 25 means something else is capping.
 - In both cases, if the extra cards add no junior + remote + BR supply, revisit

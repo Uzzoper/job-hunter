@@ -97,7 +97,7 @@ company suffix strip. Naming `methodName_scenario_expectedResult` +
       parity sample (REST is dead-by-config, so MCP is the only live source);
       MCP volume proof remains the open gate for Phase B code deletion.
       `gupy.keywords` no longer exists — the keyword source is the canonical
-      `scraper.gupy.keywords` (9 terms), wired default-on
+      `scraper.gupy.keywords` (8 terms), wired default-on
       (`boot_withDefaultConfig_usesGupyMcpProvider`/
       `boot_withDefaultConfig_mcpKeywordsComeFromScraperGupyKeywords`).
 - [x] `AppConfig` is the only `@Value` layer; records, no Lombok,
@@ -115,7 +115,7 @@ company suffix strip. Naming `methodName_scenario_expectedResult` +
 - Config keys: `gupy.mcp-url`, `gupy.timeout-seconds`, `gupy.limit`,
   `gupy.max-jobs`, `gupy.enabled` (`/gupy.rest.enabled` hatch) — all `@Value`
   only in AppConfig. Keywords are NOT owned here anymore: the MCP provider
-  reads `scraper.gupy.keywords` (9 terms — single canonical list shared with
+  reads `scraper.gupy.keywords` (8 terms — single canonical list shared with
   the normalizers and the REST hatch; verified by
   `boot_withDefaultConfig_mcpKeywordsComeFromScraperGupyKeywords`).
   `scraper.gupy.max-detail-domains`

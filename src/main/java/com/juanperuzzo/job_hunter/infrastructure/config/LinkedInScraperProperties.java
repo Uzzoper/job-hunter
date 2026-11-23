@@ -14,12 +14,14 @@ public record LinkedInScraperProperties(
     int maxJobs,
     /**
      * Per-keyword budget for the search loop
-     * ({@code scraper.linkedin.per-keyword-limit}, default 25).
+     * ({@code scraper.linkedin.per-keyword-limit}, shipped as 25 in
+     * {@code application.yaml}; {@code 0} or absent keeps the derived
+     * {@code ceil(max-jobs / keywords.size())} quota).
      *
      * <p>Decoupled from {@code max-jobs} on purpose: deriving the budget from
      * {@code ceil(max-jobs / keywords.size())} made every added keyword shrink
-     * every other term's coverage (10 keywords × 60 total = 6 each, while the
-     * guest search page returns ~25 per query). {@code 0} or absent keeps the
+     * every other term's coverage (10 keywords x 60 total = 6 each, while the
+     * guest search returns ~120 cards per productive term). {@code 0} keeps the
      * derived quota for backwards compatibility.
      */
     int perKeywordLimit,

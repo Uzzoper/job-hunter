@@ -1048,6 +1048,32 @@ List<RawJob> jobs = client.extract();
             assertEquals(20, jobs.size());
             assertTrue(jobs.stream().anyMatch(j -> j.title().equals("Job-20")));
         }
+
+        @Test
+        @DisplayName("extract should cap a fat keyword at per-keyword-limit even when the batch exceeds it")
+        void extract_whenBatchExceedsPerKeywordLimit_shouldKeepOnlyTheLimit() {
+            var keywords = List.of("k1", "k2");
+            client = clientWith(keywords, 150, 25);
+
+            var cards = new java.util.ArrayList<String>();
+            for (int i = 1; i <= 30; i++) {
+                cards.add("""
+                        { "id": "%d", "title": "Job-%d", "company": "A", "location": "SP", "postedAt": "", "summary": "" }
+                        """.formatted(i, i));
+            }
+            stubFor(get(urlPathEqualTo("/api/jobs"))
+                    .withQueryParam("keywords", equalTo("k1"))
+                    .willReturn(okJson("""
+                            { "success": true, "data": [%s] }
+                            """.formatted(String.join(",", cards)))));
+
+            List<RawJob> jobs = client.extract();
+
+            // 30 offered, limit 25: only the first 25 survive.
+            assertEquals(25, jobs.size());
+            assertTrue(jobs.stream().anyMatch(j -> j.title().equals("Job-25")));
+            assertTrue(jobs.stream().noneMatch(j -> j.title().equals("Job-26")));
+        }
     }
 
     @Nested
