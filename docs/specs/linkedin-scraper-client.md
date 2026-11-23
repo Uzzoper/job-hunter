@@ -106,9 +106,10 @@ scraper:
     locations: "Brazil,São Paulo,Rio de Janeiro,Curitiba,Remote"
     geo-ids: "106057199"
     seniority: "entry_level"
-    work-type: "remote,hybrid,on-site"
-    time-range: "past_week"
-    max-jobs: 60
+    work-type: "remote,hybrid"
+    time-range: "past_month"
+    max-jobs: 150
+    per-keyword-limit: 25
     timeout-seconds: 30
     search-timeout-seconds: 240
     detail-fetch-delay-millis: 500

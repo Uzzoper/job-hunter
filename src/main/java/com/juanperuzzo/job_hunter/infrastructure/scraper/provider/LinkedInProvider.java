@@ -45,6 +45,7 @@ public class LinkedInProvider implements com.juanperuzzo.job_hunter.infrastructu
     private final List<String> workType;
     private final String timeRange;
     private final int maxJobs;
+    private final int perKeywordLimit;
 
     public LinkedInProvider(
             String baseUrl,
@@ -52,7 +53,7 @@ public class LinkedInProvider implements com.juanperuzzo.job_hunter.infrastructu
             List<String> keywords,
             int maxPages,
             RetryStrategy retry) {
-        this(baseUrl, timeoutSeconds, keywords, maxPages, retry, 1000L, "", List.of(), List.of(), List.of(), "", 25);
+        this(baseUrl, timeoutSeconds, keywords, maxPages, retry, 1000L, "", List.of(), List.of(), List.of(), "", 25, 0);
     }
 
     public LinkedInProvider(
@@ -67,7 +68,8 @@ public class LinkedInProvider implements com.juanperuzzo.job_hunter.infrastructu
             List<String> seniority,
             List<String> workType,
             String timeRange,
-            int maxJobs) {
+            int maxJobs,
+            int perKeywordLimit) {
         this.baseUrl = UrlNormalizer.noTrailingSlash(baseUrl);
         this.timeoutSeconds = timeoutSeconds;
         this.keywords = keywords;
@@ -80,6 +82,7 @@ public class LinkedInProvider implements com.juanperuzzo.job_hunter.infrastructu
         this.workType = workType;
         this.timeRange = timeRange;
         this.maxJobs = maxJobs;
+        this.perKeywordLimit = perKeywordLimit;
     }
 
     public LinkedInProvider(
@@ -100,6 +103,7 @@ public class LinkedInProvider implements com.juanperuzzo.job_hunter.infrastructu
         this.workType = properties.workType();
         this.timeRange = properties.timeRange();
         this.maxJobs = properties.maxJobs();
+        this.perKeywordLimit = properties.perKeywordLimit();
     }
 
     @Override
@@ -123,8 +127,14 @@ public class LinkedInProvider implements com.juanperuzzo.job_hunter.infrastructu
         var effective = (keywordOverride == null || keywordOverride.isEmpty()) ? keywords : keywordOverride;
         int totalFetched = 0;
 
+        // Per-keyword budget (linkedin-search-coverage): mirrors the service client.
+        // 0 or absent keeps the derived ceil(maxJobs / keywords.size()) quota.
+        int derivedQuota = effective.isEmpty() ? maxJobs : (int) Math.ceil((double) maxJobs / effective.size());
+        int perKeywordQuota = perKeywordLimit > 0 ? perKeywordLimit : derivedQuota;
+
         for (var keyword : effective) {
-            for (var page = 0; page < maxPages && totalFetched < maxJobs; page++) {
+            int addedForKeyword = 0;
+            for (var page = 0; page < maxPages && totalFetched < maxJobs && addedForKeyword < perKeywordQuota; page++) {
                 var start = page * 25;
                 var uri = buildSearchUri(keyword, start);
                 try {
@@ -134,8 +144,12 @@ public class LinkedInProvider implements com.juanperuzzo.job_hunter.infrastructu
                         if (totalFetched >= maxJobs) {
                             break;
                         }
+                        if (addedForKeyword >= perKeywordQuota) {
+                            break;
+                        }
                         uniqueJobs.putIfAbsent(job.url(), job);
                         totalFetched++;
+                        addedForKeyword++;
                     }
 
                     log.debug("{}: fetched {} jobs for keyword '{}' page {} (start={})",
@@ -185,7 +199,12 @@ public class LinkedInProvider implements com.juanperuzzo.job_hunter.infrastructu
             }
         }
         if (!timeRange.isBlank()) {
-            builder.append("&f_TPR=").append(URLEncoder.encode(timeRange, StandardCharsets.UTF_8));
+            var nativeCode = switch (timeRange.trim().toLowerCase(java.util.Locale.ROOT)) {
+                case "past_week" -> "r604800";
+                case "past_month" -> "r2592000";
+                default -> timeRange.trim();
+            };
+            builder.append("&f_TPR=").append(URLEncoder.encode(nativeCode, StandardCharsets.UTF_8));
         }
         if (!seniority.isEmpty()) {
             for (var s : seniority) {

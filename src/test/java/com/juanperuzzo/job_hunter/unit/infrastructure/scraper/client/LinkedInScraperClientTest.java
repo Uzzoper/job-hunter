@@ -56,6 +56,7 @@ class LinkedInScraperClientTest {
                 30,
                 5,
                 25,
+                0,
                 "https://www.linkedin.com",
                 List.of("desenvolvedor"),
                 "Brazil",
@@ -165,6 +166,7 @@ class LinkedInScraperClientTest {
                     30,
                     5,
                     25,
+                    0,
                     "https://www.linkedin.com",
                     keywords,
                     "Brazil",
@@ -252,6 +254,7 @@ class LinkedInScraperClientTest {
                     30,
                     5,
                     25,
+                    0,
                     "https://www.linkedin.com",
                     keywords,
                     "Brazil",
@@ -640,6 +643,10 @@ List<RawJob> jobs = client.extract();
     class MultiKeywordLoop {
 
         private LinkedInScraperClient clientWith(List<String> keywords, int maxJobs) {
+            return clientWith(keywords, maxJobs, 0);
+        }
+
+        private LinkedInScraperClient clientWith(List<String> keywords, int maxJobs, int perKeywordLimit) {
             return new LinkedInScraperClient(new LinkedInScraperProperties(
                     true,
                     "service",
@@ -647,6 +654,7 @@ List<RawJob> jobs = client.extract();
                     30,
                     5,
                     maxJobs,
+                    perKeywordLimit,
                     "https://www.linkedin.com",
                     keywords,
                     "Brazil",
@@ -1014,6 +1022,58 @@ List<RawJob> jobs = client.extract();
             assertTrue(jobs.stream().anyMatch(j -> j.title().equals("Dev-1")));
             assertTrue(jobs.stream().noneMatch(j -> j.title().equals("Dev-4")));
         }
+
+        @Test
+        @DisplayName("extract should keep the configured per-keyword limit instead of shrinking it with the keyword count")
+        void extract_whenManyKeywords_shouldKeepPerKeywordLimitNotDerivedFromCount() {
+            var keywords = List.of("k1", "k2", "k3", "k4", "k5", "k6", "k7", "k8", "k9", "k10");
+            // The derived quota would be ceil(150 / 10) = 15; the configured limit is 25.
+            client = clientWith(keywords, 150, 25);
+
+            var cards = new java.util.ArrayList<String>();
+            for (int i = 1; i <= 20; i++) {
+                cards.add("""
+                        { "id": "%d", "title": "Job-%d", "company": "A", "location": "SP", "postedAt": "", "summary": "" }
+                        """.formatted(i, i));
+            }
+            stubFor(get(urlPathEqualTo("/api/jobs"))
+                    .withQueryParam("keywords", equalTo("k1"))
+                    .willReturn(okJson("""
+                            { "success": true, "data": [%s] }
+                            """.formatted(String.join(",", cards)))));
+
+            List<RawJob> jobs = client.extract();
+
+            // 20 > the 15 the count-derived quota would have kept, and < the configured 25.
+            assertEquals(20, jobs.size());
+            assertTrue(jobs.stream().anyMatch(j -> j.title().equals("Job-20")));
+        }
+
+        @Test
+        @DisplayName("extract should cap a fat keyword at per-keyword-limit even when the batch exceeds it")
+        void extract_whenBatchExceedsPerKeywordLimit_shouldKeepOnlyTheLimit() {
+            var keywords = List.of("k1", "k2");
+            client = clientWith(keywords, 150, 25);
+
+            var cards = new java.util.ArrayList<String>();
+            for (int i = 1; i <= 30; i++) {
+                cards.add("""
+                        { "id": "%d", "title": "Job-%d", "company": "A", "location": "SP", "postedAt": "", "summary": "" }
+                        """.formatted(i, i));
+            }
+            stubFor(get(urlPathEqualTo("/api/jobs"))
+                    .withQueryParam("keywords", equalTo("k1"))
+                    .willReturn(okJson("""
+                            { "success": true, "data": [%s] }
+                            """.formatted(String.join(",", cards)))));
+
+            List<RawJob> jobs = client.extract();
+
+            // 30 offered, limit 25: only the first 25 survive.
+            assertEquals(25, jobs.size());
+            assertTrue(jobs.stream().anyMatch(j -> j.title().equals("Job-25")));
+            assertTrue(jobs.stream().noneMatch(j -> j.title().equals("Job-26")));
+        }
     }
 
     @Nested
@@ -1043,7 +1103,7 @@ List<RawJob> jobs = client.extract();
         void extract_whenSearchTimeoutShorterThanBodyDelay_shouldSkipKeyword() {
             // search-specific read timeout 1s, shared detail timeout 30s
             client = new LinkedInScraperClient(new LinkedInScraperProperties(
-                    true, "service", baseUrl, 30, 5, 25, "https://www.linkedin.com",
+                    true, "service", baseUrl, 30, 5, 25, 0, "https://www.linkedin.com",
                     List.of("desenvolvedor"), "Brazil", List.of("106057199"),
                     List.of("entry_level"), List.of("remote"), "past_week", 1, 0,
                     "https://www.linkedin.com/jobs/view/", 1,
@@ -1083,6 +1143,7 @@ List<RawJob> jobs = client.extract();
                     30,
                     5,
                     5,
+                    0,
                     "https://www.linkedin.com",
                     List.of("desenvolvedor"),
                     "Brazil",

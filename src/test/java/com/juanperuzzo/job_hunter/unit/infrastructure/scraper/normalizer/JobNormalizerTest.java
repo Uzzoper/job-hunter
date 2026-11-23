@@ -210,10 +210,11 @@ class JobNormalizerTest {
     class PlenoExclusion {
 
         private JobNormalizer appConfigWiredNormalizer() {
-            // mirrors AppConfig: include list = scraper.gupy.keywords (9 terms),
+            // mirrors AppConfig: include list = scraper.gupy.keywords (8 terms,
+            // estágio dropped per junior-floor policy),
             // exclude = the shared AppConfig.SENIOR_EXCLUDE_PATTERN (senior set + pleno)
             return new JobNormalizer(dateParser,
-                    List.of("desenvolvedor", "programador", "estágio", "junior", "ti", "tecnologia", "dev", "software", "analista"),
+                    List.of("desenvolvedor", "programador", "junior", "ti", "tecnologia", "dev", "software", "analista"),
                     List.of(com.juanperuzzo.job_hunter.infrastructure.config.AppConfig.SENIOR_EXCLUDE_PATTERN),
                     List.of(), 90, FIXED_CLOCK, userRepository);
         }

@@ -61,8 +61,8 @@ scraper:
     geo-ids: "106057199"
     seniority: "entry_level"
     work-type: "remote,hybrid,on-site"
-    time-range: "past_week"
-    max-jobs: 60
+    time-range: "past_month"
+    max-jobs: 150
     timeout-seconds: 30
     detail-fetch-delay-millis: 500
 ```
