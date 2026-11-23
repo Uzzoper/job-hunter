@@ -160,47 +160,57 @@ with the per-keyword `jobsFound` reported by the service.
 | metric | dev-only before | dev-only after |
 |---|---|---|
 | keywords | 4 (frozen: desenvolvedor junior, desenvolvedor backend junior, desenvolvedor java junior, desenvolvedor full stack junior) | same |
-| raw cards returned by the service | 340 | _pending_ |
-| `fetched` (post-quota) | **45** | _pending_ |
-| `saved` (new only) | **0** | _pending_ |
-| `detailSkipped` | 0 (structural, see below) | — |
+| raw cards returned by the service | 340 | 270 |
+| `fetched` (post-quota) | **45** | **45** |
+| `saved` (new only) | **0** | **2** |
+| `detailSkipped` | 0 (structural, see below) | 0 (structural) |
 
-Per-keyword baseline:
+Per-keyword (before → after):
 
-| term | status | `jobsFound` | kept (quota 15) |
-|---|---|---|---|
-| `desenvolvedor junior` | ok | 120 | 15 |
-| `desenvolvedor backend junior` | ok | 120 | 15 |
-| `desenvolvedor java junior` | ok | 100 | 15 |
-| `desenvolvedor full stack junior` | ok | 0 | 0 |
+| term | before jobsFound | after jobsFound | before kept (quota 15) | after kept (quota 25) |
+|---|---|---|---|---|
+| `desenvolvedor junior` | 120 | 0 | 15 | 0 |
+| `desenvolvedor backend junior` | 120 | 110 | 15 | 15 |
+| `desenvolvedor java junior` | 100 | 100 | 15 | 15 |
+| `desenvolvedor full stack junior` | 0 | 60 | 0 | 15 |
 
-Mechanics: derived quota = `ceil(60 / 4)` = **15** per keyword; three of the
-four terms produced cards, so `fetched = 15 + 15 + 15 + 0 = 45`. The service
-offered **340** cards and the client kept **45** — 87% discarded by the quota.
-`desenvolvedor full stack junior` returned 0 on `past_week` even though a direct
-probe on `past_month` had returned 60; the term is kept pending one more run
-(supply may be week-sensitive).
+Mechanics: derived quota = `ceil(60 / 4)` = **15** per keyword before; explicit
+`per-keyword-limit: 25` after. Three terms produced cards in both runs; the
+broad `desenvolvedor junior` went 120 → 0 (supply drift / anti-bot on the
+generic term) and `desenvolvedor full stack junior` went 0 → 60 (recovered by
+`past_month`). Raw supply moved 340 → 270, but the unique pool stayed at
+**45** both times.
 
-Expected after: three productive terms × `per-keyword-limit: 25` = **75** max,
-plus `desenvolvedor full stack junior` if the wider window recovers it
-(up to 100). The 2× gate was calibrated before this distribution was known; for
-the dev-only A/B the target is approaching 75.
+**Verdict.** `fetched` did **not** grow (45 → 45). The per-keyword quota lever
+is exhausted for this keyword set: the 4 terms return largely the same jobs, so
+URL dedupe collapses 270 raw cards into 45 unique ones and a higher quota only
+re-keeps duplicates. The PR's other changes had mixed, non-additive effects
+(`past_month` recovered full stack junior but the broad term died). Net unique
+coverage is unchanged; the review gate ("fetched must grow ~2x") is **not met**.
+
+Consequences:
+- Raising `per-keyword-limit` further (e.g. 60) will not help — the unique
+  pool is the ceiling, not the quota.
+- `desenvolvedor junior` is unreliable on `past_month` (0 this run); keep the
+  stack-specific terms and drop/replace the broad one.
+- The guest-page ceiling (~120 cards/term) is not the bottleneck; keyword
+  overlap and supply drift are.
+- Next experiment, if any: reduce overlap (fewer, more distinct terms) and
+  measure `fetched` again. Otherwise, the dev track is saturated and the value
+  is in the data track (§6.2) and freshness (30-day window).
 
 **Single-variable caveat.** The "before" runs on the deployed build
 (`past_week`, `max-jobs: 60`) and the "after" runs on the new build
 (`past_month`, `max-jobs: 150`, `per-keyword-limit: 25`). The comparison
 therefore measures the PR's **net** effect, not the quota change in isolation.
-Isolating the quota would require an intermediate build; not worth it for this
-experiment. If the after-run disappoints, re-run with `past_month` held constant
-on both sides before blaming the quota.
 
 `detailSkipped` is not usable for LinkedIn and the status endpoint always
 reports 0: only `InfoJobsProvider` sets the `detailSkipped` metadata flag;
 `LinkedInScraperClient` skips enrichment for already-known URLs silently
-(line 215 of the client). So `saved: 0` cannot distinguish "all URLs already
-known" from "fetched but rejected downstream". It does not affect the A/B,
-which is measured by `fetched`; closing that instrumentation gap is a separate
-follow-up, not a blocker.
+(line 215 of the client). So `saved: 0`/`2` cannot distinguish "all URLs
+already known" from "fetched but rejected downstream". It does not affect the
+A/B, which is measured by `fetched`; closing that instrumentation gap is a
+separate follow-up, not a blocker.
 
 Historical (superseded) baseline — old list, kept for reference only:
 `desenvolvedor junior` (120), `dev junior` (0), `programador junior` (0),
