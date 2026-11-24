@@ -13,9 +13,15 @@
 **Automated junior-developer job hunting, scored by AI, applied with your approval.**
 Chat with the `jobhunter-bot` Hermes agent — it lists, analyzes, drafts emails, and applies for you.
 
-> **Screenshot/GIF placeholder** — _TODO: record a short clip showing the bot listing jobs by score and running an apply with the confirmation checkpoint. Place the file at `docs/assets/bot-demo.gif` and update this line. No fabricated asset exists yet._
-
 For portfolio reviewers: the **Hermes bot** is the primary interface (see [ADR 001](docs/adr/001-multi-interface.md)). The Rust CLI/TUI is legacy (kept for debug/manual use).
+
+---
+
+## Demo
+
+![Job Hunter demo — fetch, score, shortlist, apply](docs/assets/bot-demo.gif)
+
+*Illustrative run: aggregate counters only — no real listings, companies, recipients or applications are shown.*
 
 ---
 
