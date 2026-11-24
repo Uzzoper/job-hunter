@@ -14,6 +14,14 @@ A Spring Boot backend (REST API) + Node.js/Playwright scraper microservice + Rus
 
 ---
 
+## Demo
+
+![Job Hunter demo — fetch, score, shortlist, apply](docs/assets/bot-demo.gif)
+
+*Illustrative run: aggregate counters only — no real listings, companies, recipients or applications are shown.*
+
+---
+
 ## How it works
 
 ```mermaid
