@@ -17,14 +17,6 @@ For portfolio reviewers: the **Hermes bot** is the primary interface (see [ADR 0
 
 ---
 
-## Demo
-
-![Job Hunter demo — fetch, score, shortlist, apply](docs/assets/bot-demo.gif)
-
-*Illustrative run: aggregate counters only — no real listings, companies, recipients or applications are shown.*
-
----
-
 ## How it works
 
 ```mermaid
@@ -223,6 +215,12 @@ manual JWT access.
 | **Batch** | Any subcommand | Non-interactive commands for scripting and CI |
 
 Batch commands are documented in [`docs/cli.md`](docs/cli.md).
+
+### Demo (CLI)
+
+![Job Hunter demo — fetch, score, shortlist, apply](docs/assets/bot-demo.gif)
+
+*Illustrative run (CLI mode, aggregate counters only — no real listings, companies, recipients or applications).*
 
 > Full spec at [`docs/specs/cli-tui-spec.md`](docs/specs/cli-tui-spec.md)
 
