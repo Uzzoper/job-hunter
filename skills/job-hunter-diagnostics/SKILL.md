@@ -40,12 +40,12 @@ curl -s -H "X-Bot-Token: $TOKEN" http://localhost:8080/api/jobs
 
 ### Hermes Gateway API key
 
-The Hermes gateway (port 9119) reads `API_SERVER_KEY` from **`~/.hermes/.env`** (the GLOBAL Hermes env, NOT the profile env at `<bot-profile-dir>/.env`). The gateway runs with `HERMES_HOME=<bot-profile-dir>` but still reads the global `.env`.
+The Hermes gateway (port 8642, profile-routed) reads `API_SERVER_KEY` from **`~/.hermes/.env`** (the GLOBAL Hermes env, NOT the profile env at `<bot-profile-dir>/.env`). The gateway runs with `HERMES_HOME=<bot-profile-dir>` but still reads the global `.env`.
 
 ```bash
 # Correct key for gateway auth:
 GATEWAY_KEY=$(grep API_SERVER_KEY <hermes-home>/.env | cut -d= -f2)
-curl -s -H "Authorization: Bearer $GATEWAY_KEY" http://localhost:9119/v1/models
+curl -s -H "Authorization: Bearer $GATEWAY_KEY" http://localhost:8642/p/jobhunter-bot/v1/models
 ```
 
 **`gateway_auth_failed`** → the `HERMES_API_KEY` in the job-hunter `.env` doesn't match the gateway's `API_SERVER_KEY`. Fix: set `HERMES_API_KEY` in the job-hunter `.env` to the same value as `API_SERVER_KEY` in `~/.hermes/.env`, then restart the backend.

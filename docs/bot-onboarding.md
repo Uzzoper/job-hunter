@@ -18,7 +18,7 @@ Create `src/main/resources/application-local.yaml` (gitignored, never commit):
 
 ```yaml
 hermes:
-  base-url: http://localhost:9119/v1   # MUST end in /v1
+  base-url: http://localhost:8642/p/jobhunter-bot/v1   # MUST end in /v1 (profile-routed; see application.yaml default)
   api-key: YOUR_HERMES_API_KEY         # equals the gateway API_SERVER_KEY — required
   model: default                       # HERMES_MODEL, pinned on the Bot profile
   timeout-seconds: 120
@@ -101,7 +101,7 @@ Then, inside `~/.hermes/profiles/jobhunter-bot/`:
   `EMAIL_SENT` / `EMAIL_TOOL_MISSING`.
   Versioned source: `bot-profile/SOUL.md` — installed (never overwritten) by `scripts/install-bot-skills.sh`.
 - **Gateway keys** in the profile `.env`:
-  `API_SERVER_KEY=YOUR_HERMES_API_KEY`, `API_SERVER_PORT=9119`.
+  `API_SERVER_KEY=YOUR_HERMES_API_KEY` (port 8642 is the default; set `API_SERVER_PORT` only if you override it).
 - **Approvals off** in the profile `config.yaml`
   (`approvals.mode: off`) — an interactive prompt would stall requests.
   Add it manually and verify:
@@ -143,7 +143,7 @@ journalctl --user -u hermes-gateway-jobhunter-bot -f
 Sanity check from another terminal:
 
 ```bash
-curl -s http://localhost:9119/v1/models \
+curl -s http://localhost:8642/p/jobhunter-bot/v1/models \
   -H "Authorization: Bearer $HERMES_API_KEY" | head -c 300
 ```
 
@@ -206,7 +206,7 @@ bot profile into the container:
 - The container user is `appuser`, not `root` — mount at the `appuser` home
   path or the profile is invisible.
 - The compose override also needs `network_mode: host` (or equivalent) so the
-  container can reach the gateway at `http://localhost:9119`.
+  container can reach the gateway at `http://localhost:8642`.
 - Without the mount, `BotMemorySyncService` logs a warning and skips
   memory sync.
 

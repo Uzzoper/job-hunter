@@ -76,7 +76,7 @@ flowchart TB
 ### Prerequisites
 
 - Java 21
-- A local **Hermes Agent** bot profile (gateway on localhost:9119 — see 'Email sending via Hermes Agent' below). `HERMES_API_KEY` is the only AI credential required; Hermes also handles email delivery
+- A local **Hermes Agent** bot profile (gateway on localhost:8642 — see 'Email sending via Hermes Agent' below). `HERMES_API_KEY` is the only AI credential required; Hermes also handles email delivery
 - Rust 2024 edition (for the CLI binary — `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`)
 - Docker + Docker Compose (optional — only to run the LinkedIn scraper container; the database needs none)
 
@@ -136,9 +136,9 @@ delivery from its own profile:
    `himalaya message compose` (the resume is attached from a fresh backend
    download at send time — see "Resume attachment" below) and reply only
    `EMAIL_SENT` (success) or `EMAIL_TOOL_MISSING` (tool/config missing)
-3. In the profile `.env`, set `API_SERVER_KEY=YOUR_HERMES_API_KEY` and
-   `API_SERVER_PORT=9119` — the key auto-enables the gateway's OpenAI-compatible
-   API server
+3. In the profile `.env`, set `API_SERVER_KEY=YOUR_HERMES_API_KEY`
+   (port 8642 is the default — set `API_SERVER_PORT` only if you override it).
+   The key auto-enables the gateway's OpenAI-compatible API server.
 4. Set `approvals.mode: off` in the profile's `config.yaml` — an interactive
    approval prompt would stall requests until timeout
 5. Export `HERMES_API_KEY=YOUR_HERMES_API_KEY` before running job-hunter
