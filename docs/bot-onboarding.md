@@ -9,7 +9,6 @@ needs just steps 1–2; everything bot-related starts at step 3.
 ```bash
 git clone https://github.com/Uzzoper/job-hunter.git
 cd job-hunter
-git checkout feat/bot-improvement   # bot track (until merged)
 ```
 
 Prerequisites: Java 21, `python3` (skills are stdlib-only, no pip needed).

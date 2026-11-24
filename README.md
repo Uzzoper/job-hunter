@@ -10,7 +10,12 @@
 ![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript)
 ![License](https://img.shields.io/badge/license-GPL--3.0-blue)
 
-A Spring Boot backend (REST API) + Node.js/Playwright scraper microservice + Rust CLI/TUI client + Hermes agent bot (`jobhunter-bot`) that hunts junior developer jobs across Gupy, InfoJobs, LinkedIn, Greenhouse/Ashby/Lever boards and GitHub community boards, scores each one with AI against your work preferences, drafts personalized application emails, and applies with confirmation gates and verified submits.
+**Automated junior-developer job hunting, scored by AI, applied with your approval.**
+Chat with the `jobhunter-bot` Hermes agent — it lists, analyzes, drafts emails, and applies for you.
+
+> **Screenshot/GIF placeholder** — _TODO: record a short clip showing the bot listing jobs by score and running an apply with the confirmation checkpoint. Place the file at `docs/assets/bot-demo.gif` and update this line. No fabricated asset exists yet._
+
+For portfolio reviewers: the **Hermes bot** is the primary interface (see [ADR 001](docs/adr/001-multi-interface.md)). The Rust CLI/TUI is legacy (kept for debug/manual use).
 
 ---
 
@@ -122,134 +127,26 @@ bot:
 
 ### Email sending via Hermes Agent (required for `POST /api/jobs/{id}/send`)
 
-Application emails are not sent by an email API — they are delegated to a
-[Hermes Agent](https://hermes-agent.nousresearch.com) bot, which performs the
-delivery from its own profile:
+Application emails are delegated to a [Hermes Agent](https://hermes-agent.nousresearch.com)
+bot. Full setup (profile creation, himalaya, Gmail app password, gateway keys,
+smoke test, service install): [`docs/bot-onboarding.md`](docs/bot-onboarding.md).
 
-1. Install Hermes Agent and create a dedicated profile:
-   `hermes profile create jobhunter-bot --clone-all`
-2. Give the profile an **email tool**: the [himalaya](https://github.com/pimalaya/himalaya)
-   CLI v2 (`~/.local/bin/himalaya` — adjust to your `$HOME`), configured via
-   `~/.config/himalaya/config.toml`. Its password is resolved by a shell command
-   reading the profile `.env` directly, so the secret is never duplicated. The send
-   protocol lives as a standing instruction in the profile's `SOUL.md`: send with
-   `himalaya message compose` (the resume is attached from a fresh backend
-   download at send time — see "Resume attachment" below) and reply only
-   `EMAIL_SENT` (success) or `EMAIL_TOOL_MISSING` (tool/config missing)
-3. In the profile `.env`, set `API_SERVER_KEY=YOUR_HERMES_API_KEY`
-   (port 8642 is the default — set `API_SERVER_PORT` only if you override it).
-   The key auto-enables the gateway's OpenAI-compatible API server.
-4. Set `approvals.mode: off` in the profile's `config.yaml` — an interactive
-   approval prompt would stall requests until timeout
-5. Export `HERMES_API_KEY=YOUR_HERMES_API_KEY` before running job-hunter
+Quick version:
 
-#### Running the bot as a service (recommended)
-
-Install the gateway as a systemd **user** service so it survives logout/reboot:
-
-```bash
-hermes gateway install --profile jobhunter-bot
-hermes gateway start --profile jobhunter-bot
-loginctl enable-linger        # keeps the unit alive without an active session
-journalctl --user -u hermes-gateway-jobhunter-bot -f
-```
-
-Containerizing the bot is a possible future evolution — not a supported setup today.
-
-#### Resume attachment
-
-Emails and portal applies attach the resume **downloaded fresh from the
-backend at attach time** (issue #92, `apply-backend-profile.md`) — there is no
-standing local copy and no manual step:
-
-> The bot pulls `GET /api/profile/resume` (bot-token authenticated) into a
-> temp file right before the attach, sanity-gates it (HTTP 200 /
-> `application/pdf` / `%PDF-` magic bytes), attaches it, and deletes the temp
-> file after the action. Re-uploading a resume in the app (preview → commit)
-> automatically serves the new canonical PDF on the next attach — no `cp`, no
-> re-sync.
-
-> **Tip:** name the file after yourself when uploading in the app (e.g.
-> `YourName.pdf`) — himalaya uses the filename as the attachment name, so
-> recipients save an identified CV instead of a generic `resume.pdf`.
+1. Install Hermes Agent and create a profile: `hermes profile create jobhunter-bot --clone-all`
+2. Give the profile an email tool (himalaya CLI v2) and set `API_SERVER_KEY` in the profile `.env`
+3. Set `approvals.mode: off` in the profile's `config.yaml`
+4. Export `HERMES_API_KEY=YOUR_HERMES_API_KEY` before running job-hunter
 
 The same gateway is the sole AI backend for analysis and email generation
 (`hermes.base-url` must end in `/v1` — the clients append `/chat/completions`).
 
 #### Bot setup from scratch
 
-The steps above assume a working bot profile. Starting from zero, in order:
-
-**Step 1 — Gmail app password.** Enable 2FA first
-([myaccount.google.com/signinoptions/twosv](https://myaccount.google.com/signinoptions/twosv)),
-then generate an App Password at
-[myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords) —
-the page only exists with 2FA on. The password is shown once, formatted
-`xxxx xxxx xxxx xxxx`; store it somewhere safe before closing the tab.
-
-**Step 2 — himalaya config.** Create `~/.config/himalaya/config.toml` using the v2
-schema. Older tutorials use the v1 syntax (`backend.type = "imap"`), which v2
-silently ignores — use exactly this shape:
-
-```toml
-[accounts.dev]
-default = true
-email = "YOUR_EMAIL@gmail.com"
-
-imap.server = "imaps://imap.gmail.com:993"
-imap.sasl.plain.username = "YOUR_EMAIL@gmail.com"
-imap.sasl.plain.password.command = ["sh", "-c", "grep '^EMAIL_PASSWORD=' ~/.hermes/profiles/jobhunter-bot/.env | cut -d= -f2-"]
-
-smtp.server = "smtps://smtp.gmail.com:465"
-smtp.sasl.plain.username = "YOUR_EMAIL@gmail.com"
-smtp.sasl.plain.password.command = ["sh", "-c", "grep '^EMAIL_PASSWORD=' ~/.hermes/profiles/jobhunter-bot/.env | cut -d= -f2-"]
-
-mailbox.alias.sent = "[Gmail]/E-mails enviados"   # folder names vary with the account language — list them via: himalaya mailbox list
-```
-
-**Step 3 — Profile `.env` credentials.** Add the `EMAIL_` variables next to
-`API_SERVER_KEY`/`API_SERVER_PORT` in `~/.hermes/profiles/jobhunter-bot/.env`:
-
-```bash
-EMAIL_ADDRESS=YOUR_EMAIL@gmail.com
-EMAIL_PASSWORD=YOUR_GMAIL_APP_PASSWORD   # the xxxx xxxx xxxx xxxx value from step 1
-EMAIL_IMAP_HOST=imap.gmail.com
-EMAIL_SMTP_HOST=smtp.gmail.com
-```
-
-These feed the gateway's inbox adapter and are what the `grep` lines in the
-himalaya config resolve the password from — the secret lives only here.
-
-**Step 4 — Send protocol.** The canonical contract ships in the repo template
-(`bot-profile/SOUL.md`) — the installer renders it into the profile, so do not
-paste a hand-written copy. In short: compose with himalaya, attach the resume
-downloaded fresh from `GET /api/profile/resume` into a temp file (sanity-gate:
-200 / `application/pdf` / `%PDF-`; delete the temp after the send), never alter
-the backend's subject or body, and reply only:
-
-```
-EMAIL_SENT
-```
-
-If the tool or its configuration is missing or broken, reply only:
-EMAIL_TOOL_MISSING
-
-**Step 5 — Gateway key.** Generate a strong one and set it as `API_SERVER_KEY` in the
-profile `.env` (and later as `HERMES_API_KEY` on the job-hunter side):
-
-```bash
-openssl rand -hex 24
-```
-
-**Step 6 — Smoke test.** Before plugging the backend in, prove the tool works by hand:
-
-```bash
-himalaya message send -a dev -- < test.eml
-```
-
-Then confirm the message landed in the Sent folder. If that round trip works,
-every delegated send from job-hunter uses exactly the same path.
-
+The steps above assume a working bot profile. Starting from zero, follow
+[`docs/bot-onboarding.md`](docs/bot-onboarding.md) — it is the single source
+for profile creation, himalaya config, Gmail app password, gateway keys, smoke
+test and service install. The README keeps a short quickstart only.
 
 **4. Run the application**
 
@@ -257,100 +154,72 @@ every delegated send from job-hunter uses exactly the same path.
 ./mvnw spring-boot:run -Dspring-boot.run.profiles=local
 ```
 
-The application will start on `http://localhost:8080`. Flyway runs automatically and creates the database schema on first startup.
+The application starts on `http://localhost:8080`. Flyway creates the database
+schema automatically.
 
 **5. LinkedIn scraping (optional)**
-
-LinkedIn runs through the Playwright microservice, containerized via Docker Compose:
 
 ```bash
 docker compose up -d linkedin-scraper
 ```
 
-Then point a natively-run backend at it in `src/main/resources/application-local.yaml`:
+Then set `scraper.linkedin.service-url: http://localhost:3000` in
+`application-local.yaml`.
 
-```yaml
-scraper:
-  linkedin:
-    service-url: http://localhost:3000
-```
-
-> Without this, everything still works: Gupy and InfoJobs need no container, and LinkedIn
+> Without this, Gupy and InfoJobs still work (no container needed). LinkedIn
 > falls back to Jsoup (`scraper.linkedin.mode: jsoup`).
 
-> **Retry/backoff**: the `scraper.retry.*` properties (`max-attempts`, `base-delay-millis`,
-> `max-delay-millis`, `max-jitter-millis`) govern scraper and company-enrichment callers only —
-> transient HTTP 429/5xx responses and timeouts are retried with exponential backoff.
-> AI adapters do not retry: Hermes gateway failures surface as `AiException`.
-
-**6. Build and run the CLI**
+**6. Build and run the CLI (legacy)**
 
 ```bash
-cd cli
-cargo build --release
-./target/release/jh-cli --help
+cd cli && cargo build --release && ./target/release/jh-cli --help
 ```
 
-Start the TUI (default mode, no subcommand needed):
-
-```bash
-./target/release/jh-cli        # interactive TUI
-./target/release/jh-cli list   # batch mode — list jobs
-```
-
-> The CLI auto-detects mode: no subcommand → TUI; any subcommand → batch.
-
----
-
-## CLI / TUI
-
-The project includes a **Rust** binary (`jh-cli`) with two interaction modes for the Spring Boot backend:
-
-| Mode | Trigger | Description |
-|------|---------|-------------|
-| **TUI** (default) | No subcommand or `-T`/`--tui` | Interactive terminal UI — browse, filter, analyze jobs, manage profile |
-| **Batch** | Any subcommand | Non-interactive commands for scripting and CI |
-
-### Batch Commands
-
-| Command | Description |
-|---------|-------------|
-| `jh-cli auth login <email> [password]` | Authenticate and store token |
-| `jh-cli auth register <name> <email> [password]` | Create a new account |
-| `jh-cli auth logout` | Clear stored credentials |
-| `jh-cli list [--keyword] [--min-score] [--source] [--csv\|--json]` | List jobs with filters and format flags |
-| `jh-cli detail <id> [--json]` | Show full job detail |
-| `jh-cli fetch [source]` | Trigger backend scraping (all providers or a specific one) |
-| `jh-cli analyze <job-id> [--json]` | Trigger AI analysis for a job |
-| `jh-cli email show <job-id> [--json] [--copy]` | View generated email draft (optionally copy to clipboard) |
-| `jh-cli email generate <job-id>` | Generate a new email draft |
-| `jh-cli profile show [--json]` | View current profile |
-| `jh-cli profile edit [--resume] [--skills] [--tone]` | Update profile fields |
-| `jh-cli profile upload <path>` | Upload PDF resume — AI extracts skills & projects |
-| `jh-cli export <output> [--keyword]` | Export jobs to a CSV file |
-| `jh-cli clear-cache` | Clear local SQLite cache |
-
-| `jh-cli email send <job-id>` | Send email for a job |
-| `jh-cli email approve <job-id>` | Approve a pending draft for auto-send |
-
-> Full spec at [`docs/specs/cli-tui-spec.md`](docs/specs/cli-tui-spec.md)
+> The Rust CLI/TUI is legacy — daily use goes through the Hermes bot. See
+> [`docs/cli.md`](docs/cli.md) for batch commands.
 
 ---
 
 ## Hermes bot (primary interface)
 
-Per [ADR 001](docs/adr/001-multi-interface.md), the Hermes Agent bot (`jobhunter-bot` profile) is the primary interface: you chat, it lists/applies/reports via skills. **Start at [`docs/bot-onboarding.md`](docs/bot-onboarding.md)** — the step-by-step guide from fresh clone to working integration.
+Per [ADR 001](docs/adr/001-multi-interface.md), the Hermes Agent bot
+(`jobhunter-bot` profile) is the primary interface: you chat, it
+lists/applies/reports via skills. **Start at
+[`docs/bot-onboarding.md`](docs/bot-onboarding.md)** — the step-by-step guide
+from fresh clone to working integration.
 
 ```bash
 bash scripts/install-bot-skills.sh                # install skills into the bot profile
 bash scripts/setup-bot-access.sh --owner-id <id>  # service-token setup (X-Bot-Token)
 ```
 
-Skills: `company-scraper` (company contact research), `job-application` (Gupy + InfoJobs apply planner — emits a selector-free intent that the MCP executor loop drives, `verdict.py` is the sole writer of applied records), `job-portal-browser` (browser fallback), `report-generator` + `analyzer` + `visualizer` (progress reports and funnel charts). Standing-instructions template: `bot-profile/SOUL.md` (installed once, never overwritten).
+Skills: `company-scraper` (company contact research), `job-application` (Gupy +
+InfoJobs apply planner), `job-portal-browser` (browser fallback),
+`report-generator` + `analyzer` + `visualizer` (progress reports and funnel
+charts). Standing-instructions template: `bot-profile/SOUL.md` (installed once,
+never overwritten).
 
-Watch the bot work live and take over logins/CAPTCHAs via the official Hermes **Bot Screen**: setup, takeover flow, standing LinkedIn rules and troubleshooting are in [`docs/specs/bot-screen-runbook.md`](docs/specs/bot-screen-runbook.md).
+Watch the bot work live and take over logins/CAPTCHAs via the official Hermes
+**Bot Screen**: setup, takeover flow, standing LinkedIn rules and troubleshooting
+are in [`docs/specs/bot-screen-runbook.md`](docs/specs/bot-screen-runbook.md).
 
 ---
+
+## CLI / TUI (legacy)
+
+The project includes a **Rust** binary (`jh-cli`) with two interaction modes.
+Marked **legacy** — daily use goes through the Hermes bot. Kept for debug and
+manual JWT access.
+
+| Mode | Trigger | Description |
+|------|---------|-------------|
+| **TUI** (default) | No subcommand or `-T`/`--tui` | Interactive terminal UI |
+| **Batch** | Any subcommand | Non-interactive commands for scripting and CI |
+
+Batch commands are documented in [`docs/cli.md`](docs/cli.md).
+
+> Full spec at [`docs/specs/cli-tui-spec.md`](docs/specs/cli-tui-spec.md)
+
 
 ## API
 
