@@ -283,7 +283,7 @@ sequenceDiagram
     User ->> API: POST /api/jobs/:id/analyze
     API ->> AI: analyze(jobId)
     AI ->> AI: build prompt
-    AI ->> AI: call HermesAgentClient<br/>(Hermes gateway, sole AiPort)
+    AI ->> AI: call HermesAgentClient (Hermes gateway, sole AiPort)
     AI ->> DB: save analysis
     DB -->> AI: analysis saved
     AI -->> User: JobAnalysis
@@ -291,7 +291,7 @@ sequenceDiagram
     User ->> API: POST /api/jobs/:id/email
     API ->> Email: generate(jobId)
     Email ->> Email: build prompt
-    Email ->> Email: call HermesAgentClient<br/>(Hermes gateway, sole AiPort)
+    Email ->> Email: call HermesAgentClient (Hermes gateway, sole AiPort)
     Email ->> DB: save draft
     DB -->> Email: subject, body
     API -->> User: EmailDraft
