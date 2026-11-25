@@ -10,14 +10,14 @@
 
 ## Context
 
-The application emails are no longer sent through an email API (Resend). Instead they are delegated to a **Hermes Agent** bot (Nous Research): a named profile running behind the headless gateway (`hermes gateway run`, typically installed as a systemd user service), which exposes an OpenAI-compatible API (`POST /v1/chat/completions`, default port 9119, bearer-key auth). The same gateway is the **single AI backend** for analysis and email generation — `openrouter`/`ollama`/`ai.provider` were removed by `hermes-only-ai.md`.
+The application emails are no longer sent through an email API (Resend). Instead they are delegated to a **Hermes Agent** bot (Nous Research): a named profile running behind the headless gateway (`hermes gateway run`, typically installed as a systemd user service), which exposes an OpenAI-compatible API (`POST /v1/chat/completions`, bearer-key auth, default port 8642 (profile-routed)). The same gateway is the **single AI backend** for analysis and email generation — `openrouter`/`ollama`/`ai.provider` were removed by `hermes-only-ai.md`.
 
 Key property: **this repo contains no email-delivery logic**. The Java side hands the bot a structured send instruction; the bot performs delivery with whatever email tool is configured in its own profile (in the validated setup: the himalaya CLI v2, driven by a standing instruction in the profile's `SOUL.md`). Analysis runs through `HermesAgentClient`, the sole `AiPort` bean, against the same chat-completions shape.
 
 ### External prerequisites (not code)
 
 1. Hermes Agent installed; a dedicated Bot profile created (`hermes profile create jobhunter-bot --clone-all`) whose **email tool** is the himalaya CLI v2 (`~/.local/bin/himalaya` — adjust to your `$HOME`), configured via `~/.config/himalaya/config.toml` (password resolved by shell command straight from the profile `.env`, never duplicated). The send protocol lives as a standing instruction in the profile's `SOUL.md`: send with `himalaya message compose --send --attach YourName.pdf` (himalaya uses the filename as the attachment name) and reply only `EMAIL_SENT` (success) or `EMAIL_TOOL_MISSING` (tool/config missing)
-2. Gateway running: `hermes gateway run` — or persisted as a systemd user service (`jobhunter-bot gateway install` + linger) — serving `http://localhost:9119/v1` with strong `API_SERVER_KEY` and `API_SERVER_PORT=9119` set in the profile `.env` (the key auto-enables the platform `api_server`)
+2. Gateway running: `hermes gateway run` — or persisted as a systemd user service (`jobhunter-bot gateway install` + linger) — serving `http://localhost:8642/p/jobhunter-bot/v1` (profile-routed; override with `API_SERVER_PORT` only if needed) with strong `API_SERVER_KEY` set in the global `~/.hermes/.env` (the key auto-enables the platform `api_server`)
 3. `HERMES_API_KEY` env var set to that key
 4. `approvals.mode: off` in the bot profile's `config.yaml` (interactive approvals would stall the request until timeout)
 5. **Resume attachment** (single-user setup): the user's PDF lives inside the Bot profile

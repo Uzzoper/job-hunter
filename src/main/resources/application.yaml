@@ -127,11 +127,12 @@ scraper:
     # matches the description of nearly every dev listing and pollutes the gate.
     # Junior floor: internship terms are out (policy decision 2026-11-22 — owner
     # does not apply to estágio, except a big-company one, which the search will
-    # not target). Dead terms removed: "dev junior", "programador junior" (0 cards
-    # measured 2026-11-22). Verified live (2026-11-22/23 baseline): desenvolvedor
-    # junior (120), desenvolvedor backend junior (120), desenvolvedor java junior
-    # (100), desenvolvedor full stack junior (0 — supply week-sensitive).
-    keywords: "desenvolvedor junior,desenvolvedor backend junior,desenvolvedor java junior,desenvolvedor full stack junior,analista de dados junior,analista de bi junior,data analyst,bi analyst,power bi"
+    # not target). Dead terms removed: "dev junior", "programador junior",
+    # "desenvolvedor junior" (0 cards on past_month — unreliable broad term).
+    # Verified live (2026-11-22/23): backend junior (100-120), java junior
+    # (90-100), react junior (120), mobile junior (100). Full stack junior
+    # (60) replaced by react+mobile to reduce overlap (§6.3: fetched 45→60).
+    keywords: "desenvolvedor backend junior,desenvolvedor java junior,desenvolvedor react junior,desenvolvedor mobile junior,analista de dados junior,analista de bi junior,data analyst,bi analyst,power bi"
     locations: "Brazil,São Paulo,Rio de Janeiro,Curitiba,Remote"
     # Single LinkedIn geo ID (Brazil). Verified live: repeated geoIds return an
     # empty search page, and the other IDs were not Brazil (Peru/UK/invalid).

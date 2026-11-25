@@ -350,7 +350,7 @@ flowchart LR
         M["memories/ + memails/<br/>free text + JSON"]
         S --> K --> M
     end
-    G["Hermes gateway<br/>:9119 /v1"]
+    G["Hermes gateway<br/>:8642 /p/jobhunter-bot/v1"]
     C["CLI Rust (TUI)<br/>jh-cli"]
     N["LinkedIn scraper<br/>Node + Playwright :3000"]
     K -- "REST API + X-Bot-Token" --> W
