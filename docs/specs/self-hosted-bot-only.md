@@ -1,7 +1,7 @@
 # Spec: Self-hosted bot-only (remove CLI and multi-user auth)
 
 > **Layer:** all layers (domain, application, infrastructure, web)
-> **Status:** proposed — awaiting implementation
+> **Status:** approved — implementing (decisions: 1A, 2B, 3A)
 > **Depends on:** ADR 002 (CLI removed), bot service token (X-Bot-Token)
 > **Non-goals:** multi-tenancy, webapp, new features
 
@@ -80,7 +80,9 @@ single-tenant backend.
   tables. Data is single-user (owner's), so no data loss for the owner.
 - The private clone keeps the auth version; this repo diverges permanently.
 
-## Open questions (owner)
+## Open questions (owner) — RESOLVED 2026-11-26
+
+Decisions: 1A (single Profile table), 2B (fail-fast on missing token), 3A (keep ProfileController).
 
 1. Should `User`/`UserProfile` merge into a single `Profile` config table, or
    keep `user_profiles` with a fixed `id = 1`?
