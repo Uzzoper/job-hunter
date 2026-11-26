@@ -180,7 +180,7 @@ public class ResumeCommitService {
         }
         // Identity corrections ride the same pre-pass: an invalid name/email
         // must answer 400 before the PDF is stored or the profile replaced,
-        // not from inside updateIdentity after both writes (review 2026-11-15).
+        // never after both writes (review 2026-11-15).
         validateCorrectionValue("name", corrections.name(), 255, false);
         validateCorrectionValue("email", corrections.email(), 255, true);
         validateCorrectionValue("phone", corrections.phone(), ResumeExtractionPipeline.PHONE_MAX_LENGTH, false);
