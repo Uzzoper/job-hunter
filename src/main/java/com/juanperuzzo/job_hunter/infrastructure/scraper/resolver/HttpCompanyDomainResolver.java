@@ -44,6 +44,9 @@ public class HttpCompanyDomainResolver implements CompanyDomainResolverPort {
             // Social / tracker hosts (gupy-detail-domains spec §3)
             "linkedin.com", "facebook.com", "instagram.com", "youtube.com",
             "twitter.com", "x.com", "whatsapp.com", "tiktok.com",
+            // ATS / tracker hosts (greenhouse-company-domains spec §3.3)
+            "greenhouse.io", "greenhouse.com", "ashbyprd.com", "pandape.com.br",
+            "privacy-center.org",
             // Asset / CDN hosts (google fonts/gstatic, CDNs)
             "googleapis.com", "gstatic.com", "cloudflare.com", "cloudfront.net",
             "fastly.net", "akamaihd.net", "jsdelivr.net", "unpkg.com");
@@ -133,51 +136,89 @@ public class HttpCompanyDomainResolver implements CompanyDomainResolverPort {
     }
 
     @Override
-    public Map<String, String> resolveCompanyWebsites(List<String> jobUrls, int maxHosts) {
-        if (jobUrls == null || jobUrls.isEmpty() || maxHosts <= 0) {
+    public Map<String, String> resolveCompanyWebsites(List<JobRef> jobs, int maxHosts) {
+        if (jobs == null || jobs.isEmpty() || maxHosts <= 0) {
             return Map.of();
         }
 
-        // First-seen host order: the first URL of a host is the one fetched for it.
-        var hostToJobUrls = new LinkedHashMap<String, List<String>>();
-        for (var jobUrl : jobUrls) {
-            if (jobUrl == null) {
+        // Group by grouping key: host for most sources, host + "/" + first path
+        // segment for Greenhouse (greenhouse-company-domains spec §2/§3.2).
+        // First-seen key order: the first job of a key is the one fetched.
+        var keyToJobs = new LinkedHashMap<String, List<JobRef>>();
+        for (var job : jobs) {
+            if (job == null || job.url() == null) {
                 continue;
             }
-            var host = UrlNormalizer.host(jobUrl);
-            if (host == null || host.isBlank()) {
+            var key = groupingKey(job);
+            if (key == null) {
                 continue;
             }
-            hostToJobUrls.computeIfAbsent(host, h -> new ArrayList<>()).add(jobUrl);
+            keyToJobs.computeIfAbsent(key, k -> new ArrayList<>()).add(job);
         }
-        if (hostToJobUrls.isEmpty()) {
+        if (keyToJobs.isEmpty()) {
             return Map.of();
         }
 
-        var hosts = new ArrayList<>(hostToJobUrls.entrySet());
+        var keys = new ArrayList<>(keyToJobs.entrySet());
         var websitesByUrl = new HashMap<String, String>();
-        for (int i = 0; i < hosts.size(); i++) {
+        for (int i = 0; i < keys.size(); i++) {
             if (i >= maxHosts) {
-                log.warn("company-domain cap {} reached, skipping {} remaining host(s)",
-                        maxHosts, hosts.size() - i);
+                log.warn("company-domain cap {} reached, skipping {} remaining key(s)",
+                        maxHosts, keys.size() - i);
                 break;
             }
-            var host = hosts.get(i).getKey();
-            var jobUrlsOfHost = hosts.get(i).getValue();
+            var key = keys.get(i).getKey();
+            var jobsOfKey = keys.get(i).getValue();
+            var firstJob = jobsOfKey.get(0);
+            var host = UrlNormalizer.host(firstJob.url());
+            var greenhouse = "greenhouse".equalsIgnoreCase(firstJob.source());
             try {
-                var website = extractCompanyWebsite(fetchDetailHtml(jobUrlsOfHost.get(0)), host);
+                var html = fetchDetailHtml(firstJob.url());
+                var website = greenhouse
+                        ? extractCompanyWebsiteByNameAffinity(html, host, firstJob.company())
+                        : extractCompanyWebsite(html, host);
                 if (website != null) {
-                    for (var jobUrl : jobUrlsOfHost) {
-                        websitesByUrl.put(jobUrl, website);
+                    for (var job : jobsOfKey) {
+                        websitesByUrl.put(job.url(), website);
                     }
                 }
-                log.debug("resolved companyWebsite {} for host {}", website, host);
+                log.debug("resolved companyWebsite {} for key {}", website, key);
             } catch (Exception e) {
-                log.warn("detail page failed for host {} ({}), skipping host", host, e.getMessage());
+                log.warn("detail page failed for key {} ({}), skipping key", key, e.getMessage());
             }
         }
 
         return websitesByUrl;
+    }
+
+    static String groupingKey(JobRef job) {
+        var host = UrlNormalizer.host(job.url());
+        if (host == null || host.isBlank()) {
+            return null;
+        }
+        if ("greenhouse".equalsIgnoreCase(job.source())) {
+            var path = pathOf(job.url());
+            var firstSegment = firstPathSegment(path);
+            return host + "/" + firstSegment;
+        }
+        return host;
+    }
+
+    private static String pathOf(String url) {
+        try {
+            return new java.net.URI(url).getPath();
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    private static String firstPathSegment(String path) {
+        if (path == null || path.isBlank()) {
+            return "";
+        }
+        var trimmed = path.startsWith("/") ? path.substring(1) : path;
+        var slash = trimmed.indexOf('/');
+        return slash < 0 ? trimmed : trimmed.substring(0, slash);
     }
 
     /** Rate-limited, retried detail-page fetch (shared retry + rate limiter, key {@value #DETAIL_RATE_LIMIT_KEY}). */
@@ -230,6 +271,87 @@ public class HttpCompanyDomainResolver implements CompanyDomainResolverPort {
             return UrlNormalizer.noTrailingSlash(stripTrackingParams(href));
         }
         return null;
+    }
+
+    /**
+     * Name-affinity company-website selection for Greenhouse detail pages
+     * (greenhouse-company-domains spec §3.3). Collects every eligible link on
+     * the page, scores each candidate host by token overlap against the company
+     * name, and picks the highest scorer (tie-break: fewest host labels).
+     * Requires at least one shared token; otherwise returns null.
+     */
+    private static String extractCompanyWebsiteByNameAffinity(String html, String fetchedHost, String company) {
+        if (html == null || html.isBlank()) {
+            return null;
+        }
+        var doc = Jsoup.parse(html);
+        var candidates = new ArrayList<String>();
+        for (var anchor : doc.select("a[href]")) {
+            var href = anchor.absUrl("href");
+            if (href.isBlank() || !(href.startsWith("http://") || href.startsWith("https://"))) {
+                continue;
+            }
+            var host = UrlNormalizer.host(href);
+            if (host == null || !isEligibleCompanyHost(host) || isExcludedCompanyLinkHost(host, fetchedHost)) {
+                continue;
+            }
+            candidates.add(UrlNormalizer.noTrailingSlash(stripTrackingParams(href)));
+        }
+        if (candidates.isEmpty()) {
+            return null;
+        }
+        var companyTokens = companyTokens(company);
+        if (companyTokens.isEmpty()) {
+            return null;
+        }
+        String best = null;
+        int bestScore = 0;
+        int bestLabels = Integer.MAX_VALUE;
+        for (var candidate : candidates) {
+            var host = UrlNormalizer.host(candidate);
+            var hostLabels = host.split("\\.");
+            var hostTokens = new ArrayList<String>();
+            for (var label : hostLabels) {
+                hostTokens.add(label.toLowerCase(java.util.Locale.ROOT));
+            }
+            int score = 0;
+            for (var ct : companyTokens) {
+                for (var ht : hostTokens) {
+                    if (ht.contains(ct) || ct.contains(ht)) {
+                        score++;
+                        break;
+                    }
+                }
+            }
+            if (score == 0) {
+                continue;
+            }
+            if (score > bestScore || (score == bestScore && hostLabels.length < bestLabels)) {
+                bestScore = score;
+                bestLabels = hostLabels.length;
+                best = candidate;
+            }
+        }
+        return best;
+    }
+
+    private static List<String> companyTokens(String company) {
+        if (company == null || company.isBlank()) {
+            return List.of();
+        }
+        var normalized = java.text.Normalizer.normalize(company, java.text.Normalizer.Form.NFD)
+                .replaceAll("\\p{M}", "");
+        var lower = normalized.toLowerCase(java.util.Locale.ROOT);
+        // drop corporate suffixes
+        var suffixes = Set.of("ltda", "s.a.", "sa", "inc", "ltd", "gmbh", "do", "brasil", "llc", "corp", "co");
+        var tokens = new ArrayList<String>();
+        for (var part : lower.split("[^a-z0-9]+")) {
+            if (part.isBlank()) continue;
+            if (suffixes.contains(part)) continue;
+            if (part.length() < 2) continue;
+            tokens.add(part);
+        }
+        return tokens;
     }
 
     /**

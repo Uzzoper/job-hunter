@@ -1,6 +1,7 @@
 package com.juanperuzzo.job_hunter.infrastructure.scraper.provider;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.juanperuzzo.job_hunter.application.port.out.CompanyDomainResolverPort;
 import com.juanperuzzo.job_hunter.application.port.out.RawJob;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.retry.ExponentialBackoffRetry;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.strategy.ExtractionStrategy;
@@ -34,6 +35,8 @@ public class GreenhouseProvider implements ExtractionStrategy {
     private final RestApiStrategy apiStrategy;
     private final ExponentialBackoffRetry retry;
     private final List<String> boardTokens;
+    private final CompanyDomainResolverPort companyDomainResolver;
+    private final int maxDetailDomains;
 
     /**
      * Production constructor: wires the provider's own {@link #mapNode(JsonNode)}
@@ -44,9 +47,21 @@ public class GreenhouseProvider implements ExtractionStrategy {
             int timeoutSeconds,
             List<String> boardTokens,
             ExponentialBackoffRetry retry) {
+        this(baseUrl, timeoutSeconds, boardTokens, retry, null, 0);
+    }
+
+    public GreenhouseProvider(
+            String baseUrl,
+            int timeoutSeconds,
+            List<String> boardTokens,
+            ExponentialBackoffRetry retry,
+            CompanyDomainResolverPort companyDomainResolver,
+            int maxDetailDomains) {
         this.providerId = "greenhouse";
         this.boardTokens = boardTokens;
         this.retry = retry;
+        this.companyDomainResolver = companyDomainResolver;
+        this.maxDetailDomains = maxDetailDomains;
         // Honest shared UA (AtsHttpHeaders): ATS edges 403 bare Java/urllib UAs (probed 2026-10-23).
         this.apiStrategy = new RestApiStrategy(providerId, baseUrl, timeoutSeconds, JSON_PATH, this::mapNode,
                 AtsHttpHeaders.DEFAULT);
@@ -61,10 +76,22 @@ public class GreenhouseProvider implements ExtractionStrategy {
             RestApiStrategy apiStrategy,
             ExponentialBackoffRetry retry,
             List<String> boardTokens) {
+        this(providerId, apiStrategy, retry, boardTokens, null, 0);
+    }
+
+    public GreenhouseProvider(
+            String providerId,
+            RestApiStrategy apiStrategy,
+            ExponentialBackoffRetry retry,
+            List<String> boardTokens,
+            CompanyDomainResolverPort companyDomainResolver,
+            int maxDetailDomains) {
         this.providerId = providerId;
         this.apiStrategy = apiStrategy;
         this.retry = retry;
         this.boardTokens = boardTokens;
+        this.companyDomainResolver = companyDomainResolver;
+        this.maxDetailDomains = maxDetailDomains;
     }
 
     @Override
@@ -95,8 +122,40 @@ public class GreenhouseProvider implements ExtractionStrategy {
         }
 
         var result = List.copyOf(uniqueJobs.values());
-        log.info("{}: total unique jobs fetched: {}", providerId, result.size());
-        return result;
+        var resolved = resolveCompanyDomains(result);
+        log.info("{}: total unique jobs fetched: {}", providerId, resolved.size());
+        return resolved;
+    }
+
+    /**
+     * Resolve a company website per Greenhouse board and attach it as
+     * {@code companyWebsite} metadata to every job of that board
+     * (greenhouse-company-domains spec §3.4).
+     */
+    private List<RawJob> resolveCompanyDomains(List<RawJob> jobs) {
+        if (jobs.isEmpty() || companyDomainResolver == null || maxDetailDomains <= 0) {
+            return jobs;
+        }
+        var refs = jobs.stream()
+                .map(j -> new CompanyDomainResolverPort.JobRef(j.url(), j.company(), "greenhouse"))
+                .toList();
+        var resolved = companyDomainResolver.resolveCompanyWebsites(refs, maxDetailDomains);
+        if (resolved.isEmpty()) {
+            return jobs;
+        }
+        var out = new java.util.ArrayList<RawJob>();
+        for (var job : jobs) {
+            var website = resolved.get(job.url());
+            if (website != null) {
+                var meta = new java.util.HashMap<>(job.metadata());
+                meta.put("companyWebsite", website);
+                out.add(new RawJob(job.title(), job.company(), job.url(), job.description(),
+                        job.rawDate(), job.location(), job.workModel(), job.source(), meta));
+            } else {
+                out.add(job);
+            }
+        }
+        return List.copyOf(out);
     }
 
     /**

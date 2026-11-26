@@ -32,7 +32,7 @@ import org.slf4j.LoggerFactory;
 public class BackfillCompanyWebsitesService implements BackfillCompanyWebsitesUseCase {
 
     private static final Logger log = LoggerFactory.getLogger(BackfillCompanyWebsitesService.class);
-    private static final String SOURCE = "gupy";
+    private static final String DEFAULT_SOURCE = "gupy";
 
     private final JobRepository jobRepository;
     private final CompanyDomainResolverPort companyDomainResolver;
@@ -45,16 +45,19 @@ public class BackfillCompanyWebsitesService implements BackfillCompanyWebsitesUs
     }
 
     @Override
-    public Result run(boolean dryRun, int maxHosts, Long afterId) {
+    public Result run(boolean dryRun, int maxHosts, Long afterId, String source) {
+        var resolvedSource = (source == null || source.isBlank()) ? DEFAULT_SOURCE : source;
         var candidates = afterId == null
-                ? jobRepository.findBySourceAndCompanyWebsiteIsNull(SOURCE)
-                : jobRepository.findBySourceAndCompanyWebsiteIsNullAfterId(SOURCE, afterId);
+                ? jobRepository.findBySourceAndCompanyWebsiteIsNull(resolvedSource)
+                : jobRepository.findBySourceAndCompanyWebsiteIsNullAfterId(resolvedSource, afterId);
         var scanned = candidates.size();
         var filled = 0;
 
         if (scanned > 0) {
-            var resolved = companyDomainResolver.resolveCompanyWebsites(
-                    candidates.stream().map(Job::url).toList(), maxHosts);
+            var refs = candidates.stream()
+                    .map(j -> new CompanyDomainResolverPort.JobRef(j.url(), j.company(), resolvedSource))
+                    .toList();
+            var resolved = companyDomainResolver.resolveCompanyWebsites(refs, maxHosts);
             for (var job : candidates) {
                 var website = resolved.get(job.url());
                 if (website == null) {
@@ -68,8 +71,8 @@ public class BackfillCompanyWebsitesService implements BackfillCompanyWebsitesUs
         }
 
         var result = new Result(scanned, filled, scanned - filled);
-        log.info("Company-website backfill (dryRun={}, maxHosts={}, afterId={}): scanned={}, filled={}, stillNull={}",
-                dryRun, maxHosts, afterId, result.scanned(), result.filled(), result.stillNull());
+        log.info("Company-website backfill (source={}, dryRun={}, maxHosts={}, afterId={}): scanned={}, filled={}, stillNull={}",
+                resolvedSource, dryRun, maxHosts, afterId, result.scanned(), result.filled(), result.stillNull());
         return result;
     }
 }

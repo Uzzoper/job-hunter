@@ -56,7 +56,7 @@ class BackfillCompanyWebsitesServiceTest {
         var j2 = job(2L, "https://techco.gupy.io/jobs/2");
         var j3 = job(3L, "https://brand.gupy.io/jobs/3");
         when(jobRepository.findBySourceAndCompanyWebsiteIsNull("gupy")).thenReturn(List.of(j1, j2, j3));
-        when(companyDomainResolver.resolveCompanyWebsites(List.of(j1.url(), j2.url(), j3.url()), 50))
+        when(companyDomainResolver.resolveCompanyWebsites(List.of(new CompanyDomainResolverPort.JobRef(j1.url(), j1.company(), "gupy"), new CompanyDomainResolverPort.JobRef(j2.url(), j2.company(), "gupy"), new CompanyDomainResolverPort.JobRef(j3.url(), j3.company(), "gupy")), 50))
                 .thenReturn(Map.of(j1.url(), "https://www.techco.com.br",
                         j2.url(), "https://www.techco.com.br"));
 
@@ -74,7 +74,7 @@ class BackfillCompanyWebsitesServiceTest {
         var j1 = job(1L, "https://techco.gupy.io/jobs/1");
         var j2 = job(2L, "https://brand.gupy.io/jobs/2");
         when(jobRepository.findBySourceAndCompanyWebsiteIsNull("gupy")).thenReturn(List.of(j1, j2));
-        when(companyDomainResolver.resolveCompanyWebsites(List.of(j1.url(), j2.url()), 50))
+        when(companyDomainResolver.resolveCompanyWebsites(List.of(new CompanyDomainResolverPort.JobRef(j1.url(), j1.company(), "gupy"), new CompanyDomainResolverPort.JobRef(j2.url(), j2.company(), "gupy")), 50))
                 .thenReturn(Map.of(j1.url(), "https://www.techco.com.br"));
 
         var result = service.run(false, 50);
@@ -132,13 +132,13 @@ class BackfillCompanyWebsitesServiceTest {
     void run_shouldForwardMaxHostsToResolver() {
         var j1 = job(1L, "https://techco.gupy.io/jobs/1");
         when(jobRepository.findBySourceAndCompanyWebsiteIsNull("gupy")).thenReturn(List.of(j1));
-        when(companyDomainResolver.resolveCompanyWebsites(List.of(j1.url()), 10))
+        when(companyDomainResolver.resolveCompanyWebsites(List.of(new CompanyDomainResolverPort.JobRef(j1.url(), j1.company(), "gupy")), 10))
                 .thenReturn(Map.of(j1.url(), "https://www.techco.com.br"));
 
         var result = service.run(true, 10);
 
         assertEquals(1, result.filled());
-        verify(companyDomainResolver).resolveCompanyWebsites(List.of(j1.url()), 10);
+        verify(companyDomainResolver).resolveCompanyWebsites(List.of(new CompanyDomainResolverPort.JobRef(j1.url(), j1.company(), "gupy")), 10);
     }
 
     @Test
@@ -163,7 +163,7 @@ class BackfillCompanyWebsitesServiceTest {
         var afterHead = job(101L, "https://techco.gupy.io/jobs/101");
         when(jobRepository.findBySourceAndCompanyWebsiteIsNullAfterId("gupy", 100L))
                 .thenReturn(List.of(afterHead));
-        when(companyDomainResolver.resolveCompanyWebsites(List.of(afterHead.url()), 1))
+        when(companyDomainResolver.resolveCompanyWebsites(List.of(new CompanyDomainResolverPort.JobRef(afterHead.url(), afterHead.company(), "gupy")), 1))
                 .thenReturn(Map.of(afterHead.url(), "https://www.techco.com.br"));
 
         var result = service.run(false, 1, 100L);
@@ -193,7 +193,7 @@ class BackfillCompanyWebsitesServiceTest {
         assertEquals(2, result.filled());
         assertEquals(1, result.stillNull());
         verify(companyDomainResolver).resolveCompanyWebsites(
-                List.of(later1.url(), later2.url(), later3.url()), 50);
+                List.of(new CompanyDomainResolverPort.JobRef(later1.url(), later1.company(), "gupy"), new CompanyDomainResolverPort.JobRef(later2.url(), later2.company(), "gupy"), new CompanyDomainResolverPort.JobRef(later3.url(), later3.company(), "gupy")), 50);
         var captor = ArgumentCaptor.forClass(Job.class);
         verify(jobRepository, times(2)).save(captor.capture());
         assertEquals(List.of(later1.url(), later2.url()),
@@ -205,7 +205,7 @@ class BackfillCompanyWebsitesServiceTest {
     void run_whenAfterIdNull_shouldScanFromStartWithLegacyQuery() {
         var j1 = job(1L, "https://techco.gupy.io/jobs/1");
         when(jobRepository.findBySourceAndCompanyWebsiteIsNull("gupy")).thenReturn(List.of(j1));
-        when(companyDomainResolver.resolveCompanyWebsites(List.of(j1.url()), 50))
+        when(companyDomainResolver.resolveCompanyWebsites(List.of(new CompanyDomainResolverPort.JobRef(j1.url(), j1.company(), "gupy")), 50))
                 .thenReturn(Map.of(j1.url(), "https://www.techco.com.br"));
 
         var result = service.run(true, 50, null);

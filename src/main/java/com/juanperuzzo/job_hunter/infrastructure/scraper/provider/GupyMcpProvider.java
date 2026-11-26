@@ -542,7 +542,9 @@ public class GupyMcpProvider implements ExtractionStrategy {
         }
 
         var resolvedWebsites = companyDomainResolver.resolveCompanyWebsites(
-                List.copyOf(representativeByHost.values()), maxDetailDomains);
+                List.copyOf(representativeByHost.values()).stream()
+                        .map(url -> new CompanyDomainResolverPort.JobRef(url, null, "gupy"))
+                        .toList(), maxDetailDomains);
         if (resolvedWebsites.isEmpty()) {
             return jobs;
         }
