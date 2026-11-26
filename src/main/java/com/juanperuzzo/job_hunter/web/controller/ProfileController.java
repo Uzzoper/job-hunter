@@ -96,7 +96,7 @@ public class ProfileController {
 
     @PostMapping("/commit-resume")
     public ResponseEntity<ProfileResponse> commitResume(@RequestParam("file") MultipartFile file,
-                                                        @Valid @RequestBody(required = false) ResumeCorrectionsRequest corrections) {
+                                                        @RequestPart(value = "corrections", required = false) @Valid ResumeCorrectionsRequest corrections) {
         var appCorrections = corrections == null ? null : new ResumeCorrections(corrections.name(), corrections.email(), corrections.phone(), corrections.contactEmail(), corrections.portfolioUrl(), corrections.digest());
         var profile = resumeCommitService.commit(file, appCorrections);
         var response = toResponse(profile);
