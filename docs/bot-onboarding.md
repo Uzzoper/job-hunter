@@ -26,7 +26,7 @@ bot:
     dir: ${user.home}/.hermes/profiles/jobhunter-bot/memories
   service:
     # Static service token for bot API access (issue #47). Bot calls send it
-    # via the X-Bot-Token header; CLI/webapp keep the normal JWT login.
+    # via the X-Bot-Token header (no JWT — single operator).
     # The SAME value must be saved later in the bot profile (api-token.txt).
     api-key: ${BOT_SERVICE_API_KEY}         # blank = bot token auth disabled
     owner-user-id: ${BOT_SERVICE_OWNER_USER_ID}  # existing user the bot acts as
@@ -36,12 +36,10 @@ Export `HERMES_API_KEY=YOUR_HERMES_API_KEY` before running the backend.
 
 **Service token (optional — for bot API access, issue #47):** the bot
 authenticates to the Job Hunter API with a static token via the
-`X-Bot-Token` header, while CLI/webapp keep the usual JWT `Bearer` header
-(login). Generate the secret once and set both sides to the SAME value:
+`X-Bot-Token` header (no JWT — single operator). Generate the secret once and set both sides to the SAME value:
 `bot.service.api-key` here (env `BOT_SERVICE_API_KEY`) and later in the bot
 profile as `api-token.txt` (step 3 / step 5). `owner-user-id` must be a
-positive id (the `userId` from `POST /api/auth/login`) for the feature to
-engage; blank `api-key` keeps the old JWT-only behavior.
+positive id for the feature to engage; blank `api-key` keeps the API open (dev mode).
 
 **Shortcut (recommended):** `bash scripts/setup-bot-access.sh --owner-id <id>`
 automates secret generation + profile save + backend exports + endpoint
