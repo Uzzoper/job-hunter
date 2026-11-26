@@ -3,7 +3,6 @@ package com.juanperuzzo.job_hunter.unit.application;
 import com.juanperuzzo.job_hunter.application.service.ProfilePlaceholders;
 import com.juanperuzzo.job_hunter.domain.model.CompanyTone;
 import com.juanperuzzo.job_hunter.domain.model.Project;
-import com.juanperuzzo.job_hunter.domain.model.User;
 import com.juanperuzzo.job_hunter.domain.model.UserProfile;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -30,8 +29,7 @@ class ProfilePlaceholdersTest {
     @Test
     @DisplayName("resolve should substitute every available placeholder and leave no raw token when the profile is complete")
     void resolve_whenFullProfile_shouldSubstituteAllPlaceholders() {
-        User user = new User(1L, "juan@example.com", "Juan Antonio Peruzzo", "hash");
-        UserProfile profile = new UserProfile(10L, 1L, "Resume text",
+        UserProfile profile = new UserProfile(10L, "Juan Antonio Peruzzo", "juan@example.com", "Resume text",
                 List.of("Java", "Spring Boot", "PostgreSQL"),
                 CompanyTone.FORMAL,
                 List.of(
@@ -42,7 +40,7 @@ class ProfilePlaceholdersTest {
                 "https://juanperuzzo.is-a.dev", "https://github.com/Uzzoper",
                 "https://linkedin.com/in/juan", null);
 
-        String resolved = ProfilePlaceholders.resolve(TEMPLATE, user, profile);
+        String resolved = ProfilePlaceholders.resolve(TEMPLATE, profile);
 
         assertAll(
                 () -> assertTrue(resolved.contains("Juan Antonio Peruzzo")),
@@ -62,14 +60,13 @@ class ProfilePlaceholdersTest {
     @Test
     @DisplayName("resolve should drop the whole line of each missing optional field and never leak a raw token")
     void resolve_whenOptionalFieldsMissing_shouldOmitTheirLines() {
-        User user = new User(1L, "juan@example.com", "Juan Antonio Peruzzo", "hash");
-        UserProfile profile = new UserProfile(10L, 1L, "Resume text",
+        UserProfile profile = new UserProfile(10L, "Juan Antonio Peruzzo", "juan@example.com", "Resume text",
                 List.of("Java", "PostgreSQL"),
                 CompanyTone.FORMAL,
                 List.of(),
                 null, null, null, " ", "https://linkedin.com/in/juan", null);
 
-        String resolved = ProfilePlaceholders.resolve(TEMPLATE, user, profile);
+        String resolved = ProfilePlaceholders.resolve(TEMPLATE, profile);
 
         assertAll(
                 () -> assertTrue(resolved.contains("Juan Antonio Peruzzo")),

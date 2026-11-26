@@ -4,7 +4,6 @@ import com.juanperuzzo.job_hunter.application.service.TemplateEmailService;
 import com.juanperuzzo.job_hunter.domain.model.CompanyTone;
 import com.juanperuzzo.job_hunter.domain.model.Job;
 import com.juanperuzzo.job_hunter.domain.model.Project;
-import com.juanperuzzo.job_hunter.domain.model.User;
 import com.juanperuzzo.job_hunter.domain.model.UserProfile;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -17,7 +16,6 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class TemplateEmailServiceTest {
 
-    private static final User USER = new User(1L, "juan@example.com", "Juan Antonio Peruzzo", "hash");
 
     private TemplateEmailService templateEmailService;
 
@@ -27,7 +25,7 @@ class TemplateEmailServiceTest {
     }
 
     private static UserProfile fullProfile() {
-        return new UserProfile(10L, 1L, "Resume text",
+        return new UserProfile(10L, "Juan Antonio Peruzzo", "juan@example.com", "Resume text",
                 List.of("Java", "Spring Boot", "PostgreSQL"),
                 CompanyTone.FORMAL,
                 List.of(
@@ -45,7 +43,7 @@ class TemplateEmailServiceTest {
         var job = new Job(1L, "Desenvolvedor Java Júnior", "Acme Corp",
                 "https://example.com/job", "Desc", LocalDate.now(), "source");
 
-        var result = templateEmailService.generate(job, USER, fullProfile());
+        var result = templateEmailService.generate(job, fullProfile());
 
         assertAll(
                 () -> assertTrue(result.subject().contains("Desenvolvedor Java Júnior")),
@@ -71,11 +69,11 @@ class TemplateEmailServiceTest {
     void generate_whenOptionalFieldsMissing_shouldOmitTheirLines() {
         var job = new Job(1L, "Desenvolvedor Java Júnior", "Acme Corp",
                 "https://example.com/job", "Desc", LocalDate.now(), "source");
-        UserProfile profile = new UserProfile(10L, 1L, "Resume text",
+        UserProfile profile = new UserProfile(10L, "Juan Antonio Peruzzo", "juan@example.com", "Resume text",
                 List.of("Java", "PostgreSQL"), CompanyTone.FORMAL, List.of(),
                 null, null, null, " ", "https://linkedin.com/in/juan", null);
 
-        var result = templateEmailService.generate(job, USER, profile);
+        var result = templateEmailService.generate(job, profile);
 
         assertAll(
                 () -> assertTrue(result.body().contains("Juan Antonio Peruzzo")),
@@ -99,7 +97,7 @@ class TemplateEmailServiceTest {
         var job = new Job(1L, "Desenvolvedor Java Júnior", "Acme Corp",
                 "https://example.com/job", "Desc", LocalDate.now(), "source");
 
-        var result = templateEmailService.generate(job, USER, fullProfile());
+        var result = templateEmailService.generate(job, fullProfile());
 
         assertAll(
                 () -> assertTrue(result.body().contains(

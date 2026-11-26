@@ -30,7 +30,6 @@ import com.juanperuzzo.job_hunter.infrastructure.botmemory.BotMemoryStartupSync;
 import com.juanperuzzo.job_hunter.infrastructure.email.HermesBotEmailSender;
 import com.juanperuzzo.job_hunter.infrastructure.pdf.ResumePdfRenderer;
 import com.juanperuzzo.job_hunter.infrastructure.scheduler.AutoSendScheduler;
-import com.juanperuzzo.job_hunter.application.port.out.PasswordHasher;
 import com.juanperuzzo.job_hunter.application.port.out.JobAnalysisRepository;
 import com.juanperuzzo.job_hunter.application.port.out.UserProfileRepository;
 import com.juanperuzzo.job_hunter.application.port.out.BotMemoryPort;
@@ -61,7 +60,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
-import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.context.annotation.Primary;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -620,21 +618,6 @@ public class AppConfig {
                                                          @Value("${email.max-resume-chars:8000}") int maxResumeChars) {
         return new EmailGenerationService(aiPort, emailDraftRepository, userProfileRepository,
                 jobRepository, jobAnalysisRepository, templateEmailService, botMemorySyncService, minMatchScore, maxResumeChars);
-    }
-
-    @Bean
-    public PasswordHasher passwordHasher(PasswordEncoder passwordEncoder) {
-        return new PasswordHasher() {
-            @Override
-            public String hash(String rawPassword) {
-                return passwordEncoder.encode(rawPassword);
-            }
-
-            @Override
-            public boolean matches(String rawPassword, String hash) {
-                return passwordEncoder.matches(rawPassword, hash);
-            }
-        };
     }
 
     @Bean
