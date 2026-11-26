@@ -198,3 +198,22 @@ Do not touch implementation files yet.
 
 Step 2 — wait for confirmation before implementing.
 ```
+
+---
+
+## Prompt-injection defense (issue #162, part 1 — 2026-11-25)
+
+Job descriptions are third-party text interpolated into the analysis prompt.
+Defense-in-depth implemented in `AiAnalysisService`:
+
+1. The description is wrapped in `<job_description>...</job_description>` tags
+   and the prompt marks it as untrusted data (never instructions).
+2. `parseAnalysis` validates the response shape (matchScore present & integer,
+   skills arrays of strings, companyTone in {formal,casual,startup}, summary
+   textual) and throws `AiException` on violation before persisting.
+
+Tool-boundary isolation (a second Hermes profile without tools,
+`hermes.analysis-base-url`) is **deferred** as over-engineering for personal
+use: the realistic blast radius is a corrupted analysis/draft, not an
+autonomous email send (sending is a separate `POST /send` gated on user
+action). See `docs/specs/prompt-injection-defense.md`.
