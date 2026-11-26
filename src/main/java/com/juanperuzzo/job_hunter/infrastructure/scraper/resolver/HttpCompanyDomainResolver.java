@@ -317,7 +317,7 @@ public class HttpCompanyDomainResolver implements CompanyDomainResolverPort {
             int score = 0;
             for (var ct : companyTokens) {
                 for (var ht : hostTokens) {
-                    if (ht.contains(ct) || ct.contains(ht)) {
+                    if (ht.equals(ct)) {
                         score++;
                         break;
                     }

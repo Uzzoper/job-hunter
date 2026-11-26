@@ -1,6 +1,6 @@
 # Greenhouse Company Domains — Spec
 
-Issue: #117 (continuation) · Status: **implemented**
+Issue: #117 (continuation) · Status: **implemented (code done; live verification pending on VM)**
 
 ## 1. Context
 
@@ -56,8 +56,9 @@ public record JobRef(String url, String company, String source) {}
 Map<String, String> resolveCompanyWebsites(List<JobRef> jobs, int maxHosts);
 ```
 
-Keep a `default` overload taking `List<String>` (source `gupy`, company `null`) so the
-two existing call sites (`GupyProvider`, `GupyMcpProvider`) compile unchanged.
+A `List<String>` overload is impossible in Java (generic erasure), so the two
+existing call sites (`GupyProvider`, `GupyMcpProvider`) build `JobRef`s
+(source `gupy`, company `null`) instead. Behavior is unchanged.
 
 ### 3.2 Grouping key
 
@@ -79,8 +80,9 @@ Canonical's page the first eligible link is `ubuntu.com`, not `canonical.com`.
    `privacy-center.org`).
 2. Normalize the company name into tokens (lowercase, strip accents, drop corporate
    suffixes `ltda`, `s.a.`, `inc`, `ltd`, `gmbh`, `do brasil`).
-3. Score each candidate host by token overlap against its registrable domain and
-   labels.
+3. Score each candidate host by exact token equality (case-insensitive) between
+   company-name tokens and host labels — substring matches are intentionally
+   excluded to avoid false positives on TLDs like `com`/`io`.
 4. Pick the highest score; tie-break by **fewest host labels** (root domain wins:
    `canonical.com` over `www.canonical.com`, `stripe.com` over `docs.stripe.com`);
    **require ≥ 1 shared token**.
@@ -93,7 +95,7 @@ stripped by `GreenhouseProvider.stripSuffix`), so no new data is needed.
 
 `GreenhouseProvider` resolves websites for the page it is about to return and attaches
 `metadata.companyWebsite`, mirroring `GupyProvider.resolveCompanyDomains`. New config
-`greenhouse.max-detail-domains` (default `100`, overflow logged and skipped).
+`ats.greenhouse.max-detail-domains` (default `100`, overflow logged and skipped).
 
 ### 3.5 Backfill
 
