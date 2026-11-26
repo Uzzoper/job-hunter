@@ -18,9 +18,9 @@ public class ApproveDraftService implements ApproveDraftUseCase {
     }
 
     @Override
-    public EmailDraft approve(Long userId, Long jobId) {
-        var draft = emailDraftRepository.findByJobIdAndUserId(jobId, userId)
-                .orElseThrow(() -> new JobNotFoundException("Email draft not found for job " + jobId + " and user " + userId));
+    public EmailDraft approve(Long jobId) {
+        var draft = emailDraftRepository.findByJobId(jobId)
+                .orElseThrow(() -> new JobNotFoundException("Email draft not found for job " + jobId));
 
         if (draft.status() == EmailStatus.SENT) {
             throw new EmailAlreadySentException("Email " + draft.id() + " has already been sent");
@@ -33,7 +33,7 @@ public class ApproveDraftService implements ApproveDraftUseCase {
         }
 
         var approved = new EmailDraft(
-                draft.id(), draft.jobId(), draft.userId(),
+                draft.id(), draft.jobId(),
                 draft.subject(), draft.body(),
                 EmailStatus.APPROVED, draft.generatedAt(), draft.sentAt(), draft.recipientEmail()
         );

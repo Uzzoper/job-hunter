@@ -47,15 +47,14 @@ public class LinkedInAsyncFetchService implements FetchLinkedInAsyncUseCase, Fet
     }
 
     @Override
-    public StartResult start(Long userId) {
-        Objects.requireNonNull(userId, "userId");
+    public StartResult start() {
         var startedAt = Instant.now();
         if (!runStore.tryBegin(SOURCE_ID, startedAt)) {
             // The 409 body reports the ACTIVE run's own startedAt, not now().
             return new StartResult(StartOutcome.ALREADY_RUNNING, runStore.get(SOURCE_ID).startedAt());
         }
         try {
-            fetchExecutor.execute(() -> run(userId));
+            fetchExecutor.execute(() -> run());
         } catch (RuntimeException e) {
             // Without this guard a rejected submission would leave the registry
             // RUNNING forever — every later POST a 409 until restart.
@@ -77,10 +76,10 @@ public class LinkedInAsyncFetchService implements FetchLinkedInAsyncUseCase, Fet
      * completion or failure — whatever happens inside the scraper, the registry
      * reflects the actual outcome (saves continue past caller death by design).
      */
-    private void run(Long userId) {
+    private void run() {
         var keywordRuns = Collections.synchronizedList(new ArrayList<KeywordRun>());
         try {
-            var result = fetchSourceJobs.fetchAndSave(userId, SOURCE_ID, keywordRuns::add);
+            var result = fetchSourceJobs.fetchAndSave(SOURCE_ID, keywordRuns::add);
             finish(result, List.copyOf(keywordRuns));
         } catch (RuntimeException e) {
             log.error("{}: async fetch failed: {}", SOURCE_ID, e.getMessage(), e);

@@ -48,20 +48,20 @@ public class RecordExternalApplyService implements RecordExternalApplyUseCase {
     }
 
     @Override
-    public RecordExternalApplyResult record(Long userId, Long jobId) {
+    public RecordExternalApplyResult record(Long jobId) {
         jobRepository.findById(jobId)
                 .orElseThrow(() -> new JobNotFoundException("Job not found with id: " + jobId));
 
-        var existing = emailDraftRepository.findByJobIdAndUserId(jobId, userId);
+        var existing = emailDraftRepository.findByJobId(jobId);
         if (existing.isPresent() && existing.get().status() == EmailStatus.SENT) {
-            log.debug("External apply already recorded for job {} and user {}", jobId, userId);
+            log.debug("External apply already recorded for job {}", jobId);
             return new RecordExternalApplyResult(existing.get(), false);
         }
 
         var now = LocalDateTime.now();
         var marker = new EmailDraft(
                 existing.map(EmailDraft::id).orElse(null),
-                jobId, userId, EXTERNAL_APPLY_SUBJECT, EXTERNAL_APPLY_BODY,
+                jobId, EXTERNAL_APPLY_SUBJECT, EXTERNAL_APPLY_BODY,
                 EmailStatus.SENT, now, now);
         boolean conflicted = false;
         EmailDraft saved;
@@ -74,13 +74,13 @@ public class RecordExternalApplyService implements RecordExternalApplyUseCase {
             // Lost a concurrent insert race: the unique constraint is the source of
             // truth — return the winner instead of surfacing a 409. No in-process
             // locking (it would silently break under multiple instances).
-            log.debug("Concurrent apply record for job {} and user {} — returning existing", jobId, userId);
+            log.debug("Concurrent apply record for job {} — returning existing", jobId);
             conflicted = true;
-            saved = emailDraftRepository.findByJobIdAndUserId(jobId, userId)
+            saved = emailDraftRepository.findByJobId(jobId)
                     .orElseThrow(() -> writeFailure);
         }
         var created = existing.isEmpty() && !conflicted;
-        log.debug("Recorded external apply for job {} and user {} (created={})", jobId, userId, created);
+        log.debug("Recorded external apply for job {} (created={})", jobId, created);
         return new RecordExternalApplyResult(saved, created);
     }
 

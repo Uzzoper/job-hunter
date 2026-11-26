@@ -43,11 +43,10 @@ public class AutoSendScheduler {
         }
 
         eligibilityPort.nextEligibleDraft().ifPresent(eligible -> {
-            var userId = eligible.draft().userId();
             var jobId = eligible.draft().jobId();
 
             try {
-                sendEmailUseCase.send(userId, jobId);
+                sendEmailUseCase.send(jobId);
                 log.info("Auto-sent email for job {} (score {})", jobId, eligible.matchScore());
             } catch (Exception e) {
                 log.warn("Auto-send failed for job {}: {}", jobId, e.getMessage());

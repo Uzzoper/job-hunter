@@ -60,7 +60,7 @@ public class ResumePreviewService {
      * @throws com.juanperuzzo.job_hunter.domain.exception.UserNotFoundException
      *                                  if the user does not exist
      */
-    public ResumePreview preview(Long userId, MultipartFile file) {
+    public ResumePreview preview(MultipartFile file) {
         ResumeExtractionPipeline.validateFile(file);
 
         String rawText = ResumeExtractionPipeline.extractPdfText(file);
@@ -77,8 +77,10 @@ public class ResumePreviewService {
         // Cheap reads before the AI call: an unknown user fails without
         // spending a completion (review 2026-11-15).
         // accountIdentity = users row (slice (a) source of truth)
-        AccountIdentity identity = userProfileService.getAccountIdentity(userId);
-        var stored = userProfileRepository.findByUserId(userId).orElse(null);
+        var stored = userProfileRepository.find().orElse(null);
+        AccountIdentity identity = stored == null
+                ? new AccountIdentity("Owner", null)
+                : new AccountIdentity(stored.name(), stored.email());
 
         var extraction = ResumeExtractionPipeline.extractWithAi(rawText, aiPort, maxAiChars);
         var contact = extraction.contact();
@@ -107,7 +109,7 @@ public class ResumePreviewService {
                 .toList();
 
         log.info("Resume preview for user {}: {} skills, {} projects, {} missing fields (nothing persisted)",
-                userId, extraction.skills().size(), projects.size(), missingFields.size());
+                extraction.skills().size(), projects.size(), missingFields.size());
 
         return new ResumePreview(identity,
                 new ResumePreview.ContactPreview(phone, contactEmail, portfolioUrl),

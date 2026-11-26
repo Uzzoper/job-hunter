@@ -2,8 +2,6 @@ package com.juanperuzzo.job_hunter.web.controller;
 
 import com.juanperuzzo.job_hunter.application.dto.ResumeCorrections;
 import com.juanperuzzo.job_hunter.application.dto.ResumePreview;
-import com.juanperuzzo.job_hunter.application.port.in.AccountIdentity;
-import com.juanperuzzo.job_hunter.application.port.in.CurrentUserProvider;
 import com.juanperuzzo.job_hunter.application.port.in.ResumeRetrievalUseCase;
 import com.juanperuzzo.job_hunter.application.port.in.UserProfileUseCase;
 import com.juanperuzzo.job_hunter.application.service.ResumeCommitService;
@@ -35,19 +33,17 @@ import java.util.List;
 public class ProfileController {
 
     private final UserProfileUseCase userProfileService;
-    private final CurrentUserProvider currentUserService;
     private final ResumeUploadService resumeUploadService;
     private final ResumeRetrievalUseCase resumeRetrievalUseCase;
     private final ResumePreviewService resumePreviewService;
     private final ResumeCommitService resumeCommitService;
 
-    public ProfileController(UserProfileUseCase userProfileService, CurrentUserProvider currentUserService,
+    public ProfileController(UserProfileUseCase userProfileService,
                              ResumeUploadService resumeUploadService,
                              ResumeRetrievalUseCase resumeRetrievalUseCase,
                              ResumePreviewService resumePreviewService,
                              ResumeCommitService resumeCommitService) {
         this.userProfileService = userProfileService;
-        this.currentUserService = currentUserService;
         this.resumeUploadService = resumeUploadService;
         this.resumeRetrievalUseCase = resumeRetrievalUseCase;
         this.resumePreviewService = resumePreviewService;
@@ -56,167 +52,80 @@ public class ProfileController {
 
     @GetMapping
     public ResponseEntity<ProfileResponse> getProfile() {
-        Long userId = currentUserService.getCurrentUserId();
-        var profile = userProfileService.getProfile(userId);
-        var identity = userProfileService.getAccountIdentity(userId);
-        var response = toResponse(profile, identity);
+        var profile = userProfileService.getProfile();
+        var response = toResponse(profile);
         return ResponseEntity.ok(response);
     }
 
     @PutMapping
     public ResponseEntity<ProfileResponse> saveProfile(@Valid @RequestBody ProfileRequest request) {
-        Long userId = currentUserService.getCurrentUserId();
-        // Identity corrections are validated and applied BEFORE the profile
-        // write: an invalid identity answers 400 with nothing written
-        // (review 2026-11-15: partial-write finding — the @Email bean rule is
-        // lenient, the service rule is not, so the service must run first).
-        // Blank = "no correction", the same rule the commit route applies.
         boolean hasName = hasText(request.name());
         boolean hasEmail = hasText(request.email());
-        AccountIdentity identity = (hasName || hasEmail)
-                ? userProfileService.updateIdentity(userId,
-                        hasName ? request.name().trim() : null,
-                        hasEmail ? request.email().trim() : null)
-                : userProfileService.getAccountIdentity(userId);
+
         List<Project> projects = request.projects().stream()
                 .map(p -> new Project(p.name(), p.description(), String.join(", ", p.techStack())))
                 .toList();
         var prefs = toUserPreferences(request.preferences());
-        var profile = new UserProfile(null, userId, request.resumeText(), request.skills(),
+
+        // name/email corrections update the profile identity fields directly
+        var existing = userProfileService.getProfile();
+        String name = hasName ? request.name().trim() : existing.name();
+        String email = hasEmail ? request.email().trim() : existing.email();
+
+        var profile = new UserProfile(existing.id(), name, email, request.resumeText(), request.skills(),
                 request.tone(), projects, request.phone(), request.contactEmail(),
                 request.portfolioUrl(), request.githubUrl(), request.linkedinUrl(),
                 prefs);
-        var saved = userProfileService.saveProfile(userId, profile);
-        var response = toResponse(saved, identity);
+        var saved = userProfileService.saveProfile(profile);
+        var response = toResponse(saved);
         return ResponseEntity.ok(response);
     }
 
     @PostMapping("/upload-resume")
     public ResponseEntity<ProfileResponse> uploadResume(@RequestParam("file") MultipartFile file) {
-        Long userId = currentUserService.getCurrentUserId();
-        var profile = resumeUploadService.uploadResume(userId, file);
-        var response = toResponse(profile, userProfileService.getAccountIdentity(userId));
+        var profile = resumeUploadService.uploadResume(file);
+        var response = toResponse(profile);
         return ResponseEntity.ok(response);
     }
 
-    /**
-     * Stateless resume preview (issue #92 slice b): extracts and returns what a
-     * commit would write against the stored profile — persists nothing, so the
-     * bot can summarize the facts in chat and wait for explicit confirmation.
-     */
-    @PostMapping("/resume/preview")
+    @PostMapping("/preview-resume")
     public ResponseEntity<ResumePreviewResponse> previewResume(@RequestParam("file") MultipartFile file) {
-        Long userId = currentUserService.getCurrentUserId();
-        var preview = resumePreviewService.preview(userId, file);
-        return ResponseEntity.ok(toResponse(preview));
+        var preview = resumePreviewService.preview(file);
+        return ResponseEntity.ok(toPreviewResponse(preview));
     }
 
-    /**
-     * Confirmed resume commit (issue #92 slice b): this call IS the explicit
-     * confirmation — only it replaces the active resume/profile. Optional
-     * {@code corrections} JSON part carries chat corrections (merge order:
-     * chat correction &gt; stored value &gt; AI extraction) and the digest echo.
-     */
-    @PostMapping("/resume/commit")
-    public ResponseEntity<ProfileResponse> commitResume(
-            @RequestParam("file") MultipartFile file,
-            @RequestPart(value = "corrections", required = false) @Valid ResumeCorrectionsRequest corrections) {
-        Long userId = currentUserService.getCurrentUserId();
-        var appCorrections = corrections == null ? null : new ResumeCorrections(
-                corrections.name(), corrections.email(), corrections.phone(),
-                corrections.contactEmail(), corrections.portfolioUrl(), corrections.digest());
-        var profile = resumeCommitService.commit(userId, file, appCorrections);
-        var response = toResponse(profile, userProfileService.getAccountIdentity(userId));
+    @PostMapping("/commit-resume")
+    public ResponseEntity<ProfileResponse> commitResume(@RequestParam("file") MultipartFile file,
+                                                        @Valid @RequestBody(required = false) ResumeCorrectionsRequest corrections) {
+        var appCorrections = corrections == null ? null : new ResumeCorrections(corrections.name(), corrections.email(), corrections.phone(), corrections.contactEmail(), corrections.portfolioUrl(), corrections.digest());
+        var profile = resumeCommitService.commit(file, appCorrections);
+        var response = toResponse(profile);
         return ResponseEntity.ok(response);
     }
 
-    /**
-     * Serves the stored original resume PDF (issue #92 slice a). Works for
-     * every authenticated principal (bot via X-Bot-Token or user via JWT),
-     * always scoped to the principal's own file. {@code 404} when nothing is
-     * stored yet.
-     */
     @GetMapping("/resume")
-    public ResponseEntity<byte[]> getResume() {
-        Long userId = currentUserService.getCurrentUserId();
-        var pdf = resumeRetrievalUseCase.downloadResume(userId);
+    public ResponseEntity<byte[]> downloadResume() {
+        var pdf = resumeRetrievalUseCase.downloadResume();
         return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"resume.pdf\"")
                 .contentType(MediaType.APPLICATION_PDF)
-                .header(HttpHeaders.CONTENT_DISPOSITION,
-                        "attachment; filename=\"resume-" + userId + ".pdf\"")
                 .body(pdf);
     }
 
-    /**
-     * Account identity ({@code name}/{@code email}, issue #92 slices a–b) is
-     * carried by every profile response from the users row — GET, PUT,
-     * upload-resume and commit alike; the resume-extracted contact fields
-     * remain a separate concern.
-     */
-    private ProfileResponse toResponse(UserProfile profile, AccountIdentity identity) {
-        var accountName = identity == null ? null : identity.name();
-        var accountEmail = identity == null ? null : identity.email();
-        var projectResponses = profile.projects().stream()
-                .map(p -> {
-                    var techStack = p.techStack().isBlank()
-                            ? Collections.<String>emptyList()
-                            : List.of(p.techStack().split("\\s*,\\s*"));
-                    return new ProjectResponse(p.name(), p.description(), techStack);
-                })
-                .toList();
-        var prefsResponse = toPreferencesResponse(profile.preferences());
+    private ProfileResponse toResponse(UserProfile profile) {
         return new ProfileResponse(
-                profile.id(), profile.userId(), accountName, accountEmail,
-                profile.resumeText(), profile.skills(), profile.tone(), projectResponses,
-                profile.phone(), profile.contactEmail(), profile.portfolioUrl(),
-                profile.githubUrl(), profile.linkedinUrl(), prefsResponse);
+                profile.id(), profile.name(), profile.email(),
+                profile.resumeText(), profile.skills(), profile.tone(), toProjectResponses(profile.projects()),
+                profile.phone(), profile.contactEmail(), profile.portfolioUrl(), profile.githubUrl(),
+                profile.linkedinUrl(), toPreferencesResponse(profile.preferences()));
     }
 
-    /** True when {@code value} carries a non-blank correction. */
-    private static boolean hasText(String value) {
+    private boolean hasText(String value) {
         return value != null && !value.isBlank();
     }
 
-    /** Maps the stateless preview (application) into its API response shape. */
-    private ResumePreviewResponse toResponse(ResumePreview preview) {
-        var identity = new ResumePreviewResponse.IdentityResponse(
-                preview.accountIdentity().name(), preview.accountIdentity().email());
-        var contact = new ResumePreviewResponse.ContactResponse(
-                preview.contact().phone(), preview.contact().contactEmail(), preview.contact().portfolioUrl());
-        var projects = preview.projects().stream()
-                .map(p -> new ResumePreviewResponse.ProjectPreviewResponse(
-                        p.name(), p.description(), p.techStack()))
-                .toList();
-        return new ResumePreviewResponse(identity, contact, preview.skills(), projects,
-                preview.tone(), preview.resumeTextChars(), preview.digest(), preview.missingFields());
-    }
-
-    /**
-     * Converts a request-level preferences DTO into a domain {@link UserPreferences}.
-     * Null input → null output (omit = preserve existing, handled by service layer).
-     * The discriminated {@code workPreference} DTO is translated via
-     * {@link WorkPreference} construction.
-     */
-    private static UserPreferences toUserPreferences(
-            com.juanperuzzo.job_hunter.web.dto.PreferencesRequest req) {
-        if (req == null) {
-            return null;
-        }
-        return new UserPreferences(
-                req.workPreference() != null ? req.workPreference().toDomain() : null,
-                req.salaryFloor(),
-                req.excludedCompanies() != null ? List.copyOf(req.excludedCompanies()) : List.of(),
-                req.keywords() != null ? List.copyOf(req.keywords()) : List.of());
-    }
-
-    /**
-     * Converts domain preferences into a read-only response DTO.
-     * Null input → null output.
-     */
-    private static PreferencesResponse toPreferencesResponse(UserPreferences prefs) {
-        if (prefs == null) {
-            return null;
-        }
+    private PreferencesResponse toPreferencesResponse(UserPreferences prefs) {
+        if (prefs == null) return null;
         return new PreferencesResponse(
                 toWorkPreferenceDto(prefs.workPreference()),
                 prefs.salaryFloor(),
@@ -224,18 +133,40 @@ public class ProfileController {
                 prefs.keywords());
     }
 
-    /**
-     * Converts a domain {@code WorkPreference} variant into its discriminated
-     * JSON DTO representation.
-     */
-    private static WorkPreferenceDto toWorkPreferenceDto(WorkPreference workPreference) {
+    private UserPreferences toUserPreferences(com.juanperuzzo.job_hunter.web.dto.PreferencesRequest req) {
+        if (req == null) return null;
+        return new UserPreferences(
+                req.workPreference() != null ? req.workPreference().toDomain() : null,
+                req.salaryFloor(),
+                req.excludedCompanies() != null ? List.copyOf(req.excludedCompanies()) : List.of(),
+                req.keywords() != null ? List.copyOf(req.keywords()) : List.of());
+    }
+
+    private static WorkPreferenceDto toWorkPreferenceDto(com.juanperuzzo.job_hunter.domain.model.WorkPreference workPreference) {
         if (workPreference == null) {
             return null;
         }
         return switch (workPreference) {
-            case WorkPreference.Remote r -> new WorkPreferenceDto.Remote();
-            case WorkPreference.Hybrid h -> new WorkPreferenceDto.Hybrid(h.cities());
-            case WorkPreference.Onsite o -> new WorkPreferenceDto.Onsite(o.cities());
+            case com.juanperuzzo.job_hunter.domain.model.WorkPreference.Remote r -> new WorkPreferenceDto.Remote();
+            case com.juanperuzzo.job_hunter.domain.model.WorkPreference.Hybrid h -> new WorkPreferenceDto.Hybrid(h.cities());
+            case com.juanperuzzo.job_hunter.domain.model.WorkPreference.Onsite o -> new WorkPreferenceDto.Onsite(o.cities());
         };
+    }
+
+    private List<ProjectResponse> toProjectResponses(List<Project> projects) {
+        return projects == null ? List.of() : projects.stream()
+                .map(p -> new ProjectResponse(p.name(), p.description(), List.of(p.techStack().split(", "))))
+                .toList();
+    }
+
+    private ResumePreviewResponse toPreviewResponse(ResumePreview preview) {
+        var identity = new ResumePreviewResponse.IdentityResponse(preview.accountIdentity().name(), preview.accountIdentity().email());
+        var contact = new ResumePreviewResponse.ContactResponse(preview.contact().phone(), preview.contact().contactEmail(),
+                preview.contact().portfolioUrl());
+        var projects = preview.projects().stream()
+                .map(pr -> new ResumePreviewResponse.ProjectPreviewResponse(pr.name(), pr.description(), pr.techStack()))
+                .toList();
+        return new ResumePreviewResponse(identity, contact, preview.skills(), projects,
+                preview.tone(), preview.resumeTextChars(), preview.digest(), preview.missingFields());
     }
 }

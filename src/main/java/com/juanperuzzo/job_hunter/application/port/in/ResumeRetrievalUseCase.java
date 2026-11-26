@@ -13,5 +13,5 @@ public interface ResumeRetrievalUseCase {
      * @throws com.juanperuzzo.job_hunter.domain.exception.ResumeNotFoundException
      *         when no PDF is stored for that user
      */
-    byte[] downloadResume(Long userId);
+    byte[] downloadResume();
 }

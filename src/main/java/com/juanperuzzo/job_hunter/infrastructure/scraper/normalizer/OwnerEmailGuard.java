@@ -1,9 +1,10 @@
 package com.juanperuzzo.job_hunter.infrastructure.scraper.normalizer;
 
-import com.juanperuzzo.job_hunter.application.port.out.UserRepository;
+import com.juanperuzzo.job_hunter.application.port.out.UserProfileRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.juanperuzzo.job_hunter.domain.model.UserProfile;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
@@ -33,12 +34,12 @@ public class OwnerEmailGuard {
 
     private static final Logger log = LoggerFactory.getLogger(OwnerEmailGuard.class);
 
-    private final UserRepository userRepository;
+    private final UserProfileRepository userProfileRepository;
     private volatile Set<String> ownerEmails;
     private final AtomicBoolean loadWarningLogged = new AtomicBoolean();
 
-    public OwnerEmailGuard(UserRepository userRepository) {
-        this.userRepository = userRepository;
+    public OwnerEmailGuard(UserProfileRepository userProfileRepository) {
+        this.userProfileRepository = userProfileRepository;
     }
 
     /**
@@ -49,7 +50,7 @@ public class OwnerEmailGuard {
      * @param context human/URL context used only in the WARN log line
      */
     public String discardIfOwnerEmail(String contactEmail, String context) {
-        if (contactEmail == null || contactEmail.isBlank() || userRepository == null) {
+        if (contactEmail == null || contactEmail.isBlank() || userProfileRepository == null) {
             return contactEmail;
         }
         var owners = ownerEmails();
@@ -75,7 +76,8 @@ public class OwnerEmailGuard {
         synchronized (this) {
             if (ownerEmails == null) {
                 try {
-                    var emails = userRepository.findAllEmails();
+                    var profile = userProfileRepository.find().orElse(null);
+                    var emails = profile != null && profile.email() != null ? List.of(profile.email()) : List.<String>of();
                     // Nil-guard: an unexpected null list is treated as an empty set.
                     var emailList = emails != null ? emails : List.<String>of();
                     ownerEmails = emailList.stream()

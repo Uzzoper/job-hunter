@@ -2,9 +2,9 @@ package com.juanperuzzo.job_hunter.application.service;
 
 import com.juanperuzzo.job_hunter.application.port.in.SendEmailUseCase;
 import com.juanperuzzo.job_hunter.application.port.out.EmailDraftRepository;
+import com.juanperuzzo.job_hunter.application.port.out.UserProfileRepository;
 import com.juanperuzzo.job_hunter.application.port.out.EmailSenderPort;
 import com.juanperuzzo.job_hunter.application.port.out.JobRepository;
-import com.juanperuzzo.job_hunter.application.port.out.UserRepository;
 import com.juanperuzzo.job_hunter.domain.exception.EmailAlreadySentException;
 import com.juanperuzzo.job_hunter.domain.exception.EmailDeliveryException;
 import com.juanperuzzo.job_hunter.domain.exception.JobNotFoundException;
@@ -24,20 +24,20 @@ public class EmailSendingService implements SendEmailUseCase {
 
     private final EmailDraftRepository emailDraftRepository;
     private final JobRepository jobRepository;
-    private final UserRepository userRepository;
+    private final UserProfileRepository userProfileRepository;
     private final EmailSenderPort emailSenderPort;
 
-    public EmailSendingService(EmailDraftRepository emailDraftRepository, JobRepository jobRepository, UserRepository userRepository, EmailSenderPort emailSenderPort) {
+    public EmailSendingService(EmailDraftRepository emailDraftRepository, JobRepository jobRepository, UserProfileRepository userProfileRepository, EmailSenderPort emailSenderPort) {
         this.emailDraftRepository = emailDraftRepository;
         this.jobRepository = jobRepository;
-        this.userRepository = userRepository;
+        this.userProfileRepository = userProfileRepository;
         this.emailSenderPort = emailSenderPort;
     }
 
     @Override
-    public EmailDraft send(Long userId, Long jobId) {
-        var draft = emailDraftRepository.findByJobIdAndUserId(jobId, userId)
-                .orElseThrow(() -> new JobNotFoundException("Email draft not found for job " + jobId + " and user " + userId));
+    public EmailDraft send(Long jobId) {
+        var draft = emailDraftRepository.findByJobId(jobId)
+                .orElseThrow(() -> new JobNotFoundException("Email draft not found for job " + jobId));
 
         if (draft.status() == EmailStatus.SENT) {
             throw new EmailAlreadySentException("Email " + draft.id() + " has already been sent");
@@ -71,11 +71,11 @@ public class EmailSendingService implements SendEmailUseCase {
             throw new EmailAlreadySentException("Email already sent for job " + jobId + " to " + contactEmail);
         }
 
-        var user = userRepository.findById(userId)
-                .orElseThrow(() -> new UserNotFoundException("User not found: " + userId));
 
+        var profile = userProfileRepository.find().orElseThrow(() -> new UserNotFoundException("Profile not found"));
+        var senderEmail = profile.email() != null ? profile.email() : profile.contactEmail();
         try {
-            emailSenderPort.send(user.email(), contactEmail, draft.subject(), draft.body());
+            emailSenderPort.send(senderEmail, contactEmail, draft.subject(), draft.body());
         } catch (EmailDeliveryException e) {
             // adapters already throw the domain exception — don't re-wrap
             throw e;
@@ -84,7 +84,7 @@ public class EmailSendingService implements SendEmailUseCase {
         }
 
         var sentDraft = new EmailDraft(
-                draft.id(), draft.jobId(), draft.userId(),
+                draft.id(), draft.jobId(),
                 draft.subject(), draft.body(),
                 EmailStatus.SENT, draft.generatedAt(), LocalDateTime.now(), contactEmail
         );

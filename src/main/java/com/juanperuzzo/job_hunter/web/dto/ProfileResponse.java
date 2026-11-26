@@ -5,11 +5,8 @@ import java.util.List;
 
 public record ProfileResponse(
     Long id,
-    Long userId,
     /**
-     * Account display name from the {@code users} row (issue #92 slice a) —
-     * distinct from resume-extracted contact data; filled on GET, {@code null}
-     * on write routes until the slice-(b) preview/commit flow.
+     * Account display name (self-hosted: from the single profile row).
      */
     String name,
     /** Account login email from the {@code users} row — NOT the resume contactEmail. */

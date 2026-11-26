@@ -6,7 +6,6 @@ import com.juanperuzzo.job_hunter.application.port.out.JobAnalysisRepository;
 import com.juanperuzzo.job_hunter.application.port.out.JobRepository;
 import com.juanperuzzo.job_hunter.application.port.out.PdfRendererPort;
 import com.juanperuzzo.job_hunter.application.port.out.UserProfileRepository;
-import com.juanperuzzo.job_hunter.application.port.out.UserRepository;
 import com.juanperuzzo.job_hunter.domain.exception.AiException;
 import com.juanperuzzo.job_hunter.domain.exception.AnalysisNotFoundException;
 import com.juanperuzzo.job_hunter.domain.exception.JobNotFoundException;
@@ -16,7 +15,6 @@ import com.juanperuzzo.job_hunter.domain.exception.UserNotFoundException;
 import com.juanperuzzo.job_hunter.domain.model.Job;
 import com.juanperuzzo.job_hunter.domain.model.JobAnalysis;
 import com.juanperuzzo.job_hunter.domain.model.TailoredResume;
-import com.juanperuzzo.job_hunter.domain.model.User;
 import com.juanperuzzo.job_hunter.domain.model.UserProfile;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -48,7 +46,6 @@ public class ResumeTailoringService implements TailorResumeUseCase {
     private final JobRepository jobRepository;
     private final JobAnalysisRepository jobAnalysisRepository;
     private final UserProfileRepository userProfileRepository;
-    private final UserRepository userRepository;
     private final PdfRendererPort pdfRendererPort;
     private final int maxAiChars;
     private final ObjectMapper objectMapper;
@@ -66,14 +63,12 @@ public class ResumeTailoringService implements TailorResumeUseCase {
     public ResumeTailoringService(AiPort aiPort, JobRepository jobRepository,
                                   JobAnalysisRepository jobAnalysisRepository,
                                   UserProfileRepository userProfileRepository,
-                                  UserRepository userRepository,
                                   PdfRendererPort pdfRendererPort,
                                   int maxAiChars) {
         this.aiPort = aiPort;
         this.jobRepository = jobRepository;
         this.jobAnalysisRepository = jobAnalysisRepository;
         this.userProfileRepository = userProfileRepository;
-        this.userRepository = userRepository;
         this.pdfRendererPort = pdfRendererPort;
         this.maxAiChars = maxAiChars;
         this.objectMapper = new ObjectMapper();
@@ -93,22 +88,19 @@ public class ResumeTailoringService implements TailorResumeUseCase {
      * @throws AiException                   if the AI call fails or returns invalid JSON
      */
     @Override
-    public byte[] tailorResume(Long userId, Long jobId) {
+    public byte[] tailorResume(Long jobId) {
         Job job = jobRepository.findById(jobId)
                 .orElseThrow(() -> new JobNotFoundException("Job not found with id: " + jobId));
 
-        JobAnalysis analysis = jobAnalysisRepository.findByJobIdAndUserId(jobId, userId)
+        JobAnalysis analysis = jobAnalysisRepository.findByJobId(jobId)
                 .orElseThrow(() -> new AnalysisNotFoundException("Job must be analyzed before tailoring the resume"));
 
-        UserProfile profile = userProfileRepository.findByUserId(userId)
+        UserProfile profile = userProfileRepository.find()
                 .orElseThrow(() -> new ProfileNotConfiguredException("Please configure your resume and skills profile first"));
 
         if (profile.resumeText() == null || profile.resumeText().isBlank()) {
             throw new ProfileNotConfiguredException("Please configure your resume and skills profile first");
         }
-
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new UserNotFoundException("User not found with id: " + userId));
 
         String prompt = buildPrompt(job, analysis, profile);
         String response;
@@ -120,7 +112,7 @@ public class ResumeTailoringService implements TailorResumeUseCase {
 
         TailoredResume tailored = parseTailoredResume(response, profile.resumeText());
 
-        String html = fillTemplate(tailored, user, profile);
+        String html = fillTemplate(tailored, profile);
         return pdfRendererPort.renderPdf(html);
     }
 
@@ -346,10 +338,10 @@ Resume text:
         return result;
     }
 
-    private String fillTemplate(TailoredResume tailored, User user, UserProfile profile) {
+    private String fillTemplate(TailoredResume tailored, UserProfile profile) {
         String html = template;
-        html = html.replace("{{FULL_NAME}}", escapeHtml(user.name()));
-        html = html.replace("{{CONTACT}}", renderContact(profile, user));
+        html = html.replace("{{FULL_NAME}}", escapeHtml(profile.name()));
+        html = html.replace("{{CONTACT}}", renderContact(profile));
         html = html.replace("{{OBJECTIVE}}", renderObjective(tailored.objective()));
         html = html.replace("{{SKILLS_GROUPS}}", renderSkillsGroups(tailored.skills()));
         html = html.replace("{{PROJECTS}}", renderProjects(tailored.projects()));
@@ -367,12 +359,13 @@ Resume text:
      * Empty parts are skipped so no dangling separators are rendered; the
      * registered account email is the fallback for the mailto anchor.
      */
-    private String renderContact(UserProfile profile, User user) {
+    private String renderContact(UserProfile profile) {
         var parts = new ArrayList<String>();
         if (isNotBlank(profile.phone())) {
             parts.add(escapeHtml(profile.phone().trim()));
         }
-        String email = isNotBlank(profile.contactEmail()) ? profile.contactEmail().trim() : user.email();
+        String email = isNotBlank(profile.contactEmail()) ? profile.contactEmail().trim()
+                : (isNotBlank(profile.email()) ? profile.email().trim() : "");
         parts.add("<a href=\"mailto:" + escapeHtml(email) + "\">" + escapeHtml(email) + "</a>");
         if (isNotBlank(profile.portfolioUrl())) {
             parts.add(renderContactLink(profile.portfolioUrl()));

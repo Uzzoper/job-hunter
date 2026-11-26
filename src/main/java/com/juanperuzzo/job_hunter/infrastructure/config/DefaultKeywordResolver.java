@@ -17,9 +17,8 @@ public class DefaultKeywordResolver implements KeywordResolver {
     }
 
     @Override
-    public List<String> resolve(Long userId) {
-        Objects.requireNonNull(userId, "userId");
-        var profileOpt = userProfileRepository.findByUserId(userId);
+    public List<String> resolve() {
+        var profileOpt = userProfileRepository.find();
         if (profileOpt.isPresent()) {
             var prefs = profileOpt.get().preferences();
             if (prefs != null && prefs.keywords() != null && !prefs.keywords().isEmpty()) {

@@ -48,8 +48,8 @@ public class FetchSourceJobsService implements FetchSourceJobsUseCase {
     }
 
     @Override
-    public FetchResult fetchAndSave(Long userId, String sourceId) {
-        return fetchAndSave(userId, sourceId, null);
+    public FetchResult fetchAndSave(String sourceId) {
+        return fetchAndSave(sourceId, null);
     }
 
     /**
@@ -59,9 +59,9 @@ public class FetchSourceJobsService implements FetchSourceJobsUseCase {
      * behave exactly as before.
      */
     @Override
-    public FetchResult fetchAndSave(Long userId, String sourceId, Consumer<KeywordRun> keywordListener) {
+    public FetchResult fetchAndSave(String sourceId, Consumer<KeywordRun> keywordListener) {
         log.info("Fetching jobs from source: {}", sourceId);
-        var keywords = List.copyOf(keywordResolver.resolve(userId));
+        var keywords = List.copyOf(keywordResolver.resolve());
 
         int fetched = 0;
         int saved = 0;

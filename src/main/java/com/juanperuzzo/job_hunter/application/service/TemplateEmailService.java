@@ -1,7 +1,6 @@
 package com.juanperuzzo.job_hunter.application.service;
 
 import com.juanperuzzo.job_hunter.domain.model.Job;
-import com.juanperuzzo.job_hunter.domain.model.User;
 import com.juanperuzzo.job_hunter.domain.model.UserProfile;
 
 /**
@@ -47,9 +46,9 @@ public class TemplateEmailService {
     public TemplateEmailService() {
     }
 
-    public TemplateResult generate(Job job, User user, UserProfile profile) {
+    public TemplateResult generate(Job job, UserProfile profile) {
         var subject = resolveJobTokens(TEMPLATE_SUBJECT, job);
-        var body = ProfilePlaceholders.resolve(resolveJobTokens(TEMPLATE_BODY, job), user, profile);
+        var body = ProfilePlaceholders.resolve(resolveJobTokens(TEMPLATE_BODY, job), profile);
         return new TemplateResult(subject, body);
     }
 

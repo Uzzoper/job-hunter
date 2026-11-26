@@ -18,8 +18,8 @@ public class ResumeRetrievalService implements ResumeRetrievalUseCase {
     }
 
     @Override
-    public byte[] downloadResume(Long userId) {
-        return resumeStorage.read(userId)
-                .orElseThrow(() -> new ResumeNotFoundException("No resume stored for user: " + userId));
+    public byte[] downloadResume() {
+        return resumeStorage.read()
+                .orElseThrow(() -> new ResumeNotFoundException("No resume stored"));
     }
 }

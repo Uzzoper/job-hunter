@@ -12,5 +12,5 @@ public interface TailorResumeUseCase {
      * @param jobId  the job the resume is tailored for
      * @return the tailored resume as PDF bytes
      */
-    byte[] tailorResume(Long userId, Long jobId);
+    byte[] tailorResume(Long jobId);
 }

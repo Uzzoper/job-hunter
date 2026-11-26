@@ -51,7 +51,7 @@ public class AiAnalysisService implements AnalyzeJobUseCase {
      * @throws AiException                  if the AI call or response parsing fails
      */
     @Override
-    public JobAnalysis analyze(Long userId, Long jobId) {
+    public JobAnalysis analyze(Long jobId) {
         Job job = jobRepository.findById(jobId)
                 .orElseThrow(() -> new JobNotFoundException("Job not found with id: " + jobId));
 
@@ -59,7 +59,7 @@ public class AiAnalysisService implements AnalyzeJobUseCase {
             throw new IllegalArgumentException("Job description must not be empty");
         }
 
-        var profile = userProfileRepository.findByUserId(userId)
+        var profile = userProfileRepository.find()
                 .orElseThrow(() -> new ProfileNotConfiguredException("Please configure your resume and skills profile first"));
 
         try {
@@ -71,11 +71,11 @@ public class AiAnalysisService implements AnalyzeJobUseCase {
             // if the AI ignores the injected context; the soft stack signal
             // (match-quality spec §4) penalizes a skills list with zero overlap.
             int matchScore = JobPreferenceScorer.adjust(parsed.matchScore(), job, profile.preferences(), profile.skills());
-            var existingId = jobAnalysisRepository.findByJobIdAndUserId(job.id(), userId)
+            var existingId = jobAnalysisRepository.findByJobId(job.id())
                     .map(JobAnalysis::id)
                     .orElse(null);
             var analysis = new JobAnalysis(
-                    existingId, job.id(), userId, matchScore,
+                    existingId, job.id(), matchScore,
                     parsed.matchedSkills(), parsed.missingSkills(),
                     parsed.companyTone(), parsed.summary()
             );
@@ -207,7 +207,7 @@ public class AiAnalysisService implements AnalyzeJobUseCase {
                 summary = node.get("summary").asText("");
             }
 
-            return new JobAnalysis(null, null, null, matchScore, matchedSkills, missingSkills, tone, summary);
+            return new JobAnalysis(null, null, matchScore, matchedSkills, missingSkills, tone, summary);
         } catch (AiException e) {
             throw e;
         } catch (Exception e) {

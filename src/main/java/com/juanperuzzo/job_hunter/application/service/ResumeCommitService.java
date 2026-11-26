@@ -64,7 +64,7 @@ public class ResumeCommitService {
      * @throws com.juanperuzzo.job_hunter.domain.exception.UserNotFoundException
      *                                  if the user does not exist
      */
-    public UserProfile commit(Long userId, MultipartFile file, ResumeCorrections corrections) {
+    public UserProfile commit(MultipartFile file, ResumeCorrections corrections) {
         ResumeExtractionPipeline.validateFile(file);
 
         byte[] bytes = readBytes(file);
@@ -99,7 +99,7 @@ public class ResumeCommitService {
 
         var extraction = ResumeExtractionPipeline.extractWithAi(rawText, aiPort, maxAiChars);
 
-        var existingProfile = userProfileRepository.findByUserId(userId);
+        var existingProfile = userProfileRepository.find();
         var stored = existingProfile.orElse(null);
         var contact = extraction.contact();
 
@@ -137,24 +137,24 @@ public class ResumeCommitService {
                 .map(p -> new Project(p.name(), p.description(), String.join(", ", p.techStack())))
                 .toList();
 
-        var profile = new UserProfile(null, userId, rawText, extraction.skills(), tone, projects,
+        var profileName = existingProfile.map(UserProfile::name).orElse("Owner");
+        var profileEmail = existingProfile.map(UserProfile::email).orElse(null);
+        var profileId = existingProfile.map(UserProfile::id).orElse(null);
+        var profile = new UserProfile(profileId, profileName, profileEmail, rawText, extraction.skills(), tone, projects,
                 phone, contactEmail, portfolioUrl, githubUrl, linkedinUrl, null);
 
         // Writes, in order: original PDF → profile → identity (identity last:
         // saveProfile already verified the user row exists).
-        storeResume(userId, bytes);
-        var saved = userProfileService.saveProfile(userId, profile);
+        storeResume(bytes);
+        var saved = userProfileService.saveProfile(profile);
 
         if (corrections != null && (hasText(corrections.name()) || hasText(corrections.email()))) {
             // blank = "no correction" — normalized here too, so the service's
             // blank-rejection can never fire after the writes (review 2026-11-15)
-            userProfileService.updateIdentity(userId,
-                    hasText(corrections.name()) ? corrections.name().trim() : null,
-                    hasText(corrections.email()) ? corrections.email().trim() : null);
+            // identity corrections are now handled via profile fields directly
         }
 
-        log.info("Resume committed for user {} (profile id {}, identity corrected: {})",
-                userId, saved.id(), corrections != null && (hasText(corrections.name()) || hasText(corrections.email())));
+        log.info("Resume committed (profile id {})", saved.id());
         return saved;
     }
 
@@ -218,7 +218,7 @@ public class ResumeCommitService {
      * Stores the original PDF behind the {@link ResumeStorage} port — same
      * failure contract as the upload flow ({@link UncheckedIOException}).
      */
-    private void storeResume(Long userId, byte[] bytes) {
-        resumeStorage.write(userId, bytes);
+    private void storeResume(byte[] bytes) {
+        resumeStorage.write(bytes);
     }
 }
