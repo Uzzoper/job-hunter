@@ -2,7 +2,7 @@
 
 ## Status
 
-Superseded by ADR 002 (CLI removed from the public repo; bot is the only interface)
+Superseded by ADR 003 (self-hosted single-user, bot-only)
 
 ## Date
 
@@ -18,13 +18,13 @@ webapp. We decided to keep all interfaces.
 
 Keep:
 
-- Bot (Hermes) — primary interface, self-hosted
-- REST API + X-Bot-Token — used by the bot (JWT retained for now, to be removed in the self-hosted-only phase)
+- Bot (Hermes) — primary (and only) interface, self-hosted
+- REST API + X-Bot-Token — used by the bot
 
 ## Consequences
 
-- JWT stays in the backend even without direct use by the bot
-- TUI remains in the repo (living, tested code)
+- JWT removed; X-Bot-Token is the only auth (ADR 003)
+- CLI removed from the public repo (ADR 002)
 - Whenever web ships, auth is already solved
 - Maintenance cost is zero (config in application.yaml)
 

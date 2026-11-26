@@ -272,7 +272,7 @@ flowchart BT
 
     subgraph Application["🔵 Application"]
         A1["port/in/ — FetchJobsUseCase, AnalyzeJobUseCase,<br/>GenerateEmailUseCase, AuthUseCase,<br/>ApproveDraftUseCase, AutoSendEligibilityUseCase,<br/>CurrentUserProvider, FetchSourceJobsUseCase,<br/>GetEmailDraftUseCase, GetJobUseCase,<br/>ListJobsUseCase, SendEmailUseCase,<br/>TailorResumeUseCase, UserProfileUseCase"]
-        A2["port/out/ — JobRepository, ScraperPort, AiPort,<br/>NormalizerPort, SourceFetchPort,<br/>EmailDraftRepository, EmailSenderPort,<br/>JobAnalysisRepository, PasswordHasher,<br/>TokenProvider, UserProfileRepository,<br/>UserRepository, RawJob"]
+        A2["port/out/ — JobRepository, ScraperPort, AiPort,<br/>NormalizerPort, SourceFetchPort,<br/>EmailDraftRepository, EmailSenderPort,<br/>JobAnalysisRepository, UserProfileRepository,<br/>RawJob"]
         A3["service/ — FetchJobsService, AiAnalysisService,<br/>EmailGenerationService,<br/>FetchSourceJobsService, ApproveDraftService,<br/>AutoSendEligibilityService, EmailSendingService,<br/>ResumeUploadService, ResumeTailoringService,<br/>TemplateEmailService, UserProfileService"]
     end
 
@@ -280,7 +280,7 @@ flowchart BT
         I1["scraper/ — ProviderBasedScraperAdapter,<br/>GupyProvider, InfoJobsProvider,<br/>LinkedInProvider, LinkedInScraperClient,<br/>GreenhouseProvider, AshbyProvider,<br/>LeverProvider, GithubJobsProvider,<br/>ProviderRegistry, JobNormalizer,<br/>DateParser, JsonLdParser,<br/>RateLimiter, RetryStrategy,<br/>ExtractionStrategy, HtmlStrategy,<br/>RestApiStrategy"]
         I2["ai/ — HermesAgentClient<br/>(sole AiPort)"]
         I3["persistence/ — JPA adapters,<br/>repositories, entities"]
-        I4["security/ — JwtTokenFilter,<br/>JwtTokenService, SecurityConfig,<br/>CurrentUserService"]
+        I4["security/ — BotTokenFilter<br/>(X-Bot-Token)"]
         I5["email/ — HermesBotEmailSender"]
         I6["scheduler/ — AutoSendScheduler"]
         I7["config/ — AppConfig,<br/>LinkedInScraperProperties"]

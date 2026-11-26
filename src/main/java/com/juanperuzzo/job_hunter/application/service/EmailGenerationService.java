@@ -143,9 +143,9 @@ public class EmailGenerationService implements GenerateEmailUseCase, GetEmailDra
      */
     private void writeRefusalReasonBestEffort(Long jobId, String aiResponse) {
         try {
-            log.debug("Refusal reason for job {}: {}", jobId, refusalReason(aiResponse));
+            botMemorySyncService.writeMemoryEntry(refusalReason(aiResponse));
         } catch (Exception e) {
-            log.warn("Could not log refusal reason for job {}: {}", jobId, e.getMessage());
+            log.warn("Could not write refusal reason to bot memory for job {}: {}", jobId, e.getMessage());
         }
     }
 

@@ -21,8 +21,8 @@ recommended daily path (see ADR 001).
 
 - The **Hermes bot is the primary interface**. Portfolio reviewers and new
   users should start at `docs/bot-onboarding.md`.
-- The **Rust CLI/TUI is legacy**: kept in the repo, built and tested, but
-  marked legacy in the README and in `cli/README.md`. It is supported only
+- The **Rust CLI/TUI is removed** from the public repo (commit 428f373).
+  The private clone retains it for debug/manual use. It is supported only
   for debug, manual JWT and scripting.
 - No new features are added to the CLI unless they are also exposed via the
   bot or the REST API. Existing CLI commands stay (no removal) to avoid
@@ -35,8 +35,8 @@ recommended daily path (see ADR 001).
 ## Consequences
 
 - README positions the bot first; CLI section is explicitly "legacy".
-- `cli/README.md` opens with a legacy notice.
-- CI keeps building and testing the CLI (no removal).
+- (cli/ directory removed; no CLI README remains.)
+- CI no longer builds or tests the CLI.
 - Contributors adding interface features target the bot/REST API, not the TUI.
 
 ## References
