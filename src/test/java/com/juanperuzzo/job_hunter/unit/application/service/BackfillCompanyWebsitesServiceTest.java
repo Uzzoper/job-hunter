@@ -45,6 +45,23 @@ class BackfillCompanyWebsitesServiceTest {
         service = new BackfillCompanyWebsitesService(jobRepository, companyDomainResolver);
     }
 
+    @Test
+    @DisplayName("run with source=greenhouse should scan only greenhouse rows and build greenhouse JobRefs")
+    void run_whenSourceGreenhouse_shouldScanOnlyGreenhouseRows() {
+        var j1 = new Job(1L, "Dev 1", "Co1", "https://boards.greenhouse.io/acme/jobs/1", "desc", LocalDate.now(), "greenhouse", null, null);
+        when(jobRepository.findBySourceAndCompanyWebsiteIsNull("greenhouse")).thenReturn(List.of(j1));
+        when(companyDomainResolver.resolveCompanyWebsites(
+                List.of(new CompanyDomainResolverPort.JobRef(j1.url(), j1.company(), "greenhouse")), 50))
+                .thenReturn(Map.of(j1.url(), "https://www.acme.com"));
+
+        var result = service.run(true, 50, null, "greenhouse");
+
+        assertEquals(1, result.scanned());
+        assertEquals(1, result.filled());
+        verify(jobRepository).findBySourceAndCompanyWebsiteIsNull("greenhouse");
+        verify(jobRepository, never()).findBySourceAndCompanyWebsiteIsNull("gupy");
+    }
+
     private static Job job(Long id, String url) {
         return new Job(id, "Dev " + id, "Co" + id, url, "desc", LocalDate.now(), "gupy", null, null);
     }

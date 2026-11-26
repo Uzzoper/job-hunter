@@ -801,6 +801,24 @@ class JobControllerTest {
     }
 
     @Test
+    @DisplayName("backfillWebsites should forward source to page the scan by job source")
+    void backfillWebsites_whenSourceGiven_shouldForwardSourceToUseCase() throws Exception {
+        authenticateAs(1L);
+
+        var result = new BackfillCompanyWebsitesUseCase.Result(2, 2, 0);
+        when(backfillCompanyWebsitesUseCase.run(true, 50, null, "greenhouse")).thenReturn(result);
+
+        mockMvc.perform(post("/api/jobs/backfill-websites")
+                        .param("source", "greenhouse"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.scanned").value(2))
+                .andExpect(jsonPath("$.filled").value(2))
+                .andExpect(jsonPath("$.stillNull").value(0));
+
+        verify(backfillCompanyWebsitesUseCase).run(true, 50, null, "greenhouse");
+    }
+
+    @Test
     @DisplayName("backfillDescriptions should default dryRun to true, limit to 100 and maxDescriptionChars to 300")
     void backfillDescriptions_whenDefaults_shouldRunDryRunWithDefaults() throws Exception {
         authenticateAs(1L);
