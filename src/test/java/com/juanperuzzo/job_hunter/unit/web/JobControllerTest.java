@@ -751,7 +751,7 @@ class JobControllerTest {
         authenticateAs(1L);
 
         var result = new BackfillCompanyWebsitesUseCase.Result(10, 6, 4);
-        when(backfillCompanyWebsitesUseCase.run(true, 50, null)).thenReturn(result);
+        when(backfillCompanyWebsitesUseCase.run(true, 50, null, null)).thenReturn(result);
 
         mockMvc.perform(post("/api/jobs/backfill-websites"))
                 .andExpect(status().isOk())
@@ -759,7 +759,7 @@ class JobControllerTest {
                 .andExpect(jsonPath("$.filled").value(6))
                 .andExpect(jsonPath("$.stillNull").value(4));
 
-        verify(backfillCompanyWebsitesUseCase).run(true, 50, null);
+        verify(backfillCompanyWebsitesUseCase).run(true, 50, null, null);
     }
 
     @Test
@@ -768,7 +768,7 @@ class JobControllerTest {
         authenticateAs(1L);
 
         var result = new BackfillCompanyWebsitesUseCase.Result(2, 2, 0);
-        when(backfillCompanyWebsitesUseCase.run(false, 10, null)).thenReturn(result);
+        when(backfillCompanyWebsitesUseCase.run(false, 10, null, null)).thenReturn(result);
 
         mockMvc.perform(post("/api/jobs/backfill-websites")
                         .param("dryRun", "false")
@@ -778,7 +778,7 @@ class JobControllerTest {
                 .andExpect(jsonPath("$.filled").value(2))
                 .andExpect(jsonPath("$.stillNull").value(0));
 
-        verify(backfillCompanyWebsitesUseCase).run(false, 10, null);
+        verify(backfillCompanyWebsitesUseCase).run(false, 10, null, null);
     }
 
     @Test
@@ -787,7 +787,7 @@ class JobControllerTest {
         authenticateAs(1L);
 
         var result = new BackfillCompanyWebsitesUseCase.Result(3, 3, 0);
-        when(backfillCompanyWebsitesUseCase.run(false, 50, 100L)).thenReturn(result);
+        when(backfillCompanyWebsitesUseCase.run(false, 50, 100L, null)).thenReturn(result);
 
         mockMvc.perform(post("/api/jobs/backfill-websites")
                         .param("dryRun", "false")
@@ -797,7 +797,25 @@ class JobControllerTest {
                 .andExpect(jsonPath("$.filled").value(3))
                 .andExpect(jsonPath("$.stillNull").value(0));
 
-        verify(backfillCompanyWebsitesUseCase).run(false, 50, 100L);
+        verify(backfillCompanyWebsitesUseCase).run(false, 50, 100L, null);
+    }
+
+    @Test
+    @DisplayName("backfillWebsites should forward source to page the scan by job source")
+    void backfillWebsites_whenSourceGiven_shouldForwardSourceToUseCase() throws Exception {
+        authenticateAs(1L);
+
+        var result = new BackfillCompanyWebsitesUseCase.Result(2, 2, 0);
+        when(backfillCompanyWebsitesUseCase.run(true, 50, null, "greenhouse")).thenReturn(result);
+
+        mockMvc.perform(post("/api/jobs/backfill-websites")
+                        .param("source", "greenhouse"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.scanned").value(2))
+                .andExpect(jsonPath("$.filled").value(2))
+                .andExpect(jsonPath("$.stillNull").value(0));
+
+        verify(backfillCompanyWebsitesUseCase).run(true, 50, null, "greenhouse");
     }
 
     @Test

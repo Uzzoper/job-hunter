@@ -239,8 +239,9 @@ public class JobController {
     public ResponseEntity<BackfillResultResponse> backfillWebsites(
             @RequestParam(defaultValue = "true") boolean dryRun,
             @RequestParam(defaultValue = "50") int maxHosts,
-            @RequestParam(required = false) Long afterId) {
-        var result = backfillCompanyWebsitesUseCase.run(dryRun, maxHosts, afterId);
+            @RequestParam(required = false) Long afterId,
+            @RequestParam(required = false) String source) {
+        var result = backfillCompanyWebsitesUseCase.run(dryRun, maxHosts, afterId, source);
         return ResponseEntity.ok(BackfillResultResponse.from(result));
     }
 

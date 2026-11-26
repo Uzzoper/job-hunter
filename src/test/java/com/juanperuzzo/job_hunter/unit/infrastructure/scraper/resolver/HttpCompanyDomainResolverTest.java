@@ -3,6 +3,7 @@ package com.juanperuzzo.job_hunter.unit.infrastructure.scraper.resolver;
 import com.github.tomakehurst.wiremock.junit5.WireMockExtension;
 import com.github.tomakehurst.wiremock.junit5.WireMockRuntimeInfo;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.ratelimit.TokenBucketRateLimiter;
+import com.juanperuzzo.job_hunter.application.port.out.CompanyDomainResolverPort;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.resolver.HttpCompanyDomainResolver;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.retry.ExponentialBackoffRetry;
 import org.junit.jupiter.api.BeforeEach;
@@ -50,7 +51,7 @@ class HttpCompanyDomainResolverTest {
                 baseUrl + "/gupy/techco/jobs/2",
                 baseUrl + "/gupy/techco/jobs/3");
 
-        var result = resolver.resolveCompanyWebsites(urls, 100);
+        var result = resolver.resolveCompanyWebsites(urls.stream().map(u -> new CompanyDomainResolverPort.JobRef(u, null, "gupy")).toList(), 100);
 
         assertEquals(3, result.size());
         urls.forEach(url -> assertEquals("https://www.techco.com.br", result.get(url),
@@ -71,7 +72,7 @@ class HttpCompanyDomainResolverTest {
                 </body></html>
                 """)));
 
-        var result = resolver.resolveCompanyWebsites(List.of(baseUrl + "/gupy/brand/jobs/1"), 100);
+        var result = resolver.resolveCompanyWebsites(List.of(new CompanyDomainResolverPort.JobRef(baseUrl + "/gupy/brand/jobs/1", null, "gupy")), 100);
 
         assertTrue(result.isEmpty(), "portal and social/tracker hosts must never be resolved");
     }
@@ -81,7 +82,7 @@ class HttpCompanyDomainResolverTest {
     void resolve_whenDetailPageReturns404_shouldSkipHostWithoutThrowing() {
         stubFor(get(urlEqualTo("/gupy/ghost/jobs/1")).willReturn(aResponse().withStatus(404)));
 
-        var result = resolver.resolveCompanyWebsites(List.of(baseUrl + "/gupy/ghost/jobs/1"), 100);
+        var result = resolver.resolveCompanyWebsites(List.of(new CompanyDomainResolverPort.JobRef(baseUrl + "/gupy/ghost/jobs/1", null, "gupy")), 100);
 
         assertTrue(result.isEmpty(), "a failed detail fetch must never fail the caller");
     }
@@ -98,7 +99,7 @@ class HttpCompanyDomainResolverTest {
         var techcoUrl = baseUrl + "/gupy/techco/jobs/1";
         var dotnetUrl = "http://127.0.0.1:" + port + "/gupy/dotnet/jobs/2";
 
-        var result = resolver.resolveCompanyWebsites(List.of(techcoUrl, dotnetUrl), 1);
+        var result = resolver.resolveCompanyWebsites(List.of(new CompanyDomainResolverPort.JobRef(techcoUrl, null, "gupy"), new CompanyDomainResolverPort.JobRef(dotnetUrl, null, "gupy")), 1);
 
         assertEquals("https://www.techco.com.br", result.get(techcoUrl),
                 "the first host in input order resolves deterministically under the cap");
@@ -117,7 +118,7 @@ class HttpCompanyDomainResolverTest {
                 </body></html>
                 """)));
 
-        var result = resolver.resolveCompanyWebsites(List.of(baseUrl + "/gupy/techco/jobs/1"), 100);
+        var result = resolver.resolveCompanyWebsites(List.of(new CompanyDomainResolverPort.JobRef(baseUrl + "/gupy/techco/jobs/1", null, "gupy")), 100);
 
         assertEquals("https://www.techco.com.br", result.get(baseUrl + "/gupy/techco/jobs/1"),
                 "the dotless host (nodejs) must be rejected, the company link must win");
@@ -135,7 +136,7 @@ class HttpCompanyDomainResolverTest {
         var techcoUrl = baseUrl + "/gupy/techco/jobs/1";
         var dotnetUrl = "http://127.0.0.1:" + port + "/gupy/dotnet/jobs/2";
 
-        var result = resolver.resolveCompanyWebsites(List.of(techcoUrl, dotnetUrl), 100);
+        var result = resolver.resolveCompanyWebsites(List.of(new CompanyDomainResolverPort.JobRef(techcoUrl, null, "gupy"), new CompanyDomainResolverPort.JobRef(dotnetUrl, null, "gupy")), 100);
 
         assertEquals("https://www.techco.com.br/?ref=x", result.get(techcoUrl),
                 "gclid and utm params must be stripped, non-tracking params kept");
@@ -147,7 +148,7 @@ class HttpCompanyDomainResolverTest {
     @DisplayName("resolve should return an empty map for empty input or a non-positive cap")
     void resolve_whenEmptyListOrNonPositiveCap_shouldReturnEmptyMap() {
         assertTrue(resolver.resolveCompanyWebsites(List.of(), 100).isEmpty());
-        assertTrue(resolver.resolveCompanyWebsites(List.of(baseUrl + "/gupy/techco/jobs/1"), 0).isEmpty());
+        assertTrue(resolver.resolveCompanyWebsites(List.of(new CompanyDomainResolverPort.JobRef(baseUrl + "/gupy/techco/jobs/1", null, "gupy")), 0).isEmpty());
     }
 
     @Test
@@ -349,7 +350,7 @@ class HttpCompanyDomainResolverTest {
                 + "</body></html>")));
 
         var jobUrl = baseUrl + path;
-        var result = resolver.resolveCompanyWebsites(List.of(jobUrl), 100);
+        var result = resolver.resolveCompanyWebsites(List.of(new CompanyDomainResolverPort.JobRef(jobUrl, null, "gupy")), 100);
 
         assertEquals("https://www.techco.com.br", result.get(jobUrl),
                 "host must be rejected and the next eligible link must win: " + rejectedHref);
@@ -362,9 +363,60 @@ class HttpCompanyDomainResolverTest {
                 "<html><body><a href=\"" + href + "\">Site</a></body></html>")));
 
         var jobUrl = baseUrl + path;
-        var result = resolver.resolveCompanyWebsites(List.of(jobUrl), 100);
+        var result = resolver.resolveCompanyWebsites(List.of(new CompanyDomainResolverPort.JobRef(jobUrl, null, "gupy")), 100);
 
         assertEquals(expected, result.get(jobUrl), "legitimate host must be kept: " + href);
+    }
+
+    @Test
+    @DisplayName("resolve (greenhouse): two boards -> one fetch per board, each domain on its own job")
+    void resolve_greenhouseTwoBoards_oneFetchPerBoard() {
+        var pageA = "<html><body><a href=\"https://acme.com/\">Site</a></body></html>";
+        var pageB = "<html><body><a href=\"https://globex.com/\">Site</a></body></html>";
+        stubFor(get(urlEqualTo("/boarda/jobs/1")).willReturn(ok(pageA)));
+        stubFor(get(urlEqualTo("/boardb/jobs/1")).willReturn(ok(pageB)));
+
+        var urlA = baseUrl + "/boarda/jobs/1";
+        var urlB = baseUrl + "/boardb/jobs/1";
+        var result = resolver.resolveCompanyWebsites(List.of(
+                new CompanyDomainResolverPort.JobRef(urlA, "Acme", "greenhouse"),
+                new CompanyDomainResolverPort.JobRef(urlB, "Globex", "greenhouse")), 100);
+
+        assertEquals("https://acme.com", result.get(urlA));
+        assertEquals("https://globex.com", result.get(urlB));
+        verify(1, getRequestedFor(urlEqualTo("/boarda/jobs/1")));
+        verify(1, getRequestedFor(urlEqualTo("/boardb/jobs/1")));
+    }
+
+    @Test
+    @DisplayName("resolve (greenhouse): company name matches one candidate -> picks by name (not first link)")
+    void resolve_greenhouseCompanyMatchesOneCandidate_picksByName() {
+        var page = "<html><body>"
+                + "<a href=\"https://ubuntu.com/\">Ubuntu</a>"
+                + "<a href=\"https://canonical.com/\">Canonical</a>"
+                + "</body></html>";
+        stubFor(get(urlEqualTo("/canonical/jobs/1")).willReturn(ok(page)));
+
+        var url = baseUrl + "/canonical/jobs/1";
+        var result = resolver.resolveCompanyWebsites(List.of(
+                new CompanyDomainResolverPort.JobRef(url, "Canonical", "greenhouse")), 100);
+
+        assertEquals("https://canonical.com", result.get(url),
+                "name affinity must pick canonical.com over ubuntu.com");
+    }
+
+    @Test
+    @DisplayName("resolve (greenhouse): no token overlap -> no metadata (never first link)")
+    void resolve_greenhouseNoTokenOverlap_noMetadata() {
+        var page = "<html><body><a href=\"https://ubuntu.com/\">Ubuntu</a></body></html>";
+        stubFor(get(urlEqualTo("/acme/jobs/1")).willReturn(ok(page)));
+
+        var url = baseUrl + "/acme/jobs/1";
+        var result = resolver.resolveCompanyWebsites(List.of(
+                new CompanyDomainResolverPort.JobRef(url, "Acme", "greenhouse")), 100);
+
+        assertTrue(result.isEmpty() || !result.containsKey(url),
+                "no shared token must yield no metadata");
     }
 
     private String nextJobPath() {

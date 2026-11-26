@@ -214,6 +214,8 @@ ats:
   # rdstation 7, agilize 7, nubank 97, supabase 59, belvo 3, snyk 33, ciandt 176,
   # neon 8, dlocal 50, spotify 80, kavak 9, despegar 111 (drifts daily).
   greenhouse-boards: stone,btgpactual,c6bank,quintoandar,xpinc,vtex,ebanx,brex,datadog,coinbase,gitlab,databricks,rdstation,agilize
+  # Max distinct Greenhouse boards resolved per fetch (name-affinity company domains; greenhouse-company-domains spec §3.4).
+  greenhouse.max-detail-domains: 100
   ashby-boards: nubank,supabase,belvo,snyk
   lever-sites: ciandt,neon,dlocal,spotify,kavak,despegar
   lever-page-size: 100            # Lever pagination page size (spec §4)

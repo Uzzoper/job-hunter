@@ -386,8 +386,11 @@ public class AppConfig {
             @Value("${ats.greenhouse-base-url:https://boards-api.greenhouse.io}") String baseUrl,
             @Value("${ats.timeout-seconds:30}") int timeoutSeconds,
             @Value("${ats.greenhouse-boards:}") List<String> boardTokens,
-            ExponentialBackoffRetry exponentialBackoffRetry) {
-        return new GreenhouseProvider(baseUrl, timeoutSeconds, boardTokens, exponentialBackoffRetry);
+            @Value("${ats.greenhouse.max-detail-domains:100}") int maxDetailDomains,
+            ExponentialBackoffRetry exponentialBackoffRetry,
+            CompanyDomainResolverPort companyDomainResolverPort) {
+        return new GreenhouseProvider(baseUrl, timeoutSeconds, boardTokens, exponentialBackoffRetry,
+                companyDomainResolverPort, maxDetailDomains);
     }
 
     @Bean

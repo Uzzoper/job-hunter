@@ -40,10 +40,21 @@ public interface BackfillCompanyWebsitesUseCase {
      * @param afterId  exclusive lower bound on row {@code id}, or {@code null} to scan from the start
      * @return scan statistics
      */
-    Result run(boolean dryRun, int maxHosts, Long afterId);
+    /**
+     * Run the backfill for the given source.
+     *
+     * @param source   job source to scan (e.g. {@code "gupy"}, {@code "greenhouse"});
+     *                 defaults to {@code "gupy"} when {@code null}
+     */
+    Result run(boolean dryRun, int maxHosts, Long afterId, String source);
 
-    /** Convenience overload scanning from the start ({@code afterId == null}). */
+    /** Convenience overload scanning from the start ({@code afterId == null}) for the default source (gupy). */
     default Result run(boolean dryRun, int maxHosts) {
-        return run(dryRun, maxHosts, null);
+        return run(dryRun, maxHosts, null, null);
+    }
+
+    /** Convenience overload with default source (gupy). */
+    default Result run(boolean dryRun, int maxHosts, Long afterId) {
+        return run(dryRun, maxHosts, afterId, null);
     }
 }
