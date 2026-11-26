@@ -630,9 +630,7 @@ curl -sS -H "X-Bot-Token: $BOT_SERVICE_API_KEY" \
      compare is case-insensitive).
    - Fail-fast errors leave the active profile untouched: invalid correction →
      `400`; resume text under 50 chars → `400` before the stored PDF is
-     touched; login email already used by another account → `409`
-     (`EmailAlreadyExistsException`). Report the error envelope in chat and
-     keep the previous state.
+     touched. Report the error envelope in chat and keep the previous state.
    - The 200 response carries the updated profile with non-null identity —
      report the new facts back.
    - Identity-only fixes ("my name is wrong") need no resume: `PUT /api/profile`
