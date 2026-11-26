@@ -105,7 +105,7 @@ public class BotMemorySyncService {
      *
      * @param userId the user whose profile to update
      */
-    public void syncFromBotMemory(Long userId) {
+    public void syncFromBotMemory() {
         var memoryFile = memoryDir.resolve(memoryFileName);
         var userFile = memoryDir.resolve(userFileName);
 
@@ -120,11 +120,11 @@ public class BotMemorySyncService {
                 List.copyOf(memoryPrefs.rawSections()));
 
         if (merged.keyValues().isEmpty()) {
-            log.debug("No key-value preferences found in bot memory for user {}", userId);
+            log.debug("No key-value preferences found in bot memory");
             return;
         }
 
-        mergeIntoProfile(userId, merged);
+        mergeIntoProfile(merged);
     }
 
     /**
@@ -169,7 +169,7 @@ public class BotMemorySyncService {
      * @param userId the user whose memory file to update
      * @param text   the free-text content of the new section
      */
-    public void writeMemoryEntry(Long userId, String text) {
+    public void writeMemoryEntry(String text) {
         if (text == null || text.isBlank()) {
             return;
         }
@@ -177,7 +177,7 @@ public class BotMemorySyncService {
         String safeText = text.replace("\u00A7", "\u00B7");
         String section = "\n\u00A7\n" + safeText.strip() + "\n";
         botMemoryPort.appendSection(memoryFile, section);
-        log.info("Wrote memory entry for user {} to {}", userId, memoryFile);
+        log.info("Wrote memory entry to {}", memoryFile);
     }
 
     // ── Private helpers ───────────────────────────────────────────────
@@ -204,10 +204,10 @@ public class BotMemorySyncService {
      * the profile instance unmodified, so a final {@code !=} check avoids an
      * unnecessary save.
      */
-    private void mergeIntoProfile(Long userId, BotPreferences prefs) {
-        var existing = userProfileRepository.findByUserId(userId);
+    private void mergeIntoProfile(BotPreferences prefs) {
+        var existing = userProfileRepository.find();
         if (existing.isEmpty()) {
-            log.warn("No profile found for user {} — skipping bot memory merge", userId);
+            log.warn("No profile found — skipping bot memory merge");
             return;
         }
 
@@ -227,11 +227,11 @@ public class BotMemorySyncService {
         }
 
         // Preferences merge (parse-lenient / validate-strict firewall)
-        updated = mergePreferences(updated, prefs, userId);
+        updated = mergePreferences(updated, prefs);
 
         if (updated != profile) {
             userProfileRepository.save(updated);
-            log.info("Merged bot memory values into profile for user {} (contact fields and/or preferences)", userId);
+            log.info("Merged bot memory values into profile (contact fields and/or preferences)");
         }
     }
 
@@ -242,7 +242,7 @@ public class BotMemorySyncService {
      * <p>
      * Fill-if-empty: human-set values (non-null) always win.
      */
-    private UserProfile mergePreferences(UserProfile profile, BotPreferences prefs, Long userId) {
+    private UserProfile mergePreferences(UserProfile profile, BotPreferences prefs) {
         var existingPrefs = profile.preferences();
         WorkPreference workPreference = existingPrefs != null ? existingPrefs.workPreference() : null;
         Integer salaryFloor = existingPrefs != null ? existingPrefs.salaryFloor() : null;
@@ -266,12 +266,12 @@ public class BotMemorySyncService {
             WorkPreference parsed = parseWorkPreference(rawWorkModel, cities);
             if (parsed != null) {
                 log.info("Merged preferences for user {}: workPreference=null→{} (source: '{}', cities: {})",
-                        userId, variantName(parsed), truncate(rawWorkModel, 80), cities);
+                        variantName(parsed), truncate(rawWorkModel, 80), cities);
                 workPreference = parsed;
                 changed = true;
             } else {
                 log.warn("Dropped invalid workPreference token '{}' for user {} — not a recognized work-model value (or cities missing)",
-                        rawWorkModel, userId);
+                        rawWorkModel);
             }
         }
 
@@ -280,11 +280,11 @@ public class BotMemorySyncService {
             Integer parsed = parseSalaryFloor(rawSalary);
             if (parsed != null) {
                 log.info("Merged preferences for user {}: salaryFloor=null→{} (source: '{}')",
-                        userId, parsed, truncate(rawSalary, 80));
+                        parsed, truncate(rawSalary, 80));
                 salaryFloor = parsed;
                 changed = true;
             } else {
-                log.warn("Dropped invalid salary value '{}' for user {} — not a valid positive integer", rawSalary, userId);
+                log.warn("Dropped invalid salary value '{}' — not a valid positive integer", rawSalary);
             }
         }
 
@@ -293,11 +293,11 @@ public class BotMemorySyncService {
             List<String> parsed = parseExcludedCompanies(rawExcluded);
             if (!parsed.isEmpty()) {
                 log.info("Merged preferences for user {}: excludedCompanies=null→{} (source: '{}')",
-                        userId, parsed, truncate(rawExcluded, 80));
+                        parsed, truncate(rawExcluded, 80));
                 excludedCompanies = parsed;
                 changed = true;
             } else {
-                log.warn("Dropped invalid excludedCompanies value '{}' for user {} — no valid companies parsed", rawExcluded, userId);
+                log.warn("Dropped invalid excludedCompanies value '{}' — no valid companies parsed", rawExcluded);
             }
         }
 
@@ -306,7 +306,7 @@ public class BotMemorySyncService {
         }
 
         return new UserProfile(
-                profile.id(), profile.userId(), profile.resumeText(),
+                profile.id(), profile.name(), profile.email(), profile.resumeText(),
                 profile.skills(), profile.tone(), profile.projects(),
                 profile.phone(), profile.contactEmail(),
                 profile.portfolioUrl(), profile.githubUrl(), profile.linkedinUrl(),
@@ -470,7 +470,7 @@ public class BotMemorySyncService {
                                     String portfolioUrl, String githubUrl,
                                     String linkedinUrl) {
         return new UserProfile(
-                p.id(), p.userId(), p.resumeText(),
+                p.id(), p.name(), p.email(), p.resumeText(),
                 p.skills(), p.tone(), p.projects(),
                 phone, contactEmail, portfolioUrl, githubUrl, linkedinUrl,
                 p.preferences());

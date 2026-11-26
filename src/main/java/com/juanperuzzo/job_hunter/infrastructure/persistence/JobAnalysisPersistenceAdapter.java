@@ -26,15 +26,14 @@ public class JobAnalysisPersistenceAdapter implements JobAnalysisRepository {
     }
 
     @Override
-    public Optional<JobAnalysis> findByJobIdAndUserId(Long jobId, Long userId) {
-        return jpaRepository.findByJobIdAndUserId(jobId, userId).map(this::toDomain);
+    public Optional<JobAnalysis> findByJobId(Long jobId) {
+        return jpaRepository.findByJobId(jobId).map(this::toDomain);
     }
 
     private JobAnalysisEntity toEntity(JobAnalysis analysis) {
         return new JobAnalysisEntity(
                 analysis.id(),
                 analysis.jobId(),
-                analysis.userId(),
                 analysis.matchScore(),
                 analysis.matchedSkills().toArray(new String[0]),
                 analysis.missingSkills().toArray(new String[0]),
@@ -54,7 +53,6 @@ public class JobAnalysisPersistenceAdapter implements JobAnalysisRepository {
         return new JobAnalysis(
                 entity.getId(),
                 entity.getJobId(),
-                entity.getUserId(),
                 entity.getMatchScore(),
                 matchedSkills,
                 missingSkills,

@@ -31,25 +31,25 @@ public class UserProfilePersistenceAdapter implements UserProfileRepository {
         var saved = jpaRepository.save(entity);
 
         if (profile.id() != null) {
-            projectJpaRepository.deleteByUserId(profile.userId());
+            projectJpaRepository.deleteByUserId(profile.id());
         }
         projectJpaRepository.flush();
 
         var projectEntities = profile.projects().stream()
-                .map(p -> new UserProjectEntity(null, profile.userId(), p.name(), p.description(), p.techStack()))
+                .map(p -> new UserProjectEntity(null, profile.id(), p.name(), p.description(), p.techStack()))
                 .toList();
         projectJpaRepository.saveAll(projectEntities);
 
-        var savedProjects = projectJpaRepository.findByUserId(profile.userId()).stream()
+        var savedProjects = projectJpaRepository.findByUserId(profile.id()).stream()
                 .map(pe -> new Project(pe.getName(), pe.getDescription(), pe.getTechStack()))
                 .toList();
         return toDomain(saved, savedProjects);
     }
 
     @Override
-    public Optional<UserProfile> findByUserId(Long userId) {
-        return jpaRepository.findByUserId(userId).map(entity -> {
-            var projects = projectJpaRepository.findByUserId(userId).stream()
+    public Optional<UserProfile> find() {
+        return jpaRepository.findFirstByOrderByIdAsc().map(entity -> {
+            var projects = projectJpaRepository.findByUserId(entity.getId()).stream()
                     .map(pe -> new Project(pe.getName(), pe.getDescription(), pe.getTechStack()))
                     .toList();
             return toDomain(entity, projects);
@@ -64,7 +64,8 @@ public class UserProfilePersistenceAdapter implements UserProfileRepository {
         }
         return new UserProfileEntity(
                 profile.id(),
-                profile.userId(),
+                profile.name(),
+                profile.email(),
                 profile.resumeText(),
                 profile.skills().toArray(new String[0]),
                 profile.tone().name(),
@@ -90,7 +91,8 @@ public class UserProfilePersistenceAdapter implements UserProfileRepository {
         UserPreferences preferences = buildPreferences(entity);
         return new UserProfile(
                 entity.getId(),
-                entity.getUserId(),
+                entity.getName(),
+                entity.getEmail(),
                 entity.getResumeText(),
                 skills,
                 tone,

@@ -4,7 +4,7 @@ import jakarta.persistence.*;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "job_analyses", uniqueConstraints = @UniqueConstraint(columnNames = {"job_id", "user_id"}))
+@Table(name = "job_analyses", uniqueConstraints = @UniqueConstraint(columnNames = {"job_id"}))
 public class JobAnalysisEntity {
 
     @Id
@@ -13,9 +13,6 @@ public class JobAnalysisEntity {
 
     @Column(name = "job_id", nullable = false)
     private Long jobId;
-
-    @Column(name = "user_id", nullable = false)
-    private Long userId;
 
     @Column(name = "match_score", nullable = false)
     private Integer matchScore;
@@ -40,12 +37,11 @@ public class JobAnalysisEntity {
     public JobAnalysisEntity() {
     }
 
-    public JobAnalysisEntity(Long id, Long jobId, Long userId, Integer matchScore,
+    public JobAnalysisEntity(Long id, Long jobId, Integer matchScore,
                              String[] matchedSkills, String[] missingSkills,
                              String companyTone, String summary) {
         this.id = id;
         this.jobId = jobId;
-        this.userId = userId;
         this.matchScore = matchScore;
         this.matchedSkills = matchedSkills;
         this.missingSkills = missingSkills;
@@ -58,9 +54,6 @@ public class JobAnalysisEntity {
 
     public Long getJobId() { return jobId; }
     public void setJobId(Long jobId) { this.jobId = jobId; }
-
-    public Long getUserId() { return userId; }
-    public void setUserId(Long userId) { this.userId = userId; }
 
     public Integer getMatchScore() { return matchScore; }
     public void setMatchScore(Integer matchScore) { this.matchScore = matchScore; }

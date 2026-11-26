@@ -5,7 +5,8 @@ import static java.util.Objects.requireNonNull;
 
 public record UserProfile(
         Long id,
-        Long userId,
+        String name,
+        String email,
         String resumeText,
         List<String> skills,
         CompanyTone tone,
@@ -18,7 +19,7 @@ public record UserProfile(
         UserPreferences preferences
 ) {
     public UserProfile {
-        requireNonNull(userId, "userId must not be null");
+        requireNonNull(name, "name must not be null");
         requireNonNull(resumeText, "resumeText must not be null");
         requireNonNull(skills, "skills must not be null");
         requireNonNull(tone, "tone must not be null");

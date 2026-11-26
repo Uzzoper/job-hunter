@@ -57,7 +57,7 @@ public class ResumeUploadService {
      * @throws com.juanperuzzo.job_hunter.domain.exception.UserNotFoundException
      *                                  if the user does not exist
      */
-    public UserProfile uploadResume(Long userId, MultipartFile file) {
+    public UserProfile uploadResume(MultipartFile file) {
         ResumeExtractionPipeline.validateFile(file);
 
         String rawText = ResumeExtractionPipeline.extractPdfText(file);
@@ -68,9 +68,9 @@ public class ResumeUploadService {
 
         var extraction = ResumeExtractionPipeline.extractWithAi(rawText, aiPort, maxAiChars);
 
-        storeResume(userId, file);
+        storeResume(file);
 
-        var existingProfile = userProfileRepository.findByUserId(userId);
+        var existingProfile = userProfileRepository.find();
 
         CompanyTone tone = existingProfile
                 .map(UserProfile::tone)
@@ -102,9 +102,11 @@ public class ResumeUploadService {
                 contact == null ? null : contact.linkedinUrl(), "linkedinUrl",
                 ResumeExtractionPipeline.URL_MAX_LENGTH, false);
 
-        var profile = new UserProfile(null, userId, rawText, extraction.skills(), tone, projects,
+        var profileName = existingProfile.map(UserProfile::name).orElse("Owner");
+        var profileEmail = existingProfile.map(UserProfile::email).orElse(null);
+        var profile = new UserProfile(null, profileName, profileEmail, rawText, extraction.skills(), tone, projects,
                 phone, contactEmail, portfolioUrl, githubUrl, linkedinUrl, null);
-        return userProfileService.saveProfile(userId, profile);
+        return userProfileService.saveProfile(profile);
     }
 
     /**
@@ -114,9 +116,9 @@ public class ResumeUploadService {
      * failure boundary, so upload callers see one type regardless of whether
      * the byte read or the disk write failed.
      */
-    private void storeResume(Long userId, MultipartFile file) {
+    private void storeResume(MultipartFile file) {
         try {
-            resumeStorage.write(userId, file.getBytes());
+            resumeStorage.write(file.getBytes());
         } catch (IOException e) {
             throw new UncheckedIOException("Failed to read uploaded file for storage", e);
         }

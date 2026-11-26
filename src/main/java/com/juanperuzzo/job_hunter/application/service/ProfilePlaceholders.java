@@ -1,7 +1,6 @@
 package com.juanperuzzo.job_hunter.application.service;
 
 import com.juanperuzzo.job_hunter.domain.model.Project;
-import com.juanperuzzo.job_hunter.domain.model.User;
 import com.juanperuzzo.job_hunter.domain.model.UserProfile;
 
 import java.util.LinkedHashMap;
@@ -33,10 +32,10 @@ public final class ProfilePlaceholders {
      * to its resolved value for the given user and profile. Fields that are null,
      * blank, or empty (skills list / projects list) are simply absent from the map.
      */
-    public static ResolvedPlaceholders resolve(User user, UserProfile profile) {
+    public static ResolvedPlaceholders resolve(UserProfile profile) {
         var values = new LinkedHashMap<String, String>();
-        putIfPresent(values, "CANDIDATE_NAME", user.name());
-        putIfPresent(values, "CANDIDATE_EMAIL", user.email());
+        putIfPresent(values, "CANDIDATE_NAME", profile.name());
+        putIfPresent(values, "CANDIDATE_EMAIL", profile.email() != null ? profile.email() : profile.contactEmail());
         putIfPresent(values, "PHONE", profile.phone());
         putIfPresent(values, "PORTFOLIO_URL", profile.portfolioUrl());
         putIfPresent(values, "GITHUB_URL", profile.githubUrl());
@@ -51,8 +50,8 @@ public final class ProfilePlaceholders {
      * hold an unresolvable {@code {{...}}} token after substitution are dropped
      * entirely, so the output never leaks a raw placeholder.
      */
-    public static String resolve(String template, User user, UserProfile profile) {
-        ResolvedPlaceholders placeholders = resolve(user, profile);
+    public static String resolve(String template, UserProfile profile) {
+        ResolvedPlaceholders placeholders = resolve(profile);
         return template.lines()
                 .map(line -> resolveLine(line, placeholders))
                 .filter(Objects::nonNull)
@@ -63,8 +62,8 @@ public final class ProfilePlaceholders {
      * Renders the {@code CANDIDATE FACTS} block used by the AI generation prompt
      * from the same resolver output as the standard-template email.
      */
-    public static String factsBlock(User user, UserProfile profile) {
-        return factsBlock(resolve(user, profile));
+    public static String factsBlock(UserProfile profile) {
+        return factsBlock(resolve(profile));
     }
 
     /**

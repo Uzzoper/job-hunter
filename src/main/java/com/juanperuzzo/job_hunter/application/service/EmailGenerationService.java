@@ -7,7 +7,6 @@ import com.juanperuzzo.job_hunter.application.port.out.EmailDraftRepository;
 import com.juanperuzzo.job_hunter.application.port.out.JobAnalysisRepository;
 import com.juanperuzzo.job_hunter.application.port.out.JobRepository;
 import com.juanperuzzo.job_hunter.application.port.out.UserProfileRepository;
-import com.juanperuzzo.job_hunter.application.port.out.UserRepository;
 import com.juanperuzzo.job_hunter.domain.exception.AiException;
 import com.juanperuzzo.job_hunter.domain.exception.AnalysisNotFoundException;
 import com.juanperuzzo.job_hunter.domain.exception.JobNotFoundException;
@@ -17,7 +16,6 @@ import com.juanperuzzo.job_hunter.domain.model.EmailDraft;
 import com.juanperuzzo.job_hunter.domain.model.EmailStatus;
 import com.juanperuzzo.job_hunter.domain.model.Job;
 import com.juanperuzzo.job_hunter.domain.model.JobAnalysis;
-import com.juanperuzzo.job_hunter.domain.model.User;
 import com.juanperuzzo.job_hunter.domain.model.UserProfile;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -63,7 +61,6 @@ public class EmailGenerationService implements GenerateEmailUseCase, GetEmailDra
     private final AiPort aiPort;
     private final EmailDraftRepository emailDraftRepository;
     private final UserProfileRepository userProfileRepository;
-    private final UserRepository userRepository;
     private final JobRepository jobRepository;
     private final JobAnalysisRepository jobAnalysisRepository;
     private final TemplateEmailService templateEmailService;
@@ -73,7 +70,6 @@ public class EmailGenerationService implements GenerateEmailUseCase, GetEmailDra
 
     public EmailGenerationService(AiPort aiPort, EmailDraftRepository emailDraftRepository,
                                   UserProfileRepository userProfileRepository,
-                                  UserRepository userRepository,
                                   JobRepository jobRepository, JobAnalysisRepository jobAnalysisRepository,
                                   TemplateEmailService templateEmailService,
                                   BotMemorySyncService botMemorySyncService,
@@ -81,7 +77,6 @@ public class EmailGenerationService implements GenerateEmailUseCase, GetEmailDra
         this.aiPort = aiPort;
         this.emailDraftRepository = emailDraftRepository;
         this.userProfileRepository = userProfileRepository;
-        this.userRepository = userRepository;
         this.jobRepository = jobRepository;
         this.jobAnalysisRepository = jobAnalysisRepository;
         this.templateEmailService = templateEmailService;
@@ -91,26 +86,22 @@ public class EmailGenerationService implements GenerateEmailUseCase, GetEmailDra
     }
 
     @Override
-    public EmailDraft generate(Long userId, Long jobId) {
-        Objects.requireNonNull(userId, "userId must not be null");
+    public EmailDraft generate(Long jobId) {
         Objects.requireNonNull(jobId, "jobId must not be null");
 
         Job job = jobRepository.findById(jobId)
                 .orElseThrow(() -> new JobNotFoundException("Job not found with id: " + jobId));
-        JobAnalysis analysis = jobAnalysisRepository.findByJobIdAndUserId(jobId, userId)
+        JobAnalysis analysis = jobAnalysisRepository.findByJobId(jobId)
                 .orElseThrow(() -> new AnalysisNotFoundException(
                         "Job must be analyzed before generating an email draft"));
 
-        UserProfile profile = userProfileRepository.findByUserId(userId)
-                .orElseThrow(() -> new ProfileNotFoundException("User profile not found for userId: " + userId));
+        UserProfile profile = userProfileRepository.find()
+                .orElseThrow(() -> new ProfileNotFoundException("User profile not found"));
 
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new UserNotFoundException("User not found with id: " + userId));
-
-        var existingSent = emailDraftRepository.findByJobIdAndUserId(job.id(), userId)
+        var existingSent = emailDraftRepository.findByJobId(job.id())
                 .filter(draft -> draft.status() == EmailStatus.SENT);
         if (existingSent.isPresent()) {
-            log.debug("Skipping generation, job {} already applied (SENT) for user {}", job.id(), userId);
+            log.debug("Skipping generation, job {} already applied (SENT)", job.id());
             return existingSent.get();
         }
 
@@ -123,19 +114,19 @@ public class EmailGenerationService implements GenerateEmailUseCase, GetEmailDra
         }
 
         if (analysis.matchScore() < minMatchScore) {
-            return generateFromTemplate(job, user, profile, userId);
+            return generateFromTemplate(job, profile);
         }
 
         try {
-            String prompt = buildPrompt(job, analysis, user, profile);
+            String prompt = buildPrompt(job, analysis, profile);
             String response = aiPort.complete(prompt);
-            var existingId = emailDraftRepository.findByJobIdAndUserId(job.id(), userId)
+            var existingId = emailDraftRepository.findByJobId(job.id())
                     .map(EmailDraft::id)
                     .orElse(null);
-            EmailDraft draft = parseEmailDraft(existingId, job.id(), userId, response, job.contactEmail());
+            EmailDraft draft = parseEmailDraft(existingId, job.id(), response, job.contactEmail());
             EmailDraft saved = emailDraftRepository.save(draft);
             if (saved.status() == EmailStatus.REJECTED) {
-                writeRefusalReasonBestEffort(userId, job.id(), response);
+                writeRefusalReasonBestEffort(job.id(), response);
             }
             return saved;
         } catch (AiException e) {
@@ -150,12 +141,11 @@ public class EmailGenerationService implements GenerateEmailUseCase, GetEmailDra
      * learns why a job was skipped. Never fails the rejection flow: any failure is
      * logged as a WARN and swallowed.
      */
-    private void writeRefusalReasonBestEffort(Long userId, Long jobId, String aiResponse) {
+    private void writeRefusalReasonBestEffort(Long jobId, String aiResponse) {
         try {
-            botMemorySyncService.writeMemoryEntry(userId, refusalReason(aiResponse));
+            log.debug("Refusal reason for job {}: {}", jobId, refusalReason(aiResponse));
         } catch (Exception e) {
-            log.warn("Could not write refusal reason to bot memory for user {} job {}: {}",
-                    userId, jobId, e.getMessage());
+            log.warn("Could not log refusal reason for job {}: {}", jobId, e.getMessage());
         }
     }
 
@@ -175,9 +165,9 @@ public class EmailGenerationService implements GenerateEmailUseCase, GetEmailDra
         return response;
     }
 
-    private EmailDraft generateFromTemplate(Job job, User user, UserProfile profile, Long userId) {
-        var template = templateEmailService.generate(job, user, profile);
-        var existingId = emailDraftRepository.findByJobIdAndUserId(job.id(), userId)
+    private EmailDraft generateFromTemplate(Job job, UserProfile profile) {
+        var template = templateEmailService.generate(job, profile);
+        var existingId = emailDraftRepository.findByJobId(job.id())
                 .map(EmailDraft::id)
                 .orElse(null);
         String body = template.body().trim();
@@ -185,24 +175,24 @@ public class EmailGenerationService implements GenerateEmailUseCase, GetEmailDra
             // Template results carrying the refusal marker follow the same contract as the
             // AI path: never persist a sendable PENDING draft, and write the reason back
             // to bot memory best-effort so the bot learns why the job was skipped.
-            var refused = new EmailDraft(existingId, job.id(), userId, template.subject(), body,
+            var refused = new EmailDraft(existingId, job.id(), template.subject(), body,
                     EmailStatus.REJECTED, LocalDateTime.now(), null, job.contactEmail());
             EmailDraft saved = emailDraftRepository.save(refused);
-            writeRefusalReasonBestEffort(userId, job.id(), body);
+            writeRefusalReasonBestEffort(job.id(), body);
             return saved;
         }
-        var draft = new EmailDraft(existingId, job.id(), userId, template.subject(), body,
+        var draft = new EmailDraft(existingId, job.id(), template.subject(), body,
                 EmailStatus.PENDING, LocalDateTime.now(), null, job.contactEmail());
         return emailDraftRepository.save(draft);
     }
 
     @Override
-    public EmailDraft getEmailDraft(Long userId, Long jobId) {
-        return emailDraftRepository.findByJobIdAndUserId(jobId, userId)
+    public EmailDraft getEmailDraft(Long jobId) {
+        return emailDraftRepository.findByJobId(jobId)
                 .orElseThrow(() -> new JobNotFoundException("Email draft not found for job id: " + jobId));
     }
 
-    private String buildPrompt(Job job, JobAnalysis analysis, User user, UserProfile profile) {
+    private String buildPrompt(Job job, JobAnalysis analysis, UserProfile profile) {
         String resumeText = profile.resumeText();
         String resumeExcerpt = resumeText.length() <= maxResumeChars
                 ? resumeText
@@ -214,7 +204,7 @@ public class EmailGenerationService implements GenerateEmailUseCase, GetEmailDra
         String tone = analysis.companyTone().name().toLowerCase();
         String matchedSkills = String.join(", ", analysis.matchedSkills());
         String missingSkills = String.join(", ", analysis.missingSkills());
-        String candidateFacts = ProfilePlaceholders.factsBlock(user, profile);
+        String candidateFacts = ProfilePlaceholders.factsBlock(profile);
 
         String projectsText = profile.projects().isEmpty()
                 ? "No projects available."
@@ -296,11 +286,11 @@ public class EmailGenerationService implements GenerateEmailUseCase, GetEmailDra
  * stripped and re-applied as {@code "Subject: <text>"}, and any remaining
  * {@code ^(Subject|Assunto)\s*:} line at the top of the body is dropped.
  */
-    private EmailDraft parseEmailDraft(Long id, Long jobId, Long userId, String aiResponse, String recipientEmail) {
+    private EmailDraft parseEmailDraft(Long id, Long jobId, String aiResponse, String recipientEmail) {
         String response = aiResponse.trim();
 
         if (indexOfNoApplyMarker(response) >= 0) {
-            return new EmailDraft(id, jobId, userId, "", response, EmailStatus.REJECTED, LocalDateTime.now(), null, recipientEmail);
+            return new EmailDraft(id, jobId, "", response, EmailStatus.REJECTED, LocalDateTime.now(), null, recipientEmail);
         }
 
         String subject;
@@ -319,7 +309,7 @@ public class EmailGenerationService implements GenerateEmailUseCase, GetEmailDra
             body = "";
         }
 
-        return new EmailDraft(id, jobId, userId, subject, body, EmailStatus.PENDING, LocalDateTime.now(), null, recipientEmail);
+        return new EmailDraft(id, jobId, subject, body, EmailStatus.PENDING, LocalDateTime.now(), null, recipientEmail);
     }
 
     /**

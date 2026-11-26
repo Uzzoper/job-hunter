@@ -2,7 +2,6 @@ package com.juanperuzzo.job_hunter.infrastructure.scraper.normalizer;
 
 import com.juanperuzzo.job_hunter.application.port.out.NormalizerPort;
 import com.juanperuzzo.job_hunter.application.port.out.RawJob;
-import com.juanperuzzo.job_hunter.application.port.out.UserRepository;
 import com.juanperuzzo.job_hunter.domain.PortalDomains;
 import com.juanperuzzo.job_hunter.domain.model.Job;
 import org.slf4j.Logger;
@@ -56,14 +55,14 @@ public class JobNormalizer implements NormalizerPort {
             List<String> locations,
             int maxAgeDays,
             Clock clock,
-            UserRepository userRepository) {
+            OwnerEmailGuard ownerEmailGuard) {
         this.dateParser = dateParser;
         this.keywords = keywords != null ? keywords : List.of();
         this.excludePatterns = excludePatterns != null ? excludePatterns : List.of();
         this.locations = locations != null ? locations : List.of();
         this.maxAgeDays = maxAgeDays;
         this.clock = clock;
-        this.ownerEmailGuard = new OwnerEmailGuard(userRepository);
+        this.ownerEmailGuard = ownerEmailGuard;
     }
 
     /**

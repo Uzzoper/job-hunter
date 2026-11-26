@@ -20,5 +20,5 @@ public interface ListJobsUseCase {
      * hybrid or negation conflict) are kept — silent/ambiguous jobs are dropped.
      * Results are sorted by matchScore descending (null scores last).
      */
-    List<JobWithDraftStatus> findAllWithDraftStatus(Long userId, Boolean hasEmail, Boolean excludeApplied, Integer minScore, Boolean remoteOnly);
+    List<JobWithDraftStatus> findAllWithDraftStatus(Boolean hasEmail, Boolean excludeApplied, Integer minScore, Boolean remoteOnly);
 }

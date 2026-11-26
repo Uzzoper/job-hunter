@@ -10,13 +10,9 @@ public interface EmailDraftJpaRepository extends JpaRepository<EmailDraftEntity,
 
     Optional<EmailDraftEntity> findByJobId(Long jobId);
 
-    Optional<EmailDraftEntity> findByJobIdAndUserId(Long jobId, Long userId);
-
-    List<EmailDraftEntity> findByUserIdAndStatusIn(Long userId, List<String> statuses);
-
     List<EmailDraftEntity> findByStatusIn(List<String> statuses);
 
     Optional<EmailDraftEntity> findByJobIdAndRecipientEmailAndStatusIn(Long jobId, String recipientEmail, List<String> statuses);
 
-    long countByUserIdAndStatusAndSentAtAfter(Long userId, String status, LocalDateTime after);
+    long countByStatusAndSentAtAfter(String status, LocalDateTime after);
 }
