@@ -17,8 +17,8 @@
 - `POST /api/profile/upload-resume` **saves immediately** — the bot cannot show
   a preview and wait for confirmation before replacing active resume data.
   A bad PDF or a chatty correction can silently clobber the active profile.
-- Account identity (`name`/`email`, users row) has **no correction route**, and
-  slice (a) deliberately left write-route identity `null`.
+- Operator identity (`name`/`email`) is stored in the single profile and can be
+  corrected through `PUT /api/profile` or the confirmed commit request.
 - #92 acceptance: "the bot receives a structured preview from the backend and
   asks for explicit confirmation before the active profile/resume is changed";
   "Re-uploading a resume cannot silently replace the active resume or manually
@@ -26,8 +26,8 @@
 
 ## Contract
 
-All endpoints behind the existing auth (`X-Bot-Token` → configured owner user /
-JWT self), scoped to the principal — same model as slice (a).
+All endpoints require the self-hosted `X-Bot-Token` and operate on the single
+operator profile.
 
 ### `POST /api/profile/resume/preview` → `200` (multipart `file`)
 
@@ -50,8 +50,8 @@ JWT self), scoped to the principal — same model as slice (a).
   }
   ```
 
-- `accountIdentity` = users row (the explicit application name/email, slice (a)
-  source of truth). `contact` = **fill-if-empty merge preview** against the
+- `accountIdentity` = the stored profile's explicit application name/email.
+  `contact` = **fill-if-empty merge preview** against the
   stored profile (stored value wins over extraction — unchanged rules from
   `profile-autofill-from-resume.md`); fields still empty after the merge land
   in `missingFields` for the bot to ask in chat.
@@ -79,19 +79,17 @@ resume/profile.
     `400` with the PDF and profile untouched (review 2026-11-15).
   - Blank = "no correction" on every route (PUT included) — a blank string is
     never an attempted update.
-  - Identity corrections validate against the users columns: a login email
-    already used by another account is rejected with `EmailAlreadyExistsException`
-    BEFORE any write (the `users.email` column is `UNIQUE`; re-submitting the
-    user's own email is a no-op, not a conflict).
+  - Identity corrections validate against the profile field rules before any
+    write; email uniqueness across accounts does not apply in single-user mode.
   - Merge order: **chat correction > stored value > AI extraction** — a chat
     correction is an explicit user instruction and overrides; extraction keeps
     losing to stored values (fill-if-empty preserved).
 - Optional `corrections.digest`: if present and != md5 of the uploaded file →
   `409` (protects against attaching a different artifact than the previewed
   one — same honesty-guard spirit as the tailoring skill gate).
-- Writes: profile save (existing merge/save logic), original PDF stored at
-  `{uploadDir}/{userId}/resume.pdf` (unchanged convention via `ResumeStorage`),
-  account identity update to the users row when `name`/`email` corrected.
+- Writes: profile save (including corrected `name`/`email`) and the original PDF
+  stored at `{uploadDir}/resume.pdf`. The storage adapter can still read the
+  legacy `{uploadDir}/{userId}/resume.pdf` location during migration.
 - Response: the standard profile response **with non-null account identity**.
 
 ### `PUT /api/profile` (amended) — optional `name` / `email`
@@ -102,9 +100,8 @@ resume/profile.
   with nothing saved (review 2026-11-15; the bean `@Email` is lenient, the
   service `EMAIL_PATTERN` is not, so the service rule must run first).
 - Blank = "no correction" (the commit route's rule).
-- **Closes slice (a)'s write-route identity thread**: from this slice on, every
-  profile response (GET / PUT / commit) carries non-null `name`/`email` from
-  the users row. The existing "null identity on write routes" assertions flip.
+- Every profile response (GET / PUT / commit) carries the profile's `name` and
+  `email` fields; blank corrections preserve the existing values.
 
 ## Design
 
@@ -112,8 +109,7 @@ resume/profile.
   extraction/validation internals are factored out of `ResumeUploadService` and
   reused (behavior preserved — `upload-resume` endpoint unchanged, TUI/CLI
   paths keep working per #92 acceptance).
-- `UserRepository` port gains `updateIdentity(userId, name, email)`; the users
-  row remains the identity source of truth (slice (a)).
+- The single profile row remains the source of truth for operator identity.
 - `ResumeStorage` port unchanged — no draft storage anywhere. The issue's
   "define cleanup for unconfirmed drafts" is satisfied vacuously: nothing is
   ever staged.
@@ -148,8 +144,8 @@ resume/profile.
 - `profile-autofill-from-resume.md` — merge rules unchanged, referenced.
 - `resume-upload.md` — upload endpoint unchanged; amendment note: commit flow
   is the chat-confirmed path.
-- `bot-resume-retrieval.md` — foundation; slice (b) builds on its identity
-  composition and auth model.
+- `bot-resume-retrieval.md` — resume retrieval foundation; the self-hosted
+  profile is the identity source.
 
 ## Testing plan (RED before GREEN)
 
@@ -163,13 +159,13 @@ Application (plain JUnit 5 + Mockito — no Spring context):
 - `commit_whenNoCorrections_shouldApplyFillIfEmptyMerge_andStoreResume`
 - `commit_whenChatCorrection_shouldOverrideStoredValue`
 - `commit_whenDigestMismatch_shouldThrowConflict_andLeaveProfileIntact`
-- `commit_whenIdentityCorrected_shouldUpdateUsersRow`
+- `commit_whenIdentityCorrected_shouldSaveCorrectedIdentity`
 - `commit_whenInvalidCorrection_shouldThrowValidation`
 
 Web (`@WebMvcTest` — house exception):
 
 - `preview_whenValidPdf_shouldReturn200WithPreview`
-- `preview_whenUnauthenticated_shouldReturn401`
+- `preview_whenMissingBotToken_shouldReturn401`
 - `commit_whenConfirmed_shouldReturn200WithNonNullIdentity`
 - `commit_whenDigestMismatch_shouldReturn409`
 - `putProfile_whenIdentityCorrected_shouldReturn200WithNonNullIdentity`

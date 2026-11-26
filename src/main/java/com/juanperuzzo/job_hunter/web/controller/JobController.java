@@ -159,8 +159,8 @@ public class JobController {
     /**
      * Async LinkedIn fetch (issue #116, docs/specs/linkedin-async-fetch.md):
      * answers before the fetch finishes — the caller polls the status endpoint
-     * instead of blocking. Single-flight: 409 while a run is active. The userId
-     * is resolved here so runtime keywords are the caller's own.
+     * instead of blocking. Single-flight: 409 while a run is active. Runtime
+     * keywords come from the single operator profile.
      */
     @PostMapping("/fetch/linkedin")
     public ResponseEntity<FetchStartedResponse> fetchLinkedInJobs() {

@@ -40,6 +40,15 @@ authenticates to the Job Hunter API with a static token via the
 profile as `api-token.txt` (step 3 / step 5). A blank `api-key` fails fast at
 startup — the backend will not start without it.
 
+**Upgrading an existing database:** if its old `users` table has multiple
+accounts, keep/set the old `bot.service.owner-user-id` or
+`BOT_SERVICE_OWNER_USER_ID` to the former owner ID before first startup. V13 uses it to preserve that account's profile,
+analyses, drafts, projects, and legacy resume PDF. A database with one old user
+is selected automatically when no legacy owner ID is configured; an ambiguous
+database fails migration without discarding account data. If multiple legacy
+resume files exist, the same owner ID selects the PDF to serve until it is
+uploaded to the new shared path.
+
 **Shortcut (recommended):** `bash scripts/setup-bot-access.sh`
 automates secret generation + profile save + backend exports + endpoint
 verification in one go (see its `--help`). Plain Java: restart stays manual.

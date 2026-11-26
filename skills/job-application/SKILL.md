@@ -596,7 +596,7 @@ owner explicitly confirms** (backend spec: `docs/specs/resume-preview-commit.md`
 ```bash
 curl -sS -H "X-Bot-Token: $BOT_SERVICE_API_KEY" \
   -F "file=@<attached-pdf>" \
-  "http://127.0.0.1:8080/api/profile/preview-resume"
+  "http://127.0.0.1:8080/api/profile/resume/preview"
 ```
 
    The response is a read-only projection of what commit would write:
@@ -621,7 +621,7 @@ curl -sS -H "X-Bot-Token: $BOT_SERVICE_API_KEY" \
 curl -sS -H "X-Bot-Token: $BOT_SERVICE_API_KEY" \
   -F "file=@<attached-pdf>" \
   -F 'corrections={"phone": "+55 42 90000-0000", "digest": "<preview.digest>"};type=application/json' \
-  "http://127.0.0.1:8080/api/profile/commit-resume"
+  "http://127.0.0.1:8080/api/profile/resume/commit"
 ```
 
    - The `file` MUST be the same artifact that was previewed: a different file

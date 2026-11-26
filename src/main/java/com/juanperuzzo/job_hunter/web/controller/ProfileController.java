@@ -88,13 +88,13 @@ public class ProfileController {
         return ResponseEntity.ok(response);
     }
 
-    @PostMapping("/preview-resume")
+    @PostMapping("/resume/preview")
     public ResponseEntity<ResumePreviewResponse> previewResume(@RequestParam("file") MultipartFile file) {
         var preview = resumePreviewService.preview(file);
         return ResponseEntity.ok(toPreviewResponse(preview));
     }
 
-    @PostMapping("/commit-resume")
+    @PostMapping("/resume/commit")
     public ResponseEntity<ProfileResponse> commitResume(@RequestParam("file") MultipartFile file,
                                                         @RequestPart(value = "corrections", required = false) @Valid ResumeCorrectionsRequest corrections) {
         var appCorrections = corrections == null ? null : new ResumeCorrections(corrections.name(), corrections.email(), corrections.phone(), corrections.contactEmail(), corrections.portfolioUrl(), corrections.digest());

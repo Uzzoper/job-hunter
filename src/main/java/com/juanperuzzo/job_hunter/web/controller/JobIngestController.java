@@ -16,7 +16,7 @@ import java.util.Map;
 /**
  * Bot-facing ingest of LinkedIn feed posts
  * ({@code docs/specs/linkedin-posts-ingest.md}). Auth is handled ahead of
- * this route by the filter chain ({@code X-Bot-Token} or JWT; 401 otherwise).
+ * this route by the filter ({@code X-Bot-Token}; 401 otherwise).
  * HTTP mapping: 201 + Job on save, 200 + {@code {ignored: reason}} for each
  * filtered-out variant, 400 on body validation, 502 when the AI gateway
  * fails (existing {@code AiException} mapping).
@@ -43,7 +43,7 @@ public class JobIngestController {
      *   <li>{@code AiException} from the Hermes gateway → 502 retryable</li>
      * </ul>
      * Authentication is enforced ahead of this route by the filter chain
-     * ({@code X-Bot-Token} or JWT; 401 otherwise — see
+     * ({@code X-Bot-Token}; 401 otherwise — see
      * {@code JobIngestControllerSecurityTest}).
      */
     @PostMapping("/api/jobs/ingest")

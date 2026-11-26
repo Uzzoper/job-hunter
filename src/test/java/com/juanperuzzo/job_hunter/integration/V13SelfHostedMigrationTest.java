@@ -15,9 +15,7 @@ import java.nio.file.Path;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Verifies that Flyway applies V13 (self-hosted single-tenant) on a fresh SQLite file:
- * the users table is gone, the profile table exists and analysis/draft rows are
- * deduplicated by job.
+ * Verifies that Flyway applies V13 (self-hosted single-tenant) on a fresh SQLite file.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE)
 @DisplayName("V13 self-hosted migration integration test")
@@ -56,21 +54,5 @@ class V13SelfHostedMigrationTest {
 
         assertThat(tables).contains("profile");
         assertThat(tables).doesNotContain("users");
-    }
-
-    @Test
-    @DisplayName("migration should keep one analysis and one draft per job")
-    void migration_whenDuplicateJobRows_shouldKeepOnePerJob() {
-        // V13 ran on an empty DB; recreate the pre-V13 shape in-memory to exercise the
-        // dedup rule used by the migration's INSERT ... SELECT statements.
-        var count = jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM job_analyses", Integer.class);
-        assertThat(count).isZero();
-
-        var sql = """
-                WITH src(id, job_id) AS (VALUES (1, 10), (2, 10), (3, 20))
-                SELECT COUNT(*) FROM (SELECT MIN(id) FROM src GROUP BY job_id)
-                """;
-        assertThat(jdbcTemplate.queryForObject(sql, Integer.class)).isEqualTo(2);
     }
 }

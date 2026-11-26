@@ -663,14 +663,11 @@ public class AppConfig {
         return new UserProfileService(userProfileRepository);
     }
 
-    /**
-     * Single owner of the `{uploadDir}/{userId}/resume.pdf` path convention —
-     * both the upload write and the retrieval read resolve through it
-     * (issue #92 slice a).
-     */
+    /** Filesystem adapter for the current resume and legacy per-user uploads. */
     @Bean
-    public ResumeStorage resumeStorage(@Value("${app.upload-dir}") String uploadDir) {
-        return new ResumeStorageAdapter(uploadDir);
+    public ResumeStorage resumeStorage(@Value("${app.upload-dir}") String uploadDir,
+                                       @Value("${bot.service.owner-user-id:${BOT_SERVICE_OWNER_USER_ID:}}") String legacyOwnerUserId) {
+        return new ResumeStorageAdapter(uploadDir, legacyOwnerUserId);
     }
 
     @Bean
@@ -691,10 +688,10 @@ public class AppConfig {
      * the upload flow, but no storage or profile-writing dependency at all.
      */
     @Bean
-    public ResumePreviewService resumePreviewService(AiPort aiPort, UserProfileService userProfileService,
+    public ResumePreviewService resumePreviewService(AiPort aiPort,
                                                      UserProfileRepository userProfileRepository,
                                                      @Value("${ai.resume-extraction.max-chars:8000}") int maxAiChars) {
-        return new ResumePreviewService(aiPort, userProfileService, userProfileRepository, maxAiChars);
+        return new ResumePreviewService(aiPort, userProfileRepository, maxAiChars);
     }
 
     /**

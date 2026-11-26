@@ -10,9 +10,9 @@ public interface ListJobsUseCase {
     List<Job> findAll(Boolean hasEmail);
 
     /**
-     * Lists jobs for a user, each entry carrying the user's draft status and AI
+     * Lists jobs for the operator, each entry carrying the operator's draft status and AI
      * match score for the job. When {@code excludeApplied} is {@code true},
-     * entries whose {@code draftStatus} is {@code SENT} (the user already
+     * entries whose {@code draftStatus} is {@code SENT} (the operator already
      * applied) are dropped. When {@code minScore} is specified, entries whose
      * {@code matchScore} is {@code null} or below the threshold are dropped.
      * When {@code remoteOnly} is {@code true}, only entries whose title or

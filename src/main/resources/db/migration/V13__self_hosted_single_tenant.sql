@@ -1,6 +1,32 @@
 -- V13: self-hosted bot-only — remove multi-user auth, single profile.
 -- Rebuilds affected tables without user_id; preserves job/analysis/draft/project data
--- where possible. users table is dropped (single owner, no accounts).
+-- for the previous bot owner. Existing databases with multiple users require the
+-- former BOT_SERVICE_OWNER_USER_ID; an ambiguous migration fails before changing data.
+
+CREATE TEMP TABLE v13_owner_migration_guard (
+    valid INTEGER NOT NULL,
+    CONSTRAINT v13_requires_single_owner_or_owner_id CHECK (valid = 1)
+);
+INSERT INTO v13_owner_migration_guard (valid)
+SELECT CASE
+    WHEN (SELECT COUNT(*) FROM users) = 0 THEN 1
+    WHEN '${legacyOwnerUserId}' = '' AND (SELECT COUNT(*) FROM users) = 1 THEN 1
+    WHEN '${legacyOwnerUserId}' <> ''
+         AND EXISTS (SELECT 1 FROM users WHERE id = CAST('${legacyOwnerUserId}' AS INTEGER)) THEN 1
+    ELSE 0
+END;
+DROP TABLE v13_owner_migration_guard;
+
+-- Owner resolution: an explicit former bot owner wins; a database with one user
+-- needs no extra setting. A fresh database has no owner rows to copy.
+CREATE TEMP TABLE v13_owner (id INTEGER PRIMARY KEY);
+INSERT INTO v13_owner (id)
+SELECT id FROM users
+WHERE id = CASE
+    WHEN '${legacyOwnerUserId}' <> '' THEN CAST('${legacyOwnerUserId}' AS INTEGER)
+    WHEN (SELECT COUNT(*) FROM users) = 1 THEN (SELECT MIN(id) FROM users)
+    ELSE NULL
+END;
 
 -- 1. profile (was user_profiles): add name/email, drop user_id + unique constraint
 CREATE TABLE profile (
@@ -32,8 +58,8 @@ SELECT up.id,
        up.portfolio_url, up.github_url, up.linkedin_url, up.work_preference, up.salary_floor,
        up.excluded_companies, up.keywords, up.updated_at
 FROM user_profiles up
-LEFT JOIN users u ON u.id = up.user_id
-LIMIT 1;
+JOIN users u ON u.id = up.user_id
+JOIN v13_owner owner ON owner.id = u.id;
 
 -- 2. job_analyses: drop user_id, unique on job_id
 CREATE TABLE job_analyses_new (
@@ -52,7 +78,13 @@ CREATE TABLE job_analyses_new (
 INSERT INTO job_analyses_new (id, job_id, match_score, matched_skills, missing_skills, company_tone, summary, analyzed_at)
 SELECT id, job_id, match_score, matched_skills, missing_skills, company_tone, summary, analyzed_at
 FROM job_analyses
-WHERE id IN (SELECT MIN(id) FROM job_analyses GROUP BY job_id);
+WHERE user_id = (SELECT id FROM v13_owner)
+AND id IN (
+    SELECT MIN(id)
+    FROM job_analyses
+    WHERE user_id = (SELECT id FROM v13_owner)
+    GROUP BY job_id
+);
 DROP TABLE job_analyses;
 ALTER TABLE job_analyses_new RENAME TO job_analyses;
 
@@ -73,7 +105,13 @@ CREATE TABLE email_drafts_new (
 INSERT INTO email_drafts_new (id, job_id, subject, body, status, generated_at, sent_at, recipient_email, lifecycle_state)
 SELECT id, job_id, subject, body, status, generated_at, sent_at, recipient_email, lifecycle_state
 FROM email_drafts
-WHERE id IN (SELECT MIN(id) FROM email_drafts GROUP BY job_id);
+WHERE user_id = (SELECT id FROM v13_owner)
+AND id IN (
+    SELECT MIN(id)
+    FROM email_drafts
+    WHERE user_id = (SELECT id FROM v13_owner)
+    GROUP BY job_id
+);
 DROP TABLE email_drafts;
 ALTER TABLE email_drafts_new RENAME TO email_drafts;
 
@@ -92,13 +130,15 @@ CREATE TABLE user_projects_new (
 INSERT INTO user_projects_new (id, user_id, name, description, tech_stack)
 SELECT id, (SELECT id FROM profile LIMIT 1), name, description, tech_stack
 FROM user_projects
-WHERE (SELECT id FROM profile LIMIT 1) IS NOT NULL;
+WHERE user_id = (SELECT id FROM v13_owner)
+AND (SELECT id FROM profile LIMIT 1) IS NOT NULL;
 DROP TABLE user_projects;
 ALTER TABLE user_projects_new RENAME TO user_projects;
 CREATE INDEX idx_user_projects_user_id ON user_projects(user_id);
 
 -- 5. Drop old tables
 DROP TABLE IF EXISTS user_profiles;
+DROP TABLE v13_owner;
 DROP TABLE IF EXISTS users;
 
 -- 6. Indexes
