@@ -1,19 +1,17 @@
 # Job Hunter
 
 [![CI](https://github.com/Uzzoper/job-hunter/actions/workflows/ci.yml/badge.svg)](https://github.com/Uzzoper/job-hunter/actions/workflows/ci.yml)
-[![Rust CLI Release](https://github.com/Uzzoper/job-hunter/actions/workflows/cli-release.yml/badge.svg)](https://github.com/Uzzoper/job-hunter/actions/workflows/cli-release.yml)
 ![Java](https://img.shields.io/badge/Java-21-orange?logo=openjdk)
 ![Spring Boot](https://img.shields.io/badge/Spring_Boot-4.0.6-brightgreen?logo=springboot)
 ![SQLite](https://img.shields.io/badge/SQLite-3-003B57?logo=sqlite)
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker)
-![Rust](https://img.shields.io/badge/Rust-2024-ed760e?logo=rust)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript)
 ![License](https://img.shields.io/badge/license-GPL--3.0-blue)
 
 **Automated junior-developer job hunting, scored by AI, applied with your approval.**
 Chat with the `jobhunter-bot` Hermes agent — it lists, analyzes, drafts emails, and applies for you.
 
-For portfolio reviewers: the **Hermes bot** is the primary interface (see [ADR 001](docs/adr/001-multi-interface.md)). The Rust CLI/TUI is legacy (kept for debug/manual use).
+For portfolio reviewers: the **Hermes bot** is the primary (and only) interface (see [ADR 001](docs/adr/001-multi-interface.md)).
 
 ---
 
@@ -64,7 +62,7 @@ flowchart TB
 
 0. Register or login via `/api/auth/register` and `/api/auth/login` to receive a JWT token.
    All subsequent requests must include `Authorization: Bearer <token>`.
-   The bot lane uses a static service token instead: `X-Bot-Token: <secret>` (no `Bearer`) — see `bot.service` in `application-local.yaml` and `scripts/setup-bot-access.sh`. CLI/webapp keep JWT login.
+   The bot lane uses a static service token instead: `X-Bot-Token: <secret>` (no `Bearer`) — see `bot.service` in `application-local.yaml` and `scripts/setup-bot-access.sh`.
 1. The scraper fetches job listings from Gupy, InfoJobs, LinkedIn, Greenhouse/Ashby/Lever boards and GitHub community boards, filtered by keywords.
 2. Each listing is saved to SQLite (`./data/jobhunter.db`) — duplicates are skipped by URL.
 3. On demand, the AI analyzes the listing against your profile and returns a match score (0–100), matched/missing skills, and company tone. The score also reflects your saved work preferences (remote/hybrid/onsite, salary floor, excluded companies) — deterministically and in the prompt.
@@ -80,7 +78,6 @@ flowchart TB
 
 - Java 21
 - A local **Hermes Agent** bot profile (gateway on localhost:8642 — see 'Email sending via Hermes Agent' below). `HERMES_API_KEY` is the only AI credential required; Hermes also handles email delivery
-- Rust 2024 edition (for the CLI binary — `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`)
 - Docker + Docker Compose (optional — only to run the LinkedIn scraper container; the database needs none)
 
 ### Setup
@@ -114,7 +111,7 @@ hermes:
 bot:
   service:
     # Static service token for bot API access (issue #47): the bot sends it
-    # via the X-Bot-Token header (no Bearer — CLI/webapp keep JWT login).
+    # via the X-Bot-Token header (no Bearer).
     # Blank api-key disables the feature. Same value goes in the bot profile
     # as api-token.txt.
     api-key: ${BOT_SERVICE_API_KEY}
@@ -167,15 +164,6 @@ Then set `scraper.linkedin.service-url: http://localhost:3000` in
 > Without this, Gupy and InfoJobs still work (no container needed). LinkedIn
 > falls back to Jsoup (`scraper.linkedin.mode: jsoup`).
 
-**6. Build and run the CLI (legacy)**
-
-```bash
-cd cli && cargo build --release && ./target/release/jh-cli --help
-```
-
-> The Rust CLI/TUI is legacy — daily use goes through the Hermes bot. See
-> [`docs/cli.md`](docs/cli.md) for batch commands.
-
 ---
 
 ## Hermes bot (primary interface)
@@ -202,27 +190,6 @@ Watch the bot work live and take over logins/CAPTCHAs via the official Hermes
 are in [`docs/specs/bot-screen-runbook.md`](docs/specs/bot-screen-runbook.md).
 
 ---
-
-## CLI / TUI (legacy)
-
-The project includes a **Rust** binary (`jh-cli`) with two interaction modes.
-Marked **legacy** — daily use goes through the Hermes bot. Kept for debug and
-manual JWT access.
-
-| Mode | Trigger | Description |
-|------|---------|-------------|
-| **TUI** (default) | No subcommand or `-T`/`--tui` | Interactive terminal UI |
-| **Batch** | Any subcommand | Non-interactive commands for scripting and CI |
-
-Batch commands are documented in [`docs/cli.md`](docs/cli.md).
-
-### Demo (CLI)
-
-![Job Hunter demo — fetch, score, shortlist, apply](docs/assets/bot-demo.gif)
-
-*Illustrative run (CLI mode, aggregate counters only — no real listings, companies, recipients or applications).*
-
-> Full spec at [`docs/specs/cli-tui-spec.md`](docs/specs/cli-tui-spec.md)
 
 
 ## API
@@ -307,10 +274,7 @@ sequenceDiagram
 
 | Layer | Technology |
 |---|---|
-| Language | Java 21 / Rust 2024 |
-| CLI Framework | Rust + Clap + Ratatui + Crossterm |
-| HTTP Client (CLI) | Reqwest (Rust) |
-| Local Cache | SQLite via Rusqlite (Rust) |
+| Language | Java 21 |
 | Framework | Spring Boot 4.0.6 |
 | Architecture | Clean Architecture |
 | Database | SQLite (local file — no server, no Docker) |
@@ -319,7 +283,7 @@ sequenceDiagram
 | Scraping | RestClient + Jsoup |
 | Browser Automation | Playwright (Node.js + TypeScript, separate container) |
 | AI | Hermes Agent gateway (OpenAI-compatible) — sole provider |
-| Tests | JUnit 5 + Mockito + WireMock / Rust async tests |
+| Tests | JUnit 5 + Mockito + WireMock |
 | Build | Maven / Cargo |
 
 ---
@@ -357,15 +321,8 @@ flowchart BT
         W3["exception/ — GlobalExceptionHandler"]
     end
 
-    subgraph CLI["🟤 CLI (Rust)"]
-        C1["jh-cli — TUI (Ratatui)<br/>+ Batch (Clap)"]
-        C2["api/ — ApiClient (Reqwest)"]
-        C3["cache/ — CacheManager (Rusqlite)"]
-    end
-
     LS[/"⚙️ LinkedIn Scraper<br/>(Node.js + Playwright)"/]
 
-    CLI -->|"HTTP JSON"| Web
     Web --> Application
     Infrastructure --> Application
     Application --> Domain
@@ -468,14 +425,11 @@ Each source is wrapped by a **Provider** that selects the right **Strategy** (RE
 # Backend (Java)
 ./mvnw test
 
-# CLI (Rust)
-cd cli && cargo test
-
 # LinkedIn microservice (Node.js)
 cd linkedin-scraper && npm test
 ```
 
-The Java test suite uses WireMock to simulate HTTP servers for the scraper and AI client — no real API calls are made during testing. The Rust CLI uses `httpmock` for the same purpose. The LinkedIn microservice has its own Jest test suite with Playwright fixtures.
+The Java test suite uses WireMock to simulate HTTP servers for the scraper and AI client — no real API calls are made during testing. The LinkedIn microservice has its own Jest test suite with Playwright fixtures.
 
 ---
 

@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Superseded by ADR 002 (CLI removed from the public repo; bot is the only interface)
 
 ## Date
 
@@ -19,8 +19,7 @@ webapp. We decided to keep all interfaces.
 Keep:
 
 - Bot (Hermes) — primary interface, self-hosted
-- TUI (Rust) — future desktop version (Tauri, pkg, etc.)
-- REST API + JWT — used by the TUI today, by the web tomorrow
+- REST API + X-Bot-Token — used by the bot (JWT retained for now, to be removed in the self-hosted-only phase)
 
 ## Consequences
 

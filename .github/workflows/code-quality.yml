@@ -10,23 +10,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  cli:
-    name: CLI (clippy)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: cli
-
-      - name: Lint with clippy
-        run: cargo clippy --manifest-path cli/Cargo.toml -- -D warnings
-
   scraper:
     name: Scraper (tsc)
     runs-on: ubuntu-latest

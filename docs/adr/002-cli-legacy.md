@@ -1,8 +1,8 @@
-# ADR 002: CLI is legacy; Hermes bot is the primary interface
+# ADR 002: CLI removed; Hermes bot is the only interface
 
 ## Status
 
-Accepted
+Accepted (supersedes ADR 001's TUI provision)
 
 ## Date
 
@@ -44,4 +44,4 @@ recommended daily path (see ADR 001).
 - ADR 001: docs/adr/001-multi-interface.md
 - README.md (## Hermes bot (primary interface), ## CLI / TUI (legacy))
 - docs/bot-onboarding.md
-- docs/cli.md
+- (cli/ removed from the repo)
