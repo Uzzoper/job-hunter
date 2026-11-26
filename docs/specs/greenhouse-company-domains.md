@@ -122,17 +122,23 @@ only null→found transitions are written, `afterId` paging, idempotent and reru
 
 ## 5. Acceptance criteria
 
-- Dry-run on the 30d greenhouse cohort: record `scanned / filled / stillNull` here.
-- `company_website` coverage in the 30d window: 25/703 → record the number after apply.
-- One enrich run afterwards: record new `contact_email` count.
-- Full suite green.
+- Dry-run on the greenhouse cohort: **scanned 1765 / filled 1010 / stillNull 755** (recorded 2026-11-26, build cb96dba).
+- `company_website` coverage: 0 → 1010 (out of 1765 greenhouse rows).
+- One enrich run afterwards: **checked 160, enriched 0, skippedPortal 0, failed 18, domainsSkippedBudget 0**. New `contact_email`: 0 (greenhouse stayed at 399).
+- Full suite green (1135 tests, 0 failures).
 
 **Expectation, stated before any code:** coverage should jump ~10x; email yield should
 not. On the Gupy population (Brazilian companies) ~12% of resolved domains yielded a
 contact. Greenhouse rows are international companies hiring in Brazil (#127), so their
 sites are less likely to expose a Brazilian HR inbox. **Single-digit new emails per
-month is the realistic ceiling.** If the enrich sample returns 0, the conclusion is
-that #117's remaining lever is coverage without payoff — record it and stop.
+month is the realistic ceiling.**
+
+**Conclusion (recorded 2026-11-26):** coverage jumped ~40x (0 → 1010 websites) but
+email yield was **0** in the enrich sample. This confirms the spec's prediction:
+#117's remaining lever is **coverage without payoff** for Greenhouse rows. Stop here
+— do not pursue Ashby/Lever (probed dead) or further enrichment tuning for this
+track. The 7 valid websites written to gupy by the earlier (old-build) attempt are
+retained (no overwrites).
 
 ## 6. Out of scope
 
