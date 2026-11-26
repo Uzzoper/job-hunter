@@ -7,7 +7,6 @@ import com.juanperuzzo.job_hunter.application.port.out.AiPort;
 import com.juanperuzzo.job_hunter.application.port.out.UserProfileRepository;
 import com.juanperuzzo.job_hunter.domain.exception.InvalidResumeTextException;
 import com.juanperuzzo.job_hunter.domain.model.CompanyTone;
-import com.juanperuzzo.job_hunter.domain.model.UserProfile;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.multipart.MultipartFile;
@@ -34,14 +33,11 @@ public class ResumePreviewService {
     private static final Logger log = LoggerFactory.getLogger(ResumePreviewService.class);
 
     private final AiPort aiPort;
-    private final UserProfileService userProfileService;
     private final UserProfileRepository userProfileRepository;
     private final int maxAiChars;
 
-    public ResumePreviewService(AiPort aiPort, UserProfileService userProfileService,
-                                UserProfileRepository userProfileRepository, int maxAiChars) {
+    public ResumePreviewService(AiPort aiPort, UserProfileRepository userProfileRepository, int maxAiChars) {
         this.aiPort = aiPort;
-        this.userProfileService = userProfileService;
         this.userProfileRepository = userProfileRepository;
         this.maxAiChars = maxAiChars;
     }
@@ -56,8 +52,6 @@ public class ResumePreviewService {
      * @throws com.juanperuzzo.job_hunter.domain.exception.InvalidResumeTextException
      *                                  if the extracted text is shorter than the
      *                                  {@link UserProfileService#RESUME_TEXT_MIN_LENGTH} gate
-     * @throws com.juanperuzzo.job_hunter.domain.exception.UserNotFoundException
-     *                                  if the user does not exist
      */
     public ResumePreview preview(MultipartFile file) {
         ResumeExtractionPipeline.validateFile(file);
@@ -73,9 +67,8 @@ public class ResumePreviewService {
                     + UserProfileService.RESUME_TEXT_MIN_LENGTH + " characters");
         }
 
-        // Cheap reads before the AI call: an unknown user fails without
-        // spending a completion (review 2026-11-15).
-        // accountIdentity = users row (slice (a) source of truth)
+        // The stored profile is the source of the operator identity and
+        // existing contact fields used by the preview merge.
         var stored = userProfileRepository.find().orElse(null);
         AccountIdentity identity = stored == null
                 ? new AccountIdentity("Owner", null)
@@ -107,7 +100,7 @@ public class ResumePreviewService {
                 .map(p -> new ResumePreview.ProjectPreview(p.name(), p.description(), p.techStack()))
                 .toList();
 
-        log.info("Resume preview for user {}: {} skills, {} projects, {} missing fields (nothing persisted)",
+        log.info("Resume preview: {} skills, {} projects, {} missing fields (nothing persisted)",
                 extraction.skills().size(), projects.size(), missingFields.size());
 
         return new ResumePreview(identity,

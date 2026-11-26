@@ -11,7 +11,6 @@ import com.juanperuzzo.job_hunter.domain.exception.AnalysisNotFoundException;
 import com.juanperuzzo.job_hunter.domain.exception.JobNotFoundException;
 import com.juanperuzzo.job_hunter.domain.exception.ProfileNotConfiguredException;
 import com.juanperuzzo.job_hunter.domain.exception.ResumeRenderingException;
-import com.juanperuzzo.job_hunter.domain.exception.UserNotFoundException;
 import com.juanperuzzo.job_hunter.domain.model.Job;
 import com.juanperuzzo.job_hunter.domain.model.JobAnalysis;
 import com.juanperuzzo.job_hunter.domain.model.TailoredResume;
@@ -83,7 +82,6 @@ public class ResumeTailoringService implements TailorResumeUseCase {
      * @throws JobNotFoundException          if the job does not exist
      * @throws AnalysisNotFoundException     if the job has not been analyzed for the user
      * @throws ProfileNotConfiguredException if the user has no profile or blank resume text
-     * @throws UserNotFoundException         if the user record no longer exists
      * @throws AiException                   if the AI call fails or returns invalid JSON
      */
     @Override

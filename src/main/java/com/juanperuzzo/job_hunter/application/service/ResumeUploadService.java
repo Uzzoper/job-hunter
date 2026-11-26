@@ -29,8 +29,7 @@ public class ResumeUploadService {
      * @param aiPort               port for AI completions
      * @param userProfileService   service for profile persistence (includes validation)
      * @param userProfileRepository repository for reading existing profile tone
-     * @param resumeStorage        storage port owning the `{uploadDir}/{userId}/resume.pdf`
-     *                             path convention (issue #92 slice a)
+     * @param resumeStorage        storage port owning the `{uploadDir}/resume.pdf` path
      * @param maxAiChars           maximum character count of resume text sent to the AI prompt
      */
     public ResumeUploadService(AiPort aiPort, UserProfileService userProfileService,
@@ -53,8 +52,6 @@ public class ResumeUploadService {
      * @throws IllegalArgumentException if the file is null/empty/non-PDF, or the PDF
      *                                  contains no extractable text
      * @throws AiException             if the AI call fails or returns unparseable JSON
-     * @throws com.juanperuzzo.job_hunter.domain.exception.UserNotFoundException
-     *                                  if the user does not exist
      */
     public UserProfile uploadResume(MultipartFile file) {
         ResumeExtractionPipeline.validateFile(file);

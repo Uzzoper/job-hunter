@@ -12,6 +12,8 @@ import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @DisplayName("ResumeStorageAdapter tests")
 class ResumeStorageAdapterTest {
@@ -42,13 +44,41 @@ class ResumeStorageAdapterTest {
     }
 
     @Test
-    @DisplayName("read when only a legacy {dir}/1/resume.pdf exists should return its bytes")
-    void read_whenLegacyPathExists_shouldFallback() throws IOException {
+    @DisplayName("read should find a unique legacy resume under a non-one user id")
+    void read_whenUniqueLegacyPathUsesNonOneUserId_shouldFallback() throws IOException {
         var adapter = new ResumeStorageAdapter(tempDir.toString());
-        var legacy = tempDir.resolve("1").resolve("resume.pdf");
+        var legacy = tempDir.resolve("42").resolve("resume.pdf");
         Files.createDirectories(legacy.getParent());
         Files.write(legacy, PDF_BYTES);
 
         assertArrayEquals(PDF_BYTES, adapter.read().orElseThrow());
+    }
+
+    @Test
+    @DisplayName("read should select the configured owner resume when multiple legacy files exist")
+    void read_whenOwnerIdConfigured_shouldSelectThatLegacyResume() throws IOException {
+        var ownerBytes = "owner resume".getBytes();
+        writeLegacyResume("1", "other resume".getBytes());
+        writeLegacyResume("42", ownerBytes);
+        var adapter = new ResumeStorageAdapter(tempDir.toString(), "42");
+
+        assertArrayEquals(ownerBytes, adapter.read().orElseThrow());
+    }
+
+    @Test
+    @DisplayName("read should fail clearly when multiple legacy files make the owner ambiguous")
+    void read_whenMultipleLegacyFilesAndNoOwnerConfigured_shouldThrow() throws IOException {
+        writeLegacyResume("1", "first resume".getBytes());
+        writeLegacyResume("42", "second resume".getBytes());
+        var adapter = new ResumeStorageAdapter(tempDir.toString());
+
+        var error = assertThrows(IllegalStateException.class, adapter::read);
+        assertTrue(error.getMessage().contains("owner-user-id"));
+    }
+
+    private void writeLegacyResume(String userId, byte[] bytes) throws IOException {
+        var legacy = tempDir.resolve(userId).resolve("resume.pdf");
+        Files.createDirectories(legacy.getParent());
+        Files.write(legacy, bytes);
     }
 }

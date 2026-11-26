@@ -77,7 +77,15 @@ single-tenant backend.
 ## Migration notes
 
 - Existing databases with `users`/`user_id` columns: the migration rebuilds
-  tables. Data is single-user (owner's), so no data loss for the owner.
+  tables. A database with one user selects that user automatically when no
+  legacy owner ID is configured. If it has multiple users, keep/set the former
+  `bot.service.owner-user-id` or `BOT_SERVICE_OWNER_USER_ID` before startup;
+  without a valid selection, migration fails instead of dropping an arbitrary
+  account. Profile, analysis, draft, and project rows are copied only for that
+  owner.
+- Legacy resume PDFs live under `app.upload-dir/{userId}/resume.pdf`. The former
+  owner ID selects the file when multiple legacy PDFs exist; a single numeric
+  user directory is detected automatically.
 - The private clone keeps the auth version; this repo diverges permanently.
 
 ## Open questions (owner) — RESOLVED 2026-11-26

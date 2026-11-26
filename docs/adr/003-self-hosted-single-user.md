@@ -31,8 +31,8 @@ The product is still **cloneable by anyone**: a new operator runs the backend lo
 ## Consequences
 
 - Simpler codebase: no auth layer, no user management, no multi-tenancy scoping in repositories/services.
-- Smaller test surface (net test deletion; 681 tests remain, down from 1135).
-- Migration V13 rebuilds tables without `user_id` and drops `users`; existing owner data is preserved (single row).
+- Smaller test surface (net test deletion relative to the multi-user version).
+- Migration V13 rebuilds tables without `user_id` and drops `users`; it auto-selects a sole legacy user, uses `BOT_SERVICE_OWNER_USER_ID` when several exist, and fails rather than selecting an arbitrary account.
 - The bot's `X-Bot-Token` is the only gate; if `bot.service.api-key` is blank, startup fails fast (`IllegalStateException`) — there is no open mode.
 - Contributors adding features target the bot/REST API, not a TUI or webapp.
 - The private clone and public repo will diverge further over time; changes are not automatically portable between them.

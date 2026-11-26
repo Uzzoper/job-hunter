@@ -5,9 +5,9 @@ import com.juanperuzzo.job_hunter.domain.model.EmailStatus;
 import com.juanperuzzo.job_hunter.domain.model.Job;
 
 /**
- * A job-listing entry: a persisted {@link Job} paired with the current user's
+ * A job-listing entry: a persisted {@link Job} paired with the operator's
  * draft status and AI match score for it. {@code draftStatus} is {@code null}
- * when the user has no draft for the job; {@code SENT} means the user already
+ * when the operator has no draft for the job; {@code SENT} means the operator already
  * applied to the job. {@code matchScore} is {@code null} when the user has not
  * analyzed the job; 0–100 otherwise. {@code lifecycleState} is the explicit
  * application lifecycle (issue #56); {@code null} when the job has no lifecycle

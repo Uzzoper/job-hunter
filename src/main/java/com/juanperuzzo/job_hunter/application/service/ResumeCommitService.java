@@ -60,8 +60,6 @@ public class ResumeCommitService {
      *                                  and does not match the uploaded bytes — nothing is written
      * @throws com.juanperuzzo.job_hunter.domain.exception.AiException
      *                                  if the AI call fails or returns unparseable JSON
-     * @throws com.juanperuzzo.job_hunter.domain.exception.UserNotFoundException
-     *                                  if the user does not exist
      */
     public UserProfile commit(MultipartFile file, ResumeCorrections corrections) {
         ResumeExtractionPipeline.validateFile(file);
@@ -138,20 +136,22 @@ public class ResumeCommitService {
 
         var profileName = existingProfile.map(UserProfile::name).orElse("Owner");
         var profileEmail = existingProfile.map(UserProfile::email).orElse(null);
+        if (corrections != null) {
+            if (hasText(corrections.name())) {
+                profileName = corrections.name().trim();
+            }
+            if (hasText(corrections.email())) {
+                profileEmail = corrections.email().trim();
+            }
+        }
         var profileId = existingProfile.map(UserProfile::id).orElse(null);
         var profile = new UserProfile(profileId, profileName, profileEmail, rawText, extraction.skills(), tone, projects,
                 phone, contactEmail, portfolioUrl, githubUrl, linkedinUrl, null);
 
-        // Writes, in order: original PDF → profile → identity (identity last:
-        // saveProfile already verified the user row exists).
+        // Persist the original PDF and profile only after all corrections and
+        // extracted content have passed validation.
         storeResume(bytes);
         var saved = userProfileService.saveProfile(profile);
-
-        if (corrections != null && (hasText(corrections.name()) || hasText(corrections.email()))) {
-            // blank = "no correction" — normalized here too, so the service's
-            // blank-rejection can never fire after the writes (review 2026-11-15)
-            // identity corrections are now handled via profile fields directly
-        }
 
         log.info("Resume committed (profile id {})", saved.id());
         return saved;

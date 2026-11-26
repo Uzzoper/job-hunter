@@ -18,7 +18,7 @@ public record ResumePreviewResponse(
         String digest,
         List<String> missingFields
 ) {
-    /** The users-row identity (name + login email) — slice (a) source of truth. */
+    /** The operator identity stored in the single profile. */
     public record IdentityResponse(String name, String email) {}
 
     /** Fill-if-empty merge preview (stored value wins over extraction). */
