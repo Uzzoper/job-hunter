@@ -36,16 +36,16 @@ class ResumeRetrievalServiceTest {
     @Test
     @DisplayName("downloadResume should return the stored PDF bytes")
     void downloadResume_whenStored_shouldReturnBytes() {
-        when(resumeStorage.read(USER_ID)).thenReturn(Optional.of(PDF_BYTES));
+        when(resumeStorage.read()).thenReturn(Optional.of(PDF_BYTES));
 
-        assertArrayEquals(PDF_BYTES, service.downloadResume(USER_ID));
+        assertArrayEquals(PDF_BYTES, service.downloadResume());
     }
 
     @Test
     @DisplayName("downloadResume when nothing is stored should throw ResumeNotFoundException")
     void downloadResume_whenMissing_shouldThrowResumeNotFound() {
-        when(resumeStorage.read(USER_ID)).thenReturn(Optional.empty());
+        when(resumeStorage.read()).thenReturn(Optional.empty());
 
-        assertThrows(ResumeNotFoundException.class, () -> service.downloadResume(USER_ID));
+        assertThrows(ResumeNotFoundException.class, () -> service.downloadResume());
     }
 }

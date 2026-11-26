@@ -25,7 +25,6 @@ import static org.mockito.Mockito.when;
 @DisplayName("DefaultKeywordResolver tests")
 class DefaultKeywordResolverTest {
 
-    private static final long USER_ID = 7L;
 
     @Mock
     private UserProfileRepository userProfileRepository;
@@ -38,7 +37,7 @@ class DefaultKeywordResolverTest {
     }
 
     private UserProfile profileWith(UserPreferences preferences) {
-        return new UserProfile(null, 1L, "resume text long enough", List.of("Java"),
+        return new UserProfile(null, "Owner", null, "resume text long enough", List.of("Java"),
                 CompanyTone.FORMAL, List.of(), null, null, null, null, null, preferences);
     }
 
@@ -49,11 +48,11 @@ class DefaultKeywordResolverTest {
         @Test
         @DisplayName("resolve should return the stored keywords when present and non-empty")
         void resolve_whenKeywordsStored_shouldReturnStoredKeywords() {
-            when(userProfileRepository.findByUserId(USER_ID))
+            when(userProfileRepository.find())
                     .thenReturn(Optional.of(profileWith(
                             new UserPreferences(null, null, List.of(), List.of("rust", "kotlin")))));
 
-            var result = resolver.resolve(USER_ID);
+            var result = resolver.resolve();
 
             assertEquals(List.of("rust", "kotlin"), result);
         }
@@ -66,9 +65,9 @@ class DefaultKeywordResolverTest {
         @Test
         @DisplayName("resolve should return an empty list when the profile has no preferences")
         void resolve_whenPreferencesNull_shouldReturnEmptyList() {
-            when(userProfileRepository.findByUserId(USER_ID)).thenReturn(Optional.of(profileWith(null)));
+            when(userProfileRepository.find()).thenReturn(Optional.of(profileWith(null)));
 
-            var result = resolver.resolve(USER_ID);
+            var result = resolver.resolve();
 
             assertTrue(result.isEmpty());
         }
@@ -76,11 +75,11 @@ class DefaultKeywordResolverTest {
         @Test
         @DisplayName("resolve should return an empty list when the stored keyword list is empty")
         void resolve_whenKeywordsEmpty_shouldReturnEmptyList() {
-            when(userProfileRepository.findByUserId(USER_ID))
+            when(userProfileRepository.find())
                     .thenReturn(Optional.of(profileWith(
                             new UserPreferences(null, null, List.of(), List.of()))));
 
-            var result = resolver.resolve(USER_ID);
+            var result = resolver.resolve();
 
             assertTrue(result.isEmpty());
         }
@@ -88,9 +87,9 @@ class DefaultKeywordResolverTest {
         @Test
         @DisplayName("resolve should return an empty list when no profile exists")
         void resolve_whenProfileMissing_shouldReturnEmptyList() {
-            when(userProfileRepository.findByUserId(USER_ID)).thenReturn(Optional.empty());
+            when(userProfileRepository.find()).thenReturn(Optional.empty());
 
-            var result = resolver.resolve(USER_ID);
+            var result = resolver.resolve();
 
             assertTrue(result.isEmpty());
         }
@@ -99,12 +98,6 @@ class DefaultKeywordResolverTest {
     @Nested
     @DisplayName("Scenario: invalid input")
     class InvalidInputTests {
-
-        @Test
-        @DisplayName("resolve should reject a null userId")
-        void resolve_whenUserIdNull_shouldThrowNullPointerException() {
-            assertThrows(NullPointerException.class, () -> resolver.resolve(null));
-        }
 
         @Test
         @DisplayName("constructor should reject a null repository")

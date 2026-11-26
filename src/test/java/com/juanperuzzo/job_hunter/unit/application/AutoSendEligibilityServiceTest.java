@@ -53,17 +53,17 @@ class AutoSendEligibilityServiceTest {
         @Test
         @DisplayName("should return highest-scoring PENDING draft")
         void nextEligibleDraft_shouldReturnHighestScore() {
-            var highDraft = new EmailDraft(10L, JOB_ID_HIGH, USER_ID, "High", "Body", EmailStatus.PENDING, LocalDateTime.now(), null);
-            var lowDraft = new EmailDraft(11L, JOB_ID_LOW, USER_ID, "Low", "Body", EmailStatus.PENDING, LocalDateTime.now(), null);
+            var highDraft = new EmailDraft(10L, JOB_ID_HIGH, "High", "Body", EmailStatus.PENDING, LocalDateTime.now(), null);
+            var lowDraft = new EmailDraft(11L, JOB_ID_LOW, "Low", "Body", EmailStatus.PENDING, LocalDateTime.now(), null);
             var highJob = new Job(JOB_ID_HIGH, "Senior Dev", "Acme", "https://job", "Desc", LocalDate.now(), "source", CONTACT_EMAIL);
             var lowJob = new Job(JOB_ID_LOW, "Junior Dev", "Beta", "https://job2", "Desc", LocalDate.now(), "source", CONTACT_EMAIL);
 
             when(emailDraftRepository.findAllByStatusIn(List.of(EmailStatus.PENDING))).thenReturn(List.of(highDraft, lowDraft));
             when(jobRepository.findById(JOB_ID_HIGH)).thenReturn(Optional.of(highJob));
             when(jobRepository.findById(JOB_ID_LOW)).thenReturn(Optional.of(lowJob));
-            when(jobAnalysisRepository.findByJobIdAndUserId(JOB_ID_HIGH, USER_ID)).thenReturn(Optional.of(new JobAnalysis(1L, JOB_ID_HIGH, USER_ID, 85, List.of(), List.of(), CompanyTone.FORMAL, "")));
-            when(jobAnalysisRepository.findByJobIdAndUserId(JOB_ID_LOW, USER_ID)).thenReturn(Optional.of(new JobAnalysis(2L, JOB_ID_LOW, USER_ID, 40, List.of(), List.of(), CompanyTone.FORMAL, "")));
-            when(emailDraftRepository.countByUserIdAndStatusAndSentAtAfter(any(), eq(EmailStatus.SENT), any())).thenReturn(0L);
+            when(jobAnalysisRepository.findByJobId(JOB_ID_HIGH)).thenReturn(Optional.of(new JobAnalysis(1L, JOB_ID_HIGH, 85, List.of(), List.of(), CompanyTone.FORMAL, "")));
+            when(jobAnalysisRepository.findByJobId(JOB_ID_LOW)).thenReturn(Optional.of(new JobAnalysis(2L, JOB_ID_LOW, 40, List.of(), List.of(), CompanyTone.FORMAL, "")));
+            when(emailDraftRepository.countByStatusAndSentAtAfter(eq(EmailStatus.SENT), any())).thenReturn(0L);
 
             var result = fullAuto.nextEligibleDraft();
 
@@ -75,13 +75,13 @@ class AutoSendEligibilityServiceTest {
         @Test
         @DisplayName("should return empty when daily cap reached")
         void nextEligibleDraft_whenDailyCapReached_shouldReturnEmpty() {
-            var draft = new EmailDraft(10L, JOB_ID_HIGH, USER_ID, "Subj", "Body", EmailStatus.PENDING, LocalDateTime.now(), null);
+            var draft = new EmailDraft(10L, JOB_ID_HIGH, "Subj", "Body", EmailStatus.PENDING, LocalDateTime.now(), null);
             var job = new Job(JOB_ID_HIGH, "Dev", "Acme", "https://job", "Desc", LocalDate.now(), "source", CONTACT_EMAIL);
 
             when(emailDraftRepository.findAllByStatusIn(List.of(EmailStatus.PENDING))).thenReturn(List.of(draft));
             when(jobRepository.findById(JOB_ID_HIGH)).thenReturn(Optional.of(job));
-            when(jobAnalysisRepository.findByJobIdAndUserId(JOB_ID_HIGH, USER_ID)).thenReturn(Optional.of(new JobAnalysis(1L, JOB_ID_HIGH, USER_ID, 70, List.of(), List.of(), CompanyTone.FORMAL, "")));
-            when(emailDraftRepository.countByUserIdAndStatusAndSentAtAfter(any(), eq(EmailStatus.SENT), any())).thenReturn(50L);
+            when(jobAnalysisRepository.findByJobId(JOB_ID_HIGH)).thenReturn(Optional.of(new JobAnalysis(1L, JOB_ID_HIGH, 70, List.of(), List.of(), CompanyTone.FORMAL, "")));
+            when(emailDraftRepository.countByStatusAndSentAtAfter(eq(EmailStatus.SENT), any())).thenReturn(50L);
 
             var result = fullAuto.nextEligibleDraft();
 
@@ -91,7 +91,7 @@ class AutoSendEligibilityServiceTest {
         @Test
         @DisplayName("should skip job without contact email")
         void nextEligibleDraft_whenNoContactEmail_shouldSkip() {
-            var draft = new EmailDraft(10L, JOB_ID_HIGH, USER_ID, "Subj", "Body", EmailStatus.PENDING, LocalDateTime.now(), null);
+            var draft = new EmailDraft(10L, JOB_ID_HIGH, "Subj", "Body", EmailStatus.PENDING, LocalDateTime.now(), null);
             var job = new Job(JOB_ID_HIGH, "Dev", "Acme", "https://job", "Desc", LocalDate.now(), "source", null);
 
             when(emailDraftRepository.findAllByStatusIn(List.of(EmailStatus.PENDING))).thenReturn(List.of(draft));
@@ -143,13 +143,13 @@ class AutoSendEligibilityServiceTest {
         @Test
         @DisplayName("should select APPROVED draft, not PENDING")
         void nextEligibleDraft_shouldOnlySelectApproved() {
-            var approved = new EmailDraft(10L, JOB_ID_HIGH, USER_ID, "Subj", "Body", EmailStatus.APPROVED, LocalDateTime.now(), null);
+            var approved = new EmailDraft(10L, JOB_ID_HIGH, "Subj", "Body", EmailStatus.APPROVED, LocalDateTime.now(), null);
             var job = new Job(JOB_ID_HIGH, "Dev", "Acme", "https://job", "Desc", LocalDate.now(), "source", CONTACT_EMAIL);
 
             when(emailDraftRepository.findAllByStatusIn(List.of(EmailStatus.APPROVED))).thenReturn(List.of(approved));
             when(jobRepository.findById(JOB_ID_HIGH)).thenReturn(Optional.of(job));
-            when(jobAnalysisRepository.findByJobIdAndUserId(JOB_ID_HIGH, USER_ID)).thenReturn(Optional.of(new JobAnalysis(1L, JOB_ID_HIGH, USER_ID, 80, List.of(), List.of(), CompanyTone.FORMAL, "")));
-            when(emailDraftRepository.countByUserIdAndStatusAndSentAtAfter(any(), eq(EmailStatus.SENT), any())).thenReturn(0L);
+            when(jobAnalysisRepository.findByJobId(JOB_ID_HIGH)).thenReturn(Optional.of(new JobAnalysis(1L, JOB_ID_HIGH, 80, List.of(), List.of(), CompanyTone.FORMAL, "")));
+            when(emailDraftRepository.countByStatusAndSentAtAfter(eq(EmailStatus.SENT), any())).thenReturn(0L);
 
             var result = reviewGate.nextEligibleDraft();
 

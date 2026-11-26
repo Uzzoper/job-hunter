@@ -31,11 +31,12 @@ public class BotTokenFilter extends OncePerRequestFilter {
 
     private final String apiKey;
 
-    public BotTokenFilter(@Value("${bot.service.api-key}") String apiKey) {
-        if (apiKey == null || apiKey.isBlank()) {
-            throw new IllegalStateException("bot.service.api-key must be set (fail-fast, like HERMES_API_KEY)");
+    public BotTokenFilter(@Value("${bot.service.api-key:}") String apiKey) {
+        this.apiKey = apiKey == null ? "" : apiKey.trim();
+        if (this.apiKey.isBlank()) {
+            log.warn("bot.service.api-key is not set — running in OPEN mode (no token required). "
+                    + "Set bot.service.api-key for production use.");
         }
-        this.apiKey = apiKey;
     }
 
     @Override
@@ -44,6 +45,10 @@ public class BotTokenFilter extends OncePerRequestFilter {
         // Allow health/actuator probes without a token
         String path = request.getRequestURI();
         if (path.startsWith("/actuator") || path.equals("/health")) {
+            filterChain.doFilter(request, response);
+            return;
+        }
+        if (apiKey.isBlank()) {
             filterChain.doFilter(request, response);
             return;
         }
