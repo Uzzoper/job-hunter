@@ -50,7 +50,6 @@ public class ResumeCommitService {
     }
 
     /**
-     * @param userId      the authenticated user's ID
      * @param file        the uploaded PDF file (same validation as the upload flow)
      * @param corrections optional chat corrections; when present, {@code digest}
      *                    must match the uploaded file's md5

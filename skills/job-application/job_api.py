@@ -71,7 +71,7 @@ _MISSING_TOKEN_DETAIL = (
     "Token da API do Job Hunter não encontrado. Gere um segredo de serviço "
     "uma vez (ex.: openssl rand -hex 24), configure-o no backend como "
     "bot.service.api-key (variável BOT_SERVICE_API_KEY) com "
-    "bot.service.owner-user-id, e salve o MESMO valor em "
+    "bot.service.api-key, e salve o MESMO valor em "
     "<profile-dir>/api-token.txt ou na variável de ambiente "
     "JOBHUNTER_API_TOKEN. Nenhuma credencial é armazenada no repositório."
 )

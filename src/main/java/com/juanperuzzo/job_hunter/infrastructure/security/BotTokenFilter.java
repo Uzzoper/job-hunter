@@ -41,12 +41,6 @@ public class BotTokenFilter extends OncePerRequestFilter {
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
             throws ServletException, IOException {
-        // Allow health/actuator probes without a token
-        String path = request.getRequestURI();
-        if (path.startsWith("/actuator") || path.equals("/health")) {
-            filterChain.doFilter(request, response);
-            return;
-        }
         String provided = request.getHeader("X-Bot-Token");
         if (provided == null || !constantTimeEquals(provided, apiKey)) {
             response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);

@@ -1,3 +1,6 @@
+> **SUPERSEDED** by `docs/specs/self-hosted-bot-only.md` and ADR 003: multi-user
+> auth (JWT, `User`, `owner-user-id`) was removed. `X-Bot-Token` is the only auth.
+
 # Spec: User Authentication
 
 > **Layer:** `web` | `application` | `domain` | `infrastructure`

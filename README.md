@@ -101,10 +101,9 @@ bot:
   service:
     # Static service token for bot API access (issue #47): the bot sends it
     # via the X-Bot-Token header (no Bearer).
-    # Blank api-key disables the feature. Same value goes in the bot profile
-    # as api-token.txt.
+    # Required: a blank api-key fails fast at startup (no open mode).
+    # Same value goes in the bot profile as api-token.txt.
     api-key: ${BOT_SERVICE_API_KEY}
-    owner-user-id: ${BOT_SERVICE_OWNER_USER_ID}   # existing user the bot acts as
 ```
 
 > This file is in `.gitignore` and will never be committed.
@@ -165,7 +164,7 @@ from fresh clone to working integration.
 
 ```bash
 bash scripts/install-bot-skills.sh                # install skills into the bot profile
-bash scripts/setup-bot-access.sh --owner-id <id>  # service-token setup (X-Bot-Token)
+bash scripts/setup-bot-access.sh                  # service-token setup (X-Bot-Token)
 ```
 
 Skills: `company-scraper` (company contact research), `job-application` (Gupy +
@@ -266,12 +265,12 @@ This project follows Clean Architecture with strict layer separation:
 ```mermaid
 flowchart BT
     subgraph Domain["🟢 Domain"]
-        D1["model/ — Job, EmailDraft, JobAnalysis,<br/>CompanyTone, User, UserProfile,<br/>EligibleDraft, EmailStatus, Project"]
+        D1["model/ — Job, EmailDraft, JobAnalysis,<br/>CompanyTone, UserProfile,<br/>EligibleDraft, EmailStatus, Project"]
         D2["exception/ — ScraperException, AiException,<br/>JobNotFoundException, etc."]
     end
 
     subgraph Application["🔵 Application"]
-        A1["port/in/ — FetchJobsUseCase, AnalyzeJobUseCase,<br/>GenerateEmailUseCase, AuthUseCase,<br/>ApproveDraftUseCase, AutoSendEligibilityUseCase,<br/>CurrentUserProvider, FetchSourceJobsUseCase,<br/>GetEmailDraftUseCase, GetJobUseCase,<br/>ListJobsUseCase, SendEmailUseCase,<br/>TailorResumeUseCase, UserProfileUseCase"]
+        A1["port/in/ — FetchJobsUseCase, AnalyzeJobUseCase,<br/>GenerateEmailUseCase,<br/>ApproveDraftUseCase, AutoSendEligibilityUseCase,<br/>FetchSourceJobsUseCase,<br/>GetEmailDraftUseCase, GetJobUseCase,<br/>ListJobsUseCase, SendEmailUseCase,<br/>TailorResumeUseCase, UserProfileUseCase"]
         A2["port/out/ — JobRepository, ScraperPort, AiPort,<br/>NormalizerPort, SourceFetchPort,<br/>EmailDraftRepository, EmailSenderPort,<br/>JobAnalysisRepository, UserProfileRepository,<br/>RawJob"]
         A3["service/ — FetchJobsService, AiAnalysisService,<br/>EmailGenerationService,<br/>FetchSourceJobsService, ApproveDraftService,<br/>AutoSendEligibilityService, EmailSendingService,<br/>ResumeUploadService, ResumeTailoringService,<br/>TemplateEmailService, UserProfileService"]
     end

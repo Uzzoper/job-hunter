@@ -12,9 +12,12 @@ import java.util.Optional;
 
 /**
  * Filesystem adapter for the original resume PDF (issue #92 slice a): the
- * single owner of the path convention `{uploadDir}/{userId}/resume.pdf`
+ * single owner of the path convention `{uploadDir}/resume.pdf`
  * established by the resume-upload spec. Both the upload write path and the
  * retrieval read path resolve files through this adapter.
+ *
+ * <p>Legacy fallback: files written by the pre-self-hosted refactor live at
+ * `{uploadDir}/{userId}/resume.pdf` and are still readable (read-only fallback).
  */
 public class ResumeStorageAdapter implements ResumeStorage {
 
@@ -55,7 +58,7 @@ public class ResumeStorageAdapter implements ResumeStorage {
         }
     }
 
-    /** Single owner of the `{uploadDir}/{userId}/resume.pdf` convention. */
+    /** Single owner of the `{uploadDir}/resume.pdf` convention. */
     private Path resumePath() {
         return uploadDir.resolve("resume.pdf");
     }
