@@ -19,13 +19,6 @@ For portfolio reviewers: the **Hermes bot** is the primary (and only) interface 
 
 ```mermaid
 flowchart TB
-    subgraph Auth["Authentication"]
-        A1[POST /api/auth/register] --> A2[AuthService]
-        A3[POST /api/auth/login] --> A2
-        A2 --> A4[JwtTokenService]
-        A4 --> A5[JWT Token]
-    end
-
     subgraph Scraper["Job Scraping"]
         S1[Gupy API] --> S2[GupyProvider]
         S3[InfoJobs] --> S4[InfoJobsProvider]
@@ -55,14 +48,13 @@ flowchart TB
         E4 --> E6[EmailDraft<br/>ready to send]
     end
 
-    Auth -->|Authorization: Bearer| Scraper
     Scraper --> AI
     AI --> Email
 ```
 
-0. Register or login via `/api/auth/register` and `/api/auth/login` to receive a JWT token.
-   All subsequent requests must include `Authorization: Bearer <token>`.
-   The bot lane uses a static service token instead: `X-Bot-Token: <secret>` (no `Bearer`) — see `bot.service` in `application-local.yaml` and `scripts/setup-bot-access.sh`.
+0. All API requests require `X-Bot-Token: <secret>` (static service token) — see
+   `bot.service` in `application-local.yaml` and `scripts/setup-bot-access.sh`.
+   There is no user login: self-hosted, single operator.
 1. The scraper fetches job listings from Gupy, InfoJobs, LinkedIn, Greenhouse/Ashby/Lever boards and GitHub community boards, filtered by keywords.
 2. Each listing is saved to SQLite (`./data/jobhunter.db`) — duplicates are skipped by URL.
 3. On demand, the AI analyzes the listing against your profile and returns a match score (0–100), matched/missing skills, and company tone. The score also reflects your saved work preferences (remote/hybrid/onsite, salary floor, excluded companies) — deterministically and in the prompt.
@@ -99,9 +91,6 @@ Flyway creates the file and the schema automatically on first startup — no ser
 Create `src/main/resources/application-local.yaml`:
 
 ```yaml
-jwt:
-  secret: a-key-with-at-least-32-characters-for-hmac
-
 hermes:
   base-url: http://127.0.0.1:8642/p/jobhunter-bot/v1   # OpenAI-compatible API root; clients append /chat/completions
   api-key: YOUR_HERMES_API_KEY   # equals the gateway API_SERVER_KEY — required
@@ -196,8 +185,6 @@ are in [`docs/specs/bot-screen-runbook.md`](docs/specs/bot-screen-runbook.md).
 
 | Method | Endpoint | Description | Auth Required |
 |--------|----------|-------------|:---:|
-| `POST` | `/api/auth/register` | Register a new user | No |
-| `POST` | `/api/auth/login` | Login and receive JWT token | No |
 | `GET` | `/api/jobs?hasEmail=&excludeApplied=&minScore=` | List jobs (filters: has contact email, hide applied, minimum AI score; each item carries draftStatus + matchScore) | Yes |
 | `GET` | `/api/jobs/{id}` | Get job detail | Yes |
 | `POST` | `/api/jobs/fetch` | Trigger all scrapers (all registered providers) | Yes |
@@ -222,26 +209,10 @@ are in [`docs/specs/bot-screen-runbook.md`](docs/specs/bot-screen-runbook.md).
 sequenceDiagram
     actor User
     participant API
-    participant Auth as AuthService
     participant Scraper as ProviderRegistry
     participant AI as AiAnalysisService
     participant Email as EmailGenerationService
     participant DB as SQLite
-
-    User ->> API: POST /api/auth/register
-    API ->> Auth: create user
-    API ->> Auth: save user
-    DB -->> API: user created
-    API -->> User: 201 Created
-
-    User ->> API: POST /api/auth/login
-    API ->> Auth: authenticate
-    API ->> Auth: verify credentials
-    DB -->> Auth: user found
-    API -->> Auth: token, userId, name, email
-    API -->> User: JWT token
-
-    Note over User,API: All subsequent requests include Authorization: Bearer <token>
 
     User ->> API: POST /api/jobs/fetch
     API ->> Scraper: fetchAll()
@@ -279,7 +250,7 @@ sequenceDiagram
 | Architecture | Clean Architecture |
 | Database | SQLite (local file — no server, no Docker) |
 | Migrations | Flyway |
-| Security | Spring Security + JWT (jjwt) |
+| Security | X-Bot-Token (static service token) |
 | Scraping | RestClient + Jsoup |
 | Browser Automation | Playwright (Node.js + TypeScript, separate container) |
 | AI | Hermes Agent gateway (OpenAI-compatible) — sole provider |
@@ -302,7 +273,7 @@ flowchart BT
     subgraph Application["🔵 Application"]
         A1["port/in/ — FetchJobsUseCase, AnalyzeJobUseCase,<br/>GenerateEmailUseCase, AuthUseCase,<br/>ApproveDraftUseCase, AutoSendEligibilityUseCase,<br/>CurrentUserProvider, FetchSourceJobsUseCase,<br/>GetEmailDraftUseCase, GetJobUseCase,<br/>ListJobsUseCase, SendEmailUseCase,<br/>TailorResumeUseCase, UserProfileUseCase"]
         A2["port/out/ — JobRepository, ScraperPort, AiPort,<br/>NormalizerPort, SourceFetchPort,<br/>EmailDraftRepository, EmailSenderPort,<br/>JobAnalysisRepository, PasswordHasher,<br/>TokenProvider, UserProfileRepository,<br/>UserRepository, RawJob"]
-        A3["service/ — FetchJobsService, AiAnalysisService,<br/>EmailGenerationService, AuthService,<br/>FetchSourceJobsService, ApproveDraftService,<br/>AutoSendEligibilityService, EmailSendingService,<br/>ResumeUploadService, ResumeTailoringService,<br/>TemplateEmailService, UserProfileService"]
+        A3["service/ — FetchJobsService, AiAnalysisService,<br/>EmailGenerationService,<br/>FetchSourceJobsService, ApproveDraftService,<br/>AutoSendEligibilityService, EmailSendingService,<br/>ResumeUploadService, ResumeTailoringService,<br/>TemplateEmailService, UserProfileService"]
     end
 
     subgraph Infrastructure["🟠 Infrastructure"]
@@ -316,7 +287,7 @@ flowchart BT
     end
 
     subgraph Web["🟣 Web"]
-        W1["controller/ — JobController,<br/>AuthController, ProfileController"]
+        W1["controller/ — JobController,<br/>ProfileController"]
         W2["dto/ — Request/Response records"]
         W3["exception/ — GlobalExceptionHandler"]
     end
