@@ -30,7 +30,11 @@ public class ResumeStorageAdapter implements ResumeStorage {
     public Optional<byte[]> read() {
         var file = resumePath();
         if (!Files.exists(file)) {
-            return Optional.empty();
+            // Backward compat: pre-refactor files live at {uploadDir}/1/resume.pdf.
+            file = uploadDir.resolve("1").resolve("resume.pdf");
+            if (!Files.exists(file)) {
+                return Optional.empty();
+            }
         }
         try {
             return Optional.of(Files.readAllBytes(file));

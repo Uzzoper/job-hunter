@@ -49,8 +49,8 @@ class LinkedInWiringTest {
                 "--spring.datasource.driver-class-name=org.sqlite.JDBC",
                 "--spring.datasource.username=",
                 "--spring.datasource.password=",
-                "--jwt.secret=test-secret-key-min-32-chars-long-for-hmac!!123",
-                "--HERMES_API_KEY=test-hermes-key"));
+                "--HERMES_API_KEY=test-hermes-key",
+                "--bot.service.api-key=test-bot-token"));
         for (var extra : extraArgs) {
             args.add(extra);
         }

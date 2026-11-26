@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.web.client.RestClient;
@@ -29,6 +30,7 @@ import static org.junit.jupiter.api.Assertions.assertSame;
  * fetches honor the shorter dedicated timeout lives in {@code InfoJobsProviderTest}.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE)
+@TestPropertySource(properties = "bot.service.api-key=test-token")
 @DisplayName("AppConfig RestClient wiring integration test")
 class AppConfigRestClientTest {
 

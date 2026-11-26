@@ -6,6 +6,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.TestPropertySource;
 import org.springframework.context.ApplicationContext;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -28,6 +29,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * at startup.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE)
+@TestPropertySource(properties = "bot.service.api-key=test-token")
 @DisplayName("AiPort wiring integration test (Hermes-only)")
 class AiPortWiringTest {
 
@@ -49,7 +51,7 @@ class AiPortWiringTest {
         registry.add("spring.datasource.driver-class-name", () -> "org.sqlite.JDBC");
         registry.add("spring.datasource.username", () -> "");
         registry.add("spring.datasource.password", () -> "");
-        registry.add("jwt.secret", () -> "test-secret-key-min-32-chars-long-for-hmac!!123");
+        registry.add("bot.service.api-key", () -> "test-bot-token");
         registry.add("HERMES_API_KEY", () -> "test-hermes-key");
     }
 

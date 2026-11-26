@@ -25,10 +25,15 @@ CREATE TABLE profile (
 INSERT INTO profile (id, name, email, resume_text, skills, tone, phone, contact_email,
                      portfolio_url, github_url, linkedin_url, work_preference, salary_floor,
                      excluded_companies, keywords, updated_at)
-SELECT up.id, 'Owner', NULL, up.resume_text, up.skills, up.tone, up.phone, up.contact_email,
+SELECT up.id,
+       COALESCE(u.name, 'Owner'),
+       u.email,
+       up.resume_text, up.skills, up.tone, up.phone, up.contact_email,
        up.portfolio_url, up.github_url, up.linkedin_url, up.work_preference, up.salary_floor,
        up.excluded_companies, up.keywords, up.updated_at
-FROM user_profiles up;
+FROM user_profiles up
+LEFT JOIN users u ON u.id = up.user_id
+LIMIT 1;
 
 -- 2. job_analyses: drop user_id, unique on job_id
 CREATE TABLE job_analyses_new (
@@ -78,7 +83,7 @@ CREATE TABLE user_projects_new (
     tech_stack  VARCHAR(500) NOT NULL
 );
 INSERT INTO user_projects_new (id, user_id, name, description, tech_stack)
-SELECT id, user_id, name, description, tech_stack FROM user_projects;
+SELECT id, (SELECT id FROM profile LIMIT 1), name, description, tech_stack FROM user_projects;
 DROP TABLE user_projects;
 ALTER TABLE user_projects_new RENAME TO user_projects;
 CREATE INDEX idx_user_projects_user_id ON user_projects(user_id);
@@ -90,3 +95,8 @@ DROP TABLE IF EXISTS users;
 -- 6. Indexes
 CREATE INDEX IF NOT EXISTS idx_job_analyses_job_id ON job_analyses(job_id);
 CREATE INDEX IF NOT EXISTS idx_email_drafts_job_id ON email_drafts(job_id);
+
+-- Send-idempotency backstop (V4): at most one SENT draft per (job_id, recipient_email).
+CREATE UNIQUE INDEX IF NOT EXISTS uq_email_drafts_sent_recipient
+    ON email_drafts(job_id, recipient_email)
+    WHERE status = 'SENT' AND recipient_email IS NOT NULL;

@@ -44,7 +44,7 @@ class HermesConfigFailFastTest {
                             "--spring.datasource.driver-class-name=org.sqlite.JDBC",
                             "--spring.datasource.username=",
                             "--spring.datasource.password=",
-                            "--jwt.secret=test-secret-key-min-32-chars-long-for-hmac!!123");
+                            "--bot.service.api-key=test-bot-token");
             // Only reached if startup unexpectedly succeeds; close so no context leaks.
             context.close();
         });

@@ -36,11 +36,11 @@ public class UserProfilePersistenceAdapter implements UserProfileRepository {
         projectJpaRepository.flush();
 
         var projectEntities = profile.projects().stream()
-                .map(p -> new UserProjectEntity(null, profile.id(), p.name(), p.description(), p.techStack()))
+                .map(p -> new UserProjectEntity(null, saved.getId(), p.name(), p.description(), p.techStack()))
                 .toList();
         projectJpaRepository.saveAll(projectEntities);
 
-        var savedProjects = projectJpaRepository.findByUserId(profile.id()).stream()
+        var savedProjects = projectJpaRepository.findByUserId(saved.getId()).stream()
                 .map(pe -> new Project(pe.getName(), pe.getDescription(), pe.getTechStack()))
                 .toList();
         return toDomain(saved, savedProjects);
