@@ -22,7 +22,7 @@ The product is still **cloneable by anyone**: a new operator runs the backend lo
 ## Decision
 
 - The public repo targets **self-hosted, single-user, bot-only**.
-- **Multi-user auth is removed**: no JWT, no `users` table, no `userId` scoping. The only authentication is the static `X-Bot-Token` (service token), fail-open in dev, required in production.
+- **Multi-user auth is removed**: no JWT, no `users` table, no `userId` scoping. The only authentication is the static `X-Bot-Token` (service token), **required**: a blank `bot.service.api-key` fails fast at startup and the Spring context does not start (same contract as `HERMES_API_KEY`).
 - **The CLI is removed** (ADR 002). The only interface is the Hermes bot; the REST API is an internal contract between the bot and the backend.
 - **SQLite remains the only database** — no external server, no Docker for the DB.
 - **The private clone** keeps the full multi-user + CLI version for the owner's own use; the public repo diverges permanently on auth and interface.
@@ -33,7 +33,7 @@ The product is still **cloneable by anyone**: a new operator runs the backend lo
 - Simpler codebase: no auth layer, no user management, no multi-tenancy scoping in repositories/services.
 - Smaller test surface (net test deletion; 681 tests remain, down from 1135).
 - Migration V13 rebuilds tables without `user_id` and drops `users`; existing owner data is preserved (single row).
-- The bot's `X-Bot-Token` is the only gate; if unset, the API runs open (dev mode) with a warning.
+- The bot's `X-Bot-Token` is the only gate; if `bot.service.api-key` is blank, startup fails fast (`IllegalStateException`) — there is no open mode.
 - Contributors adding features target the bot/REST API, not a TUI or webapp.
 - The private clone and public repo will diverge further over time; changes are not automatically portable between them.
 

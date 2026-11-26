@@ -48,7 +48,6 @@ public class ResumeUploadService {
      * Uploads a PDF resume, extracts its text via PDFBox, sends the text to an AI
      * for skills/projects extraction, saves the PDF to disk, and persists the profile.
      *
-     * @param userId the authenticated user's ID
      * @param file   the uploaded PDF file (max 2MB, must be {@code application/pdf})
      * @return the saved {@link UserProfile} with extracted skills, projects, and raw text
      * @throws IllegalArgumentException if the file is null/empty/non-PDF, or the PDF

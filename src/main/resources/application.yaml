@@ -270,7 +270,8 @@ bot:
     user-file: memories/USER.md
   service:
     # Static service token for self-hosted bot API access (issue #47).
-    # Blank api-key disables the feature; header X-Bot-Token must match exactly.
+    # Required: a blank api-key fails fast at startup (no open mode);
+    # header X-Bot-Token must match exactly.
     # No expiry — rotate the key and restart the backend to revoke.
     api-key: ${BOT_SERVICE_API_KEY:}
 

@@ -66,19 +66,15 @@ To enable it once:
    bot:
      service:
        api-key: ${BOT_SERVICE_API_KEY}            # X-Bot-Token must match exactly
-       owner-user-id: ${BOT_SERVICE_OWNER_USER_ID}  # existing user the bot acts as (positive id)
    ```
-   and export before running: `export BOT_SERVICE_API_KEY=<secret>`,
-   `export BOT_SERVICE_OWNER_USER_ID=<your user id>` (the `userId` from
-   `POST /api/auth/login`). Blank `api-key` disables the feature → bot calls
-   fall through to the JWT chain and answer 401.
+   and export before running: `export BOT_SERVICE_API_KEY=<secret>`.
+   A blank `api-key` fails fast at startup — the backend will not start.
 3. **Save the SAME value in bot memory** (so no secret ever lands in a git
    repo): `~/.hermes/profiles/jobhunter-bot/api-token.txt` — or export
    `JOBHUNTER_API_TOKEN=<secret>` on the bot host as an alternative.
 
-The service token is a plain static key — it identifies the *bot*, scoped by
-the backend to the configured `owner-user-id` (every request runs as that
-user). Missing/401 semantics are unchanged: a missing token or a 401 (secret
+The service token is a plain static key — it identifies the *bot* (the
+backend is single-tenant). Missing/401 semantics are unchanged: a missing token or a 401 (secret
 mismatch) map to clean JSON and never fall back to storing human credentials.
 
 ### First-run bootstrap (the bot self-guides)
@@ -91,16 +87,15 @@ improvising, the bot runs this fixed bootstrap once and never asks again:
    `~/.hermes/profiles/jobhunter-bot/api-token.txt` (chmod 600), the exact
    file `resolve_token()` reads from.
 3. **Show the human the backend step** — print this snippet and ask them to
-   paste the secret + owner id, then restart the backend:
+   paste the secret, then restart the backend:
    ```yaml
    bot:
      service:
        api-key: <generated secret>
-       owner-user-id: <your user id>   # from POST /api/auth/login
    ```
-   (env form: `export BOT_SERVICE_API_KEY=<secret> BOT_SERVICE_OWNER_USER_ID=<id>`, then restart the service.)
-4. **Apply backend side** — plain Java setups: the human pastes secret +
-   owner id and restarts (operator territory, deliberately NOT bot actions).
+   (env form: `export BOT_SERVICE_API_KEY=<secret>`, then restart the service.)
+4. **Apply backend side** — plain Java setups: the human pastes the secret
+   and restarts (operator territory, deliberately NOT bot actions).
    Docker setups: `bash scripts/setup-bot-access.sh --compose-dir DIR
    --recreate-backend` syncs the override env, recreates the backend, waits
    healthy and verifies — full auto once the human passes the flags.
@@ -601,11 +596,11 @@ owner explicitly confirms** (backend spec: `docs/specs/resume-preview-commit.md`
 ```bash
 curl -sS -H "X-Bot-Token: $BOT_SERVICE_API_KEY" \
   -F "file=@<attached-pdf>" \
-  "http://127.0.0.1:8080/api/profile/resume/preview"
+  "http://127.0.0.1:8080/api/profile/preview-resume"
 ```
 
    The response is a read-only projection of what commit would write:
-   `accountIdentity` (users row), `contact` (fill-if-empty merge preview —
+   `name` / `email` (single profile), `contact` (fill-if-empty merge preview —
    stored values win over extraction), `skills`, `projects`, `tone`,
    `resumeTextChars`, `digest` (echo it back at commit) and `missingFields`
    (contact fields still empty after the merge). Nothing is persisted; an
@@ -626,7 +621,7 @@ curl -sS -H "X-Bot-Token: $BOT_SERVICE_API_KEY" \
 curl -sS -H "X-Bot-Token: $BOT_SERVICE_API_KEY" \
   -F "file=@<attached-pdf>" \
   -F 'corrections={"phone": "+55 42 90000-0000", "digest": "<preview.digest>"};type=application/json' \
-  "http://127.0.0.1:8080/api/profile/resume/commit"
+  "http://127.0.0.1:8080/api/profile/commit-resume"
 ```
 
    - The `file` MUST be the same artifact that was previewed: a different file
@@ -739,7 +734,7 @@ human-review flow.
 | `invalid_job_url` | No `/jobs/<slug>` segment derivable | Show detail |
 | `corrupt_gupy_slug` | Derived job id — or a resolved Gupy url's last slug, which `derive_job_id` may not surface as the id — contains a `.` (i.e. a `...` elision). No legal derivation produces a dotted id (Gupy publicIds are urlsafe-base64; InfoJobs listing extensions `.json`/`.aspx` are stripped), so the URL was truncated or hand-typed (issue #82) | Stop, exit 1; re-fetch the URL from the API (`--from-api` / `--job-id`) instead of typing it |
 | `missing_api_token` | No Job Hunter API service token found (issue #46) — try `--api-token`, `JOBHUNTER_API_TOKEN`, or `<profile-dir>/api-token.txt` | Show the one-time service-token setup + save step (PT-BR) |
-| `unauthorized` | Job Hunter API answered HTTP 401 (issue #47 — `X-Bot-Token` present but `bot.service.api-key` mismatch, or the feature is disabled) | Verify the bot secret equals `BOT_SERVICE_API_KEY` and `BOT_SERVICE_OWNER_USER_ID` is a positive id |
+| `unauthorized` | Job Hunter API answered HTTP 401 (`X-Bot-Token` present but `bot.service.api-key` mismatch) | Verify the bot secret equals `BOT_SERVICE_API_KEY` |
 | `api_error` | Job Hunter API unreachable / unexpected response (issue #46) | Show detail; check `--api-base-url` and the backend |
 | `no_jobs` | API list empty after fetch-if-empty (issue #46) | Nothing to apply to — stop |
 | `already_applied` | Record exists with `status: applied` (guardrail #27) | Stop — duplicate apply refused |

@@ -47,9 +47,12 @@ CREATE TABLE job_analyses_new (
     analyzed_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT uq_job_analyses_job UNIQUE (job_id)
 );
+-- Keep one analysis per job (lowest id): the new table enforces UNIQUE(job_id),
+-- while the old one was UNIQUE(job_id, user_id) and may hold duplicates.
 INSERT INTO job_analyses_new (id, job_id, match_score, matched_skills, missing_skills, company_tone, summary, analyzed_at)
 SELECT id, job_id, match_score, matched_skills, missing_skills, company_tone, summary, analyzed_at
-FROM job_analyses;
+FROM job_analyses
+WHERE id IN (SELECT MIN(id) FROM job_analyses GROUP BY job_id);
 DROP TABLE job_analyses;
 ALTER TABLE job_analyses_new RENAME TO job_analyses;
 
@@ -66,9 +69,11 @@ CREATE TABLE email_drafts_new (
     lifecycle_state VARCHAR(30),
     CONSTRAINT uq_email_drafts_job UNIQUE (job_id)
 );
+-- Same deduplication as job_analyses: one draft per job (lowest id).
 INSERT INTO email_drafts_new (id, job_id, subject, body, status, generated_at, sent_at, recipient_email, lifecycle_state)
 SELECT id, job_id, subject, body, status, generated_at, sent_at, recipient_email, lifecycle_state
-FROM email_drafts;
+FROM email_drafts
+WHERE id IN (SELECT MIN(id) FROM email_drafts GROUP BY job_id);
 DROP TABLE email_drafts;
 ALTER TABLE email_drafts_new RENAME TO email_drafts;
 
@@ -82,8 +87,12 @@ CREATE TABLE user_projects_new (
     description TEXT NOT NULL,
     tech_stack  VARCHAR(500) NOT NULL
 );
+-- Without a profile there is no valid owner: copy 0 rows instead of violating
+-- the NOT NULL on user_projects.user_id.
 INSERT INTO user_projects_new (id, user_id, name, description, tech_stack)
-SELECT id, (SELECT id FROM profile LIMIT 1), name, description, tech_stack FROM user_projects;
+SELECT id, (SELECT id FROM profile LIMIT 1), name, description, tech_stack
+FROM user_projects
+WHERE (SELECT id FROM profile LIMIT 1) IS NOT NULL;
 DROP TABLE user_projects;
 ALTER TABLE user_projects_new RENAME TO user_projects;
 CREATE INDEX idx_user_projects_user_id ON user_projects(user_id);

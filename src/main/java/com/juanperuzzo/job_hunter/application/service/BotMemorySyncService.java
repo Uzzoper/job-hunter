@@ -102,8 +102,6 @@ public class BotMemorySyncService {
      * and merges applicable key-values into the user's profile (fill-if-empty).
      * <p>
      * Missing files or directories are handled gracefully (WARN log, no error).
-     *
-     * @param userId the user whose profile to update
      */
     public void syncFromBotMemory() {
         var memoryFile = memoryDir.resolve(memoryFileName);
@@ -166,8 +164,7 @@ public class BotMemorySyncService {
     /**
      * Appends a new section to MEMORY.md. The section is delimited by {@code §}.
      *
-     * @param userId the user whose memory file to update
-     * @param text   the free-text content of the new section
+     * @param text the free-text content of the new section
      */
     public void writeMemoryEntry(String text) {
         if (text == null || text.isBlank()) {

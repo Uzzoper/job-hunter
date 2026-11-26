@@ -10,8 +10,8 @@
 # printed exports, restart the backend, then re-run with --verify-only.
 #
 # Usage:
-#   bash scripts/setup-bot-access.sh [--owner-id N] [--api-base-url URL]
-#   eval "$(bash scripts/setup-bot-access.sh --owner-id N)"  # exports into your shell
+#   bash scripts/setup-bot-access.sh [--api-base-url URL]
+#   eval "$(bash scripts/setup-bot-access.sh)"  # exports into your shell
 #   bash scripts/setup-bot-access.sh --verify-only            # probe only
 #   bash scripts/setup-bot-access.sh --rotate                 # new secret (restart + re-verify after)
 #   bash scripts/setup-bot-access.sh --compose-dir DIR --recreate-backend
@@ -29,7 +29,6 @@ HERMES_BASE="${HERMES_BASE:-$HOME/.hermes}"
 BOT_PROFILE="${HERMES_BASE}/profiles/jobhunter-bot"
 TOKEN_FILE="${BOT_PROFILE}/api-token.txt"
 API_BASE_URL="${API_BASE_URL:-http://localhost:8080}"
-OWNER_ID=""
 VERIFY_ONLY=0
 ROTATE=0
 SKIP_VERIFY=0
@@ -44,7 +43,6 @@ usage() {
 
 while [ $# -gt 0 ]; do
     case "$1" in
-        --owner-id) OWNER_ID="${2:?--owner-id needs a value}"; shift 2 ;;
         --api-base-url) API_BASE_URL="$2"; shift 2 ;;
         --verify-only) VERIFY_ONLY=1; shift ;;
         --rotate) ROTATE=1; shift ;;
@@ -84,24 +82,6 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# Owner id: explicit flag, else single-user auto-detect from local SQLite.
-# Not needed for --verify-only (the probe uses only the stored token).
-# ---------------------------------------------------------------------------
-
-if [ -z "${OWNER_ID}" ] && [ "${VERIFY_ONLY}" -eq 0 ]; then
-    IDS="$(command -v sqlite3 &>/dev/null && [ -f ./data/jobhunter.db ] \
-        && sqlite3 ./data/jobhunter.db "SELECT id FROM users;" 2>/dev/null || true)"
-    if [ "$(printf '%s\n' "${IDS}" | grep -c .)" -eq 1 ] \
-        && printf '%s' "${IDS}" | grep -qE '^[0-9]+$'; then
-        OWNER_ID="${IDS}"
-        say "Auto-detected owner-user-id=${OWNER_ID} from ./data/jobhunter.db"
-    else
-        say "ERROR: owner id unknown — pass --owner-id N (your userId from POST /api/auth/login)."
-        exit 2
-    fi
-fi
-
-# ---------------------------------------------------------------------------
 # Compose override sync (only with --compose-dir). Secrets are hex-only
 # (openssl/python generators), so the sed replacement below is safe.
 # ---------------------------------------------------------------------------
@@ -117,17 +97,15 @@ if [ -n "${COMPOSE_DIR}" ]; then
     fi
     OVERRIDE="${COMPOSE_DIR}/docker-compose.override.yaml"
     if [ ! -f "${OVERRIDE}" ]; then
-        printf 'services:\n  backend:\n    environment:\n      BOT_SERVICE_API_KEY: "%s"\n      BOT_SERVICE_OWNER_USER_ID: "%s"\n' \
-            "${SECRET}" "${OWNER_ID}" > "${OVERRIDE}"
+        printf 'services:\n  backend:\n    environment:\n      BOT_SERVICE_API_KEY: "%s"\n' \
+             "${SECRET}" > "${OVERRIDE}"
         say "Created ${OVERRIDE} with the service env."
     elif grep -qE '^[[:space:]]*BOT_SERVICE_API_KEY:' "${OVERRIDE}"; then
         sed -i -E "s|^([[:space:]]*BOT_SERVICE_API_KEY:).*|\1 \"${SECRET}\"|" "${OVERRIDE}"
-        sed -i -E "s|^([[:space:]]*BOT_SERVICE_OWNER_USER_ID:).*|\1 \"${OWNER_ID}\"|" "${OVERRIDE}"
         say "Synced service env into ${OVERRIDE}."
     else
         say "ERROR: ${OVERRIDE} has no BOT_SERVICE_* keys — add once under the backend service:"
         say '    BOT_SERVICE_API_KEY: "<secret>"'
-        say '    BOT_SERVICE_OWNER_USER_ID: "<owner-id>"'
         exit 2
     fi
 fi
@@ -140,7 +118,6 @@ if [ "${VERIFY_ONLY}" -eq 0 ]; then
     say ""
     say "--- backend setup (run these, then restart the backend) ---"
     echo "export BOT_SERVICE_API_KEY=\"${SECRET}\""
-    echo "export BOT_SERVICE_OWNER_USER_ID=\"${OWNER_ID}\""
     say "--- then: restart backend, re-run: bash scripts/setup-bot-access.sh --verify-only ---"
     say ""
 fi
@@ -208,8 +185,7 @@ case "${CODE}" in
     401)
         say "FAIL (HTTP 401) — secret mismatch or backend not restarted with the new env."
         say "  1. Confirm BOT_SERVICE_API_KEY matches ${TOKEN_FILE}"
-        say "  2. Confirm BOT_SERVICE_OWNER_USER_ID=${OWNER_ID}"
-        say "  3. Restart the backend and re-run with --verify-only."
+        say "  2. Restart the backend and re-run with --verify-only."
         exit 1
         ;;
     000)

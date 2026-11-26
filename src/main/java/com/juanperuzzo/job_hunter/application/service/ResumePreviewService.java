@@ -47,7 +47,6 @@ public class ResumePreviewService {
     }
 
     /**
-     * @param userId the authenticated user's ID
      * @param file   the uploaded PDF file (same validation as the upload flow)
      * @return the preview of what commit would write; nothing is persisted
      * @throws IllegalArgumentException if the file is null/empty/non-PDF, or the PDF
