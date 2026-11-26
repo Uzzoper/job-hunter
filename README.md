@@ -199,8 +199,8 @@ are in [`docs/specs/bot-screen-runbook.md`](docs/specs/bot-screen-runbook.md).
 | `POST` | `/api/jobs/{id}/send` | Send email via Hermes bot using user's email as from | Yes |
 | `POST` | `/api/jobs/{id}/applied` | Record an external application (201 when created) | Yes |
 | `POST` | `/api/jobs/{id}/resume` | Generate ATS-tailored resume PDF for the job | Yes |
-| `GET` | `/api/profile` | Get authenticated user's profile (includes preferences: workPreference, salaryFloor, excludedCompanies) | Yes |
-| `PUT` | `/api/profile` | Save/update user profile | Yes |
+| `GET` | `/api/profile` | Get the operator profile (includes preferences: workPreference, salaryFloor, excludedCompanies) | Yes |
+| `PUT` | `/api/profile` | Save/update the operator profile | Yes |
 | `POST` | `/api/profile/upload-resume` | Upload PDF resume → AI extracts skills & projects | Yes |
 
 ### Full API Flow
