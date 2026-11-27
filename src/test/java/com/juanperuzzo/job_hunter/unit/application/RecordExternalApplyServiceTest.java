@@ -55,10 +55,10 @@ class RecordExternalApplyServiceTest {
         Job job = new Job(JOB_ID, "Developer", "Acme",
                 "https://acme.com/job/10", "Description", LocalDate.now(), "test");
         when(jobRepository.findById(JOB_ID)).thenReturn(Optional.of(job));
-        when(emailDraftRepository.findByJobIdAndUserId(JOB_ID, USER_ID)).thenReturn(Optional.empty());
+        when(emailDraftRepository.findByJobId(JOB_ID)).thenReturn(Optional.empty());
         when(emailDraftRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
-        var result = service.record(USER_ID, JOB_ID);
+        var result = service.record(JOB_ID);
 
         assertTrue(result.created());
         assertEquals(EmailStatus.SENT, result.draft().status());
@@ -74,14 +74,14 @@ class RecordExternalApplyServiceTest {
     void record_whenSentMarkerExists_shouldReturnExistingWithoutSaving() {
         Job job = new Job(JOB_ID, "Developer", "Acme",
                 "https://acme.com/job/10", "Description", LocalDate.now(), "test");
-        var sent = new EmailDraft(5L, JOB_ID, USER_ID,
+        var sent = new EmailDraft(5L, JOB_ID,
                 "Subject: [Aplicação externa]",
                 "Inscrição realizada diretamente no portal da vaga. Nenhum e-mail foi enviado.",
                 EmailStatus.SENT, LocalDateTime.now(), LocalDateTime.now());
         when(jobRepository.findById(JOB_ID)).thenReturn(Optional.of(job));
-        when(emailDraftRepository.findByJobIdAndUserId(JOB_ID, USER_ID)).thenReturn(Optional.of(sent));
+        when(emailDraftRepository.findByJobId(JOB_ID)).thenReturn(Optional.of(sent));
 
-        var result = service.record(USER_ID, JOB_ID);
+        var result = service.record(JOB_ID);
 
         assertEquals(sent, result.draft());
         assertFalse(result.created());
@@ -93,13 +93,13 @@ class RecordExternalApplyServiceTest {
     void record_whenPendingDraftExists_shouldSupersedeInPlace() {
         Job job = new Job(JOB_ID, "Developer", "Acme",
                 "https://acme.com/job/10", "Description", LocalDate.now(), "test");
-        var pending = new EmailDraft(7L, JOB_ID, USER_ID,
+        var pending = new EmailDraft(7L, JOB_ID,
                 "Subject: Pending", "Body", EmailStatus.PENDING, LocalDateTime.now());
         when(jobRepository.findById(JOB_ID)).thenReturn(Optional.of(job));
-        when(emailDraftRepository.findByJobIdAndUserId(JOB_ID, USER_ID)).thenReturn(Optional.of(pending));
+        when(emailDraftRepository.findByJobId(JOB_ID)).thenReturn(Optional.of(pending));
         when(emailDraftRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
-        var result = service.record(USER_ID, JOB_ID);
+        var result = service.record(JOB_ID);
 
         assertFalse(result.created());
         assertEquals(pending.id(), result.draft().id());
@@ -114,18 +114,18 @@ class RecordExternalApplyServiceTest {
     void record_whenSaveConflicts_shouldReturnExistingWithoutError() {
         Job job = new Job(JOB_ID, "Developer", "Acme",
                 "https://acme.com/job/10", "Description", LocalDate.now(), "test");
-        var sent = new EmailDraft(5L, JOB_ID, USER_ID,
+        var sent = new EmailDraft(5L, JOB_ID,
                 "Subject: [Aplicação externa]",
                 "Inscrição realizada diretamente no portal da vaga. Nenhum e-mail foi enviado.",
                 EmailStatus.SENT, LocalDateTime.now(), LocalDateTime.now());
         when(jobRepository.findById(JOB_ID)).thenReturn(Optional.of(job));
-        when(emailDraftRepository.findByJobIdAndUserId(JOB_ID, USER_ID))
+        when(emailDraftRepository.findByJobId(JOB_ID))
                 .thenReturn(Optional.empty())
                 .thenReturn(Optional.of(sent));
         when(emailDraftRepository.save(any()))
                 .thenThrow(new DataIntegrityViolationException("duplicate (job_id, user_id)"));
 
-        var result = service.record(USER_ID, JOB_ID);
+        var result = service.record(JOB_ID);
 
         assertFalse(result.created());
         assertEquals(sent, result.draft());
@@ -136,7 +136,7 @@ class RecordExternalApplyServiceTest {
     void record_whenJobNotFound_shouldThrowJobNotFoundException() {
         when(jobRepository.findById(JOB_ID)).thenReturn(Optional.empty());
 
-        assertThrows(JobNotFoundException.class, () -> service.record(USER_ID, JOB_ID));
+        assertThrows(JobNotFoundException.class, () -> service.record(JOB_ID));
 
         verify(emailDraftRepository, never()).save(any());
     }

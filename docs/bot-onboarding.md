@@ -26,24 +26,30 @@ bot:
     dir: ${user.home}/.hermes/profiles/jobhunter-bot/memories
   service:
     # Static service token for bot API access (issue #47). Bot calls send it
-    # via the X-Bot-Token header; CLI/webapp keep the normal JWT login.
+    # via the X-Bot-Token header (no JWT — single operator).
     # The SAME value must be saved later in the bot profile (api-token.txt).
-    api-key: ${BOT_SERVICE_API_KEY}         # blank = bot token auth disabled
-    owner-user-id: ${BOT_SERVICE_OWNER_USER_ID}  # existing user the bot acts as
+    api-key: ${BOT_SERVICE_API_KEY}         # required; blank = startup fails (fail-fast)
 ```
 
 Export `HERMES_API_KEY=YOUR_HERMES_API_KEY` before running the backend.
 
-**Service token (optional — for bot API access, issue #47):** the bot
+**Service token (required for bot API access, issue #47):** the bot
 authenticates to the Job Hunter API with a static token via the
-`X-Bot-Token` header, while CLI/webapp keep the usual JWT `Bearer` header
-(login). Generate the secret once and set both sides to the SAME value:
+`X-Bot-Token` header (no JWT — single operator). Generate the secret once and set both sides to the SAME value:
 `bot.service.api-key` here (env `BOT_SERVICE_API_KEY`) and later in the bot
-profile as `api-token.txt` (step 3 / step 5). `owner-user-id` must be a
-positive id (the `userId` from `POST /api/auth/login`) for the feature to
-engage; blank `api-key` keeps the old JWT-only behavior.
+profile as `api-token.txt` (step 3 / step 5). A blank `api-key` fails fast at
+startup — the backend will not start without it.
 
-**Shortcut (recommended):** `bash scripts/setup-bot-access.sh --owner-id <id>`
+**Upgrading an existing database:** if its old `users` table has multiple
+accounts, keep/set the old `bot.service.owner-user-id` or
+`BOT_SERVICE_OWNER_USER_ID` to the former owner ID before first startup. V13 uses it to preserve that account's profile,
+analyses, drafts, projects, and legacy resume PDF. A database with one old user
+is selected automatically when no legacy owner ID is configured; an ambiguous
+database fails migration without discarding account data. If multiple legacy
+resume files exist, the same owner ID selects the PDF to serve until it is
+uploaded to the new shared path.
+
+**Shortcut (recommended):** `bash scripts/setup-bot-access.sh`
 automates secret generation + profile save + backend exports + endpoint
 verification in one go (see its `--help`). Plain Java: restart stays manual.
 Docker: add `--compose-dir DIR --recreate-backend` and the script syncs the
@@ -54,7 +60,7 @@ override, recreates, waits healthy and verifies by itself.
 `~/.hermes/profiles/jobhunter-bot/api-token.txt`, and shows you the snippet
 above. Human steps (bounded to paste-secret + restart):
 
-- [ ] Copy `api-key` / `owner-user-id` from the bot's snippet into `bot.service.*` (or export `BOT_SERVICE_API_KEY` / `BOT_SERVICE_OWNER_USER_ID`).
+- [ ] Copy `api-key` from the bot's snippet into `bot.service.*` (or export `BOT_SERVICE_API_KEY`).
 - [ ] Restart the backend.
 - [ ] Tell the bot "done" — its `X-Bot-Token` probe expects HTTP 200.
 - [ ] Afterwards the bot runs fully autonomously, including self-updating skills via `scripts/install-bot-skills.sh`.
@@ -216,7 +222,7 @@ bot profile into the container:
 | `404` from the gateway | `base-url` missing the `/v1` suffix |
 | Requests hang until timeout | `approvals.mode` not `off` in profile `config.yaml` |
 | `401` / empty replies | `HERMES_API_KEY` differs from profile `API_SERVER_KEY` |
-| `401` on bot API calls (with a token) | `bot.service.api-key` on the backend differs from the profile's `api-token.txt` / `JOBHUNTER_API_TOKEN`, or `BOT_SERVICE_OWNER_USER_ID` is blank/0 so the filter is disabled | Compare both secrets (they must be the SAME value); confirm `BOT_SERVICE_OWNER_USER_ID` is a positive id |
+| `401` on bot API calls (with a token) | `bot.service.api-key` on the backend differs from the profile's `api-token.txt` / `JOBHUNTER_API_TOKEN` | Compare both secrets — they must be the SAME value |
 | `EMAIL_TOOL_MISSING` | himalaya missing/misconfigured for the profile |
 | Backend warns about memory dir | normal without a bot profile; set `bot.memory.dir` if custom |
 | Skill not found by the bot | re-run `scripts/install-bot-skills.sh`, check per-skill subdirs |

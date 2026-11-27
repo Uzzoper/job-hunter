@@ -12,11 +12,9 @@ job listings, analyzes each listing with AI, and generates personalized applicat
 
 ### Main flow
 ```
-User Register/Login → JWT token
+Bot (X-Bot-Token) → REST API
        ↓
-All requests require Authorization: Bearer
-       ↓
-JwtTokenFilter → CurrentUserService
+BotTokenFilter (service token)
        ↓
 Scraper (ProviderRegistry: Gupy + InfoJobs + LinkedIn)
        ↓
@@ -30,7 +28,7 @@ Job analysis + personalized email generation
        ↓
 Email sending delegated to a Hermes Agent bot (HermesBotEmailSender → Hermes gateway, jobhunter-bot profile as a systemd user service)
        ↓
-REST API (auth required except register/login)
+REST API (X-Bot-Token required)
 ```
 
 ### Target sites (priority order)
@@ -46,7 +44,7 @@ REST API (auth required except register/login)
 ```
 com.juanperuzzo.job_hunter
 ├── domain/                      ← pure Java, no framework dependencies
-│   ├── model/                   → Entities (Job, User, EmailDraft, etc.)
+│   ├── model/                   → Entities (Job, UserProfile, EmailDraft, etc.)
 │   └── exception/               → Custom exceptions
 │
 ├── application/                 ← use cases and ports
@@ -60,7 +58,7 @@ com.juanperuzzo.job_hunter
 │   ├── ai/                      → HermesAgentClient (sole AiPort)
 │   ├── email/                   → HermesBotEmailSender
 │   ├── persistence/             → JPA adapters per entity
-│   ├── security/                → JWT filter, token service, CurrentUserService
+│   ├── security/                → BotTokenFilter (X-Bot-Token)
 │   └── config/                  → AppConfig
 │
 └── web/                         ← REST controllers
@@ -88,7 +86,7 @@ infrastructure → domain
 | Build | Maven |
 | Database | SQLite via `sqlite-jdbc` — local file (`./data/jobhunter.db`), no Docker needed |
 | Migrations | Flyway |
-| Security | Spring Security + JWT (jjwt) |
+| Security | X-Bot-Token (static service token) |
 | Scraping | Jsoup + RestClient |
 | AI | Hermes Agent gateway (OpenAI-compatible) — sole provider |
 | Logging | SLF4J (`private static final Logger log`) |
@@ -267,10 +265,9 @@ Tests follow the same package structure under `src/test/java/.../`. Check the di
 - [x] `GET /api/jobs/{id}/email` — return generated email
 - [x] `POST /api/jobs/{id}/email` — generate new email
 
-### Phase 4 — Interface — ✅ Complete
-- [x] TUI (Rust Ratatui) fully functional
-- [x] TUI filters: search query, apply type (t), seniority (s), dev only (d), hasEmail (t → EmailAvailable)
-- [x] TUI shows contactEmail in job detail
+### Phase 4 — Interface — ✅ Complete (legacy)
+- [x] TUI (Rust Ratatui) was fully functional — moved out of the public repo (ADR 002)
+- [x] Bot (Hermes) is the only interface in this repo (ADR 003)
 
 ### Phase 5 — Fixes & Persistence — ✅ Complete
 - [x] `contactEmail` field persisted in `jobs` table + exposed in API

@@ -6,5 +6,5 @@ package com.juanperuzzo.job_hunter.application.port.in;
  */
 public interface RecordExternalApplyUseCase {
 
-    RecordExternalApplyResult record(Long userId, Long jobId);
+    RecordExternalApplyResult record(Long jobId);
 }

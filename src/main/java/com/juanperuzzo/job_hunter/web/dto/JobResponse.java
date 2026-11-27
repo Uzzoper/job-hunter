@@ -15,9 +15,9 @@ public record JobResponse(
     LocalDate postedAt,
     String source,
     String contactEmail,
-    /** Current user's draft status for the job; null when there is no draft. SENT means already applied. */
+    /** Operator's draft status for the job; null when there is no draft. SENT means already applied. */
     EmailStatus draftStatus,
-    /** Current user's AI match score (0-100) for the job; null when not analyzed. */
+    /** Operator's AI match score (0-100) for the job; null when not analyzed. */
     Integer matchScore,
     /** Explicit application lifecycle (issue #56); null when the job has no lifecycle yet. */
     ApplicationLifecycle lifecycleState,
@@ -27,7 +27,7 @@ public record JobResponse(
     /**
      * Single mapping source for {@code Job → JobResponse} so the field order
      * lives in one place as the record grows. The job-detail endpoint carries
-     * the user-scoped trio; the ingest endpoint passes nulls for it.
+     * the operator's draft, score, and lifecycle; the ingest endpoint passes nulls.
      */
     public static JobResponse from(
             Job job,

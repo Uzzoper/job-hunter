@@ -50,7 +50,6 @@ public class ResumeCommitService {
     }
 
     /**
-     * @param userId      the authenticated user's ID
      * @param file        the uploaded PDF file (same validation as the upload flow)
      * @param corrections optional chat corrections; when present, {@code digest}
      *                    must match the uploaded file's md5
@@ -61,10 +60,8 @@ public class ResumeCommitService {
      *                                  and does not match the uploaded bytes — nothing is written
      * @throws com.juanperuzzo.job_hunter.domain.exception.AiException
      *                                  if the AI call fails or returns unparseable JSON
-     * @throws com.juanperuzzo.job_hunter.domain.exception.UserNotFoundException
-     *                                  if the user does not exist
      */
-    public UserProfile commit(Long userId, MultipartFile file, ResumeCorrections corrections) {
+    public UserProfile commit(MultipartFile file, ResumeCorrections corrections) {
         ResumeExtractionPipeline.validateFile(file);
 
         byte[] bytes = readBytes(file);
@@ -99,7 +96,7 @@ public class ResumeCommitService {
 
         var extraction = ResumeExtractionPipeline.extractWithAi(rawText, aiPort, maxAiChars);
 
-        var existingProfile = userProfileRepository.findByUserId(userId);
+        var existingProfile = userProfileRepository.find();
         var stored = existingProfile.orElse(null);
         var contact = extraction.contact();
 
@@ -137,24 +134,26 @@ public class ResumeCommitService {
                 .map(p -> new Project(p.name(), p.description(), String.join(", ", p.techStack())))
                 .toList();
 
-        var profile = new UserProfile(null, userId, rawText, extraction.skills(), tone, projects,
+        var profileName = existingProfile.map(UserProfile::name).orElse("Owner");
+        var profileEmail = existingProfile.map(UserProfile::email).orElse(null);
+        if (corrections != null) {
+            if (hasText(corrections.name())) {
+                profileName = corrections.name().trim();
+            }
+            if (hasText(corrections.email())) {
+                profileEmail = corrections.email().trim();
+            }
+        }
+        var profileId = existingProfile.map(UserProfile::id).orElse(null);
+        var profile = new UserProfile(profileId, profileName, profileEmail, rawText, extraction.skills(), tone, projects,
                 phone, contactEmail, portfolioUrl, githubUrl, linkedinUrl, null);
 
-        // Writes, in order: original PDF → profile → identity (identity last:
-        // saveProfile already verified the user row exists).
-        storeResume(userId, bytes);
-        var saved = userProfileService.saveProfile(userId, profile);
+        // Persist the original PDF and profile only after all corrections and
+        // extracted content have passed validation.
+        storeResume(bytes);
+        var saved = userProfileService.saveProfile(profile);
 
-        if (corrections != null && (hasText(corrections.name()) || hasText(corrections.email()))) {
-            // blank = "no correction" — normalized here too, so the service's
-            // blank-rejection can never fire after the writes (review 2026-11-15)
-            userProfileService.updateIdentity(userId,
-                    hasText(corrections.name()) ? corrections.name().trim() : null,
-                    hasText(corrections.email()) ? corrections.email().trim() : null);
-        }
-
-        log.info("Resume committed for user {} (profile id {}, identity corrected: {})",
-                userId, saved.id(), corrections != null && (hasText(corrections.name()) || hasText(corrections.email())));
+        log.info("Resume committed (profile id {})", saved.id());
         return saved;
     }
 
@@ -181,7 +180,7 @@ public class ResumeCommitService {
         }
         // Identity corrections ride the same pre-pass: an invalid name/email
         // must answer 400 before the PDF is stored or the profile replaced,
-        // not from inside updateIdentity after both writes (review 2026-11-15).
+        // never after both writes (review 2026-11-15).
         validateCorrectionValue("name", corrections.name(), 255, false);
         validateCorrectionValue("email", corrections.email(), 255, true);
         validateCorrectionValue("phone", corrections.phone(), ResumeExtractionPipeline.PHONE_MAX_LENGTH, false);
@@ -218,7 +217,7 @@ public class ResumeCommitService {
      * Stores the original PDF behind the {@link ResumeStorage} port — same
      * failure contract as the upload flow ({@link UncheckedIOException}).
      */
-    private void storeResume(Long userId, byte[] bytes) {
-        resumeStorage.write(userId, bytes);
+    private void storeResume(byte[] bytes) {
+        resumeStorage.write(bytes);
     }
 }

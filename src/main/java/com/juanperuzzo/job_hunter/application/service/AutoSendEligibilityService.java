@@ -53,7 +53,7 @@ public class AutoSendEligibilityService implements AutoSendEligibilityUseCase {
                 var job = jobOpt.get();
                 if (job.contactEmail() == null) continue;
 
-                var analysisOpt = jobAnalysisRepository.findByJobIdAndUserId(candidate.jobId(), candidate.userId());
+                var analysisOpt = jobAnalysisRepository.findByJobId(candidate.jobId());
                 if (analysisOpt.isEmpty()) continue;
 
                 allEligible.add(new EligibleDraft(candidate, analysisOpt.get().matchScore(), job.company(), job.contactEmail(), job.title()));
@@ -70,11 +70,11 @@ public class AutoSendEligibilityService implements AutoSendEligibilityUseCase {
                 .thenComparing(e -> e.draft().generatedAt()));
 
         var chosen = allEligible.getFirst();
-        long sentToday = emailDraftRepository.countByUserIdAndStatusAndSentAtAfter(
-                chosen.draft().userId(), EmailStatus.SENT, todayStart());
+        long sentToday = emailDraftRepository.countByStatusAndSentAtAfter(
+                EmailStatus.SENT, todayStart());
 
         if (sentToday >= dailyCap) {
-            log.debug("Daily cap reached for user {}, skipping", chosen.draft().userId());
+            log.debug("Daily cap reached, skipping");
             return Optional.empty();
         }
 
@@ -88,18 +88,9 @@ public class AutoSendEligibilityService implements AutoSendEligibilityUseCase {
 
         var allDrafts = emailDraftRepository.findAllByStatusIn(statuses);
 
-        var userIds = allDrafts.stream()
-                .map(EmailDraft::userId)
-                .distinct()
-                .sorted()
-                .toList();
-
-        return userIds.stream()
-                .map(uid -> allDrafts.stream()
-                        .filter(d -> d.userId().equals(uid))
-                        .sorted(Comparator.comparing(EmailDraft::generatedAt))
-                        .toList())
-                .toList();
+        return List.of(allDrafts.stream()
+                .sorted(Comparator.comparing(EmailDraft::generatedAt))
+                .toList());
     }
 
     private LocalDateTime todayStart() {

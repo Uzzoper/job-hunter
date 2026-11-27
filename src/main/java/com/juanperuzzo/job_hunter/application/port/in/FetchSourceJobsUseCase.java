@@ -9,11 +9,10 @@ public interface FetchSourceJobsUseCase {
     /**
      * Fetch, enrich, deduplicate and persist jobs from a single source.
      *
-     * @param userId the authenticated user whose stored keywords scope the fetch
      * @param sourceId the provider/source identifier (e.g. "gupy", "infojobs", "linkedin")
      * @return aggregate fetch statistics
      */
-    FetchResult fetchAndSave(Long userId, String sourceId);
+    FetchResult fetchAndSave(String sourceId);
 
     /**
      * Listener-aware variant (issue #116): receives one consumer called with a
@@ -21,7 +20,7 @@ public interface FetchSourceJobsUseCase {
      * Default ignores the listener and keeps the synchronous behavior — the
      * async LinkedIn path overrides this to surface per-keyword status.
      */
-    default FetchResult fetchAndSave(Long userId, String sourceId, Consumer<KeywordRun> keywordListener) {
-        return fetchAndSave(userId, sourceId);
+    default FetchResult fetchAndSave(String sourceId, Consumer<KeywordRun> keywordListener) {
+        return fetchAndSave(sourceId);
     }
 }

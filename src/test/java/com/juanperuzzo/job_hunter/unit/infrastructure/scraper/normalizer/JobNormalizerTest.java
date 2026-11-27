@@ -1,9 +1,10 @@
 package com.juanperuzzo.job_hunter.unit.infrastructure.scraper.normalizer;
 
 import com.juanperuzzo.job_hunter.application.port.out.RawJob;
-import com.juanperuzzo.job_hunter.application.port.out.UserRepository;
+import com.juanperuzzo.job_hunter.application.port.out.UserProfileRepository;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.normalizer.DateParser;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.normalizer.JobNormalizer;
+import com.juanperuzzo.job_hunter.infrastructure.scraper.normalizer.OwnerEmailGuard;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -14,6 +15,9 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.List;
+import java.util.Optional;
+import com.juanperuzzo.job_hunter.domain.model.CompanyTone;
+import com.juanperuzzo.job_hunter.domain.model.UserProfile;
 import java.util.regex.Pattern;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -29,7 +33,7 @@ class JobNormalizerTest {
 
     private JobNormalizer normalizer;
     private DateParser dateParser;
-    private final UserRepository userRepository = mock(UserRepository.class);
+    private final UserProfileRepository userProfileRepository = mock(UserProfileRepository.class);
 
     @BeforeEach
     void setUp() {
@@ -117,7 +121,7 @@ class JobNormalizerTest {
         @Test
         @DisplayName("should accept when no keywords configured")
         void shouldAcceptWhenNoKeywords() {
-            normalizer = new JobNormalizer(dateParser, List.of(), List.of(), List.of(), 90, FIXED_CLOCK, userRepository);
+            normalizer = new JobNormalizer(dateParser, List.of(), List.of(), List.of(), 90, FIXED_CLOCK, new OwnerEmailGuard(userProfileRepository));
             var job = normalizer.normalize(new RawJob(
                     "Desenvolvedor Java", "Company", "https://example.com/job1",
                     "Description", "2026-07-01", "São Paulo", "Presencial", "test", null));
@@ -130,7 +134,7 @@ class JobNormalizerTest {
         void shouldAcceptWhenKeywordMatchesTitle() {
             normalizer = new JobNormalizer(dateParser,
                     List.of("Java", "Spring"),
-                    List.of(), List.of(), 90, FIXED_CLOCK, userRepository);
+                    List.of(), List.of(), 90, FIXED_CLOCK, new OwnerEmailGuard(userProfileRepository));
             var job = normalizer.normalize(new RawJob(
                     "Desenvolvedor Java Spring", "Company", "https://example.com/job2",
                     "Description", "2026-07-01", null, null, "test", null));
@@ -142,7 +146,7 @@ class JobNormalizerTest {
         void shouldRejectWhenNoKeywordMatches() {
             normalizer = new JobNormalizer(dateParser,
                     List.of("Python"),
-                    List.of(), List.of(), 90, FIXED_CLOCK, userRepository);
+                    List.of(), List.of(), 90, FIXED_CLOCK, new OwnerEmailGuard(userProfileRepository));
             var job = normalizer.normalize(new RawJob(
                     "Desenvolvedor Java", "Company", "https://example.com/job3",
                     "Description", "2026-07-01", null, null, "test", null));
@@ -154,7 +158,7 @@ class JobNormalizerTest {
         void shouldMatchMultiTokenKeywords() {
             normalizer = new JobNormalizer(dateParser,
                     List.of("Junior Java"),
-                    List.of(), List.of(), 90, FIXED_CLOCK, userRepository);
+                    List.of(), List.of(), 90, FIXED_CLOCK, new OwnerEmailGuard(userProfileRepository));
             var job = normalizer.normalize(new RawJob(
                     "Desenvolvedor Java Jr", "Company", "https://example.com/job4",
                     "Description", "2026-07-01", null, null, "test", null));
@@ -166,7 +170,7 @@ class JobNormalizerTest {
         void shouldMatchKeywordInDescription() {
             normalizer = new JobNormalizer(dateParser,
                     List.of("Kubernetes"),
-                    List.of(), List.of(), 90, FIXED_CLOCK, userRepository);
+                    List.of(), List.of(), 90, FIXED_CLOCK, new OwnerEmailGuard(userProfileRepository));
             var job = normalizer.normalize(new RawJob(
                     "Desenvolvedor Backend", "Company", "https://example.com/job5",
                     "We use Kubernetes for orchestration",
@@ -185,7 +189,7 @@ class JobNormalizerTest {
             normalizer = new JobNormalizer(dateParser, List.of("desenvolvedor"),
                     List.of(Pattern.compile("(?<![\\p{L}\\p{N}_])senior(?![\\p{L}\\p{N}_])",
                             Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CHARACTER_CLASS)),
-                    List.of(), 90, FIXED_CLOCK, userRepository);
+                    List.of(), 90, FIXED_CLOCK, new OwnerEmailGuard(userProfileRepository));
             var job = normalizer.normalize(new RawJob(
                     "Desenvolvedor Senior", "Company", "https://example.com/excluded1",
                     "Description", "2026-07-01", null, null, "test", null));
@@ -197,7 +201,7 @@ class JobNormalizerTest {
         void shouldAcceptWhenNotExcluded() {
             normalizer = new JobNormalizer(dateParser, List.of("desenvolvedor"),
                     List.of(Pattern.compile("senior"), Pattern.compile("pleno")),
-                    List.of(), 90, FIXED_CLOCK, userRepository);
+                    List.of(), 90, FIXED_CLOCK, new OwnerEmailGuard(userProfileRepository));
             var job = normalizer.normalize(new RawJob(
                     "Desenvolvedor Junior", "Company", "https://example.com/not-excluded",
                     "Description", "2026-07-01", null, null, "test", null));
@@ -216,7 +220,7 @@ class JobNormalizerTest {
             return new JobNormalizer(dateParser,
                     List.of("desenvolvedor", "programador", "junior", "ti", "tecnologia", "dev", "software", "analista"),
                     List.of(com.juanperuzzo.job_hunter.infrastructure.config.AppConfig.SENIOR_EXCLUDE_PATTERN),
-                    List.of(), 90, FIXED_CLOCK, userRepository);
+                    List.of(), 90, FIXED_CLOCK, new OwnerEmailGuard(userProfileRepository));
         }
 
         @Test
@@ -258,7 +262,7 @@ class JobNormalizerTest {
         @DisplayName("should accept when no locations configured")
         void shouldAcceptWhenNoLocations() {
             normalizer = new JobNormalizer(dateParser, List.of("desenvolvedor"),
-                    List.of(), List.of(), 90, FIXED_CLOCK, userRepository);
+                    List.of(), List.of(), 90, FIXED_CLOCK, new OwnerEmailGuard(userProfileRepository));
             var job = normalizer.normalize(new RawJob(
                     "Desenvolvedor", "Company", "https://example.com/loc1",
                     "Description", "2026-07-01", "São Paulo", "Presencial", "test", null));
@@ -269,7 +273,7 @@ class JobNormalizerTest {
         @DisplayName("should accept remote jobs regardless of location filter")
         void shouldAcceptRemoteJobs() {
             normalizer = new JobNormalizer(dateParser, List.of("desenvolvedor"),
-                    List.of(), List.of("São Paulo"), 90, FIXED_CLOCK, userRepository);
+                    List.of(), List.of("São Paulo"), 90, FIXED_CLOCK, new OwnerEmailGuard(userProfileRepository));
             var job = normalizer.normalize(new RawJob(
                     "Desenvolvedor", "Company", "https://example.com/remote1",
                     "Description", "2026-07-01", "Qualquer", "Remoto", "test", null));
@@ -280,7 +284,7 @@ class JobNormalizerTest {
         @DisplayName("should accept when location matches")
         void shouldAcceptWhenLocationMatches() {
             normalizer = new JobNormalizer(dateParser, List.of("desenvolvedor"),
-                    List.of(), List.of("sao paulo"), 90, FIXED_CLOCK, userRepository);
+                    List.of(), List.of("sao paulo"), 90, FIXED_CLOCK, new OwnerEmailGuard(userProfileRepository));
             var job = normalizer.normalize(new RawJob(
                     "Desenvolvedor", "Company", "https://example.com/sp",
                     "Description", "2026-07-01", "São Paulo", "Presencial", "test", null));
@@ -291,7 +295,7 @@ class JobNormalizerTest {
         @DisplayName("should reject when location does not match")
         void shouldRejectWhenLocationDoesNotMatch() {
             normalizer = new JobNormalizer(dateParser, List.of("desenvolvedor"),
-                    List.of(), List.of("São Paulo"), 90, FIXED_CLOCK, userRepository);
+                    List.of(), List.of("São Paulo"), 90, FIXED_CLOCK, new OwnerEmailGuard(userProfileRepository));
             var job = normalizer.normalize(new RawJob(
                     "Desenvolvedor", "Company", "https://example.com/rj",
                     "Description", "2026-07-01", "Rio de Janeiro", "Presencial", "test", null));
@@ -307,7 +311,7 @@ class JobNormalizerTest {
         @DisplayName("should accept jobs within maxAgeDays")
         void shouldAcceptRecentJobs() {
             normalizer = new JobNormalizer(dateParser, List.of("desenvolvedor"),
-                    List.of(), List.of(), 90, FIXED_CLOCK, userRepository);
+                    List.of(), List.of(), 90, FIXED_CLOCK, new OwnerEmailGuard(userProfileRepository));
             var job = normalizer.normalize(new RawJob(
                     "Desenvolvedor", "Company", "https://example.com/recent",
                     "Description", "2026-07-01", null, null, "test", null));
@@ -319,7 +323,7 @@ class JobNormalizerTest {
         @DisplayName("should reject jobs older than maxAgeDays")
         void shouldRejectOldJobs() {
             normalizer = new JobNormalizer(dateParser, List.of("desenvolvedor"),
-                    List.of(), List.of(), 30, FIXED_CLOCK, userRepository);
+                    List.of(), List.of(), 30, FIXED_CLOCK, new OwnerEmailGuard(userProfileRepository));
             var job = normalizer.normalize(new RawJob(
                     "Desenvolvedor", "Company", "https://example.com/old",
                     "Description", "2026-05-01", null, null, "test", null));
@@ -334,7 +338,7 @@ class JobNormalizerTest {
         @BeforeEach
         void setUp() {
             normalizer = new JobNormalizer(dateParser, List.of("desenvolvedor"),
-                    List.of(), List.of(), 90, FIXED_CLOCK, userRepository);
+                    List.of(), List.of(), 90, FIXED_CLOCK, new OwnerEmailGuard(userProfileRepository));
         }
 
         @Test
@@ -381,7 +385,7 @@ class JobNormalizerTest {
         @BeforeEach
         void setUp() {
             normalizer = new JobNormalizer(dateParser, List.of("desenvolvedor"),
-                    List.of(), List.of(), 90, FIXED_CLOCK, userRepository);
+                    List.of(), List.of(), 90, FIXED_CLOCK, new OwnerEmailGuard(userProfileRepository));
         }
 
         @Test
@@ -525,10 +529,10 @@ class JobNormalizerTest {
 
         @BeforeEach
         void setUp() {
-            when(userRepository.findAllEmails()).thenReturn(List.of(
-                    OWNER_EMAIL, "second.owner@example.org"));
+            when(userProfileRepository.find()).thenReturn(Optional.of(
+                    profileWithOwnerEmail(OWNER_EMAIL)));
             normalizer = new JobNormalizer(dateParser, List.of("desenvolvedor"),
-                    List.of(), List.of(), 90, FIXED_CLOCK, userRepository);
+                    List.of(), List.of(), 90, FIXED_CLOCK, new OwnerEmailGuard(userProfileRepository));
         }
 
         @Test
@@ -586,20 +590,20 @@ class JobNormalizerTest {
         }
 
         @Test
-        @DisplayName("should clear contactEmail when it matches a second owner in the set")
-        void normalize_whenSecondOwnerEmailMatches_shouldClearContactEmail() {
+        @DisplayName("should keep contactEmail that does not match the single owner email")
+        void normalize_whenDifferentFromOwnerEmail_shouldKeepContactEmail() {
             var job = normalizer.normalize(new RawJob(
                     "Desenvolvedor Java", "Company", "https://example.com/job",
                     "Send your resume to Second.Owner@Example.ORG",
                     "2026-07-01", null, null, "test", null));
             assertNotNull(job);
-            assertNull(job.contactEmail());
+            assertEquals("Second.Owner@Example.ORG", job.contactEmail());
         }
 
         @Test
         @DisplayName("should fail closed when the owner email query fails, discarding the contact email")
         void normalize_whenOwnerEmailLoadFails_shouldFailClosedAndDiscardContactEmail() {
-            when(userRepository.findAllEmails()).thenThrow(new RuntimeException("db down"));
+            when(userProfileRepository.find()).thenThrow(new RuntimeException("db down"));
 
             var job = normalizer.normalize(new RawJob(
                     "Desenvolvedor Java", "Company", "https://example.com/job",
@@ -642,7 +646,7 @@ class JobNormalizerTest {
         @BeforeEach
         void setUp() {
             normalizer = new JobNormalizer(dateParser, List.of("desenvolvedor"),
-                    List.of(), List.of(), 90, FIXED_CLOCK, userRepository);
+                    List.of(), List.of(), 90, FIXED_CLOCK, new OwnerEmailGuard(userProfileRepository));
         }
 
         @Test
@@ -757,7 +761,7 @@ class JobNormalizerTest {
         void setUp() {
             // "developer" covers the Scenario 7 title, "desenvolvedor" the rest
             normalizer = new JobNormalizer(dateParser, List.of("developer", "desenvolvedor"),
-                    List.of(), List.of(), 90, FIXED_CLOCK, userRepository);
+                    List.of(), List.of(), 90, FIXED_CLOCK, new OwnerEmailGuard(userProfileRepository));
         }
 
         @Test
@@ -846,7 +850,7 @@ class JobNormalizerTest {
         @DisplayName("should normalize multiple raw jobs")
         void shouldNormalizeMultipleJobs() {
             normalizer = new JobNormalizer(dateParser, List.of("desenvolvedor"),
-                    List.of(), List.of(), 90, FIXED_CLOCK, userRepository);
+                    List.of(), List.of(), 90, FIXED_CLOCK, new OwnerEmailGuard(userProfileRepository));
             var jobs = normalizer.normalizeAll(List.of(
                     new RawJob("Desenvolvedor Java", "C1", "https://a.com/1",
                             "Desc", "2026-07-01", null, null, "test", null),
@@ -862,7 +866,7 @@ class JobNormalizerTest {
         @DisplayName("should return empty list for empty input")
         void shouldReturnEmptyForEmptyInput() {
             normalizer = new JobNormalizer(dateParser, List.of(),
-                    List.of(), List.of(), 90, FIXED_CLOCK, userRepository);
+                    List.of(), List.of(), 90, FIXED_CLOCK, new OwnerEmailGuard(userProfileRepository));
             assertTrue(normalizer.normalizeAll(List.of()).isEmpty());
         }
     }
@@ -875,7 +879,7 @@ class JobNormalizerTest {
         @DisplayName("should match against the override keywords instead of the constructor defaults")
         void normalize_whenOverrideMatches_shouldAcceptEvenIfDefaultWouldNot() {
             normalizer = new JobNormalizer(dateParser, List.of("java"),
-                    List.of(), List.of(), 90, FIXED_CLOCK, userRepository);
+                    List.of(), List.of(), 90, FIXED_CLOCK, new OwnerEmailGuard(userProfileRepository));
             var raw = new RawJob(
                     "Rust Developer", "Company", "https://example.com/override1",
                     "Systems role", "2026-07-01", null, null, "test", null);
@@ -890,7 +894,7 @@ class JobNormalizerTest {
         @DisplayName("should reject when the override does not match even if the default would")
         void normalize_whenOverrideDoesNotMatch_shouldRejectEvenIfDefaultWould() {
             normalizer = new JobNormalizer(dateParser, List.of("java"),
-                    List.of(), List.of(), 90, FIXED_CLOCK, userRepository);
+                    List.of(), List.of(), 90, FIXED_CLOCK, new OwnerEmailGuard(userProfileRepository));
             var raw = new RawJob(
                     "Java Developer", "Company", "https://example.com/override2",
                     "Backend role", "2026-07-01", null, null, "test", null);
@@ -904,7 +908,7 @@ class JobNormalizerTest {
         @DisplayName("should fall back to the constructor keywords when the override is empty")
         void normalize_whenOverrideEmpty_shouldFallBackToDefaultKeywords() {
             normalizer = new JobNormalizer(dateParser, List.of("java"),
-                    List.of(), List.of(), 90, FIXED_CLOCK, userRepository);
+                    List.of(), List.of(), 90, FIXED_CLOCK, new OwnerEmailGuard(userProfileRepository));
             var raw = new RawJob(
                     "Java Developer", "Company", "https://example.com/override3",
                     "Backend role", "2026-07-01", null, null, "test", null);
@@ -913,5 +917,10 @@ class JobNormalizerTest {
 
             assertNotNull(job);
         }
+    }
+
+    private static UserProfile profileWithOwnerEmail(String ownerEmail) {
+        return new UserProfile(1L, "Owner", ownerEmail, "", List.of(), CompanyTone.FORMAL,
+                List.of(), null, null, null, null, null, null);
     }
 }

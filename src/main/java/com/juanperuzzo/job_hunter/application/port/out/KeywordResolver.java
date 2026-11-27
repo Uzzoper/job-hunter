@@ -7,8 +7,8 @@ import java.util.List;
  * <p>
  * Implementation returns the stored keywords when present and non-empty,
  * otherwise an empty list. When the list is empty, each call site falls back to
- * its own per-provider yaml default. This is a single-owner scope (userId is the key).
+ * its own per-provider yaml default. Single-owner (self-hosted) scope.
  */
 public interface KeywordResolver {
-    List<String> resolve(Long userId);
+    List<String> resolve();
 }

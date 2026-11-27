@@ -16,7 +16,6 @@ import com.juanperuzzo.job_hunter.application.port.out.PdfRendererPort;
 import com.juanperuzzo.job_hunter.application.port.out.ScraperPort;
 import com.juanperuzzo.job_hunter.application.port.out.SourceFetchPort;
 import com.juanperuzzo.job_hunter.application.port.out.KeywordResolver;
-import com.juanperuzzo.job_hunter.application.port.out.UserRepository;
 import com.juanperuzzo.job_hunter.application.service.AiAnalysisService;
 import com.juanperuzzo.job_hunter.application.service.CompanyEnrichmentService;
 import com.juanperuzzo.job_hunter.application.service.EmailGenerationService;
@@ -31,9 +30,6 @@ import com.juanperuzzo.job_hunter.infrastructure.botmemory.BotMemoryStartupSync;
 import com.juanperuzzo.job_hunter.infrastructure.email.HermesBotEmailSender;
 import com.juanperuzzo.job_hunter.infrastructure.pdf.ResumePdfRenderer;
 import com.juanperuzzo.job_hunter.infrastructure.scheduler.AutoSendScheduler;
-import com.juanperuzzo.job_hunter.application.port.out.PasswordHasher;
-import com.juanperuzzo.job_hunter.application.port.out.TokenProvider;
-import com.juanperuzzo.job_hunter.application.port.out.UserRepository;
 import com.juanperuzzo.job_hunter.application.port.out.JobAnalysisRepository;
 import com.juanperuzzo.job_hunter.application.port.out.UserProfileRepository;
 import com.juanperuzzo.job_hunter.application.port.out.BotMemoryPort;
@@ -41,7 +37,6 @@ import com.juanperuzzo.job_hunter.application.port.out.ContactEmailExtractorPort
 import com.juanperuzzo.job_hunter.application.service.BotMemorySyncService;
 import com.juanperuzzo.job_hunter.application.service.ApproveDraftService;
 import com.juanperuzzo.job_hunter.application.service.RecordExternalApplyService;
-import com.juanperuzzo.job_hunter.application.service.AuthService;
 import com.juanperuzzo.job_hunter.application.service.AutoSendEligibilityService;
 import com.juanperuzzo.job_hunter.application.service.BackfillContactEmailsService;
 import com.juanperuzzo.job_hunter.application.service.IngestLinkedInPostService;
@@ -54,7 +49,6 @@ import com.juanperuzzo.job_hunter.application.service.ResumeRetrievalService;
 import com.juanperuzzo.job_hunter.application.service.ResumeUploadService;
 import com.juanperuzzo.job_hunter.application.service.TemplateEmailService;
 import com.juanperuzzo.job_hunter.application.service.UserProfileService;
-import com.juanperuzzo.job_hunter.infrastructure.security.JwtTokenService;
 import com.juanperuzzo.job_hunter.infrastructure.storage.ResumeStorageAdapter;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.retry.ExponentialBackoffRetry;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.ratelimit.RateLimiter;
@@ -66,7 +60,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
-import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.context.annotation.Primary;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -210,9 +203,9 @@ public class AppConfig {
     }
 
     @Bean
-    public OwnerEmailGuard ownerEmailGuard(UserRepository userRepository) {
+    public OwnerEmailGuard ownerEmailGuard(UserProfileRepository userProfileRepository) {
         // Shared by the company-site enricher (the normalizers build their own internally).
-        return new OwnerEmailGuard(userRepository);
+        return new OwnerEmailGuard(userProfileRepository);
     }
 
     @Bean
@@ -241,21 +234,21 @@ public class AppConfig {
     @Bean
     public JobNormalizer jobNormalizer(
             DateParser dateParser,
-            UserRepository userRepository,
+            OwnerEmailGuard ownerEmailGuard,
             @Value("#{'${scraper.gupy.keywords}'.split(',')}") List<String> keywords,
             @Value("${scraper.normalizer.max-age-days}") int maxAgeDays) {
         return new JobNormalizer(dateParser, keywords, List.of(SENIOR_EXCLUDE_PATTERN), List.of(), maxAgeDays, Clock.systemUTC(),
-                userRepository);
+                ownerEmailGuard);
     }
 
     @Bean
     public JobNormalizer linkedinJobNormalizer(
             DateParser dateParser,
-            UserRepository userRepository,
+            OwnerEmailGuard ownerEmailGuard,
             @Value("#{'${scraper.linkedin.keywords}'.split(',')}") List<String> keywords,
             @Value("${scraper.normalizer.max-age-days}") int maxAgeDays) {
         return new JobNormalizer(dateParser, keywords, List.of(SENIOR_EXCLUDE_PATTERN), List.of(), maxAgeDays, Clock.systemUTC(),
-                userRepository);
+                ownerEmailGuard);
     }
 
     @Bean
@@ -618,29 +611,13 @@ public class AppConfig {
     @Bean
     public EmailGenerationService emailGenerationService(AiPort aiPort, EmailDraftRepository emailDraftRepository,
                                                          UserProfileRepository userProfileRepository,
-                                                         UserRepository userRepository,
                                                          JobRepository jobRepository, JobAnalysisRepository jobAnalysisRepository,
                                                          TemplateEmailService templateEmailService,
                                                          BotMemorySyncService botMemorySyncService,
                                                          @Value("${email.standard-template.min-match-score:60}") int minMatchScore,
                                                          @Value("${email.max-resume-chars:8000}") int maxResumeChars) {
-        return new EmailGenerationService(aiPort, emailDraftRepository, userProfileRepository, userRepository,
+        return new EmailGenerationService(aiPort, emailDraftRepository, userProfileRepository,
                 jobRepository, jobAnalysisRepository, templateEmailService, botMemorySyncService, minMatchScore, maxResumeChars);
-    }
-
-    @Bean
-    public PasswordHasher passwordHasher(PasswordEncoder passwordEncoder) {
-        return new PasswordHasher() {
-            @Override
-            public String hash(String rawPassword) {
-                return passwordEncoder.encode(rawPassword);
-            }
-
-            @Override
-            public boolean matches(String rawPassword, String hash) {
-                return passwordEncoder.matches(rawPassword, hash);
-            }
-        };
     }
 
     @Bean
@@ -682,28 +659,15 @@ public class AppConfig {
     }
 
     @Bean
-    public JwtTokenService jwtTokenService(@Value("${jwt.secret}") String secret, @Value("${jwt.expiration-hours}") int expirationHours) {
-        return new JwtTokenService(secret, expirationHours);
+    public UserProfileService userProfileService(UserProfileRepository userProfileRepository) {
+        return new UserProfileService(userProfileRepository);
     }
 
+    /** Filesystem adapter for the current resume and legacy per-user uploads. */
     @Bean
-    public AuthService authService(UserRepository userRepository, PasswordHasher passwordHasher, TokenProvider tokenProvider) {
-        return new AuthService(userRepository, passwordHasher, tokenProvider);
-    }
-
-    @Bean
-    public UserProfileService userProfileService(UserRepository userRepository, UserProfileRepository userProfileRepository) {
-        return new UserProfileService(userRepository, userProfileRepository);
-    }
-
-    /**
-     * Single owner of the `{uploadDir}/{userId}/resume.pdf` path convention —
-     * both the upload write and the retrieval read resolve through it
-     * (issue #92 slice a).
-     */
-    @Bean
-    public ResumeStorage resumeStorage(@Value("${app.upload-dir}") String uploadDir) {
-        return new ResumeStorageAdapter(uploadDir);
+    public ResumeStorage resumeStorage(@Value("${app.upload-dir}") String uploadDir,
+                                       @Value("${bot.service.owner-user-id:${BOT_SERVICE_OWNER_USER_ID:}}") String legacyOwnerUserId) {
+        return new ResumeStorageAdapter(uploadDir, legacyOwnerUserId);
     }
 
     @Bean
@@ -724,10 +688,10 @@ public class AppConfig {
      * the upload flow, but no storage or profile-writing dependency at all.
      */
     @Bean
-    public ResumePreviewService resumePreviewService(AiPort aiPort, UserProfileService userProfileService,
+    public ResumePreviewService resumePreviewService(AiPort aiPort,
                                                      UserProfileRepository userProfileRepository,
                                                      @Value("${ai.resume-extraction.max-chars:8000}") int maxAiChars) {
-        return new ResumePreviewService(aiPort, userProfileService, userProfileRepository, maxAiChars);
+        return new ResumePreviewService(aiPort, userProfileRepository, maxAiChars);
     }
 
     /**
@@ -755,9 +719,9 @@ public class AppConfig {
     public EmailSendingService emailSendingService(
             EmailDraftRepository emailDraftRepository,
             JobRepository jobRepository,
-            UserRepository userRepository,
+            UserProfileRepository userProfileRepository,
             EmailSenderPort emailSenderPort) {
-        return new EmailSendingService(emailDraftRepository, jobRepository, userRepository, emailSenderPort);
+        return new EmailSendingService(emailDraftRepository, jobRepository, userProfileRepository, emailSenderPort);
     }
 
     @Bean
@@ -795,11 +759,10 @@ public class AppConfig {
             JobRepository jobRepository,
             JobAnalysisRepository jobAnalysisRepository,
             UserProfileRepository userProfileRepository,
-            UserRepository userRepository,
             PdfRendererPort pdfRendererPort,
             @Value("${ai.resume-tailoring.max-chars:8000}") int maxAiChars) {
         return new ResumeTailoringService(aiPort, jobRepository, jobAnalysisRepository,
-                userProfileRepository, userRepository, pdfRendererPort, maxAiChars);
+                userProfileRepository, pdfRendererPort, maxAiChars);
     }
 
     @Bean
@@ -837,8 +800,7 @@ public class AppConfig {
     @Bean
     public BotMemoryStartupSync botMemoryStartupSync(
             BotMemorySyncService botMemorySyncService,
-            UserRepository userRepository,
             @Value("${bot.memory.dir}") String memoryDir) {
-        return new BotMemoryStartupSync(botMemorySyncService, userRepository, Path.of(memoryDir));
+        return new BotMemoryStartupSync(botMemorySyncService, Path.of(memoryDir));
     }
 }

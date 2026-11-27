@@ -117,7 +117,7 @@ class BotMemorySyncServiceTest {
     void writeMemoryEntry_shouldAppendToFile() {
         Path memoryFile = tempDir.resolve("memories/MEMORY.md");
 
-        service.writeMemoryEntry(1L, "Draft rejected: too generic for Company Z");
+        service.writeMemoryEntry("Draft rejected: too generic for Company Z");
 
         verify(botMemoryPort).appendSection(eq(memoryFile), contains("Draft rejected"));
     }
@@ -128,7 +128,7 @@ class BotMemorySyncServiceTest {
         Path memoryFile = tempDir.resolve("memories/MEMORY.md");
         ArgumentCaptor<String> payloadCaptor = ArgumentCaptor.forClass(String.class);
 
-        service.writeMemoryEntry(1L, "Draft rejected § due to delimiter § in reason");
+        service.writeMemoryEntry("Draft rejected § due to delimiter § in reason");
 
         verify(botMemoryPort).appendSection(eq(memoryFile), payloadCaptor.capture());
         String payload = payloadCaptor.getValue();
@@ -154,7 +154,7 @@ class BotMemorySyncServiceTest {
         when(botMemoryPort.readFile(memoryFile)).thenReturn(Optional.empty());
 
         // Should not throw
-        service.syncFromBotMemory(1L);
+        service.syncFromBotMemory();
     }
 
     // ── Merge ─────────────────────────────────────────────────────────
@@ -170,10 +170,10 @@ class BotMemorySyncServiceTest {
                 """));
 
         var existingProfile = existingProfile(null, null);
-        when(userProfileRepository.findByUserId(1L)).thenReturn(Optional.of(existingProfile));
+        when(userProfileRepository.find()).thenReturn(Optional.of(existingProfile));
         when(userProfileRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
-        service.syncFromBotMemory(1L);
+        service.syncFromBotMemory();
 
         verify(userProfileRepository).save(argThat(profile ->
                 "bot-learned@example.com".equals(profile.contactEmail())
@@ -192,10 +192,10 @@ class BotMemorySyncServiceTest {
                 """));
 
         var existingProfile = existingProfile("existing@example.com", "+55 11 88888-0000");
-        when(userProfileRepository.findByUserId(1L)).thenReturn(Optional.of(existingProfile));
+        when(userProfileRepository.find()).thenReturn(Optional.of(existingProfile));
 
         // All mapped fields are already set → nothing should be changed/saved
-        service.syncFromBotMemory(1L);
+        service.syncFromBotMemory();
 
         verify(userProfileRepository, never()).save(any());
     }
@@ -208,10 +208,10 @@ class BotMemorySyncServiceTest {
                 §
                 contactEmail: bot-learned@example.com
                 """));
-        when(userProfileRepository.findByUserId(1L)).thenReturn(Optional.empty());
+        when(userProfileRepository.find()).thenReturn(Optional.empty());
 
         // Should not throw
-        service.syncFromBotMemory(1L);
+        service.syncFromBotMemory();
 
         verify(userProfileRepository, never()).save(any());
     }
@@ -227,9 +227,9 @@ class BotMemorySyncServiceTest {
                 """));
 
         var existingProfile = existingProfile(null, null);
-        when(userProfileRepository.findByUserId(1L)).thenReturn(Optional.of(existingProfile));
+        when(userProfileRepository.find()).thenReturn(Optional.of(existingProfile));
 
-        service.syncFromBotMemory(1L);
+        service.syncFromBotMemory();
 
         verify(userProfileRepository, never()).save(any());
     }
@@ -238,7 +238,7 @@ class BotMemorySyncServiceTest {
 
     private UserProfile existingProfile(String contactEmail, String phone) {
         return new UserProfile(
-                10L, 1L, "Valid resume text for testing purposes with enough content here.",
+                10L, "Owner", null, "Valid resume text for testing purposes with enough content here.",
                 List.of("Java"), CompanyTone.STARTUP, List.of(),
                 phone, contactEmail, null, null, null, null);
     }

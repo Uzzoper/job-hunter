@@ -34,7 +34,7 @@ curl -s -H "X-Bot-Token: $TOKEN" http://localhost:8080/api/jobs
 
 **Do not** use `<bot-profile-dir>/api-token.txt` — that's the Hermes bot token, not the job-hunter API token. They are different values.
 
-**JWT vs X-Bot-Token**: The backend accepts both `Authorization: Bearer <jwt>` (from `/api/auth/login`) and `X-Bot-Token: <bot_key>` (from `BOT_SERVICE_API_KEY` in `.env`). The bot token is simpler for automation — use it for all fetch/diagnostic calls. JWT requires a password and is only needed for user-scoped operations.
+**X-Bot-Token only**: the self-hosted backend accepts `X-Bot-Token: <bot_key>` (from `BOT_SERVICE_API_KEY` in `.env`). Use it for all fetch/diagnostic calls. JWT login was removed with the multi-user auth.
 
 **401 Unauthorized** → the header token doesn't match `BOT_SERVICE_API_KEY`. Fix: read the correct value from the `.env` file and restart the backend container.
 

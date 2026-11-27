@@ -1,19 +1,17 @@
 # Job Hunter
 
 [![CI](https://github.com/Uzzoper/job-hunter/actions/workflows/ci.yml/badge.svg)](https://github.com/Uzzoper/job-hunter/actions/workflows/ci.yml)
-[![Rust CLI Release](https://github.com/Uzzoper/job-hunter/actions/workflows/cli-release.yml/badge.svg)](https://github.com/Uzzoper/job-hunter/actions/workflows/cli-release.yml)
 ![Java](https://img.shields.io/badge/Java-21-orange?logo=openjdk)
 ![Spring Boot](https://img.shields.io/badge/Spring_Boot-4.0.6-brightgreen?logo=springboot)
 ![SQLite](https://img.shields.io/badge/SQLite-3-003B57?logo=sqlite)
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker)
-![Rust](https://img.shields.io/badge/Rust-2024-ed760e?logo=rust)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript)
 ![License](https://img.shields.io/badge/license-GPL--3.0-blue)
 
 **Automated junior-developer job hunting, scored by AI, applied with your approval.**
 Chat with the `jobhunter-bot` Hermes agent — it lists, analyzes, drafts emails, and applies for you.
 
-For portfolio reviewers: the **Hermes bot** is the primary interface (see [ADR 001](docs/adr/001-multi-interface.md)). The Rust CLI/TUI is legacy (kept for debug/manual use).
+For portfolio reviewers: the **Hermes bot** is the primary (and only) interface (see [ADR 001](docs/adr/001-multi-interface.md)).
 
 ---
 
@@ -21,13 +19,6 @@ For portfolio reviewers: the **Hermes bot** is the primary interface (see [ADR 0
 
 ```mermaid
 flowchart TB
-    subgraph Auth["Authentication"]
-        A1[POST /api/auth/register] --> A2[AuthService]
-        A3[POST /api/auth/login] --> A2
-        A2 --> A4[JwtTokenService]
-        A4 --> A5[JWT Token]
-    end
-
     subgraph Scraper["Job Scraping"]
         S1[Gupy API] --> S2[GupyProvider]
         S3[InfoJobs] --> S4[InfoJobsProvider]
@@ -57,14 +48,13 @@ flowchart TB
         E4 --> E6[EmailDraft<br/>ready to send]
     end
 
-    Auth -->|Authorization: Bearer| Scraper
     Scraper --> AI
     AI --> Email
 ```
 
-0. Register or login via `/api/auth/register` and `/api/auth/login` to receive a JWT token.
-   All subsequent requests must include `Authorization: Bearer <token>`.
-   The bot lane uses a static service token instead: `X-Bot-Token: <secret>` (no `Bearer`) — see `bot.service` in `application-local.yaml` and `scripts/setup-bot-access.sh`. CLI/webapp keep JWT login.
+0. All API requests require `X-Bot-Token: <secret>` (static service token) — see
+   `bot.service` in `application-local.yaml` and `scripts/setup-bot-access.sh`.
+   There is no user login: self-hosted, single operator.
 1. The scraper fetches job listings from Gupy, InfoJobs, LinkedIn, Greenhouse/Ashby/Lever boards and GitHub community boards, filtered by keywords.
 2. Each listing is saved to SQLite (`./data/jobhunter.db`) — duplicates are skipped by URL.
 3. On demand, the AI analyzes the listing against your profile and returns a match score (0–100), matched/missing skills, and company tone. The score also reflects your saved work preferences (remote/hybrid/onsite, salary floor, excluded companies) — deterministically and in the prompt.
@@ -80,7 +70,6 @@ flowchart TB
 
 - Java 21
 - A local **Hermes Agent** bot profile (gateway on localhost:8642 — see 'Email sending via Hermes Agent' below). `HERMES_API_KEY` is the only AI credential required; Hermes also handles email delivery
-- Rust 2024 edition (for the CLI binary — `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`)
 - Docker + Docker Compose (optional — only to run the LinkedIn scraper container; the database needs none)
 
 ### Setup
@@ -102,9 +91,6 @@ Flyway creates the file and the schema automatically on first startup — no ser
 Create `src/main/resources/application-local.yaml`:
 
 ```yaml
-jwt:
-  secret: a-key-with-at-least-32-characters-for-hmac
-
 hermes:
   base-url: http://127.0.0.1:8642/p/jobhunter-bot/v1   # OpenAI-compatible API root; clients append /chat/completions
   api-key: YOUR_HERMES_API_KEY   # equals the gateway API_SERVER_KEY — required
@@ -114,11 +100,10 @@ hermes:
 bot:
   service:
     # Static service token for bot API access (issue #47): the bot sends it
-    # via the X-Bot-Token header (no Bearer — CLI/webapp keep JWT login).
-    # Blank api-key disables the feature. Same value goes in the bot profile
-    # as api-token.txt.
+    # via the X-Bot-Token header (no Bearer).
+    # Required: a blank api-key fails fast at startup (no open mode).
+    # Same value goes in the bot profile as api-token.txt.
     api-key: ${BOT_SERVICE_API_KEY}
-    owner-user-id: ${BOT_SERVICE_OWNER_USER_ID}   # existing user the bot acts as
 ```
 
 > This file is in `.gitignore` and will never be committed.
@@ -167,15 +152,6 @@ Then set `scraper.linkedin.service-url: http://localhost:3000` in
 > Without this, Gupy and InfoJobs still work (no container needed). LinkedIn
 > falls back to Jsoup (`scraper.linkedin.mode: jsoup`).
 
-**6. Build and run the CLI (legacy)**
-
-```bash
-cd cli && cargo build --release && ./target/release/jh-cli --help
-```
-
-> The Rust CLI/TUI is legacy — daily use goes through the Hermes bot. See
-> [`docs/cli.md`](docs/cli.md) for batch commands.
-
 ---
 
 ## Hermes bot (primary interface)
@@ -188,7 +164,7 @@ from fresh clone to working integration.
 
 ```bash
 bash scripts/install-bot-skills.sh                # install skills into the bot profile
-bash scripts/setup-bot-access.sh --owner-id <id>  # service-token setup (X-Bot-Token)
+bash scripts/setup-bot-access.sh                  # service-token setup (X-Bot-Token)
 ```
 
 Skills: `company-scraper` (company contact research), `job-application` (Gupy +
@@ -203,34 +179,11 @@ are in [`docs/specs/bot-screen-runbook.md`](docs/specs/bot-screen-runbook.md).
 
 ---
 
-## CLI / TUI (legacy)
-
-The project includes a **Rust** binary (`jh-cli`) with two interaction modes.
-Marked **legacy** — daily use goes through the Hermes bot. Kept for debug and
-manual JWT access.
-
-| Mode | Trigger | Description |
-|------|---------|-------------|
-| **TUI** (default) | No subcommand or `-T`/`--tui` | Interactive terminal UI |
-| **Batch** | Any subcommand | Non-interactive commands for scripting and CI |
-
-Batch commands are documented in [`docs/cli.md`](docs/cli.md).
-
-### Demo (CLI)
-
-![Job Hunter demo — fetch, score, shortlist, apply](docs/assets/bot-demo.gif)
-
-*Illustrative run (CLI mode, aggregate counters only — no real listings, companies, recipients or applications).*
-
-> Full spec at [`docs/specs/cli-tui-spec.md`](docs/specs/cli-tui-spec.md)
-
 
 ## API
 
 | Method | Endpoint | Description | Auth Required |
 |--------|----------|-------------|:---:|
-| `POST` | `/api/auth/register` | Register a new user | No |
-| `POST` | `/api/auth/login` | Login and receive JWT token | No |
 | `GET` | `/api/jobs?hasEmail=&excludeApplied=&minScore=` | List jobs (filters: has contact email, hide applied, minimum AI score; each item carries draftStatus + matchScore) | Yes |
 | `GET` | `/api/jobs/{id}` | Get job detail | Yes |
 | `POST` | `/api/jobs/fetch` | Trigger all scrapers (all registered providers) | Yes |
@@ -245,8 +198,8 @@ Batch commands are documented in [`docs/cli.md`](docs/cli.md).
 | `POST` | `/api/jobs/{id}/send` | Send email via Hermes bot using user's email as from | Yes |
 | `POST` | `/api/jobs/{id}/applied` | Record an external application (201 when created) | Yes |
 | `POST` | `/api/jobs/{id}/resume` | Generate ATS-tailored resume PDF for the job | Yes |
-| `GET` | `/api/profile` | Get authenticated user's profile (includes preferences: workPreference, salaryFloor, excludedCompanies) | Yes |
-| `PUT` | `/api/profile` | Save/update user profile | Yes |
+| `GET` | `/api/profile` | Get the operator profile (includes preferences: workPreference, salaryFloor, excludedCompanies) | Yes |
+| `PUT` | `/api/profile` | Save/update the operator profile | Yes |
 | `POST` | `/api/profile/upload-resume` | Upload PDF resume → AI extracts skills & projects | Yes |
 
 ### Full API Flow
@@ -255,26 +208,10 @@ Batch commands are documented in [`docs/cli.md`](docs/cli.md).
 sequenceDiagram
     actor User
     participant API
-    participant Auth as AuthService
     participant Scraper as ProviderRegistry
     participant AI as AiAnalysisService
     participant Email as EmailGenerationService
     participant DB as SQLite
-
-    User ->> API: POST /api/auth/register
-    API ->> Auth: create user
-    API ->> Auth: save user
-    DB -->> API: user created
-    API -->> User: 201 Created
-
-    User ->> API: POST /api/auth/login
-    API ->> Auth: authenticate
-    API ->> Auth: verify credentials
-    DB -->> Auth: user found
-    API -->> Auth: token, userId, name, email
-    API -->> User: JWT token
-
-    Note over User,API: All subsequent requests include Authorization: Bearer <token>
 
     User ->> API: POST /api/jobs/fetch
     API ->> Scraper: fetchAll()
@@ -307,19 +244,16 @@ sequenceDiagram
 
 | Layer | Technology |
 |---|---|
-| Language | Java 21 / Rust 2024 |
-| CLI Framework | Rust + Clap + Ratatui + Crossterm |
-| HTTP Client (CLI) | Reqwest (Rust) |
-| Local Cache | SQLite via Rusqlite (Rust) |
+| Language | Java 21 |
 | Framework | Spring Boot 4.0.6 |
 | Architecture | Clean Architecture |
 | Database | SQLite (local file — no server, no Docker) |
 | Migrations | Flyway |
-| Security | Spring Security + JWT (jjwt) |
+| Security | X-Bot-Token (static service token) |
 | Scraping | RestClient + Jsoup |
 | Browser Automation | Playwright (Node.js + TypeScript, separate container) |
 | AI | Hermes Agent gateway (OpenAI-compatible) — sole provider |
-| Tests | JUnit 5 + Mockito + WireMock / Rust async tests |
+| Tests | JUnit 5 + Mockito + WireMock |
 | Build | Maven / Cargo |
 
 ---
@@ -331,41 +265,34 @@ This project follows Clean Architecture with strict layer separation:
 ```mermaid
 flowchart BT
     subgraph Domain["🟢 Domain"]
-        D1["model/ — Job, EmailDraft, JobAnalysis,<br/>CompanyTone, User, UserProfile,<br/>EligibleDraft, EmailStatus, Project"]
+        D1["model/ — Job, EmailDraft, JobAnalysis,<br/>CompanyTone, UserProfile,<br/>EligibleDraft, EmailStatus, Project"]
         D2["exception/ — ScraperException, AiException,<br/>JobNotFoundException, etc."]
     end
 
     subgraph Application["🔵 Application"]
-        A1["port/in/ — FetchJobsUseCase, AnalyzeJobUseCase,<br/>GenerateEmailUseCase, AuthUseCase,<br/>ApproveDraftUseCase, AutoSendEligibilityUseCase,<br/>CurrentUserProvider, FetchSourceJobsUseCase,<br/>GetEmailDraftUseCase, GetJobUseCase,<br/>ListJobsUseCase, SendEmailUseCase,<br/>TailorResumeUseCase, UserProfileUseCase"]
-        A2["port/out/ — JobRepository, ScraperPort, AiPort,<br/>NormalizerPort, SourceFetchPort,<br/>EmailDraftRepository, EmailSenderPort,<br/>JobAnalysisRepository, PasswordHasher,<br/>TokenProvider, UserProfileRepository,<br/>UserRepository, RawJob"]
-        A3["service/ — FetchJobsService, AiAnalysisService,<br/>EmailGenerationService, AuthService,<br/>FetchSourceJobsService, ApproveDraftService,<br/>AutoSendEligibilityService, EmailSendingService,<br/>ResumeUploadService, ResumeTailoringService,<br/>TemplateEmailService, UserProfileService"]
+        A1["port/in/ — FetchJobsUseCase, AnalyzeJobUseCase,<br/>GenerateEmailUseCase,<br/>ApproveDraftUseCase, AutoSendEligibilityUseCase,<br/>FetchSourceJobsUseCase,<br/>GetEmailDraftUseCase, GetJobUseCase,<br/>ListJobsUseCase, SendEmailUseCase,<br/>TailorResumeUseCase, UserProfileUseCase"]
+        A2["port/out/ — JobRepository, ScraperPort, AiPort,<br/>NormalizerPort, SourceFetchPort,<br/>EmailDraftRepository, EmailSenderPort,<br/>JobAnalysisRepository, UserProfileRepository,<br/>RawJob"]
+        A3["service/ — FetchJobsService, AiAnalysisService,<br/>EmailGenerationService,<br/>FetchSourceJobsService, ApproveDraftService,<br/>AutoSendEligibilityService, EmailSendingService,<br/>ResumeUploadService, ResumeTailoringService,<br/>TemplateEmailService, UserProfileService"]
     end
 
     subgraph Infrastructure["🟠 Infrastructure"]
         I1["scraper/ — ProviderBasedScraperAdapter,<br/>GupyProvider, InfoJobsProvider,<br/>LinkedInProvider, LinkedInScraperClient,<br/>GreenhouseProvider, AshbyProvider,<br/>LeverProvider, GithubJobsProvider,<br/>ProviderRegistry, JobNormalizer,<br/>DateParser, JsonLdParser,<br/>RateLimiter, RetryStrategy,<br/>ExtractionStrategy, HtmlStrategy,<br/>RestApiStrategy"]
         I2["ai/ — HermesAgentClient<br/>(sole AiPort)"]
         I3["persistence/ — JPA adapters,<br/>repositories, entities"]
-        I4["security/ — JwtTokenFilter,<br/>JwtTokenService, SecurityConfig,<br/>CurrentUserService"]
+        I4["security/ — BotTokenFilter<br/>(X-Bot-Token)"]
         I5["email/ — HermesBotEmailSender"]
         I6["scheduler/ — AutoSendScheduler"]
         I7["config/ — AppConfig,<br/>LinkedInScraperProperties"]
     end
 
     subgraph Web["🟣 Web"]
-        W1["controller/ — JobController,<br/>AuthController, ProfileController"]
+        W1["controller/ — JobController,<br/>ProfileController"]
         W2["dto/ — Request/Response records"]
         W3["exception/ — GlobalExceptionHandler"]
     end
 
-    subgraph CLI["🟤 CLI (Rust)"]
-        C1["jh-cli — TUI (Ratatui)<br/>+ Batch (Clap)"]
-        C2["api/ — ApiClient (Reqwest)"]
-        C3["cache/ — CacheManager (Rusqlite)"]
-    end
-
     LS[/"⚙️ LinkedIn Scraper<br/>(Node.js + Playwright)"/]
 
-    CLI -->|"HTTP JSON"| Web
     Web --> Application
     Infrastructure --> Application
     Application --> Domain
@@ -468,14 +395,11 @@ Each source is wrapped by a **Provider** that selects the right **Strategy** (RE
 # Backend (Java)
 ./mvnw test
 
-# CLI (Rust)
-cd cli && cargo test
-
 # LinkedIn microservice (Node.js)
 cd linkedin-scraper && npm test
 ```
 
-The Java test suite uses WireMock to simulate HTTP servers for the scraper and AI client — no real API calls are made during testing. The Rust CLI uses `httpmock` for the same purpose. The LinkedIn microservice has its own Jest test suite with Playwright fixtures.
+The Java test suite uses WireMock to simulate HTTP servers for the scraper and AI client — no real API calls are made during testing. The LinkedIn microservice has its own Jest test suite with Playwright fixtures.
 
 ---
 

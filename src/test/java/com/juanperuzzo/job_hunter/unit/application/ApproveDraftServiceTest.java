@@ -37,12 +37,12 @@ class ApproveDraftServiceTest {
     @Test
     @DisplayName("should approve a PENDING draft and return APPROVED")
     void approve_whenPending_shouldReturnApproved() {
-        var draft = new EmailDraft(DRAFT_ID, JOB_ID, USER_ID, "Subject", "Body", EmailStatus.PENDING, LocalDateTime.now(), null);
+        var draft = new EmailDraft(DRAFT_ID, JOB_ID, "Subject", "Body", EmailStatus.PENDING, LocalDateTime.now(), null);
 
-        when(emailDraftRepository.findByJobIdAndUserId(JOB_ID, USER_ID)).thenReturn(Optional.of(draft));
+        when(emailDraftRepository.findByJobId(JOB_ID)).thenReturn(Optional.of(draft));
         when(emailDraftRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
-        var result = approveDraftService.approve(USER_ID, JOB_ID);
+        var result = approveDraftService.approve(JOB_ID);
 
         assertEquals(EmailStatus.APPROVED, result.status());
         verify(emailDraftRepository).save(any());
@@ -51,43 +51,43 @@ class ApproveDraftServiceTest {
     @Test
     @DisplayName("should throw EmailAlreadySentException when draft is SENT")
     void approve_whenAlreadySent_shouldThrow() {
-        var draft = new EmailDraft(DRAFT_ID, JOB_ID, USER_ID, "Subject", "Body", EmailStatus.SENT, LocalDateTime.now(), LocalDateTime.now());
+        var draft = new EmailDraft(DRAFT_ID, JOB_ID, "Subject", "Body", EmailStatus.SENT, LocalDateTime.now(), LocalDateTime.now());
 
-        when(emailDraftRepository.findByJobIdAndUserId(JOB_ID, USER_ID)).thenReturn(Optional.of(draft));
+        when(emailDraftRepository.findByJobId(JOB_ID)).thenReturn(Optional.of(draft));
 
-        assertThrows(EmailAlreadySentException.class, () -> approveDraftService.approve(USER_ID, JOB_ID));
+        assertThrows(EmailAlreadySentException.class, () -> approveDraftService.approve(JOB_ID));
         verify(emailDraftRepository, never()).save(any());
     }
 
     @Test
     @DisplayName("should throw DraftAlreadyApprovedException when already APPROVED")
     void approve_whenAlreadyApproved_shouldThrow() {
-        var draft = new EmailDraft(DRAFT_ID, JOB_ID, USER_ID, "Subject", "Body", EmailStatus.APPROVED, LocalDateTime.now(), null);
+        var draft = new EmailDraft(DRAFT_ID, JOB_ID, "Subject", "Body", EmailStatus.APPROVED, LocalDateTime.now(), null);
 
-        when(emailDraftRepository.findByJobIdAndUserId(JOB_ID, USER_ID)).thenReturn(Optional.of(draft));
+        when(emailDraftRepository.findByJobId(JOB_ID)).thenReturn(Optional.of(draft));
 
-        assertThrows(DraftAlreadyApprovedException.class, () -> approveDraftService.approve(USER_ID, JOB_ID));
+        assertThrows(DraftAlreadyApprovedException.class, () -> approveDraftService.approve(JOB_ID));
         verify(emailDraftRepository, never()).save(any());
     }
 
     @Test
     @DisplayName("should throw JobNotFoundException when draft not found")
     void approve_whenNoDraft_shouldThrow() {
-        when(emailDraftRepository.findByJobIdAndUserId(JOB_ID, USER_ID)).thenReturn(Optional.empty());
+        when(emailDraftRepository.findByJobId(JOB_ID)).thenReturn(Optional.empty());
 
-        assertThrows(JobNotFoundException.class, () -> approveDraftService.approve(USER_ID, JOB_ID));
+        assertThrows(JobNotFoundException.class, () -> approveDraftService.approve(JOB_ID));
         verify(emailDraftRepository, never()).save(any());
     }
 
     @Test
     @DisplayName("should throw RefusedDraftException when draft is REJECTED")
     void approve_whenRejected_shouldThrowRefused() {
-        var refused = new EmailDraft(DRAFT_ID, JOB_ID, USER_ID, "", "NO_APPLY: non-tech role",
+        var refused = new EmailDraft(DRAFT_ID, JOB_ID, "", "NO_APPLY: non-tech role",
                 EmailStatus.REJECTED, LocalDateTime.now());
 
-        when(emailDraftRepository.findByJobIdAndUserId(JOB_ID, USER_ID)).thenReturn(Optional.of(refused));
+        when(emailDraftRepository.findByJobId(JOB_ID)).thenReturn(Optional.of(refused));
 
-        assertThrows(RefusedDraftException.class, () -> approveDraftService.approve(USER_ID, JOB_ID));
+        assertThrows(RefusedDraftException.class, () -> approveDraftService.approve(JOB_ID));
         verify(emailDraftRepository, never()).save(any());
     }
 }

@@ -42,8 +42,8 @@ public record ProfileRequest(
     PreferencesRequest preferences,
 
     /**
-     * Account-identity corrections (issue #92 slice b): the users-row name and
-     * login email — NOT resume-extracted contact data. Optional on PUT; the
+     * Operator-identity corrections (issue #92 slice b): the single-profile
+     * name and email — NOT resume-extracted contact data. Optional on PUT; the
      * stored value is kept when absent.
      */
     @Size(max = 255, message = "name must be at most 255 characters")

@@ -40,8 +40,8 @@ public class FetchJobsService implements FetchJobsUseCase, ListJobsUseCase, GetJ
     }
 
     @Override
-    public FetchResult fetchAndSave(Long userId) {
-        var keywords = List.copyOf(keywordResolver.resolve(userId));
+    public FetchResult fetchAndSave() {
+        var keywords = List.copyOf(keywordResolver.resolve());
         var result = scraperPort.fetch(keywords, jobRepository::existsByUrl);
         var jobs = result.jobs();
 
@@ -93,12 +93,12 @@ public class FetchJobsService implements FetchJobsUseCase, ListJobsUseCase, GetJ
     }
 
     @Override
-    public List<JobWithDraftStatus> findAllWithDraftStatus(Long userId, Boolean hasEmail, Boolean excludeApplied, Integer minScore, Boolean remoteOnly) {
+    public List<JobWithDraftStatus> findAllWithDraftStatus(Boolean hasEmail, Boolean excludeApplied, Integer minScore, Boolean remoteOnly) {
         // Deliberately per-job lookups (1 draft + 1 analysis query per listed job, i.e. 2N+1).
         // At the current job-list scale this is negligible and keeps the change
         // reuse-only; a single bulk lookup replaces this if the list grows.
         var entries = findAll(hasEmail).stream()
-                .map(job -> enrich(job, userId))
+                .map(job -> enrich(job))
                 .filter(entry -> !Boolean.TRUE.equals(excludeApplied) || entry.draftStatus() != EmailStatus.SENT)
                 .filter(entry -> !Boolean.TRUE.equals(remoteOnly)
                         || WorkModelSignals.isRemoteOnly(workModelSignalText(entry.job())))
@@ -126,14 +126,14 @@ public class FetchJobsService implements FetchJobsUseCase, ListJobsUseCase, GetJ
         return (title + " " + description).trim();
     }
 
-    private EmailStatus draftStatus(Job job, Long userId) {
-        return emailDraftRepository.findByJobIdAndUserId(job.id(), userId)
+    private EmailStatus draftStatus(Job job) {
+        return emailDraftRepository.findByJobId(job.id())
                 .map(EmailDraft::status)
                 .orElse(null);
     }
 
-    private Integer matchScore(Job job, Long userId) {
-        return jobAnalysisRepository.findByJobIdAndUserId(job.id(), userId)
+    private Integer matchScore(Job job) {
+        return jobAnalysisRepository.findByJobId(job.id())
                 .map(analysis -> analysis.matchScore())
                 .orElse(null);
     }
@@ -145,14 +145,14 @@ public class FetchJobsService implements FetchJobsUseCase, ListJobsUseCase, GetJ
     }
 
     @Override
-    public JobWithDraftStatus getByIdWithDraftStatus(Long userId, Long jobId) {
-        return enrich(getById(jobId), userId);
+    public JobWithDraftStatus getByIdWithDraftStatus(Long jobId) {
+        return enrich(getById(jobId));
     }
 
     /** Resolves the user's draft status, match score and lifecycle for a job. */
-    private JobWithDraftStatus enrich(Job job, Long userId) {
-        var status = draftStatus(job, userId);
+    private JobWithDraftStatus enrich(Job job) {
+        var status = draftStatus(job);
         var lifecycle = ApplicationLifecycle.fromEmailStatus(status).orElse(null);
-        return new JobWithDraftStatus(job, status, matchScore(job, userId), lifecycle);
+        return new JobWithDraftStatus(job, status, matchScore(job), lifecycle);
     }
 }

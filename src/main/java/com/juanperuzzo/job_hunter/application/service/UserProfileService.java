@@ -1,16 +1,13 @@
 package com.juanperuzzo.job_hunter.application.service;
 
-import com.juanperuzzo.job_hunter.application.port.in.AccountIdentity;
 import com.juanperuzzo.job_hunter.application.port.in.UserProfileUseCase;
 import com.juanperuzzo.job_hunter.application.port.out.UserProfileRepository;
-import com.juanperuzzo.job_hunter.application.port.out.UserRepository;
-import com.juanperuzzo.job_hunter.domain.exception.EmailAlreadyExistsException;
 import com.juanperuzzo.job_hunter.domain.exception.InvalidResumeTextException;
-import com.juanperuzzo.job_hunter.domain.exception.UserNotFoundException;
 import com.juanperuzzo.job_hunter.domain.model.CompanyTone;
 import com.juanperuzzo.job_hunter.domain.model.UserProfile;
 
 import java.util.List;
+import java.util.Optional;
 
 public class UserProfileService implements UserProfileUseCase {
 
@@ -21,103 +18,44 @@ public class UserProfileService implements UserProfileUseCase {
      */
     static final int RESUME_TEXT_MIN_LENGTH = 50;
 
-    private final UserRepository userRepository;
     private final UserProfileRepository userProfileRepository;
 
-    public UserProfileService(UserRepository userRepository, UserProfileRepository userProfileRepository) {
-        this.userRepository = userRepository;
+    public UserProfileService(UserProfileRepository userProfileRepository) {
         this.userProfileRepository = userProfileRepository;
     }
 
-    public UserProfile getProfile(Long userId) {
-        userRepository.findById(userId)
-                .orElseThrow(() -> new UserNotFoundException("User not found with id: " + userId));
-
-        return userProfileRepository.findByUserId(userId)
-                .orElse(new UserProfile(null, userId, "", List.of(), CompanyTone.STARTUP, List.of(),
+    public UserProfile getProfile() {
+        return userProfileRepository.find()
+                .orElse(new UserProfile(null, "Owner", null, "", List.of(), CompanyTone.STARTUP, List.of(),
                         null, null, null, null, null, null));
     }
 
     /**
-     * Resolves the account identity from the {@code users} row (issue #92
-     * slice a) — deliberately separate from {@link #getProfile(Long)}, whose
-     * returned {@link UserProfile} carries only resume-extracted contact data.
-     */
-    @Override
-    public AccountIdentity getAccountIdentity(Long userId) {
-        var user = userRepository.findById(userId)
-                .orElseThrow(() -> new UserNotFoundException("User not found with id: " + userId));
-        return new AccountIdentity(user.name(), user.email());
-    }
-
-    @Override
-    public AccountIdentity updateIdentity(Long userId, String name, String email) {
-        var user = userRepository.findById(userId)
-                .orElseThrow(() -> new UserNotFoundException("User not found with id: " + userId));
-
-        // Null = no correction for this field → stored value kept; a blank string
-        // is an explicit correction that cannot be applied (reject, never guess).
-        String newName = user.name();
-        if (name != null) {
-            var candidate = name.trim();
-            if (candidate.isBlank() || candidate.length() > 255) { // mirrors @Size on ProfileRequest.name
-                throw new IllegalArgumentException("name must be non-blank and at most 255 characters");
-            }
-            newName = candidate;
-        }
-        String newEmail = user.email();
-        if (email != null) {
-            var candidate = email.trim();
-            if (candidate.isBlank() || candidate.length() > 255
-                    || !ResumeExtractionPipeline.EMAIL_PATTERN.matcher(candidate).matches()) {
-                throw new IllegalArgumentException("email must be a valid, non-blank address of at most 255 characters");
-            }
-            // the users.email column is UNIQUE — a colliding correction must be
-            // rejected here, BEFORE any caller-side write has happened, instead
-            // of surfacing as a constraint violation afterwards (review 2026-11-15)
-            if (!candidate.equals(user.email()) && userRepository.existsByEmail(candidate)) {
-                throw new EmailAlreadyExistsException("Email already in use: " + candidate);
-            }
-            newEmail = candidate;
-        }
-
-        userRepository.updateIdentity(userId, newName, newEmail);
-        return new AccountIdentity(newName, newEmail);
-    }
-
-    /**
-     * Saves the profile for the given authenticated user, enforcing the user's
-     * existence and the resumeText minimum length. The profile id of an existing
-     * record is preserved so the save is an update, and {@code userId} is always
-     * taken from the authenticated parameter — never from the payload.
+     * Saves the profile, enforcing the resumeText minimum length. The profile id
+     * of an existing record is preserved so the save is an update.
      *
      * @throws InvalidResumeTextException if the resume text is null or shorter
      *                                    than 50 characters
      */
     @Override
-    public UserProfile saveProfile(Long userId, UserProfile profile) {
-        userRepository.findById(userId)
-                .orElseThrow(() -> new UserNotFoundException("User not found with id: " + userId));
-
+    public UserProfile saveProfile(UserProfile profile) {
         if (profile.resumeText() == null || profile.resumeText().length() < RESUME_TEXT_MIN_LENGTH) {
             throw new InvalidResumeTextException("Resume text must not be null and must be at least "
                     + RESUME_TEXT_MIN_LENGTH + " characters");
         }
 
-        var existing = userProfileRepository.findByUserId(userId);
+        var existing = userProfileRepository.find();
         Long profileId = existing.map(UserProfile::id).orElse(null);
 
-        // Preserve existing preferences when incoming is null (omit = keep).
-        // When incoming is non-null, all sub-fields are authoritative (human override).
         var existingPrefs = existing.flatMap(p ->
-                p.preferences() != null ? java.util.Optional.of(p.preferences()) : java.util.Optional.empty())
+                p.preferences() != null ? Optional.of(p.preferences()) : Optional.empty())
                 .orElse(null);
         var effectivePrefs = profile.preferences() != null ? profile.preferences() : existingPrefs;
 
-        var toSave = new UserProfile(profileId, userId, profile.resumeText(), profile.skills(),
-                profile.tone(), profile.projects(), profile.phone(), profile.contactEmail(),
-                profile.portfolioUrl(), profile.githubUrl(), profile.linkedinUrl(),
-                effectivePrefs);
+        var toSave = new UserProfile(profileId, profile.name(), profile.email(),
+                profile.resumeText(), profile.skills(), profile.tone(), profile.projects(),
+                profile.phone(), profile.contactEmail(), profile.portfolioUrl(),
+                profile.githubUrl(), profile.linkedinUrl(), effectivePrefs);
         return userProfileRepository.save(toSave);
     }
 }

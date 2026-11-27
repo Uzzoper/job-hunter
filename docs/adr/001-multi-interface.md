@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Superseded by ADR 003 (self-hosted single-user, bot-only)
 
 ## Date
 
@@ -18,19 +18,18 @@ webapp. We decided to keep all interfaces.
 
 Keep:
 
-- Bot (Hermes) — primary interface, self-hosted
-- TUI (Rust) — future desktop version (Tauri, pkg, etc.)
-- REST API + JWT — used by the TUI today, by the web tomorrow
+- Bot (Hermes) — primary (and only) interface, self-hosted
+- REST API + X-Bot-Token — used by the bot
 
 ## Consequences
 
-- JWT stays in the backend even without direct use by the bot
-- TUI remains in the repo (living, tested code)
+- JWT removed; X-Bot-Token is the only auth (ADR 003)
+- CLI removed from the public repo (ADR 002)
 - Whenever web ships, auth is already solved
 - Maintenance cost is zero (config in application.yaml)
 
 ## References
 
 - docs/specs/bot-company-enrichment.md
-- src/main/java/com/juanperuzzo/job_hunter/infrastructure/security/ (JWT)
-- cli/ (TUI in Rust)
+- src/main/java/com/juanperuzzo/job_hunter/infrastructure/security/ (`BotTokenFilter`, `X-Bot-Token` only — JWT removed)
+- docs/adr/002-cli-legacy.md (CLI/TUI moved out of the public repo)

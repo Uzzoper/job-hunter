@@ -5,15 +5,18 @@ import jakarta.persistence.*;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "user_profiles", uniqueConstraints = @UniqueConstraint(name = "uq_user_profiles_user_id", columnNames = "user_id"))
+@Table(name = "profile")
 public class UserProfileEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "user_id", nullable = false)
-    private Long userId;
+    @Column(name = "name", length = 255)
+    private String name;
+
+    @Column(name = "email", length = 255)
+    private String email;
 
     @Column(name = "resume_text", nullable = false, columnDefinition = "TEXT")
     private String resumeText;
@@ -67,13 +70,14 @@ public class UserProfileEntity {
     public UserProfileEntity() {
     }
 
-    public UserProfileEntity(Long id, Long userId, String resumeText, String[] skills, String tone,
+    public UserProfileEntity(Long id, String name, String email, String resumeText, String[] skills, String tone,
                              String phone, String contactEmail, String portfolioUrl,
                              String githubUrl, String linkedinUrl,
                              WorkPreference workPreference, Integer salaryFloor,
                              String[] excludedCompanies, String[] keywords) {
         this.id = id;
-        this.userId = userId;
+        this.name = name;
+        this.email = email;
         this.resumeText = resumeText;
         this.skills = skills;
         this.tone = tone;
@@ -88,20 +92,23 @@ public class UserProfileEntity {
         this.keywords = keywords;
     }
 
-    public UserProfileEntity(Long id, Long userId, String resumeText, String[] skills, String tone,
+    public UserProfileEntity(Long id, String name, String email, String resumeText, String[] skills, String tone,
                              String phone, String contactEmail, String portfolioUrl,
                              String githubUrl, String linkedinUrl,
                              WorkPreference workPreference, Integer salaryFloor,
                              String[] excludedCompanies) {
-        this(id, userId, resumeText, skills, tone, phone, contactEmail, portfolioUrl,
+        this(id, name, email, resumeText, skills, tone, phone, contactEmail, portfolioUrl,
                 githubUrl, linkedinUrl, workPreference, salaryFloor, excludedCompanies, null);
     }
 
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
 
-    public Long getUserId() { return userId; }
-    public void setUserId(Long userId) { this.userId = userId; }
+    public String getName() { return name; }
+    public void setName(String name) { this.name = name; }
+
+    public String getEmail() { return email; }
+    public void setEmail(String email) { this.email = email; }
 
     public String getResumeText() { return resumeText; }
     public void setResumeText(String resumeText) { this.resumeText = resumeText; }

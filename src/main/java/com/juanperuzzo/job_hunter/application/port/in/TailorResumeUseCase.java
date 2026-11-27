@@ -6,11 +6,10 @@ package com.juanperuzzo.job_hunter.application.port.in;
 public interface TailorResumeUseCase {
 
     /**
-     * Generates a tailored resume PDF for the given user and job.
+     * Generates a tailored resume PDF for the given job.
      *
-     * @param userId the authenticated user's ID
      * @param jobId  the job the resume is tailored for
      * @return the tailored resume as PDF bytes
      */
-    byte[] tailorResume(Long userId, Long jobId);
+    byte[] tailorResume(Long jobId);
 }

@@ -1,20 +1,22 @@
 package com.juanperuzzo.job_hunter.unit.infrastructure.scraper.normalizer;
 
-import com.juanperuzzo.job_hunter.application.port.out.UserRepository;
+import com.juanperuzzo.job_hunter.application.port.out.UserProfileRepository;
 import com.juanperuzzo.job_hunter.infrastructure.scraper.normalizer.OwnerEmailGuard;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
-import java.util.Arrays;
 import java.util.List;
+import java.util.Optional;
+import com.juanperuzzo.job_hunter.domain.model.CompanyTone;
+import com.juanperuzzo.job_hunter.domain.model.UserProfile;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.when;
 
 @DisplayName("OwnerEmailGuard tests")
@@ -25,13 +27,13 @@ class OwnerEmailGuardTest {
     private static final String COMPANY_EMAIL = "hiring@techcorp.com";
     private static final String JOB_URL = "https://example.org/jobs/1";
 
-    private final UserRepository userRepository = mock(UserRepository.class);
+    private final UserProfileRepository userProfileRepository = mock(UserProfileRepository.class);
     private OwnerEmailGuard guard;
 
     @BeforeEach
     void setUp() {
-        when(userRepository.findAllEmails()).thenReturn(List.of(OWNER_EMAIL, SECOND_OWNER_EMAIL));
-        guard = new OwnerEmailGuard(userRepository);
+        when(userProfileRepository.find()).thenReturn(Optional.of(profileWithEmail(OWNER_EMAIL)));
+        guard = new OwnerEmailGuard(userProfileRepository);
     }
 
     @Nested
@@ -50,11 +52,6 @@ class OwnerEmailGuardTest {
             assertNull(guard.discardIfOwnerEmail("User@Example.ORG", JOB_URL));
         }
 
-        @Test
-        @DisplayName("should discard an email that matches a second owner in the set")
-        void discard_whenSecondOwnerMatch_shouldReturnNull() {
-            assertNull(guard.discardIfOwnerEmail("Second.Owner@Example.ORG", JOB_URL));
-        }
 
         @Test
         @DisplayName("should keep a distinct company email")
@@ -80,18 +77,18 @@ class OwnerEmailGuardTest {
     class OwnerSet {
 
         @Test
-        @DisplayName("should ignore null and blank owner entries when building the set")
+        @DisplayName("should ignore a null owner email when building the set")
         void ownerSet_whenNullAndBlankEntries_shouldIgnoreThem() {
-            when(userRepository.findAllEmails()).thenReturn(Arrays.asList(null, "   ", OWNER_EMAIL));
+            when(userProfileRepository.find()).thenReturn(Optional.of(profileWithEmail(null)));
 
-            assertNull(guard.discardIfOwnerEmail(OWNER_EMAIL, JOB_URL));
+            assertEquals(OWNER_EMAIL, guard.discardIfOwnerEmail(OWNER_EMAIL, JOB_URL));
             assertEquals(COMPANY_EMAIL, guard.discardIfOwnerEmail(COMPANY_EMAIL, JOB_URL));
         }
 
         @Test
         @DisplayName("should treat a null owner list as an empty set (nil-guard)")
         void ownerSet_whenNullList_shouldKeepDistinctEmails() {
-            when(userRepository.findAllEmails()).thenReturn(null);
+            when(userProfileRepository.find()).thenReturn(Optional.empty());
 
             assertEquals(COMPANY_EMAIL, guard.discardIfOwnerEmail(COMPANY_EMAIL, JOB_URL));
         }
@@ -99,7 +96,7 @@ class OwnerEmailGuardTest {
         @Test
         @DisplayName("should trim surrounding whitespace from owner entries before matching")
         void ownerSet_whenOwnerEntriesHaveSurroundingWhitespace_shouldStillMatch() {
-            when(userRepository.findAllEmails()).thenReturn(List.of("  user@example.org  "));
+            when(userProfileRepository.find()).thenReturn(Optional.of(profileWithEmail("  user@example.org  ")));
 
             assertNull(guard.discardIfOwnerEmail("User@Example.ORG", JOB_URL));
         }
@@ -111,7 +108,7 @@ class OwnerEmailGuardTest {
             guard.discardIfOwnerEmail(SECOND_OWNER_EMAIL, JOB_URL);
             guard.discardIfOwnerEmail(COMPANY_EMAIL, JOB_URL);
 
-            verify(userRepository, times(1)).findAllEmails();
+            verify(userProfileRepository, times(1)).find();
         }
     }
 
@@ -122,7 +119,7 @@ class OwnerEmailGuardTest {
         @Test
         @DisplayName("should fail closed: discard the contact email and never throw")
         void discard_whenOwnerLoadFails_shouldFailClosedAndDiscardEmail() {
-            when(userRepository.findAllEmails()).thenThrow(new RuntimeException("db down"));
+            when(userProfileRepository.find()).thenThrow(new RuntimeException("db down"));
 
             assertNull(guard.discardIfOwnerEmail(COMPANY_EMAIL, JOB_URL));
         }
@@ -130,9 +127,9 @@ class OwnerEmailGuardTest {
         @Test
         @DisplayName("should retry the load on the next call (retry-while-down)")
         void discard_whenOwnerLoadFails_shouldRetryOnNextCall() {
-            when(userRepository.findAllEmails())
+            when(userProfileRepository.find())
                     .thenThrow(new RuntimeException("db down"))
-                    .thenReturn(List.of(OWNER_EMAIL));
+                    .thenReturn(Optional.of(profileWithEmail(OWNER_EMAIL)));
 
             // First call: load fails → fail-closed, a distinct email is discarded.
             assertNull(guard.discardIfOwnerEmail(COMPANY_EMAIL, JOB_URL));
@@ -141,7 +138,12 @@ class OwnerEmailGuardTest {
             // Third call: cache hit → a distinct company email is kept.
             assertEquals(COMPANY_EMAIL, guard.discardIfOwnerEmail(COMPANY_EMAIL, JOB_URL));
 
-            verify(userRepository, times(2)).findAllEmails();
+            verify(userProfileRepository, times(2)).find();
         }
+    }
+
+    private static UserProfile profileWithEmail(String email) {
+        return new UserProfile(1L, "Owner", email, "", List.of(), CompanyTone.FORMAL,
+                List.of(), null, null, null, null, null, null);
     }
 }

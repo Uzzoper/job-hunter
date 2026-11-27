@@ -1,191 +1,88 @@
 package com.juanperuzzo.job_hunter.unit.web;
 
-import com.juanperuzzo.job_hunter.application.port.in.AnalyzeJobUseCase;
-import com.juanperuzzo.job_hunter.application.port.in.ApproveDraftUseCase;
-import com.juanperuzzo.job_hunter.application.port.in.BackfillContactEmailsUseCase;
-import com.juanperuzzo.job_hunter.application.port.in.BackfillCompanyWebsitesUseCase;
-import com.juanperuzzo.job_hunter.application.port.in.BackfillJobDescriptionsUseCase;
-import com.juanperuzzo.job_hunter.application.port.in.CompanyEnrichmentUseCase;
-import com.juanperuzzo.job_hunter.application.port.in.FetchJobsUseCase;
-import com.juanperuzzo.job_hunter.application.port.in.FetchLinkedInAsyncUseCase;
-import com.juanperuzzo.job_hunter.application.port.in.FetchRunStatusUseCase;
-import com.juanperuzzo.job_hunter.application.port.in.FetchSourceJobsUseCase;
-import com.juanperuzzo.job_hunter.application.port.in.GenerateEmailUseCase;
-import com.juanperuzzo.job_hunter.application.port.in.GetEmailDraftUseCase;
-import com.juanperuzzo.job_hunter.application.port.in.GetJobUseCase;
-import com.juanperuzzo.job_hunter.application.port.in.ListJobsUseCase;
-import com.juanperuzzo.job_hunter.application.port.in.RecordExternalApplyUseCase;
-import com.juanperuzzo.job_hunter.application.port.in.SendEmailUseCase;
-import com.juanperuzzo.job_hunter.application.port.in.TailorResumeUseCase;
-import com.juanperuzzo.job_hunter.application.port.out.TokenProvider;
-import com.juanperuzzo.job_hunter.domain.model.EmailDraft;
-import com.juanperuzzo.job_hunter.domain.model.EmailStatus;
-import com.juanperuzzo.job_hunter.domain.model.User;
 import com.juanperuzzo.job_hunter.infrastructure.security.BotTokenFilter;
-import com.juanperuzzo.job_hunter.infrastructure.security.CurrentUserService;
-import com.juanperuzzo.job_hunter.infrastructure.security.JwtTokenFilter;
-import com.juanperuzzo.job_hunter.infrastructure.security.SecurityConfig;
-import com.juanperuzzo.job_hunter.web.controller.JobController;
-import com.juanperuzzo.job_hunter.web.exception.GlobalExceptionHandler;
-import org.junit.jupiter.api.AfterEach;
+import jakarta.servlet.FilterChain;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
-import org.springframework.context.annotation.Import;
-import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.test.context.TestPropertySource;
-import org.springframework.test.context.bean.override.mockito.MockitoBean;
-import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.mock.web.MockHttpServletResponse;
 
-import java.time.LocalDateTime;
-
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoInteractions;
-import static org.mockito.Mockito.when;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@WebMvcTest(controllers = JobController.class)
-@Import({SecurityConfig.class, JwtTokenFilter.class, BotTokenFilter.class,
-        CurrentUserService.class, GlobalExceptionHandler.class})
-@TestPropertySource(properties = {
-        "bot.service.api-key=test-bot-key",
-        "bot.service.owner-user-id=7"
-})
-@DisplayName("BotTokenFilter tests (service token enabled)")
+@DisplayName("BotTokenFilter tests (self-hosted single token)")
 class BotTokenFilterTest {
 
-    private static final long JOB_ID = 10L;
+    private static final String TOKEN = "s3cr3t-bot-key";
 
-    @Autowired
-    private MockMvc mockMvc;
-
-    @MockitoBean
-    private FetchJobsUseCase fetchJobsUseCase;
-
-    @MockitoBean
-    private FetchLinkedInAsyncUseCase fetchLinkedInAsyncUseCase;
-
-    @MockitoBean
-    private FetchRunStatusUseCase fetchRunStatusUseCase;
-
-    @MockitoBean
-    private FetchSourceJobsUseCase fetchSourceJobsUseCase;
-
-    @MockitoBean
-    private AnalyzeJobUseCase analyzeJobUseCase;
-
-    @MockitoBean
-    private GenerateEmailUseCase generateEmailUseCase;
-
-    @MockitoBean
-    private SendEmailUseCase sendEmailUseCase;
-
-    @MockitoBean
-    private ApproveDraftUseCase approveDraftUseCase;
-
-    @MockitoBean
-    private ListJobsUseCase listJobsUseCase;
-
-    @MockitoBean
-    private GetJobUseCase getJobUseCase;
-
-    @MockitoBean
-    private GetEmailDraftUseCase getEmailDraftUseCase;
-
-    @MockitoBean
-    private TailorResumeUseCase tailorResumeUseCase;
-
-    @MockitoBean
-    private CompanyEnrichmentUseCase companyEnrichmentUseCase;
-
-    @MockitoBean
-    private RecordExternalApplyUseCase recordExternalApplyUseCase;
-
-    @MockitoBean
-    private BackfillContactEmailsUseCase backfillContactEmailsUseCase;
-
-    @MockitoBean
-    private BackfillCompanyWebsitesUseCase backfillCompanyWebsitesUseCase;
-
-    @MockitoBean
-    private BackfillJobDescriptionsUseCase backfillJobDescriptionsUseCase;
-
-    @MockitoBean
-    private TokenProvider tokenProvider;
-
-    @AfterEach
-    void tearDown() {
-        SecurityContextHolder.clearContext();
+    @Test
+    @DisplayName("constructor with blank api-key should throw IllegalStateException (fail-fast)")
+    void constructor_whenApiKeyBlank_shouldThrow() {
+        assertThatThrownBy(() -> new BotTokenFilter("  "))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("bot.service.api-key must be set");
+        assertThatThrownBy(() -> new BotTokenFilter(null))
+                .isInstanceOf(IllegalStateException.class);
     }
 
     @Test
-    @DisplayName("valid X-Bot-Token should authenticate as the configured owner user and return 200")
-    void validToken_whenConfigured_shouldAuthenticateAsOwner() throws Exception {
-        var draft = new EmailDraft(
-                5L, JOB_ID, 7L,
-                "Subject: Application",
-                "Email body",
-                EmailStatus.PENDING,
-                LocalDateTime.parse("2026-05-30T10:00:00"));
-        when(getEmailDraftUseCase.getEmailDraft(7L, JOB_ID)).thenReturn(draft);
+    @DisplayName("doFilter with valid X-Bot-Token should pass through")
+    void doFilter_whenValidToken_shouldPassThrough() throws Exception {
+        var filter = new BotTokenFilter(TOKEN);
+        var request = new MockHttpServletRequest("GET", "/api/jobs");
+        request.addHeader("X-Bot-Token", TOKEN);
+        var response = new MockHttpServletResponse();
+        var chain = mock(FilterChain.class);
 
-        mockMvc.perform(get("/api/jobs/{id}/email", JOB_ID)
-                        .header("X-Bot-Token", "test-bot-key"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.subject").value("Subject: Application"));
+        filter.doFilter(request, response, chain);
 
-        verify(getEmailDraftUseCase).getEmailDraft(7L, JOB_ID);
+        assertThat(response.getStatus()).isEqualTo(200);
+        verify(chain).doFilter(request, response);
     }
 
     @Test
-    @DisplayName("valid bot token plus a Bearer JWT should keep the bot principal and scope the request to the owner")
-    void validBotTokenAndJwt_shouldPreserveBotPrincipal() throws Exception {
-        var draft = new EmailDraft(
-                5L, JOB_ID, 7L,
-                "Subject: Application",
-                "Email body",
-                EmailStatus.PENDING,
-                LocalDateTime.parse("2026-05-30T10:00:00"));
-        when(getEmailDraftUseCase.getEmailDraft(7L, JOB_ID)).thenReturn(draft);
-        // The JWT resolves to a different user (99); if it overwrote the bot
-        // principal, the request would be scoped to 99 instead of owner 7.
-        when(tokenProvider.validate("other-user-jwt"))
-                .thenReturn(new User(99L, "other@example.com", "other", "hash"));
+    @DisplayName("doFilter with missing X-Bot-Token should answer 401 without continuing the chain")
+    void doFilter_whenMissingToken_shouldAnswerUnauthorized() throws Exception {
+        var filter = new BotTokenFilter(TOKEN);
+        var request = new MockHttpServletRequest("GET", "/api/jobs");
+        var response = new MockHttpServletResponse();
+        var chain = mock(FilterChain.class);
 
-        mockMvc.perform(get("/api/jobs/{id}/email", JOB_ID)
-                        .header("X-Bot-Token", "test-bot-key")
-                        .header("Authorization", "Bearer other-user-jwt"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.subject").value("Subject: Application"));
+        filter.doFilter(request, response, chain);
 
-        // Both tokens were presented; the bot principal must win: the request stays
-        // scoped to the owner and the JWT filter never even consults the token provider
-        // (guard on an already-present authentication skips the JWT entirely).
-        verify(getEmailDraftUseCase).getEmailDraft(7L, JOB_ID);
-        verifyNoInteractions(tokenProvider);
+        assertThat(response.getStatus()).isEqualTo(401);
+        assertThat(response.getContentAsString()).contains("unauthorized");
+        verify(chain, never()).doFilter(request, response);
     }
 
     @Test
-    @DisplayName("wrong X-Bot-Token should fall through to the JWT chain and return 401 without JWT")
-    void invalidToken_whenConfigured_shouldFallThroughToJwt() throws Exception {
-        mockMvc.perform(get("/api/jobs/{id}/email", JOB_ID)
-                        .header("X-Bot-Token", "wrong-token"))
-                .andExpect(status().isUnauthorized())
-                .andExpect(jsonPath("$.error").value("Unauthorized"));
+    @DisplayName("doFilter with wrong X-Bot-Token should answer 401 without continuing the chain")
+    void doFilter_whenWrongToken_shouldAnswerUnauthorized() throws Exception {
+        var filter = new BotTokenFilter(TOKEN);
+        var request = new MockHttpServletRequest("GET", "/api/jobs");
+        request.addHeader("X-Bot-Token", "wrong-key");
+        var response = new MockHttpServletResponse();
+        var chain = mock(FilterChain.class);
 
-        verifyNoInteractions(getEmailDraftUseCase);
+        filter.doFilter(request, response, chain);
+
+        assertThat(response.getStatus()).isEqualTo(401);
+        verify(chain, never()).doFilter(request, response);
     }
 
     @Test
-    @DisplayName("missing X-Bot-Token should leave JWT-chain behavior unchanged and return 401 without JWT")
-    void missingToken_whenConfigured_shouldFallThroughToJwt() throws Exception {
-        mockMvc.perform(get("/api/jobs/{id}/email", JOB_ID))
-                .andExpect(status().isUnauthorized())
-                .andExpect(jsonPath("$.error").value("Unauthorized"));
+    @DisplayName("doFilter should also protect actuator and health paths")
+    void doFilter_whenActuatorPathWithoutToken_shouldAnswerUnauthorized() throws Exception {
+        var filter = new BotTokenFilter(TOKEN);
+        var response = new MockHttpServletResponse();
+        var chain = mock(FilterChain.class);
 
-        verifyNoInteractions(getEmailDraftUseCase);
+        filter.doFilter(new MockHttpServletRequest("GET", "/actuator/health"), response, chain);
+
+        assertThat(response.getStatus()).isEqualTo(401);
+        verify(chain, never()).doFilter(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
     }
 }

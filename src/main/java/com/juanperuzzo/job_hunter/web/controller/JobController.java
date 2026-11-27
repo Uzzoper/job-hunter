@@ -21,7 +21,6 @@ import com.juanperuzzo.job_hunter.application.port.in.TailorResumeUseCase;
 import com.juanperuzzo.job_hunter.domain.model.EmailDraft;
 import com.juanperuzzo.job_hunter.domain.model.Job;
 import com.juanperuzzo.job_hunter.domain.model.JobAnalysis;
-import com.juanperuzzo.job_hunter.application.port.in.CurrentUserProvider;
 import com.juanperuzzo.job_hunter.web.dto.EmailDraftResponse;
 import com.juanperuzzo.job_hunter.web.dto.EnrichmentResultResponse;
 import com.juanperuzzo.job_hunter.web.dto.ExternalApplyResponse;
@@ -61,7 +60,6 @@ public class JobController {
     private final BackfillContactEmailsUseCase backfillContactEmailsUseCase;
     private final BackfillCompanyWebsitesUseCase backfillCompanyWebsitesUseCase;
     private final BackfillJobDescriptionsUseCase backfillJobDescriptionsUseCase;
-    private final CurrentUserProvider currentUserService;
 
     public JobController(
             FetchJobsUseCase fetchJobsUseCase,
@@ -80,8 +78,7 @@ public class JobController {
             RecordExternalApplyUseCase recordExternalApplyUseCase,
             BackfillContactEmailsUseCase backfillContactEmailsUseCase,
             BackfillCompanyWebsitesUseCase backfillCompanyWebsitesUseCase,
-            BackfillJobDescriptionsUseCase backfillJobDescriptionsUseCase,
-            CurrentUserProvider currentUserService) {
+            BackfillJobDescriptionsUseCase backfillJobDescriptionsUseCase) {
         this.fetchJobsUseCase = fetchJobsUseCase;
         this.fetchSourceJobsUseCase = fetchSourceJobsUseCase;
         this.fetchLinkedInAsyncUseCase = fetchLinkedInAsyncUseCase;
@@ -99,7 +96,6 @@ public class JobController {
         this.backfillContactEmailsUseCase = backfillContactEmailsUseCase;
         this.backfillCompanyWebsitesUseCase = backfillCompanyWebsitesUseCase;
         this.backfillJobDescriptionsUseCase = backfillJobDescriptionsUseCase;
-        this.currentUserService = currentUserService;
     }
 
     @GetMapping
@@ -108,8 +104,7 @@ public class JobController {
             @RequestParam(required = false) Boolean excludeApplied,
             @RequestParam(required = false) Integer minScore,
             @RequestParam(required = false) Boolean remoteOnly) {
-        Long userId = currentUserService.getCurrentUserId();
-        List<JobResponse> response = listJobsUseCase.findAllWithDraftStatus(userId, hasEmail, excludeApplied, minScore, remoteOnly).stream()
+        List<JobResponse> response = listJobsUseCase.findAllWithDraftStatus(hasEmail, excludeApplied, minScore, remoteOnly).stream()
                 .map(this::toJobResponse)
                 .collect(Collectors.toList());
         return ResponseEntity.ok(response);
@@ -117,8 +112,7 @@ public class JobController {
 
     @GetMapping("/{id}")
     public ResponseEntity<JobResponse> getJobById(@PathVariable Long id) {
-        Long userId = currentUserService.getCurrentUserId();
-        JobWithDraftStatus entry = getJobUseCase.getByIdWithDraftStatus(userId, id);
+        JobWithDraftStatus entry = getJobUseCase.getByIdWithDraftStatus(id);
         return ResponseEntity.ok(toJobResponse(entry));
     }
 
@@ -129,15 +123,13 @@ public class JobController {
 
     @PostMapping("/{id}/analyze")
     public ResponseEntity<JobAnalysis> analyzeJob(@PathVariable Long id) {
-        Long userId = currentUserService.getCurrentUserId();
-        JobAnalysis analysis = analyzeJobUseCase.analyze(userId, id);
+        JobAnalysis analysis = analyzeJobUseCase.analyze(id);
         return ResponseEntity.ok(analysis);
     }
 
     @PostMapping("/{id}/email")
     public ResponseEntity<EmailDraftResponse> generateEmail(@PathVariable Long id) {
-        Long userId = currentUserService.getCurrentUserId();
-        EmailDraft emailDraft = generateEmailUseCase.generate(userId, id);
+        EmailDraft emailDraft = generateEmailUseCase.generate(id);
         EmailDraftResponse response = new EmailDraftResponse(
                 emailDraft.id(),
                 emailDraft.jobId(),
@@ -151,8 +143,7 @@ public class JobController {
 
     @PostMapping("/{id}/applied")
     public ResponseEntity<ExternalApplyResponse> recordExternalApply(@PathVariable Long id) {
-        Long userId = currentUserService.getCurrentUserId();
-        var result = recordExternalApplyUseCase.record(userId, id);
+        var result = recordExternalApplyUseCase.record(id);
         var body = new ExternalApplyResponse(result.draft().jobId(), result.draft().status());
         return result.created()
                 ? ResponseEntity.status(HttpStatus.CREATED).body(body)
@@ -161,21 +152,19 @@ public class JobController {
 
     @PostMapping("/fetch")
     public ResponseEntity<FetchResultResponse> fetchJobs() {
-        Long userId = currentUserService.getCurrentUserId();
-        var result = fetchJobsUseCase.fetchAndSave(userId);
+        var result = fetchJobsUseCase.fetchAndSave();
         return ResponseEntity.ok(FetchResultResponse.from(result));
     }
 
     /**
      * Async LinkedIn fetch (issue #116, docs/specs/linkedin-async-fetch.md):
      * answers before the fetch finishes — the caller polls the status endpoint
-     * instead of blocking. Single-flight: 409 while a run is active. The userId
-     * is resolved here so runtime keywords are the caller's own.
+     * instead of blocking. Single-flight: 409 while a run is active. Runtime
+     * keywords come from the single operator profile.
      */
     @PostMapping("/fetch/linkedin")
     public ResponseEntity<FetchStartedResponse> fetchLinkedInJobs() {
-        Long userId = currentUserService.getCurrentUserId();
-        var started = fetchLinkedInAsyncUseCase.start(userId);
+        var started = fetchLinkedInAsyncUseCase.start();
         return started.outcome() == FetchLinkedInAsyncUseCase.StartOutcome.STARTED
                 ? ResponseEntity.accepted().body(FetchStartedResponse.started(started.startedAt()))
                 : ResponseEntity.status(HttpStatus.CONFLICT).body(FetchStartedResponse.running(started.startedAt()));
@@ -193,22 +182,19 @@ public class JobController {
 
     @PostMapping("/fetch/gupy")
     public ResponseEntity<FetchResultResponse> fetchGupyJobs() {
-        Long userId = currentUserService.getCurrentUserId();
-        var result = fetchSourceJobsUseCase.fetchAndSave(userId, "gupy");
+        var result = fetchSourceJobsUseCase.fetchAndSave("gupy");
         return ResponseEntity.ok(FetchResultResponse.from(result));
     }
 
     @PostMapping("/fetch/infojobs")
     public ResponseEntity<FetchResultResponse> fetchInfoJobs() {
-        Long userId = currentUserService.getCurrentUserId();
-        var result = fetchSourceJobsUseCase.fetchAndSave(userId, "infojobs");
+        var result = fetchSourceJobsUseCase.fetchAndSave("infojobs");
         return ResponseEntity.ok(FetchResultResponse.from(result));
     }
 
     @PostMapping("/fetch/lever")
     public ResponseEntity<FetchResultResponse> fetchLeverJobs() {
-        Long userId = currentUserService.getCurrentUserId();
-        var result = fetchSourceJobsUseCase.fetchAndSave(userId, "lever");
+        var result = fetchSourceJobsUseCase.fetchAndSave("lever");
         return ResponseEntity.ok(FetchResultResponse.from(result));
     }
 
@@ -263,8 +249,7 @@ public class JobController {
 
     @PostMapping("/{id}/email/approve")
     public ResponseEntity<EmailDraftResponse> approveEmail(@PathVariable Long id) {
-        Long userId = currentUserService.getCurrentUserId();
-        var draft = approveDraftUseCase.approve(userId, id);
+        var draft = approveDraftUseCase.approve(id);
         var response = new EmailDraftResponse(
                 draft.id(), draft.jobId(), draft.subject(), draft.body(),
                 draft.status(), draft.generatedAt(), draft.sentAt());
@@ -273,8 +258,7 @@ public class JobController {
 
     @PostMapping("/{id}/send")
     public ResponseEntity<EmailDraftResponse> sendEmail(@PathVariable Long id) {
-        Long userId = currentUserService.getCurrentUserId();
-        EmailDraft emailDraft = sendEmailUseCase.send(userId, id);
+        EmailDraft emailDraft = sendEmailUseCase.send(id);
         EmailDraftResponse response = new EmailDraftResponse(
                 emailDraft.id(),
                 emailDraft.jobId(),
@@ -289,8 +273,7 @@ public class JobController {
 
     @GetMapping("/{id}/email")
     public ResponseEntity<EmailDraftResponse> getEmailDraft(@PathVariable Long id) {
-        Long userId = currentUserService.getCurrentUserId();
-        EmailDraft emailDraft = getEmailDraftUseCase.getEmailDraft(userId, id);
+        EmailDraft emailDraft = getEmailDraftUseCase.getEmailDraft(id);
         EmailDraftResponse response = new EmailDraftResponse(
                 emailDraft.id(),
                 emailDraft.jobId(),
@@ -304,8 +287,7 @@ public class JobController {
 
     @PostMapping("/{id}/resume")
     public ResponseEntity<byte[]> generateResume(@PathVariable Long id) {
-        Long userId = currentUserService.getCurrentUserId();
-        byte[] pdf = tailorResumeUseCase.tailorResume(userId, id);
+        byte[] pdf = tailorResumeUseCase.tailorResume(id);
         return ResponseEntity.ok()
                 .contentType(MediaType.APPLICATION_PDF)
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"curriculo-" + id + ".pdf\"")

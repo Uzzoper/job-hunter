@@ -9,8 +9,8 @@ package com.juanperuzzo.job_hunter.application.dto;
  * <p>{@code digest}, when present, must match the uploaded file's md5 — the
  * confirmed artifact is provably the previewed one.
  *
- * @param name          account display name correction (users row)
- * @param email         account login email correction (users row)
+ * @param name          operator display name correction (profile)
+ * @param email         operator email correction (profile)
  * @param phone         contact correction
  * @param contactEmail  contact correction
  * @param portfolioUrl  contact correction

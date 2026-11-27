@@ -57,7 +57,7 @@ class LinkedInAsyncFetchServiceTest {
     void start_whenIdle_shouldBeginRunAndScheduleFetch() {
         when(runStore.tryBegin(eq(LinkedInAsyncFetchService.SOURCE_ID), any(Instant.class))).thenReturn(true);
 
-        var result = service.start(USER_ID);
+        var result = service.start();
 
         assertEquals(FetchLinkedInAsyncUseCase.StartOutcome.STARTED, result.outcome());
         assertNotNull(result.startedAt());
@@ -74,14 +74,14 @@ class LinkedInAsyncFetchServiceTest {
                 4, 4, 1,
                 List.of(new ProviderFetchStats("linkedin", 4, 4, 1, 0, 0, null)));
         var emitted = KeywordRun.ok("dev junior", 4, 9_000);
-        when(fetchSourceJobs.fetchAndSave(eq(USER_ID), eq(LinkedInAsyncFetchService.SOURCE_ID), any()))
+        when(fetchSourceJobs.fetchAndSave(eq(LinkedInAsyncFetchService.SOURCE_ID), any()))
                 .thenAnswer(invocation -> {
-                    Consumer<KeywordRun> keywordListener = invocation.getArgument(2);
+                    Consumer<KeywordRun> keywordListener = invocation.getArgument(1);
                     keywordListener.accept(emitted);
                     return result;
                 });
 
-        service.start(USER_ID);
+        service.start();
         submitted.get(0).run();
 
         verify(runStore).complete(
@@ -96,7 +96,7 @@ class LinkedInAsyncFetchServiceTest {
         var activeStartedAt = Instant.parse("2026-11-12T02:55:00Z");
         when(runStore.get(LinkedInAsyncFetchService.SOURCE_ID)).thenReturn(FetchRun.running(activeStartedAt));
 
-        var result = service.start(USER_ID);
+        var result = service.start();
 
         assertEquals(FetchLinkedInAsyncUseCase.StartOutcome.ALREADY_RUNNING, result.outcome());
         assertEquals(activeStartedAt, result.startedAt());
@@ -112,14 +112,14 @@ class LinkedInAsyncFetchServiceTest {
         var result = new FetchResult(
                 0, 0, 0,
                 List.of(new ProviderFetchStats("linkedin", 0, 0, 0, 0, 0, "Read timed out")));
-        when(fetchSourceJobs.fetchAndSave(eq(USER_ID), eq(LinkedInAsyncFetchService.SOURCE_ID), any()))
+        when(fetchSourceJobs.fetchAndSave(eq(LinkedInAsyncFetchService.SOURCE_ID), any()))
                 .thenAnswer(invocation -> {
-                    Consumer<KeywordRun> keywordListener = invocation.getArgument(2);
+                    Consumer<KeywordRun> keywordListener = invocation.getArgument(1);
                     keywordListener.accept(emitted);
                     return result;
                 });
 
-        service.start(USER_ID);
+        service.start();
         submitted.get(0).run();
 
         verify(runStore).fail(
@@ -132,10 +132,10 @@ class LinkedInAsyncFetchServiceTest {
     void run_whenFetchThrows_shouldMarkRunFailed() {
         when(runStore.tryBegin(anyString(), any(Instant.class))).thenReturn(true);
         var failureMessage = "boom-".repeat(100);
-        when(fetchSourceJobs.fetchAndSave(eq(USER_ID), eq(LinkedInAsyncFetchService.SOURCE_ID), any()))
+        when(fetchSourceJobs.fetchAndSave(eq(LinkedInAsyncFetchService.SOURCE_ID), any()))
                 .thenThrow(new RuntimeException(failureMessage));
 
-        service.start(USER_ID);
+        service.start();
         submitted.get(0).run();
 
         verify(runStore).fail(
@@ -148,10 +148,10 @@ class LinkedInAsyncFetchServiceTest {
     void run_whenErrorEscapes_shouldReleaseStuckRun() {
         when(runStore.tryBegin(anyString(), any(Instant.class))).thenReturn(true);
         when(runStore.get(LinkedInAsyncFetchService.SOURCE_ID)).thenReturn(FetchRun.running(Instant.now()));
-        when(fetchSourceJobs.fetchAndSave(eq(USER_ID), eq(LinkedInAsyncFetchService.SOURCE_ID), any()))
+        when(fetchSourceJobs.fetchAndSave(eq(LinkedInAsyncFetchService.SOURCE_ID), any()))
                 .thenThrow(new AssertionError("boom"));
 
-        service.start(USER_ID);
+        service.start();
 
         assertThrows(AssertionError.class, () -> submitted.get(0).run());
 
@@ -170,7 +170,7 @@ class LinkedInAsyncFetchServiceTest {
         Executor rejectingExecutor = command -> { throw new RejectedExecutionException(); };
         service = new LinkedInAsyncFetchService(fetchSourceJobs, runStore, rejectingExecutor);
 
-        assertThrows(RejectedExecutionException.class, () -> service.start(USER_ID));
+        assertThrows(RejectedExecutionException.class, () -> service.start());
 
         verify(runStore).fail(
                 eq(LinkedInAsyncFetchService.SOURCE_ID),

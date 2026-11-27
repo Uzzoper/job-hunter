@@ -10,7 +10,7 @@ import java.util.List;
  * these facts in chat and waits for an explicit confirmation before calling
  * the commit endpoint.
  *
- * @param accountIdentity the users row (name + login email) — slice (a) source of truth
+ * @param accountIdentity the stored operator identity (name and email)
  * @param contact         fill-if-empty merge preview (stored value wins over extraction)
  * @param skills          extracted skills
  * @param projects        extracted projects

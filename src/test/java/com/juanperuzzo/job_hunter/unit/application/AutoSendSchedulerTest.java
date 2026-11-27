@@ -40,7 +40,7 @@ class AutoSendSchedulerTest {
     @Test
     @DisplayName("tick should call send with eligible draft userId and jobId, never regenerate")
     void tick_whenEligibleDraftExists_shouldSendWithoutRegenerating() {
-        var draft = new EmailDraft(99L, JOB_ID, USER_ID, "Subj", "Body",
+        var draft = new EmailDraft(99L, JOB_ID, "Subj", "Body",
                 EmailStatus.APPROVED, LocalDateTime.now(), null);
         var eligible = new EligibleDraft(draft, 80, "Acme", "hr@acme.com", "Dev");
 
@@ -48,7 +48,7 @@ class AutoSendSchedulerTest {
 
         scheduler.tick();
 
-        verify(sendEmailUseCase).send(USER_ID, JOB_ID);
+        verify(sendEmailUseCase).send(JOB_ID);
     }
 
     @Test
@@ -58,22 +58,22 @@ class AutoSendSchedulerTest {
 
         scheduler.tick();
 
-        verify(sendEmailUseCase, never()).send(anyLong(), anyLong());
+        verify(sendEmailUseCase, never()).send(anyLong());
     }
 
     @Test
     @DisplayName("tick should catch send exception and not propagate")
     void tick_whenSendThrows_shouldCatchAndContinue() {
-        var draft = new EmailDraft(99L, JOB_ID, USER_ID, "Subj", "Body",
+        var draft = new EmailDraft(99L, JOB_ID, "Subj", "Body",
                 EmailStatus.APPROVED, LocalDateTime.now(), null);
         var eligible = new EligibleDraft(draft, 80, "Acme", "hr@acme.com", "Dev");
 
         when(eligibilityPort.nextEligibleDraft()).thenReturn(Optional.of(eligible));
-        doThrow(new RuntimeException("Send failed")).when(sendEmailUseCase).send(USER_ID, JOB_ID);
+        doThrow(new RuntimeException("Send failed")).when(sendEmailUseCase).send(JOB_ID);
 
         scheduler.tick();
 
-        verify(sendEmailUseCase).send(USER_ID, JOB_ID);
+        verify(sendEmailUseCase).send(JOB_ID);
     }
 
     @Test

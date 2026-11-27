@@ -13,9 +13,7 @@ public interface EmailDraftRepository {
 
     Optional<EmailDraft> findByJobId(Long jobId);
 
-    Optional<EmailDraft> findByJobIdAndUserId(Long jobId, Long userId);
-
-    List<EmailDraft> findByUserIdAndStatusIn(Long userId, List<EmailStatus> statuses);
+    List<EmailDraft> findByStatusIn(List<EmailStatus> statuses);
 
     List<EmailDraft> findAllByStatusIn(List<EmailStatus> statuses);
 
@@ -26,5 +24,5 @@ public interface EmailDraftRepository {
      */
     Optional<EmailDraft> findSentByJobIdAndRecipientEmail(Long jobId, String recipientEmail);
 
-    long countByUserIdAndStatusAndSentAtAfter(Long userId, EmailStatus status, LocalDateTime after);
+    long countByStatusAndSentAtAfter(EmailStatus status, LocalDateTime after);
 }

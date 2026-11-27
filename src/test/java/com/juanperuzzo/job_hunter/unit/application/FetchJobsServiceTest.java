@@ -15,6 +15,7 @@ import com.juanperuzzo.job_hunter.domain.model.ApplicationLifecycle;
 import com.juanperuzzo.job_hunter.domain.model.EmailDraft;
 import com.juanperuzzo.job_hunter.domain.model.EmailStatus;
 import com.juanperuzzo.job_hunter.domain.model.Job;
+import com.juanperuzzo.job_hunter.domain.model.CompanyTone;
 import com.juanperuzzo.job_hunter.domain.model.JobAnalysis;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -66,7 +67,7 @@ class FetchJobsServiceTest {
     @BeforeEach
     void setUp() {
         fetchJobsService = new FetchJobsService(scraperPort, jobRepository, emailDraftRepository, jobAnalysisRepository, keywordResolver);
-        lenient().when(keywordResolver.resolve(any())).thenReturn(List.of());
+        lenient().when(keywordResolver.resolve()).thenReturn(List.of());
     }
 
     @Nested
@@ -85,7 +86,7 @@ class FetchJobsServiceTest {
             when(jobRepository.existsByUrl("https://example.com/job/1")).thenReturn(false);
             when(jobRepository.existsByUrl("https://example.com/job/2")).thenReturn(true);
 
-            var result = fetchJobsService.fetchAndSave(7L);
+            var result = fetchJobsService.fetchAndSave();
 
             verify(jobRepository, times(1)).save(newJob);
             verify(jobRepository, never()).save(existingJob);
@@ -109,7 +110,7 @@ class FetchJobsServiceTest {
                     List.of(new ProviderFetchStats("gupy", 1, 0, 0, 0, 0, null))));
             when(jobRepository.existsByUrl("https://example.com/job/1")).thenReturn(true);
 
-            var result = fetchJobsService.fetchAndSave(7L);
+            var result = fetchJobsService.fetchAndSave();
 
             verify(jobRepository, never()).save(any());
             assertEquals(0, result.totalSaved());
@@ -127,7 +128,7 @@ class FetchJobsServiceTest {
             when(scraperPort.fetch(anyList(), any())).thenThrow(new ScraperException("Scraping failed"));
 
             try {
-                fetchJobsService.fetchAndSave(7L);
+                fetchJobsService.fetchAndSave();
             } catch (ScraperException e) {
                 // expected
             }
@@ -145,7 +146,7 @@ class FetchJobsServiceTest {
         void fetchAndSave_whenEmptyListReturned_shouldNotSaveAnyJob() {
             when(scraperPort.fetch(anyList(), any())).thenReturn(new ScraperResult(List.of(), List.of()));
 
-            var result = fetchJobsService.fetchAndSave(7L);
+            var result = fetchJobsService.fetchAndSave();
 
             verify(jobRepository, never()).save(any());
             assertEquals(0, result.totalFetched());
@@ -168,7 +169,7 @@ class FetchJobsServiceTest {
                     List.of(new ProviderFetchStats("gupy", 1, 1, 0, 0, 0, null))));
             when(jobRepository.existsByUrl(any())).thenReturn(false);
 
-            var result = fetchJobsService.fetchAndSave(7L);
+            var result = fetchJobsService.fetchAndSave();
 
             // FetchResult shape unchanged: totalFetched/totalSaved/totalWithEmail/perProvider.
             assertEquals(1, result.totalFetched());
@@ -198,7 +199,7 @@ class FetchJobsServiceTest {
                     List.of(new ProviderFetchStats("gupy", 2, 0, 0, 0, 0, null))));
             when(jobRepository.existsByUrl(any())).thenReturn(false);
 
-            var result = fetchJobsService.fetchAndSave(7L);
+            var result = fetchJobsService.fetchAndSave();
 
             assertEquals(2, result.totalSaved());
             assertEquals(1, result.totalWithEmail());
@@ -219,7 +220,7 @@ class FetchJobsServiceTest {
         }
 
         private EmailDraft draft(long jobId, EmailStatus status) {
-            return new EmailDraft(100L + jobId, jobId, USER_ID, "Subject", "Body",
+            return new EmailDraft(100L + jobId, jobId, "Subject", "Body",
                     status, LocalDateTime.now());
         }
 
@@ -229,11 +230,11 @@ class FetchJobsServiceTest {
             var appliedJob = job(1L, "Java Dev");
             var freshJob = job(2L, "React Dev");
             when(jobRepository.findAll()).thenReturn(List.of(appliedJob, freshJob));
-            when(emailDraftRepository.findByJobIdAndUserId(1L, USER_ID))
+            when(emailDraftRepository.findByJobId(1L))
                     .thenReturn(Optional.of(draft(1L, EmailStatus.SENT)));
-            when(emailDraftRepository.findByJobIdAndUserId(2L, USER_ID)).thenReturn(Optional.empty());
+            when(emailDraftRepository.findByJobId(2L)).thenReturn(Optional.empty());
 
-            var result = fetchJobsService.findAllWithDraftStatus(USER_ID, null, false, null, null);
+            var result = fetchJobsService.findAllWithDraftStatus(null, false, null, null);
 
             assertEquals(2, result.size());
             assertEquals(EmailStatus.SENT, result.get(0).draftStatus());
@@ -246,11 +247,11 @@ class FetchJobsServiceTest {
             var appliedJob = job(1L, "Java Dev");
             var freshJob = job(2L, "React Dev");
             when(jobRepository.findAll()).thenReturn(List.of(appliedJob, freshJob));
-            when(emailDraftRepository.findByJobIdAndUserId(1L, USER_ID))
+            when(emailDraftRepository.findByJobId(1L))
                     .thenReturn(Optional.of(draft(1L, EmailStatus.SENT)));
-            when(emailDraftRepository.findByJobIdAndUserId(2L, USER_ID)).thenReturn(Optional.empty());
+            when(emailDraftRepository.findByJobId(2L)).thenReturn(Optional.empty());
 
-            var result = fetchJobsService.findAllWithDraftStatus(USER_ID, null, true, null, null);
+            var result = fetchJobsService.findAllWithDraftStatus(null, true, null, null);
 
             assertEquals(1, result.size());
             assertEquals(2L, result.get(0).job().id());
@@ -264,13 +265,13 @@ class FetchJobsServiceTest {
             var approvedJob = job(2L, "React Dev");
             var freshJob = job(3L, "Go Dev");
             when(jobRepository.findAll()).thenReturn(List.of(pendingJob, approvedJob, freshJob));
-            when(emailDraftRepository.findByJobIdAndUserId(1L, USER_ID))
+            when(emailDraftRepository.findByJobId(1L))
                     .thenReturn(Optional.of(draft(1L, EmailStatus.PENDING)));
-            when(emailDraftRepository.findByJobIdAndUserId(2L, USER_ID))
+            when(emailDraftRepository.findByJobId(2L))
                     .thenReturn(Optional.of(draft(2L, EmailStatus.APPROVED)));
-            when(emailDraftRepository.findByJobIdAndUserId(3L, USER_ID)).thenReturn(Optional.empty());
+            when(emailDraftRepository.findByJobId(3L)).thenReturn(Optional.empty());
 
-            var result = fetchJobsService.findAllWithDraftStatus(USER_ID, null, true, null, null);
+            var result = fetchJobsService.findAllWithDraftStatus(null, true, null, null);
 
             assertEquals(3, result.size());
             assertEquals(Arrays.asList(EmailStatus.PENDING, EmailStatus.APPROVED, null),
@@ -285,9 +286,9 @@ class FetchJobsServiceTest {
             // The draft exists but belongs to another user: the current-user lookup
             // (findByJobIdAndUserId(1L, USER_ID)) yields no draft, so the job is
             // neither marked as applied nor excluded.
-            when(emailDraftRepository.findByJobIdAndUserId(1L, USER_ID)).thenReturn(Optional.empty());
+            when(emailDraftRepository.findByJobId(1L)).thenReturn(Optional.empty());
 
-            var result = fetchJobsService.findAllWithDraftStatus(USER_ID, null, true, null, null);
+            var result = fetchJobsService.findAllWithDraftStatus(null, true, null, null);
 
             assertEquals(1, result.size());
             assertNull(result.get(0).draftStatus());
@@ -299,10 +300,10 @@ class FetchJobsServiceTest {
             var appliedJobWithEmail = new Job(1L, "Java Dev", "Acme", "https://example.com/job/1",
                     "Description", LocalDate.now(), "gupy", "rh@acme.com");
             when(jobRepository.findAllByContactEmailIsNotNull()).thenReturn(List.of(appliedJobWithEmail));
-            when(emailDraftRepository.findByJobIdAndUserId(1L, USER_ID))
+            when(emailDraftRepository.findByJobId(1L))
                     .thenReturn(Optional.of(draft(1L, EmailStatus.SENT)));
 
-            var result = fetchJobsService.findAllWithDraftStatus(USER_ID, true, true, null, null);
+            var result = fetchJobsService.findAllWithDraftStatus(true, true, null, null);
 
             assertTrue(result.isEmpty());
             verify(jobRepository).findAllByContactEmailIsNotNull();
@@ -322,13 +323,13 @@ class FetchJobsServiceTest {
         }
 
         private EmailDraft draft(long jobId, EmailStatus status) {
-            return new EmailDraft(100L + jobId, jobId, USER_ID, "Subject", "Body",
+            return new EmailDraft(100L + jobId, jobId, "Subject", "Body",
                     status, LocalDateTime.now());
         }
 
         private JobAnalysis analysis(long jobId, int matchScore) {
-            return new JobAnalysis(200L + jobId, jobId, USER_ID, matchScore,
-                    List.of("Java"), List.of(), null, "summary");
+            return new JobAnalysis(200L + jobId, jobId, matchScore,
+                    List.of("Java"), List.of(), CompanyTone.FORMAL, "summary");
         }
 
         @Test
@@ -337,13 +338,13 @@ class FetchJobsServiceTest {
             var job1 = job(1L, "Java Dev");
             var job2 = job(2L, "React Dev");
             when(jobRepository.findAll()).thenReturn(List.of(job1, job2));
-            when(emailDraftRepository.findByJobIdAndUserId(1L, USER_ID)).thenReturn(Optional.empty());
-            when(emailDraftRepository.findByJobIdAndUserId(2L, USER_ID)).thenReturn(Optional.empty());
-            when(jobAnalysisRepository.findByJobIdAndUserId(1L, USER_ID))
+            when(emailDraftRepository.findByJobId(1L)).thenReturn(Optional.empty());
+            when(emailDraftRepository.findByJobId(2L)).thenReturn(Optional.empty());
+            when(jobAnalysisRepository.findByJobId(1L))
                     .thenReturn(Optional.of(analysis(1L, 85)));
-            when(jobAnalysisRepository.findByJobIdAndUserId(2L, USER_ID)).thenReturn(Optional.empty());
+            when(jobAnalysisRepository.findByJobId(2L)).thenReturn(Optional.empty());
 
-            var result = fetchJobsService.findAllWithDraftStatus(USER_ID, null, false, null, null);
+            var result = fetchJobsService.findAllWithDraftStatus(null, false, null, null);
 
             assertEquals(2, result.size());
             assertEquals(85, result.get(0).matchScore());
@@ -357,14 +358,14 @@ class FetchJobsServiceTest {
             var jobHigh = job(2L, "High Score");
             var jobNull = job(3L, "No Score");
             when(jobRepository.findAll()).thenReturn(List.of(jobLow, jobHigh, jobNull));
-            when(emailDraftRepository.findByJobIdAndUserId(anyLong(), eq(USER_ID))).thenReturn(Optional.empty());
-            when(jobAnalysisRepository.findByJobIdAndUserId(1L, USER_ID))
+            when(emailDraftRepository.findByJobId(anyLong())).thenReturn(Optional.empty());
+            when(jobAnalysisRepository.findByJobId(1L))
                     .thenReturn(Optional.of(analysis(1L, 30)));
-            when(jobAnalysisRepository.findByJobIdAndUserId(2L, USER_ID))
+            when(jobAnalysisRepository.findByJobId(2L))
                     .thenReturn(Optional.of(analysis(2L, 90)));
-            when(jobAnalysisRepository.findByJobIdAndUserId(3L, USER_ID)).thenReturn(Optional.empty());
+            when(jobAnalysisRepository.findByJobId(3L)).thenReturn(Optional.empty());
 
-            var result = fetchJobsService.findAllWithDraftStatus(USER_ID, null, false, null, null);
+            var result = fetchJobsService.findAllWithDraftStatus(null, false, null, null);
 
             assertEquals(3, result.size());
             assertEquals(90, result.get(0).matchScore());
@@ -381,13 +382,13 @@ class FetchJobsServiceTest {
             var jobHigh = job(1L, "High Score");
             var jobLow = job(2L, "Low Score");
             when(jobRepository.findAll()).thenReturn(List.of(jobHigh, jobLow));
-            when(emailDraftRepository.findByJobIdAndUserId(anyLong(), eq(USER_ID))).thenReturn(Optional.empty());
-            when(jobAnalysisRepository.findByJobIdAndUserId(1L, USER_ID))
+            when(emailDraftRepository.findByJobId(anyLong())).thenReturn(Optional.empty());
+            when(jobAnalysisRepository.findByJobId(1L))
                     .thenReturn(Optional.of(analysis(1L, 80)));
-            when(jobAnalysisRepository.findByJobIdAndUserId(2L, USER_ID))
+            when(jobAnalysisRepository.findByJobId(2L))
                     .thenReturn(Optional.of(analysis(2L, 40)));
 
-            var result = fetchJobsService.findAllWithDraftStatus(USER_ID, null, false, 60, null);
+            var result = fetchJobsService.findAllWithDraftStatus(null, false, 60, null);
 
             assertEquals(1, result.size());
             assertEquals(80, result.get(0).matchScore());
@@ -400,12 +401,12 @@ class FetchJobsServiceTest {
             var jobScored = job(1L, "Scored");
             var jobUnanalyzed = job(2L, "Unanalyzed");
             when(jobRepository.findAll()).thenReturn(List.of(jobScored, jobUnanalyzed));
-            when(emailDraftRepository.findByJobIdAndUserId(anyLong(), eq(USER_ID))).thenReturn(Optional.empty());
-            when(jobAnalysisRepository.findByJobIdAndUserId(1L, USER_ID))
+            when(emailDraftRepository.findByJobId(anyLong())).thenReturn(Optional.empty());
+            when(jobAnalysisRepository.findByJobId(1L))
                     .thenReturn(Optional.of(analysis(1L, 70)));
-            when(jobAnalysisRepository.findByJobIdAndUserId(2L, USER_ID)).thenReturn(Optional.empty());
+            when(jobAnalysisRepository.findByJobId(2L)).thenReturn(Optional.empty());
 
-            var result = fetchJobsService.findAllWithDraftStatus(USER_ID, null, false, 50, null);
+            var result = fetchJobsService.findAllWithDraftStatus(null, false, 50, null);
 
             assertEquals(1, result.size());
             assertEquals("Scored", result.get(0).job().title());
@@ -419,19 +420,19 @@ class FetchJobsServiceTest {
             var jobScoredFresh = job(2L, "Fresh");
             var jobLow = job(3L, "Low Score");
             when(jobRepository.findAll()).thenReturn(List.of(jobScoredApplied, jobScoredFresh, jobLow));
-            when(emailDraftRepository.findByJobIdAndUserId(1L, USER_ID))
+            when(emailDraftRepository.findByJobId(1L))
                     .thenReturn(Optional.of(draft(1L, EmailStatus.SENT)));
-            when(emailDraftRepository.findByJobIdAndUserId(2L, USER_ID)).thenReturn(Optional.empty());
-            when(emailDraftRepository.findByJobIdAndUserId(3L, USER_ID)).thenReturn(Optional.empty());
-            when(jobAnalysisRepository.findByJobIdAndUserId(1L, USER_ID))
+            when(emailDraftRepository.findByJobId(2L)).thenReturn(Optional.empty());
+            when(emailDraftRepository.findByJobId(3L)).thenReturn(Optional.empty());
+            when(jobAnalysisRepository.findByJobId(1L))
                     .thenReturn(Optional.of(analysis(1L, 90)));
-            when(jobAnalysisRepository.findByJobIdAndUserId(2L, USER_ID))
+            when(jobAnalysisRepository.findByJobId(2L))
                     .thenReturn(Optional.of(analysis(2L, 75)));
-            when(jobAnalysisRepository.findByJobIdAndUserId(3L, USER_ID))
+            when(jobAnalysisRepository.findByJobId(3L))
                     .thenReturn(Optional.of(analysis(3L, 30)));
 
             // excludeApplied removes job1 (SENT), minScore >= 60 removes job3
-            var result = fetchJobsService.findAllWithDraftStatus(USER_ID, null, true, 60, null);
+            var result = fetchJobsService.findAllWithDraftStatus(null, true, 60, null);
 
             assertEquals(1, result.size());
             assertEquals("Fresh", result.get(0).job().title());
@@ -458,10 +459,10 @@ class FetchJobsServiceTest {
             var hybridJob = job(3L, "Dev Hibrido", "Modelo híbrido: 3 dias no escritório");
             var silentJob = job(4L, "Dev Geral", "Vaga para time de plataforma, sem sinal de modelo");
             when(jobRepository.findAll()).thenReturn(List.of(remoteJob, onsiteJob, hybridJob, silentJob));
-            when(emailDraftRepository.findByJobIdAndUserId(anyLong(), eq(USER_ID))).thenReturn(Optional.empty());
-            when(jobAnalysisRepository.findByJobIdAndUserId(anyLong(), eq(USER_ID))).thenReturn(Optional.empty());
+            when(emailDraftRepository.findByJobId(anyLong())).thenReturn(Optional.empty());
+            when(jobAnalysisRepository.findByJobId(anyLong())).thenReturn(Optional.empty());
 
-            var result = fetchJobsService.findAllWithDraftStatus(USER_ID, null, false, null, true);
+            var result = fetchJobsService.findAllWithDraftStatus(null, false, null, true);
 
             assertEquals(1, result.size());
             assertEquals("Dev Remoto", result.get(0).job().title());
@@ -473,10 +474,10 @@ class FetchJobsServiceTest {
             var remoteJob = job(1L, "Dev Remoto", "Vaga 100% home office para todo o Brasil");
             var onsiteJob = job(2L, "Dev Presencial", "Vaga presencial em São Paulo, SP");
             when(jobRepository.findAll()).thenReturn(List.of(remoteJob, onsiteJob));
-            when(emailDraftRepository.findByJobIdAndUserId(anyLong(), eq(USER_ID))).thenReturn(Optional.empty());
-            when(jobAnalysisRepository.findByJobIdAndUserId(anyLong(), eq(USER_ID))).thenReturn(Optional.empty());
+            when(emailDraftRepository.findByJobId(anyLong())).thenReturn(Optional.empty());
+            when(jobAnalysisRepository.findByJobId(anyLong())).thenReturn(Optional.empty());
 
-            var result = fetchJobsService.findAllWithDraftStatus(USER_ID, null, false, null, false);
+            var result = fetchJobsService.findAllWithDraftStatus(null, false, null, false);
 
             assertEquals(2, result.size());
         }
@@ -486,10 +487,10 @@ class FetchJobsServiceTest {
         void findAllWithDraftStatus_whenRemoteOnlyAndNegatedRemote_shouldDropJob() {
             var negatedJob = job(1L, "Dev Onsite", "100% presencial — não é remoto");
             when(jobRepository.findAll()).thenReturn(List.of(negatedJob));
-            when(emailDraftRepository.findByJobIdAndUserId(anyLong(), eq(USER_ID))).thenReturn(Optional.empty());
-            when(jobAnalysisRepository.findByJobIdAndUserId(anyLong(), eq(USER_ID))).thenReturn(Optional.empty());
+            when(emailDraftRepository.findByJobId(anyLong())).thenReturn(Optional.empty());
+            when(jobAnalysisRepository.findByJobId(anyLong())).thenReturn(Optional.empty());
 
-            var result = fetchJobsService.findAllWithDraftStatus(USER_ID, null, false, null, true);
+            var result = fetchJobsService.findAllWithDraftStatus(null, false, null, true);
 
             assertTrue(result.isEmpty());
         }
@@ -501,22 +502,22 @@ class FetchJobsServiceTest {
             var freshRemote = job(2L, "Remoto Fresh", "Home office em todo o Brasil, flexível");
             var onsiteLow = job(3L, "Presencial Baixo", "Vaga presencial");
             when(jobRepository.findAll()).thenReturn(List.of(appliedRemote, freshRemote, onsiteLow));
-            when(emailDraftRepository.findByJobIdAndUserId(1L, USER_ID))
-                    .thenReturn(Optional.of(new EmailDraft(101L, 1L, USER_ID, "Subject", "Body",
+            when(emailDraftRepository.findByJobId(1L))
+                    .thenReturn(Optional.of(new EmailDraft(101L, 1L, "Subject", "Body",
                             EmailStatus.SENT, LocalDateTime.now())));
-            when(emailDraftRepository.findByJobIdAndUserId(2L, USER_ID)).thenReturn(Optional.empty());
-            when(emailDraftRepository.findByJobIdAndUserId(3L, USER_ID)).thenReturn(Optional.empty());
-            when(jobAnalysisRepository.findByJobIdAndUserId(1L, USER_ID))
-                    .thenReturn(Optional.of(new JobAnalysis(201L, 1L, USER_ID, 90,
+            when(emailDraftRepository.findByJobId(2L)).thenReturn(Optional.empty());
+            when(emailDraftRepository.findByJobId(3L)).thenReturn(Optional.empty());
+            when(jobAnalysisRepository.findByJobId(1L))
+                    .thenReturn(Optional.of(new JobAnalysis(201L, 1L, 90,
                             List.of("Java"), List.of(), null, "summary")));
-            when(jobAnalysisRepository.findByJobIdAndUserId(2L, USER_ID))
-                    .thenReturn(Optional.of(new JobAnalysis(202L, 2L, USER_ID, 75,
+            when(jobAnalysisRepository.findByJobId(2L))
+                    .thenReturn(Optional.of(new JobAnalysis(202L, 2L, 75,
                             List.of("Java"), List.of(), null, "summary")));
-            when(jobAnalysisRepository.findByJobIdAndUserId(3L, USER_ID))
-                    .thenReturn(Optional.of(new JobAnalysis(203L, 3L, USER_ID, 30,
+            when(jobAnalysisRepository.findByJobId(3L))
+                    .thenReturn(Optional.of(new JobAnalysis(203L, 3L, 30,
                             List.of("Java"), List.of(), null, "summary")));
 
-            var result = fetchJobsService.findAllWithDraftStatus(USER_ID, null, true, 60, true);
+            var result = fetchJobsService.findAllWithDraftStatus(null, true, 60, true);
 
             assertEquals(1, result.size());
             assertEquals("Remoto Fresh", result.get(0).job().title());
@@ -536,13 +537,13 @@ class FetchJobsServiceTest {
         }
 
         private EmailDraft draft(long jobId, EmailStatus status) {
-            return new EmailDraft(100L + jobId, jobId, USER_ID, "Subject", "Body",
+            return new EmailDraft(100L + jobId, jobId, "Subject", "Body",
                     status, LocalDateTime.now());
         }
 
         private JobAnalysis analysis(long jobId, int matchScore) {
-            return new JobAnalysis(200L + jobId, jobId, USER_ID, matchScore,
-                    List.of("Java"), List.of(), null, "summary");
+            return new JobAnalysis(200L + jobId, jobId, matchScore,
+                    List.of("Java"), List.of(), CompanyTone.FORMAL, "summary");
         }
 
         @Test
@@ -550,12 +551,12 @@ class FetchJobsServiceTest {
         void getByIdWithDraftStatus_whenDraftAndAnalysisExist_shouldReturnEnrichedEntry() {
             var job = job(1L);
             when(jobRepository.findById(1L)).thenReturn(Optional.of(job));
-            when(emailDraftRepository.findByJobIdAndUserId(1L, USER_ID))
+            when(emailDraftRepository.findByJobId(1L))
                     .thenReturn(Optional.of(draft(1L, EmailStatus.SENT)));
-            when(jobAnalysisRepository.findByJobIdAndUserId(1L, USER_ID))
+            when(jobAnalysisRepository.findByJobId(1L))
                     .thenReturn(Optional.of(analysis(1L, 85)));
 
-            var entry = fetchJobsService.getByIdWithDraftStatus(USER_ID, 1L);
+            var entry = fetchJobsService.getByIdWithDraftStatus(1L);
 
             assertEquals(job, entry.job());
             assertEquals(EmailStatus.SENT, entry.draftStatus());
@@ -568,10 +569,10 @@ class FetchJobsServiceTest {
         void getByIdWithDraftStatus_whenNoDraftAndNoAnalysis_shouldReturnNullFields() {
             var job = job(1L);
             when(jobRepository.findById(1L)).thenReturn(Optional.of(job));
-            when(emailDraftRepository.findByJobIdAndUserId(1L, USER_ID)).thenReturn(Optional.empty());
-            when(jobAnalysisRepository.findByJobIdAndUserId(1L, USER_ID)).thenReturn(Optional.empty());
+            when(emailDraftRepository.findByJobId(1L)).thenReturn(Optional.empty());
+            when(jobAnalysisRepository.findByJobId(1L)).thenReturn(Optional.empty());
 
-            var entry = fetchJobsService.getByIdWithDraftStatus(USER_ID, 1L);
+            var entry = fetchJobsService.getByIdWithDraftStatus(1L);
 
             assertEquals(job, entry.job());
             assertNull(entry.draftStatus());
@@ -585,7 +586,7 @@ class FetchJobsServiceTest {
             when(jobRepository.findById(99L)).thenReturn(Optional.empty());
 
             assertThrows(JobNotFoundException.class,
-                    () -> fetchJobsService.getByIdWithDraftStatus(USER_ID, 99L));
+                    () -> fetchJobsService.getByIdWithDraftStatus(99L));
         }
     }
 
@@ -598,23 +599,23 @@ class FetchJobsServiceTest {
         @Test
         @DisplayName("fetchAndSave should resolve the user's keywords and pass them to the scraper")
         void fetchAndSave_whenKeywordsStored_shouldPassResolvedKeywordsToScraper() {
-            when(keywordResolver.resolve(USER_ID)).thenReturn(List.of("rust", "kotlin"));
+            when(keywordResolver.resolve()).thenReturn(List.of("rust", "kotlin"));
             when(scraperPort.fetch(eq(List.of("rust", "kotlin")), any()))
                     .thenReturn(new ScraperResult(List.of(), List.of()));
 
-            fetchJobsService.fetchAndSave(USER_ID);
+            fetchJobsService.fetchAndSave();
 
-            verify(keywordResolver).resolve(USER_ID);
+            verify(keywordResolver).resolve();
             verify(scraperPort).fetch(eq(List.of("rust", "kotlin")), any());
         }
 
         @Test
         @DisplayName("fetchAndSave should pass an empty keyword list when the user has none stored")
         void fetchAndSave_whenNoKeywordsStored_shouldPassEmptyListToScraper() {
-            when(keywordResolver.resolve(USER_ID)).thenReturn(List.of());
+            when(keywordResolver.resolve()).thenReturn(List.of());
             when(scraperPort.fetch(eq(List.of()), any())).thenReturn(new ScraperResult(List.of(), List.of()));
 
-            fetchJobsService.fetchAndSave(USER_ID);
+            fetchJobsService.fetchAndSave();
 
             verify(scraperPort).fetch(eq(List.of()), any());
         }
@@ -624,7 +625,7 @@ class FetchJobsServiceTest {
         void fetchAndSave_whenResolvingKnownUrls_shouldDelegateToExistsByUrl() {
             when(scraperPort.fetch(anyList(), any())).thenReturn(new ScraperResult(List.of(), List.of()));
 
-            fetchJobsService.fetchAndSave(USER_ID);
+            fetchJobsService.fetchAndSave();
 
             var predicateCaptor = ArgumentCaptor.forClass(Predicate.class);
             verify(scraperPort).fetch(anyList(), predicateCaptor.capture());

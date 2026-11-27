@@ -29,8 +29,7 @@ public class ResumeUploadService {
      * @param aiPort               port for AI completions
      * @param userProfileService   service for profile persistence (includes validation)
      * @param userProfileRepository repository for reading existing profile tone
-     * @param resumeStorage        storage port owning the `{uploadDir}/{userId}/resume.pdf`
-     *                             path convention (issue #92 slice a)
+     * @param resumeStorage        storage port owning the `{uploadDir}/resume.pdf` path
      * @param maxAiChars           maximum character count of resume text sent to the AI prompt
      */
     public ResumeUploadService(AiPort aiPort, UserProfileService userProfileService,
@@ -48,16 +47,13 @@ public class ResumeUploadService {
      * Uploads a PDF resume, extracts its text via PDFBox, sends the text to an AI
      * for skills/projects extraction, saves the PDF to disk, and persists the profile.
      *
-     * @param userId the authenticated user's ID
      * @param file   the uploaded PDF file (max 2MB, must be {@code application/pdf})
      * @return the saved {@link UserProfile} with extracted skills, projects, and raw text
      * @throws IllegalArgumentException if the file is null/empty/non-PDF, or the PDF
      *                                  contains no extractable text
      * @throws AiException             if the AI call fails or returns unparseable JSON
-     * @throws com.juanperuzzo.job_hunter.domain.exception.UserNotFoundException
-     *                                  if the user does not exist
      */
-    public UserProfile uploadResume(Long userId, MultipartFile file) {
+    public UserProfile uploadResume(MultipartFile file) {
         ResumeExtractionPipeline.validateFile(file);
 
         String rawText = ResumeExtractionPipeline.extractPdfText(file);
@@ -68,9 +64,9 @@ public class ResumeUploadService {
 
         var extraction = ResumeExtractionPipeline.extractWithAi(rawText, aiPort, maxAiChars);
 
-        storeResume(userId, file);
+        storeResume(file);
 
-        var existingProfile = userProfileRepository.findByUserId(userId);
+        var existingProfile = userProfileRepository.find();
 
         CompanyTone tone = existingProfile
                 .map(UserProfile::tone)
@@ -102,9 +98,11 @@ public class ResumeUploadService {
                 contact == null ? null : contact.linkedinUrl(), "linkedinUrl",
                 ResumeExtractionPipeline.URL_MAX_LENGTH, false);
 
-        var profile = new UserProfile(null, userId, rawText, extraction.skills(), tone, projects,
+        var profileName = existingProfile.map(UserProfile::name).orElse("Owner");
+        var profileEmail = existingProfile.map(UserProfile::email).orElse(null);
+        var profile = new UserProfile(null, profileName, profileEmail, rawText, extraction.skills(), tone, projects,
                 phone, contactEmail, portfolioUrl, githubUrl, linkedinUrl, null);
-        return userProfileService.saveProfile(userId, profile);
+        return userProfileService.saveProfile(profile);
     }
 
     /**
@@ -114,9 +112,9 @@ public class ResumeUploadService {
      * failure boundary, so upload callers see one type regardless of whether
      * the byte read or the disk write failed.
      */
-    private void storeResume(Long userId, MultipartFile file) {
+    private void storeResume(MultipartFile file) {
         try {
-            resumeStorage.write(userId, file.getBytes());
+            resumeStorage.write(file.getBytes());
         } catch (IOException e) {
             throw new UncheckedIOException("Failed to read uploaded file for storage", e);
         }

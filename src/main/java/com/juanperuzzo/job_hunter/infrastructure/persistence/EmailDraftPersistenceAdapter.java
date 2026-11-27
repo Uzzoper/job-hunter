@@ -38,22 +38,17 @@ public class EmailDraftPersistenceAdapter implements EmailDraftRepository {
     }
 
     @Override
-    public Optional<EmailDraft> findByJobIdAndUserId(Long jobId, Long userId) {
-        return jpaRepository.findByJobIdAndUserId(jobId, userId).map(this::toDomain);
-    }
-
-    @Override
-    public List<EmailDraft> findByUserIdAndStatusIn(Long userId, List<EmailStatus> statuses) {
+    public List<EmailDraft> findByStatusIn(List<EmailStatus> statuses) {
         var statusNames = statuses.stream().map(Enum::name).toList();
-        return jpaRepository.findByUserIdAndStatusIn(userId, statusNames)
+        return jpaRepository.findByStatusIn(statusNames)
                 .stream()
                 .map(this::toDomain)
                 .toList();
     }
 
     @Override
-    public long countByUserIdAndStatusAndSentAtAfter(Long userId, EmailStatus status, LocalDateTime after) {
-        return jpaRepository.countByUserIdAndStatusAndSentAtAfter(userId, status.name(), after);
+    public long countByStatusAndSentAtAfter(EmailStatus status, LocalDateTime after) {
+        return jpaRepository.countByStatusAndSentAtAfter(status.name(), after);
     }
 
     @Override
@@ -69,7 +64,6 @@ public class EmailDraftPersistenceAdapter implements EmailDraftRepository {
         EmailDraftEntity entity = new EmailDraftEntity(
                 draft.id(),
                 draft.jobId(),
-                draft.userId(),
                 draft.subject(),
                 draft.body(),
                 draft.status().name()
@@ -91,7 +85,6 @@ public class EmailDraftPersistenceAdapter implements EmailDraftRepository {
         return new EmailDraft(
                 entity.getId(),
                 entity.getJobId(),
-                entity.getUserId(),
                 entity.getSubject(),
                 entity.getBody(),
                 EmailStatus.valueOf(entity.getStatus()),

@@ -25,21 +25,6 @@ jobs:
       - name: Run tests
         run: ./mvnw test --batch-mode
 
-  cli:
-    name: CLI (Rust)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: dtolnay/rust-toolchain@stable
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: cli
-
-      - name: Run tests
-        run: cargo test --manifest-path cli/Cargo.toml
-
   scraper:
     name: Scraper (Node.js)
     runs-on: ubuntu-latest

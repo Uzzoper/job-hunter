@@ -58,7 +58,7 @@ class FetchSourceJobsServiceTest {
     void setUp() {
         service = new FetchSourceJobsService(
                 sourceFetchPort, jobRepository, linkedinNormalizer, sourceNormalizer, keywordResolver);
-        lenient().when(keywordResolver.resolve(any())).thenReturn(List.of());
+        lenient().when(keywordResolver.resolve()).thenReturn(List.of());
     }
 
     @Nested
@@ -68,12 +68,12 @@ class FetchSourceJobsServiceTest {
         @Test
         @DisplayName("fetchAndSave with a keyword listener should forward it to the source port")
         void fetchAndSave_withListener_shouldForwardListenerToSourcePort() {
-            when(keywordResolver.resolve(USER_ID)).thenReturn(List.of("dev junior"));
+            when(keywordResolver.resolve()).thenReturn(List.of("dev junior"));
             Consumer<KeywordRun> listener = run -> {};
             when(sourceFetchPort.fetch(eq("linkedin"), eq(List.of("dev junior")), any(Predicate.class), eq(listener)))
                     .thenReturn(List.of());
 
-            service.fetchAndSave(USER_ID, "linkedin", listener);
+            service.fetchAndSave("linkedin", listener);
 
             verify(sourceFetchPort).fetch(eq("linkedin"), eq(List.of("dev junior")), any(Predicate.class), eq(listener));
         }
@@ -99,7 +99,7 @@ class FetchSourceJobsServiceTest {
             when(sourceNormalizer.normalize(eq(rawJob), anyList())).thenReturn(job);
             when(jobRepository.existsByUrl("https://example.com/job/1")).thenReturn(false);
 
-            var result = service.fetchAndSave(USER_ID, "gupy");
+            var result = service.fetchAndSave("gupy");
 
             verify(jobRepository, times(1)).save(job);
             assertEquals(1, result.totalFetched());
@@ -119,7 +119,7 @@ class FetchSourceJobsServiceTest {
         void fetchAndSave_whenProviderFails_shouldReportError() {
             when(sourceFetchPort.fetch(eq("gupy"), anyList(), any())).thenThrow(new ScraperException("Failed to fetch from gupy"));
 
-            var result = service.fetchAndSave(USER_ID, "gupy");
+            var result = service.fetchAndSave("gupy");
 
             verify(jobRepository, never()).save(any());
             assertEquals(0, result.totalSaved());
@@ -138,7 +138,7 @@ class FetchSourceJobsServiceTest {
         void fetchAndSave_whenEmpty_shouldReturnEmptyList() {
             when(sourceFetchPort.fetch(eq("gupy"), anyList(), any())).thenReturn(List.of());
 
-            var result = service.fetchAndSave(USER_ID, "gupy");
+            var result = service.fetchAndSave("gupy");
 
             verify(jobRepository, never()).save(any());
             assertEquals(0, result.totalFetched());
@@ -165,7 +165,7 @@ class FetchSourceJobsServiceTest {
             when(sourceNormalizer.normalize(eq(rawWithoutEmail), anyList())).thenReturn(jobWithEmail);
             when(jobRepository.existsByUrl("https://example.com/job/1")).thenReturn(false);
 
-            var result = service.fetchAndSave(USER_ID, "gupy");
+            var result = service.fetchAndSave("gupy");
 
             assertEquals(1, result.totalWithEmail());
             assertEquals(1, result.perProvider().get(0).withEmail());
@@ -186,12 +186,12 @@ class FetchSourceJobsServiceTest {
                     "https://example.com/job/1", "Description",
                     LocalDate.now(), "gupy");
 
-            when(keywordResolver.resolve(USER_ID)).thenReturn(List.of("rust", "kotlin"));
+            when(keywordResolver.resolve()).thenReturn(List.of("rust", "kotlin"));
             when(sourceFetchPort.fetch(eq("gupy"), eq(List.of("rust", "kotlin")), any())).thenReturn(List.of(rawJob));
             when(sourceNormalizer.normalize(rawJob, List.of("rust", "kotlin"))).thenReturn(job);
             when(jobRepository.existsByUrl("https://example.com/job/1")).thenReturn(false);
 
-            service.fetchAndSave(USER_ID, "gupy");
+            service.fetchAndSave("gupy");
 
             verify(sourceFetchPort).fetch(eq("gupy"), eq(List.of("rust", "kotlin")), any());
             verify(sourceNormalizer).normalize(rawJob, List.of("rust", "kotlin"));
@@ -202,7 +202,7 @@ class FetchSourceJobsServiceTest {
         void fetchAndSave_whenResolvingKnownUrls_shouldDelegateToExistsByUrl() {
             when(sourceFetchPort.fetch(eq("gupy"), anyList(), any())).thenReturn(List.of());
 
-            service.fetchAndSave(USER_ID, "gupy");
+            service.fetchAndSave("gupy");
 
             var predicateCaptor = ArgumentCaptor.forClass(Predicate.class);
             verify(sourceFetchPort).fetch(eq("gupy"), anyList(), predicateCaptor.capture());
@@ -236,7 +236,7 @@ class FetchSourceJobsServiceTest {
             when(sourceNormalizer.normalize(eq(RAW_JOB), anyList())).thenReturn(job);
             when(jobRepository.existsByUrl("https://example.com/job/1")).thenReturn(false);
 
-            var result = service.fetchAndSave(USER_ID, "gupy");
+            var result = service.fetchAndSave("gupy");
 
             verify(sourceNormalizer).normalize(eq(RAW_JOB), anyList());
             verifyNoInteractions(linkedinNormalizer);
@@ -254,7 +254,7 @@ class FetchSourceJobsServiceTest {
             when(linkedinNormalizer.normalize(eq(RAW_JOB), anyList())).thenReturn(job);
             when(jobRepository.existsByUrl("https://example.com/job/1")).thenReturn(false);
 
-            var result = service.fetchAndSave(USER_ID, "linkedin");
+            var result = service.fetchAndSave("linkedin");
 
             verify(linkedinNormalizer).normalize(eq(RAW_JOB), anyList());
             verifyNoInteractions(sourceNormalizer);
