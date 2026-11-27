@@ -246,33 +246,11 @@ They serve different layers. The `TokenBucketRateLimiter` controls HTTP request 
 
 ---
 
-## CLI / TUI Client (Rust)
+## CLI / TUI Client (legacy)
 
-Separate crate at `cli/`. Two modes:
-
-| Mode | Entry | Spec |
-|------|-------|------|
-| **TUI** (interactive) | `jh-cli` (no args) | `docs/specs/cli-tui-spec.md` |
-| **Batch** (scriptable) | `jh-cli <cmd>` | `docs/specs/cli-tui-spec.md` |
-
-Architecture:
-```
-Spring Boot API (localhost:8080)
-       ▲
-       │ HTTP/JSON + JWT
-       ▼
-┌──────────────────┐
-│  jh-cli (Rust)   │
-├──────────────────┤
-│  ApiClient       │  ← Reqwest + Tokio
-│  CacheManager    │  ← Rusqlite (SQLite, local)
-│  ConfigManager   │  ← TOML + env vars
-│  TUI (Ratatui)   │  ← Crossterm
-│  Batch (Clap)    │  ← Subcommands
-└──────────────────┘
-```
-
-See `docs/specs/cli-tui-spec.md` for full command reference, keybindings, data models, caching strategy, and test structure.
+The Rust CLI/TUI (`cli/`) was removed from the public repo — the Hermes bot is
+the only interface here (ADR 002, ADR 003). The private clone keeps the CLI for
+debug/manual use; `docs/specs/cli-tui-spec.md` is retained as historical design.
 
 ---
 
@@ -351,13 +329,11 @@ flowchart LR
         S --> K --> M
     end
     G["Hermes gateway<br/>:8642 /p/jobhunter-bot/v1"]
-    C["CLI Rust (TUI)<br/>jh-cli"]
     N["LinkedIn scraper<br/>Node + Playwright :3000"]
     K -- "REST API + X-Bot-Token" --> W
     M -- "sections + JSON (volume)" --> I
     I -- "chat/completions" --> G
     G -- "jobhunter-bot" --> K
-    C -- "REST API + JWT" --> W
     I -- "scraper HTTP API" --> N
 ```
 
@@ -370,5 +346,4 @@ Seams (contracts between the modules):
 | Memory sync | `§` sections + JSON records via mounted profile dir | both ways |
 | AI + email | OpenAI-compatible `POST /v1/chat/completions` | backend → gateway → bot |
 | Skills install | `scripts/install-bot-skills.sh` (copy + prune stale duplicates + render-if-absent) | repo → profile |
-| CLI access | REST API + JWT login (`jh-cli`) | CLI → backend |
 | LinkedIn scraping | scraper HTTP API on :3000 (Playwright service, Jsoup fallback) | backend → Node service |

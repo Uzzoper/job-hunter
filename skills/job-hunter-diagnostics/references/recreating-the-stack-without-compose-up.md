@@ -17,7 +17,7 @@ docker compose build              # not blocked
 docker rm -f job-hunter-backend job-hunter-linkedin-scraper
 set -a; . <job-hunter-repo>/.env; set +a   # secrets from .env, never inline
 docker run -d --name job-hunter-backend --network host \
-  -e SERVER_ADDRESS=127.0.0.1 -e JWT_SECRET="$JWT_SECRET" \
+  -e SERVER_ADDRESS=127.0.0.1 -e HERMES_API_KEY="$HERMES_API_KEY" \
   -e SCRAPER_LINKEDIN_SERVICE_URL=http://127.0.0.1:3000 \
   -e BOT_SERVICE_API_KEY="$BOT_SERVICE_API_KEY" \
   -v <job-hunter-repo>/data:/app/data \

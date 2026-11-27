@@ -3,8 +3,6 @@ package com.juanperuzzo.job_hunter.web.exception;
 import com.juanperuzzo.job_hunter.domain.exception.AiException;
 import com.juanperuzzo.job_hunter.domain.exception.JobNotFoundException;
 import com.juanperuzzo.job_hunter.domain.exception.ScraperException;
-import com.juanperuzzo.job_hunter.domain.exception.InvalidCredentialsException;
-import com.juanperuzzo.job_hunter.domain.exception.EmailAlreadyExistsException;
 import com.juanperuzzo.job_hunter.domain.exception.ResumeNotFoundException;
 import com.juanperuzzo.job_hunter.domain.exception.ResumeDigestMismatchException;
 import com.juanperuzzo.job_hunter.domain.exception.UserNotFoundException;
@@ -69,16 +67,6 @@ public class GlobalExceptionHandler {
     public ResponseEntity<Map<String, Object>> handleGenericException(Exception ex) {
         log.error("Unhandled exception: {}", ex.getMessage(), ex);
         return buildResponse(HttpStatus.INTERNAL_SERVER_ERROR, "An unexpected error occurred");
-    }
-
-    @ExceptionHandler(InvalidCredentialsException.class)
-    public ResponseEntity<Map<String, Object>> handleInvalidCredentials(InvalidCredentialsException ex) {
-        return buildResponse(HttpStatus.UNAUTHORIZED, ex.getMessage());
-    }
-
-    @ExceptionHandler(EmailAlreadyExistsException.class)
-    public ResponseEntity<Map<String, Object>> handleEmailAlreadyExists(EmailAlreadyExistsException ex) {
-        return buildResponse(HttpStatus.CONFLICT, ex.getMessage());
     }
 
     @ExceptionHandler(UserNotFoundException.class)

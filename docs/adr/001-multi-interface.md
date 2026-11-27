@@ -32,4 +32,4 @@ Keep:
 
 - docs/specs/bot-company-enrichment.md
 - src/main/java/com/juanperuzzo/job_hunter/infrastructure/security/ (`BotTokenFilter`, `X-Bot-Token` only — JWT removed)
-- cli/ (TUI in Rust)
+- docs/adr/002-cli-legacy.md (CLI/TUI moved out of the public repo)

@@ -265,10 +265,9 @@ Tests follow the same package structure under `src/test/java/.../`. Check the di
 - [x] `GET /api/jobs/{id}/email` — return generated email
 - [x] `POST /api/jobs/{id}/email` — generate new email
 
-### Phase 4 — Interface — ✅ Complete
-- [x] TUI (Rust Ratatui) fully functional
-- [x] TUI filters: search query, apply type (t), seniority (s), dev only (d), hasEmail (t → EmailAvailable)
-- [x] TUI shows contactEmail in job detail
+### Phase 4 — Interface — ✅ Complete (legacy)
+- [x] TUI (Rust Ratatui) was fully functional — moved out of the public repo (ADR 002)
+- [x] Bot (Hermes) is the only interface in this repo (ADR 003)
 
 ### Phase 5 — Fixes & Persistence — ✅ Complete
 - [x] `contactEmail` field persisted in `jobs` table + exposed in API

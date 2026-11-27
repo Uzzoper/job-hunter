@@ -1,7 +1,7 @@
 # Spec: Self-hosted bot-only (remove CLI and multi-user auth)
 
 > **Layer:** all layers (domain, application, infrastructure, web)
-> **Status:** approved — implementing (decisions: 1A, 2B, 3A)
+> **Status:** implemented (decisions: 1A, 2B, 3A)
 > **Depends on:** ADR 002 (CLI removed), bot service token (X-Bot-Token)
 > **Non-goals:** multi-tenancy, webapp, new features
 

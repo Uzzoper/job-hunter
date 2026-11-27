@@ -25,16 +25,16 @@ services:
       dockerfile: Dockerfile
     container_name: job-hunter-backend
     ports:
-      # JWT-protected, but nothing here needs to be reachable off-host
+      # X-Bot-Token protected; bound to localhost — nothing needs off-host access
       - "127.0.0.1:8080:8080"
     environment:
-      JWT_SECRET: ${JWT_SECRET}
-      HERMES_API_KEY: ${HERMES_API_KEY}
+      HERMES_API_KEY: ${HERMES_API_KEY:?HERMES_API_KEY must be set (fail-fast)}
       HERMES_MODEL: ${HERMES_MODEL:-default}
-      # Self-hosted bot API access (X-Bot-Token). Set both in the gitignored
-      # .env to enable; blank keeps the feature disabled. Never hardcode here.
-      BOT_SERVICE_API_KEY: ${BOT_SERVICE_API_KEY}
-      BOT_SERVICE_OWNER_USER_ID: ${BOT_SERVICE_OWNER_USER_ID}
+      # X-Bot-Token is the only auth; startup fails fast when this is blank.
+      # Set it in the gitignored .env. Never hardcode here.
+      BOT_SERVICE_API_KEY: ${BOT_SERVICE_API_KEY:?BOT_SERVICE_API_KEY must be set (fail-fast)}
+      # Optional legacy selector: only for V13 migration / pre-refactor resume PDFs.
+      BOT_SERVICE_OWNER_USER_ID: ${BOT_SERVICE_OWNER_USER_ID:-}
     volumes:
       # SQLite database file lives on the host (./data/jobhunter.db)
       - ./data:/app/data

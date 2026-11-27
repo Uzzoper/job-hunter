@@ -44,7 +44,7 @@ scraper-sourced jobs.
 
 ## Contract
 
-`POST /api/jobs/ingest` — bot token (`X-Bot-Token`) or JWT; body:
+`POST /api/jobs/ingest` — requires `X-Bot-Token`; body:
 
 ```json
 { "url": "https://.../feed/update/urn:li:activity:123", "text": "...",
@@ -99,11 +99,10 @@ scraper-sourced jobs.
 9. **Domínio suspeito** — free-mail domain (gmail, hotmail, yahoo, outlook,
    ig, uol…) → saves with `emailSuspect = true`; flag appears in the job
    detail response.
-10. **Auth** — no `X-Bot-Token`/JWT → `401`. The filter contract stays
-    pinned by `BotTokenFilterTest`; this spec additionally pins the ROUTE
-    against the real chain with `JobIngestControllerSecurityTest`
-    (`[BotTokenFilter, JwtTokenFilter, UPAF]`, service-token properties,
-    401 + no use-case interaction).
+10. **Auth** — no `X-Bot-Token` → `401`. The filter contract is pinned by
+    `BotTokenFilterTest` (missing/invalid token, no actuator bypass) and
+    applies to this route like every other API path; JWT was removed with
+    the multi-user auth (ADR 003).
 
 Body field `author` is classifier context only (feeds the AI prompt for
 better `ehVaga`/title/company extraction); it is NOT persisted — `Job` has
@@ -173,21 +172,17 @@ Persistence (`JobPersistenceAdapterTest`, plain Mockito):
 - converts a `DataIntegrityViolationException` carrying
   `UNIQUE constraint failed: jobs.url` into `DuplicateUrlException`; other
   violations rethrow unchanged.
-Security (new, real chain): `JobIngestControllerSecurityTest` — POST
-`/api/jobs/ingest` without `X-Bot-Token` or JWT → 401 (pattern of
-`BotTokenFilterTest`: `@Import` SecurityConfig + both filters,
-service-token `@TestPropertySource`).
+Security: `BotTokenFilterTest` pins the filter (missing/invalid token → 401,
+no actuator bypass); the filter applies to `/api/jobs/ingest` like every other
+route. The multi-user `JobIngestControllerSecurityTest` was removed with JWT.
 
-Web (`JobIngestControllerTest`, `@WebMvcTest`):
-- `ingest_whenPermalinkIsNotLinkedInFeed_shouldThrowIllegalArgument` +
-  `ingest_whenBlankText_shouldThrowIllegalArgument` (application) and
-  `ingest_whenBodyValidationFails_shouldReturn400` (web maps the 400)
+Web (`JobIngestControllerTest`, standalone MockMvc):
 - `ingest_whenSaved_shouldReturn201WithJob`
 - `ingest_whenNoContact_shouldReturn200WithIgnoredBody`
-- `ingest_whenAiUnavailable_shouldReturn502`
+- `ingest_whenBodyInvalid_shouldReturn400` (shared handler mapping)
+- `ingest_whenAiUnavailable_shouldReturn502` (retryable gateway failure)
 - 401 is NOT re-tested here: `BotTokenFilterTest` already pins the filter,
-  and the chain covers the route by construction. The web layer pins the
-  authenticated happy path via the shared `authenticateAs` helper.
+  and the chain covers the route by construction.
 
 New contracts introduced by the tests (interfaces + records only, no
 behavior): `IngestLinkedInPostUseCase` (port/in),
