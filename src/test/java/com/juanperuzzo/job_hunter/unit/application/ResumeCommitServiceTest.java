@@ -6,6 +6,7 @@ import com.juanperuzzo.job_hunter.application.port.out.ResumeStorage;
 import com.juanperuzzo.job_hunter.application.port.out.UserProfileRepository;
 import com.juanperuzzo.job_hunter.application.service.ResumeCommitService;
 import com.juanperuzzo.job_hunter.application.service.UserProfileService;
+import com.juanperuzzo.job_hunter.domain.exception.ResumeDigestMismatchException;
 import com.juanperuzzo.job_hunter.domain.model.CompanyTone;
 import com.juanperuzzo.job_hunter.domain.model.UserProfile;
 import org.junit.jupiter.api.DisplayName;
@@ -15,9 +16,12 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @DisplayName("ResumeCommitService tests")
@@ -49,5 +53,41 @@ class ResumeCommitServiceTest {
 
         assertEquals("Corrected Owner", saved.name());
         assertEquals("corrected@example.com", saved.email());
+    }
+
+    @Test
+    @DisplayName("commit should reject a digest that does not match the uploaded PDF before writing anything")
+    void commit_whenDigestMismatch_shouldThrowAndWriteNothing() throws Exception {
+        var aiPort = mock(AiPort.class);
+        var userProfileService = mock(UserProfileService.class);
+        var userProfileRepository = mock(UserProfileRepository.class);
+        var resumeStorage = mock(ResumeStorage.class);
+        var service = new ResumeCommitService(aiPort, userProfileService, userProfileRepository, resumeStorage, 8000);
+        var corrections = new ResumeCorrections(null, null, null, null, null, "00000000000000000000000000000000");
+
+        assertThrows(ResumeDigestMismatchException.class, () -> service.commit(ResumeTestFixtures.validPdf(
+                "A resume with enough text to pass validation but the wrong preview digest."), corrections));
+
+        verify(aiPort, never()).complete(anyString());
+        verify(resumeStorage, never()).write(any());
+        verify(userProfileService, never()).saveProfile(any());
+    }
+
+    @Test
+    @DisplayName("commit should reject an invalid email correction before the AI call or any write")
+    void commit_whenInvalidEmailCorrection_shouldThrowAndWriteNothing() throws Exception {
+        var aiPort = mock(AiPort.class);
+        var userProfileService = mock(UserProfileService.class);
+        var userProfileRepository = mock(UserProfileRepository.class);
+        var resumeStorage = mock(ResumeStorage.class);
+        var service = new ResumeCommitService(aiPort, userProfileService, userProfileRepository, resumeStorage, 8000);
+        var corrections = new ResumeCorrections(null, "not-an-email", null, null, null, null);
+
+        assertThrows(IllegalArgumentException.class, () -> service.commit(ResumeTestFixtures.validPdf(
+                "A resume with enough text to pass validation but an invalid identity correction."), corrections));
+
+        verify(aiPort, never()).complete(anyString());
+        verify(resumeStorage, never()).write(any());
+        verify(userProfileService, never()).saveProfile(any());
     }
 }

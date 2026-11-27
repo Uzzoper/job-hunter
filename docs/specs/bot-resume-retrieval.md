@@ -1,13 +1,12 @@
 # Bot resume retrieval + profile account identity (issue #92, slice a)
 
-> **Status:** implemented (slice a); the write-route identity thread it left
-> open is closed by slice (b) — `resume-preview-commit.md` landed the
-> `updateIdentity` route, and every profile response (GET / PUT /
-> upload-resume / commit) now carries non-null users-row identity. Slice (c)
-> (`apply-backend-profile.md`) closed the read-side debt that motivated this
-> slice: the apply skill no longer keeps a local resume copy — the PDF is
-> downloaded fresh from `GET /api/profile/resume` into a temp file only when
-> an action attaches it.
+> **Status:** historical slice (a). The `userId` scoping and `updateIdentity`
+> route described below were removed by the self-hosted single-user refactor
+> (`docs/specs/self-hosted-bot-only.md`, ADR 003): the resume is now the single
+> profile's PDF at `{upload-dir}/resume.pdf`, behind `X-Bot-Token` only. The
+> read-side debt this slice motivated was closed by slice (c)
+> (`apply-backend-profile.md`): the apply skill downloads the PDF fresh from
+> `GET /api/profile/resume` into a temp file only when an action attaches it.
 
 Small backend slice: the bot can retrieve the stored resume PDF through the
 authenticated API, and the profile response carries the account identity.
@@ -31,12 +30,11 @@ slice (c) (apply skill consumes the backend profile).
 ### `GET /api/profile/resume` → **`200 application/pdf`**
 
 - Body: the stored original PDF bytes.
-  `Content-Disposition: attachment; filename="resume-{userId}.pdf"`.
-- **Auth: any authenticated principal** — `X-Bot-Token` (bot acts as the
-  configured owner user) or `Bearer` JWT (self). Resolution goes through
-  `CurrentUserService`; the file served is always the principal's **own**
-  resume. No cross-user access, no server filesystem paths exposed — the
-  bot downloads the artifact and stages it locally.
+  `Content-Disposition: attachment; filename="resume.pdf"`.
+- **Auth: `X-Bot-Token` only** (self-hosted single-operator backend, ADR 003).
+  The endpoint serves the single profile's resume. No cross-user access, no
+  server filesystem paths exposed — the bot downloads the artifact to a temp
+  file only when an action attaches it.
 - `404`: no PDF stored for the user (never uploaded, or the file is gone
   on disk) — new domain exception `ResumeNotFoundException`, mapped by the
   GlobalExceptionHandler to a clean JSON error (no stack traces).
